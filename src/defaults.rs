@@ -337,6 +337,23 @@ pub(crate) fn default_formula_selector_config(base_url: &str, model: &str) -> Pr
     }
 }
 
+pub(crate) fn default_workflow_planner_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "workflow_planner".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 768,
+        timeout_s: 120,
+        system_prompt: "You are Elma's workflow planner.\n\nReturn ONLY one valid JSON object. No prose.\n\nSchema:\n{\n  \"objective\": \"short objective\",\n  \"complexity\": \"DIRECT\" | \"INVESTIGATE\" | \"MULTISTEP\" | \"OPEN_ENDED\",\n  \"risk\": \"LOW\" | \"MEDIUM\" | \"HIGH\",\n  \"needs_evidence\": true | false,\n  \"scope\": {\n    \"objective\": \"short scope objective\",\n    \"focus_paths\": [\"...\"],\n    \"include_globs\": [\"...\"],\n    \"exclude_globs\": [\"...\"],\n    \"query_terms\": [\"...\"],\n    \"expected_artifacts\": [\"...\"],\n    \"reason\": \"one short sentence\"\n  },\n  \"preferred_formula\": \"formula name\",\n  \"alternatives\": [\"...\"],\n  \"memory_id\": \"optional matching memory id or empty string\",\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Combine complexity, scope, and formula choice into one coherent planning prior.\n- Use formula memory candidates only when their objective and operation clearly fit the current request.\n- Prefer tighter scope and fewer assumptions.\n- Greetings and direct conversational turns should usually prefer reply_only with needs_evidence=false.\n- Project/code/file questions should usually prefer inspect-oriented formulas and a narrow scope.\n- Ranking, prioritization, and top-N tasks over workspace items usually need evidence before any selection or display.\n- Editing requests should usually prefer inspect_edit_verify_reply.\n- Keep alternatives short and relevant.\n"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_evidence_mode_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -592,6 +609,10 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
         (
             "formula_selector.toml",
             default_formula_selector_config(base_url, model),
+        ),
+        (
+            "workflow_planner.toml",
+            default_workflow_planner_config(base_url, model),
         ),
         (
             "evidence_mode.toml",

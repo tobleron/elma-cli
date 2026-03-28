@@ -46,31 +46,30 @@ pub(crate) async fn evaluate_runtime_scenario(
         .map(|mode| decision.mode.choice.eq_ignore_ascii_case(mode));
     let route_ok = decision.route.eq_ignore_ascii_case(&scenario.route);
 
-    let complexity = assess_complexity_once(
+    let memories = load_recent_formula_memories(
+        &resources
+            .tune_sessions_root
+            .parent()
+            .unwrap_or(&resources.tune_sessions_root)
+            .to_path_buf(),
+        8,
+    )
+    .unwrap_or_default();
+    let (workflow_plan, complexity, scope, formula, _) = derive_planning_prior(
         client,
         chat_url,
+        &resources.workflow_planner_cfg,
         &resources.complexity_cfg,
-        &user_message,
-        &decision,
-        &resources.ws,
-        &resources.ws_brief,
-        &conversation_messages,
-    )
-    .await
-    .unwrap_or_default();
-    let scope = build_scope_once(
-        client,
-        chat_url,
         &resources.scope_builder_cfg,
+        &resources.formula_cfg,
         &user_message,
         &decision,
-        &complexity,
         &resources.ws,
         &resources.ws_brief,
+        &memories,
         &conversation_messages,
     )
-    .await
-    .unwrap_or_default();
+    .await;
     let expected_scope =
         !scenario.expected_scope_terms.is_empty() || !scenario.forbidden_scope_terms.is_empty();
     let scope_eval_ok = scope_contains_expected_terms(&scope, &scenario.expected_scope_terms)
@@ -86,29 +85,6 @@ pub(crate) async fn evaluate_runtime_scenario(
             scope.exclude_globs
         )
     };
-
-    let memories = load_recent_formula_memories(
-        &resources
-            .tune_sessions_root
-            .parent()
-            .unwrap_or(&resources.tune_sessions_root)
-            .to_path_buf(),
-        8,
-    )
-    .unwrap_or_default();
-    let formula = select_formula_once(
-        client,
-        chat_url,
-        &resources.formula_cfg,
-        &user_message,
-        &decision,
-        &complexity,
-        &scope,
-        &memories,
-        &conversation_messages,
-    )
-    .await
-    .unwrap_or_default();
 
     let mut program_opt: Option<Program> = None;
     let mut program_eval = ProgramEvaluation {
@@ -127,6 +103,7 @@ pub(crate) async fn evaluate_runtime_scenario(
         &resources.orchestrator_cfg,
         &user_message,
         &decision,
+        workflow_plan.as_ref(),
         &complexity,
         &scope,
         &formula,
@@ -161,6 +138,7 @@ pub(crate) async fn evaluate_runtime_scenario(
             &resources.orchestrator_cfg,
             &user_message,
             &decision,
+            workflow_plan.as_ref(),
             &complexity,
             &scope,
             &formula,
@@ -217,8 +195,11 @@ pub(crate) async fn evaluate_runtime_scenario(
                 &resources.planner_cfg,
                 &resources.planner_master_cfg,
                 &resources.decider_cfg,
+                &resources.selector_cfg,
                 &resources.summarizer_cfg,
                 Some(&resources.command_repair_cfg),
+                None,
+                None,
                 Some(&resources.evidence_compactor_cfg),
                 Some(&resources.artifact_classifier_cfg),
                 &scope,
@@ -273,6 +254,7 @@ pub(crate) async fn evaluate_runtime_scenario(
                 &decision,
                 &program,
                 &step_results,
+                None,
                 0,
             )
             .await
@@ -294,10 +276,26 @@ pub(crate) async fn evaluate_runtime_scenario(
                 "Respond to the user in plain terminal text. Use any step outputs as evidence."
                     .to_string()
             });
+            let evidence_mode =
+                decide_evidence_mode_once(
+                    client,
+                    chat_url,
+                    &resources.evidence_mode_cfg,
+                    &user_message,
+                    &decision,
+                    &reply_instructions,
+                    &step_results,
+                )
+                .await
+                .unwrap_or_else(|_| EvidenceModeDecision {
+                    mode: "COMPACT".to_string(),
+                    reason: "fallback".to_string(),
+                });
             match generate_final_answer_once(
                 client,
                 chat_url,
                 &resources.elma_cfg,
+                &resources.evidence_mode_cfg,
                 &resources.result_presenter_cfg,
                 &resources.claim_checker_cfg,
                 &resources.formatter_cfg,
@@ -315,6 +313,7 @@ pub(crate) async fn evaluate_runtime_scenario(
                         chat_url,
                         &resources.claim_checker_cfg,
                         &user_message,
+                        &evidence_mode,
                         &step_results,
                         &final_text,
                     )

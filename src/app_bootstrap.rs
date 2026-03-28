@@ -186,6 +186,7 @@ fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         formatter_cfg: load_agent_config(&model_cfg_dir.join("formatter.toml"))?,
         complexity_cfg: load_agent_config(&model_cfg_dir.join("complexity_assessor.toml"))?,
         formula_cfg: load_agent_config(&model_cfg_dir.join("formula_selector.toml"))?,
+        workflow_planner_cfg: load_agent_config(&model_cfg_dir.join("workflow_planner.toml"))?,
         evidence_mode_cfg: load_agent_config(&model_cfg_dir.join("evidence_mode.toml"))?,
         command_repair_cfg: load_agent_config(&model_cfg_dir.join("command_repair.toml"))?,
         task_semantics_guard_cfg: load_agent_config(

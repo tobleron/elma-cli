@@ -513,6 +513,28 @@ pub(crate) struct FormulaSelection {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct WorkflowPlannerOutput {
+    #[serde(default)]
+    pub(crate) objective: String,
+    #[serde(default)]
+    pub(crate) complexity: String,
+    #[serde(default)]
+    pub(crate) risk: String,
+    #[serde(default)]
+    pub(crate) needs_evidence: bool,
+    #[serde(default)]
+    pub(crate) scope: ScopePlan,
+    #[serde(default)]
+    pub(crate) preferred_formula: String,
+    #[serde(default)]
+    pub(crate) alternatives: Vec<String>,
+    #[serde(default)]
+    pub(crate) memory_id: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct EvidenceModeDecision {
     #[serde(default)]
     pub(crate) mode: String,

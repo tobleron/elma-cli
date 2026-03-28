@@ -328,6 +328,13 @@ pub(crate) fn ensure_model_config_folder(
             &default_formula_selector_config(base_url, model_id),
         )?;
     }
+    let workflow_planner_path = dir.join("workflow_planner.toml");
+    if !workflow_planner_path.exists() {
+        save_agent_config(
+            &workflow_planner_path,
+            &default_workflow_planner_config(base_url, model_id),
+        )?;
+    }
     let evidence_mode_path = dir.join("evidence_mode.toml");
     if !evidence_mode_path.exists() {
         save_agent_config(

@@ -40,49 +40,53 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         .await?;
         trace_route_decision(&runtime.args, &route_decision);
 
-        let complexity = assess_complexity_once(
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.profiles.complexity_cfg,
-            line,
-            &route_decision,
-            &runtime.ws,
-            &runtime.ws_brief,
-            &runtime.messages,
-        )
-        .await
-        .unwrap_or_default();
-        trace_complexity(&runtime.args, &complexity);
-
-        let scope = build_scope_once(
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.profiles.scope_builder_cfg,
-            line,
-            &route_decision,
-            &complexity,
-            &runtime.ws,
-            &runtime.ws_brief,
-            &runtime.messages,
-        )
-        .await
-        .unwrap_or_default();
-        trace_scope(&runtime.args, &scope);
-
         let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
-        let formula = select_formula_once(
+        let (workflow_plan, complexity, scope, formula, planner_fallback_used) = derive_planning_prior(
             &runtime.client,
             &runtime.chat_url,
+            &runtime.profiles.workflow_planner_cfg,
+            &runtime.profiles.complexity_cfg,
+            &runtime.profiles.scope_builder_cfg,
             &runtime.profiles.formula_cfg,
             line,
             &route_decision,
-            &complexity,
-            &scope,
+            &runtime.ws,
+            &runtime.ws_brief,
             &memories,
             &runtime.messages,
         )
-        .await
-        .unwrap_or_default();
+        .await;
+        trace(
+            &runtime.args,
+            &format!(
+                "planning_source={}",
+                if planner_fallback_used {
+                    "fallback_chain"
+                } else if workflow_plan.is_some() {
+                    "workflow_planner"
+                } else {
+                    "chat_fast_path"
+                }
+            ),
+        );
+        if let Some(plan) = workflow_plan.as_ref() {
+            trace(
+                &runtime.args,
+                &format!(
+                    "workflow_planner objective={} formula={} memory={} reason={}",
+                    if plan.objective.trim().is_empty() { "-" } else { plan.objective.trim() },
+                    if plan.preferred_formula.trim().is_empty() {
+                        "-"
+                    } else {
+                        plan.preferred_formula.trim()
+                    },
+                    if plan.memory_id.trim().is_empty() { "-" } else { plan.memory_id.trim() },
+                    plan.reason.trim()
+                ),
+            );
+        }
+        trace_complexity(&runtime.args, &complexity);
+        trace_scope(&runtime.args, &scope);
         trace_formula(&runtime.args, &formula);
         operator_trace(
             &runtime.args,
@@ -93,6 +97,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             runtime,
             line,
             &route_decision,
+            workflow_plan.as_ref(),
             &complexity,
             &scope,
             &formula,
@@ -364,6 +369,7 @@ async fn build_program(
     runtime: &AppRuntime,
     line: &str,
     route_decision: &RouteDecision,
+    workflow_plan: Option<&WorkflowPlannerOutput>,
     complexity: &ComplexityAssessment,
     scope: &ScopePlan,
     formula: &FormulaSelection,
@@ -374,6 +380,7 @@ async fn build_program(
         &runtime.profiles.orchestrator_cfg,
         line,
         route_decision,
+        workflow_plan,
         complexity,
         scope,
         formula,
@@ -397,6 +404,7 @@ async fn build_program(
                     &runtime.profiles.orchestrator_cfg,
                     line,
                     route_decision,
+                    workflow_plan,
                     complexity,
                     scope,
                     formula,
@@ -580,6 +588,7 @@ async fn resolve_final_text(
                     &runtime.profiles.orchestrator_cfg,
                     line,
                     route_decision,
+                    None,
                     complexity,
                     scope,
                     formula,
@@ -756,6 +765,7 @@ async fn resolve_final_text(
                     &runtime.profiles.orchestrator_cfg,
                     line,
                     route_decision,
+                    None,
                     complexity,
                     scope,
                     formula,

@@ -8,6 +8,7 @@ pub(crate) async fn evaluate_response_suite_impl(
     model_id: &str,
 ) -> Result<(f64, bool, String)> {
     let elma_cfg = load_agent_config(&candidate_dir.join("_elma.config"))?;
+    let evidence_mode_cfg = load_agent_config(&candidate_dir.join("evidence_mode.toml"))?;
     let result_presenter_cfg = load_agent_config(&candidate_dir.join("result_presenter.toml"))?;
     let claim_checker_cfg = load_agent_config(&candidate_dir.join("claim_checker.toml"))?;
     let formatter_cfg = load_agent_config(&candidate_dir.join("formatter.toml"))?;
@@ -94,51 +95,30 @@ pub(crate) async fn evaluate_response_suite_impl(
             route_correct += 1;
         }
 
-        let complexity = assess_complexity_once(
-            client,
-            chat_url,
-            &complexity_cfg,
-            &user_message,
-            &decision,
-            &ws,
-            &ws_brief,
-            &conversation_messages,
-        )
-        .await
-        .unwrap_or_default();
-        let scope = build_scope_once(
-            client,
-            chat_url,
-            &scope_builder_cfg,
-            &user_message,
-            &decision,
-            &complexity,
-            &ws,
-            &ws_brief,
-            &conversation_messages,
-        )
-        .await
-        .unwrap_or_default();
         let memories = load_recent_formula_memories(candidate_dir, 8).unwrap_or_default();
-        let formula = select_formula_once(
+        let workflow_planner_cfg = load_agent_config(&candidate_dir.join("workflow_planner.toml"))?;
+        let (workflow_plan, complexity, scope, formula, _) = derive_planning_prior(
             client,
             chat_url,
+            &workflow_planner_cfg,
+            &complexity_cfg,
+            &scope_builder_cfg,
             &formula_cfg,
             &user_message,
             &decision,
-            &complexity,
-            &scope,
+            &ws,
+            &ws_brief,
             &memories,
             &conversation_messages,
         )
-        .await
-        .unwrap_or_default();
+        .await;
         let (mut program, _) = match orchestrate_program_once(
             client,
             chat_url,
             &orchestrator_cfg,
             &user_message,
             &decision,
+            workflow_plan.as_ref(),
             &complexity,
             &scope,
             &formula,
@@ -172,8 +152,11 @@ pub(crate) async fn evaluate_response_suite_impl(
             &planner_cfg,
             &planner_master_cfg,
             &decider_cfg,
+            &load_agent_config(&candidate_dir.join("selector.toml"))?,
             &summarizer_cfg,
             Some(&command_repair_cfg),
+            None,
+            None,
             Some(&evidence_compactor_cfg),
             Some(&artifact_classifier_cfg),
             &scope,
@@ -193,6 +176,7 @@ pub(crate) async fn evaluate_response_suite_impl(
             client,
             chat_url,
             &elma_cfg,
+            &evidence_mode_cfg,
             &result_presenter_cfg,
             &claim_checker_cfg,
             &formatter_cfg,

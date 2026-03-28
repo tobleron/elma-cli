@@ -27,6 +27,7 @@ pub(crate) async fn prepare_tune_resources(
     let formatter_cfg = load_agent_config(&model_cfg_dir.join("formatter.toml"))?;
     let complexity_cfg = load_agent_config(&model_cfg_dir.join("complexity_assessor.toml"))?;
     let formula_cfg = load_agent_config(&model_cfg_dir.join("formula_selector.toml"))?;
+    let workflow_planner_cfg = load_agent_config(&model_cfg_dir.join("workflow_planner.toml"))?;
     let command_repair_cfg = load_agent_config(&model_cfg_dir.join("command_repair.toml"))?;
     let scope_builder_cfg = load_agent_config(&model_cfg_dir.join("scope_builder.toml"))?;
     let evidence_compactor_cfg =
@@ -108,6 +109,7 @@ pub(crate) async fn prepare_tune_resources(
         formatter_cfg,
         complexity_cfg,
         formula_cfg,
+        workflow_planner_cfg,
         command_repair_cfg,
         scope_builder_cfg,
         evidence_compactor_cfg,

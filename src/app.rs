@@ -10,6 +10,7 @@ pub(crate) struct LoadedProfiles {
     pub(crate) formatter_cfg: Profile,
     pub(crate) complexity_cfg: Profile,
     pub(crate) formula_cfg: Profile,
+    pub(crate) workflow_planner_cfg: Profile,
     pub(crate) evidence_mode_cfg: Profile,
     pub(crate) command_repair_cfg: Profile,
     pub(crate) task_semantics_guard_cfg: Profile,

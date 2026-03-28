@@ -145,6 +145,72 @@ pub(crate) async fn select_formula_once(
     chat_json_with_repair(client, chat_url, &req).await
 }
 
+pub(crate) async fn plan_workflow_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    user_message: &str,
+    route_decision: &RouteDecision,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    memories: &[FormulaMemoryRecord],
+    messages: &[ChatMessage],
+) -> Result<WorkflowPlannerOutput> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "user_message": user_message,
+                    "speech_act": {
+                        "choice": route_decision.speech_act.choice,
+                        "distribution": route_decision.speech_act.distribution.iter().map(|(label, p)| serde_json::json!({"label": label, "p": p})).collect::<Vec<_>>(),
+                    },
+                    "workflow": {
+                        "choice": route_decision.workflow.choice,
+                        "distribution": route_decision.workflow.distribution.iter().map(|(label, p)| serde_json::json!({"label": label, "p": p})).collect::<Vec<_>>(),
+                    },
+                    "mode": {
+                        "choice": route_decision.mode.choice,
+                        "distribution": route_decision.mode.distribution.iter().map(|(label, p)| serde_json::json!({"label": label, "p": p})).collect::<Vec<_>>(),
+                    },
+                    "route": route_decision.route,
+                    "workspace_facts": workspace_facts,
+                    "workspace_brief": workspace_brief,
+                    "memory_candidates": memories.iter().map(|m| serde_json::json!({
+                        "id": m.id,
+                        "title": m.title,
+                        "route": m.route,
+                        "complexity": m.complexity,
+                        "formula": m.formula,
+                        "objective": m.objective,
+                        "program_signature": m.program_signature,
+                        "success_count": m.success_count,
+                        "failure_count": m.failure_count,
+                        "last_success_unix_s": m.last_success_unix_s,
+                        "last_failure_unix_s": m.last_failure_unix_s,
+                    })).collect::<Vec<_>>(),
+                    "conversation": conversation_excerpt(messages, 12),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    chat_json_with_repair(client, chat_url, &req).await
+}
+
 pub(crate) async fn select_items_once(
     client: &reqwest::Client,
     chat_url: &Url,

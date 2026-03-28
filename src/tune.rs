@@ -13,6 +13,7 @@ pub(crate) struct TuneResources {
     pub(crate) formatter_cfg: Profile,
     pub(crate) complexity_cfg: Profile,
     pub(crate) formula_cfg: Profile,
+    pub(crate) workflow_planner_cfg: Profile,
     pub(crate) command_repair_cfg: Profile,
     pub(crate) scope_builder_cfg: Profile,
     pub(crate) evidence_compactor_cfg: Profile,

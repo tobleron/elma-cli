@@ -173,6 +173,7 @@ pub(crate) fn conversation_excerpt(messages: &[ChatMessage], max_items: usize) -
 pub(crate) fn build_orchestrator_user_content(
     line: &str,
     route_decision: &RouteDecision,
+    workflow_plan: Option<&WorkflowPlannerOutput>,
     complexity: &ComplexityAssessment,
     scope: &ScopePlan,
     formula: &FormulaSelection,
@@ -181,7 +182,7 @@ pub(crate) fn build_orchestrator_user_content(
     messages: &[ChatMessage],
 ) -> String {
     format!(
-        "User message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nComplexity prior:\n{}\n\nScope prior:\n{}\n\nFormula prior:\n{}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
+        "User message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow planner prior:\n{}\n\nComplexity prior:\n{}\n\nScope prior:\n{}\n\nFormula prior:\n{}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
         route_decision.speech_act.choice,
         route_decision.speech_act.source,
         format_route_distribution(&route_decision.speech_act.distribution),
@@ -202,6 +203,9 @@ pub(crate) fn build_orchestrator_user_content(
         format_route_distribution(&route_decision.distribution),
         route_decision.margin,
         route_decision.entropy,
+        workflow_plan
+            .map(|plan| serde_json::to_string_pretty(plan).unwrap_or_else(|_| "{}".to_string()))
+            .unwrap_or_else(|| "null".to_string()),
         serde_json::to_string_pretty(complexity).unwrap_or_else(|_| "{}".to_string()),
         serde_json::to_string_pretty(scope).unwrap_or_else(|_| "{}".to_string()),
         serde_json::to_string_pretty(formula).unwrap_or_else(|_| "{}".to_string()),
@@ -209,4 +213,69 @@ pub(crate) fn build_orchestrator_user_content(
         ws_brief.trim(),
         conversation_excerpt(messages, 12)
     )
+}
+
+pub(crate) fn build_recovery_user_content(
+    line: &str,
+    route_decision: &RouteDecision,
+    workflow_plan: Option<&WorkflowPlannerOutput>,
+    complexity: &ComplexityAssessment,
+    scope: &ScopePlan,
+    formula: &FormulaSelection,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+    failure_reason: &str,
+    current_program: Option<&Program>,
+    step_results: &[StepResult],
+) -> String {
+    serde_json::json!({
+        "failure_reason": failure_reason,
+        "user_message": line,
+        "speech_act_prior": {
+            "choice": route_decision.speech_act.choice,
+            "distribution": route_decision.speech_act.distribution.iter().map(|(label, p)| {
+                serde_json::json!({"label": label, "p": p})
+            }).collect::<Vec<_>>(),
+        },
+        "workflow_prior": {
+            "choice": route_decision.workflow.choice,
+            "distribution": route_decision.workflow.distribution.iter().map(|(label, p)| {
+                serde_json::json!({"label": label, "p": p})
+            }).collect::<Vec<_>>(),
+        },
+        "mode_prior": {
+            "choice": route_decision.mode.choice,
+            "distribution": route_decision.mode.distribution.iter().map(|(label, p)| {
+                serde_json::json!({"label": label, "p": p})
+            }).collect::<Vec<_>>(),
+        },
+        "route_prior": {
+            "route": route_decision.route,
+            "distribution": route_decision.distribution.iter().map(|(label, p)| {
+                serde_json::json!({"label": label, "p": p})
+            }).collect::<Vec<_>>(),
+        },
+        "workflow_planner": workflow_plan,
+        "complexity": complexity,
+        "scope": scope,
+        "formula": formula,
+        "workspace_facts": ws.trim(),
+        "workspace_brief": ws_brief.trim(),
+        "conversation": conversation_excerpt(messages, 12),
+        "current_program_steps": current_program.map(|program| {
+            program.steps.iter().map(program_step_json).collect::<Vec<_>>()
+        }),
+        "observed_step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+        "recovery_rules": [
+            "Return the smallest valid Program JSON that can still satisfy the request.",
+            "For non-CHAT routes, do not fall back to reply-only unless a concise clarifying question is the only safe next step.",
+            "If the user asks to choose, rank, prioritize, or select workspace items, inspect evidence first, then decide or summarize, then reply.",
+            "If the user asks to show file contents, inspect the chosen files before replying.",
+            "If a select step exists, later shell steps that use the selection should normally reference it directly with a placeholder such as {{sel1|shell_words}}.",
+            "Do not claim completion when the observed step results did not satisfy the request.",
+            "Prefer 2-4 steps unless more are clearly necessary."
+        ]
+    })
+    .to_string()
 }
