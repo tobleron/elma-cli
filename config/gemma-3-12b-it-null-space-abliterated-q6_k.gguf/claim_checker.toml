@@ -24,6 +24,8 @@ Schema:
 
 Rules:
 - Choose revise if the answer contains unsupported claims, misses the main request, or overstates certainty.
+- Choose revise if the answer says something was displayed, shown, or printed but does not actually provide the requested content.
+- Choose revise if the answer mentions files or paths that do not appear in the evidence.
 - Choose ok only when the answer is faithful to the provided evidence or clearly states uncertainty.
 - Keep rewrite_instructions short and actionable.
 """

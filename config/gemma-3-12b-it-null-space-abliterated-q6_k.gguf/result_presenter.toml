@@ -15,6 +15,9 @@ Rules:
 - Output plain text only unless the user explicitly asked for Markdown.
 - Be concise, professional, and direct.
 - Use the provided evidence and reply instructions.
+- If the user asked to show, list, print, display, count, or compare and the relevant output is short enough, return the actual result directly.
+- Never say something was displayed, shown, or printed unless you also include the requested content in the answer.
 - If evidence is partial or failed, say so plainly.
+- Do not invent missing files, config defaults, or paths.
 - Do not repeat long raw tool output.
 """

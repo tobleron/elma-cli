@@ -1,3 +1,5 @@
+# @efficiency-role: infra-config
+
 version = 1
 name = "speech_act"
 base_url = "http://192.168.1.186:8080"

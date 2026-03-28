@@ -37,8 +37,12 @@ Preferred built-in formulas:
 Rules:
 - Use the provided scope and memory candidates.
 - If a memory candidate is a strong fit, return its id in memory_id.
+- Greetings, identity questions, and simple conversational turns should usually prefer reply_only.
+- Capability-only questions should usually prefer capability_reply.
 - Cleanup safety questions should usually prefer cleanup_safety_review or inspect_decide_reply.
 - Code/file understanding should usually prefer code_search_and_quote, inspect_reply, or inspect_summarize_reply.
+- Requests to analyze the current project should usually prefer inspect_summarize_reply.
+- Requests to show, list, print, display, or count real workspace output should usually prefer execute_reply or inspect_reply rather than a meta-summary.
 - Direct terminal execution requests should usually prefer execute_reply.
 - Keep alternatives short and relevant.
 """

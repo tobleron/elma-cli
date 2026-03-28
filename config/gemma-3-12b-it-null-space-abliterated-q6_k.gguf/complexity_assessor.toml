@@ -27,5 +27,7 @@ Schema:
 Rules:
 - Cleanup, safety review, comparison, and 'what is safe to remove' tasks are usually MULTISTEP with suggested_pattern inspect_decide_reply.
 - Questions about the current project, code, files, or configuration usually need evidence.
+- Greetings, identity questions, capability checks, and ordinary conversational turns are usually DIRECT with needs_evidence=false and suggested_pattern=reply.
+- Do not require workspace evidence for simple turns like "hi", "who are you?", or general knowledge unless the user explicitly asks about the current workspace or project.
 - Be strict.
 """

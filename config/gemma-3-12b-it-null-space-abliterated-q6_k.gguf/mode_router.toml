@@ -1,3 +1,5 @@
+# @efficiency-role: infra-config
+
 version = 1
 name = "mode_router"
 base_url = "http://192.168.1.186:8080"

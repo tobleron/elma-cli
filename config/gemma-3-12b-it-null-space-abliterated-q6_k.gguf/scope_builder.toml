@@ -26,7 +26,9 @@ Schema:
 
 Rules:
 - Prefer narrow scopes.
+- For greetings, identity questions, capability questions, and other direct conversational turns, return an empty or minimal scope. Do not default to "." unless the whole workspace truly needs inspection.
 - Exclude noisy or irrelevant areas when possible.
+- If the user names a path, center the scope on that exact path and verify whether it exists and whether it is a file or directory before deeper inspection.
 - For cleanup review, focus on the repo root plus obvious generated or cluttered areas such as target, sessions, .DS_Store, temporary files, and current config artifacts. Exclude config/*/baseline, config/*/fallback, config/*/tune, and unrelated scratch directories unless the user explicitly asks about them.
 - For code lookup, focus on source and test files and relevant config files.
 - Do not include network or remote scope.

@@ -1,3 +1,5 @@
+@efficiency-role: scenario-spec
+
 user is greeting / smalltalking, no terminal action needed.: Okay, Thanks, Testing
 user wants a terminal command to list files with flags and sorting.: List, Unknown, Unknown
 user wants planning and guidance, not immediate terminal execution.: Planning, Guidance, Request
