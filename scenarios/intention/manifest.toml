@@ -1,0 +1,154 @@
+version = 1
+
+[[scenarios]]
+file = "scenario_001_greeting.md"
+speech_act = "INFO_REQUEST"
+workflow = "CHAT"
+route = "CHAT"
+notes = "Greeting and smalltalk should stay conversational."
+
+[[scenarios]]
+file = "scenario_002_shell_task.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "Listing files with flags and sorting is a direct terminal action."
+
+[[scenarios]]
+file = "scenario_003_planning.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "PLAN"
+route = "PLAN"
+notes = "The user wants a concrete plan now, not execution."
+
+[[scenarios]]
+file = "scenario_004_ambiguous.md"
+speech_act = "CAPABILITY_CHECK"
+workflow = "CHAT"
+route = "CHAT"
+notes = "The final turn asks whether logs can be pasted, which is not an execution request."
+
+[[scenarios]]
+file = "scenario_005_research.md"
+speech_act = "INFO_REQUEST"
+workflow = "CHAT"
+route = "CHAT"
+notes = "This is a short explanatory answer request."
+
+[[scenarios]]
+file = "scenario_006_file_create_edit.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "The final turn asks to show file contents, which is read-only inspection."
+
+[[scenarios]]
+file = "scenario_007_search_and_grep.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Repo search is evidence gathering in the workspace."
+
+[[scenarios]]
+file = "scenario_008_git_basic.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "Branching and committing are direct shell actions."
+
+[[scenarios]]
+file = "scenario_009_git_conflict.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "Conflict resolution is an execution-oriented task in the workspace."
+
+[[scenarios]]
+file = "scenario_010_network_curl.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "curl and file saving are direct terminal actions."
+
+[[scenarios]]
+file = "scenario_011_ssh_remote.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "The user wants remote shell commands executed."
+
+[[scenarios]]
+file = "scenario_012_json_jq.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "jq extraction and writing output are shell tasks."
+
+[[scenarios]]
+file = "scenario_013_logs_summarize.md"
+speech_act = "INFO_REQUEST"
+workflow = "CHAT"
+route = "CHAT"
+notes = "The user provided logs and wants analysis, not shell execution."
+
+[[scenarios]]
+file = "scenario_014_confirmations.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "The final turn resumes a previously confirmed action."
+
+[[scenarios]]
+file = "scenario_015_multi_intent.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "The action request dominates because the user wants an explanation and then a config change."
+
+[[scenarios]]
+file = "scenario_016_workflow_natural_language.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "DECIDE"
+route = "DECIDE"
+notes = "The final turn explicitly asks for a decision."
+
+[[scenarios]]
+file = "scenario_017_permissions_sudo.md"
+speech_act = "INFO_REQUEST"
+workflow = "CHAT"
+route = "CHAT"
+notes = "The final turn asks for a one-sentence risk explanation."
+
+[[scenarios]]
+file = "scenario_018_package_install.md"
+speech_act = "INFO_REQUEST"
+workflow = "CHAT"
+route = "CHAT"
+notes = "The final turn asks how to uninstall, which is informational."
+
+[[scenarios]]
+file = "scenario_019_performance_tuning.md"
+speech_act = "INFO_REQUEST"
+workflow = "CHAT"
+route = "CHAT"
+notes = "This is advice and recommendation, not execution."
+
+[[scenarios]]
+file = "scenario_020_data_cleanup.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "The final turn authorizes the deletion action."

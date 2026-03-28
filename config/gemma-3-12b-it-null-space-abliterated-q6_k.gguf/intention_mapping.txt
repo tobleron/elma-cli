@@ -1,20 +1,20 @@
-user is greeting / smalltalking, no terminal action needed.: Testing, Chat, Thanks
+user is greeting / smalltalking, no terminal action needed.: Greeting, Testing, Chat
 user wants a terminal command to list files with flags and sorting.: List, Files, Sort
-user wants planning and guidance, not immediate terminal execution.: Planning, Guidance, Request
+user wants planning and guidance, not immediate terminal execution.: Planning, Guidance, Support
 user is troubleshooting; needs clarification before action.: Paste, Logs, Here
-user wants an explanation and recommendations, not shell commands.: Explain, Recommend, Values
+user wants an explanation and recommendations, not shell commands.: Explain, Recommend, Short
 user wants file operations executed in the terminal.: Create, Edit, Display
-user wants repo search commands in the terminal.: Search, Results, Refine
-user wants git commands executed in the terminal.: Execute, Commands, Terminal
+user wants repo search commands in the terminal.: Search, Commands, Messages
+user wants git commands executed in the terminal.: Execute, Git, Commands
 user wants guidance to resolve a git merge conflict.: Resolve, Incoming, Preserve
 user wants HTTP requests and file saving in the terminal.: Saving, Response, File
-user wants remote inspection commands via ssh.: Inspect, Commands, Exit
+user wants remote inspection commands via ssh.: Remote, Commands, Exit
 user wants jq/json shell commands and saving output.: Extract, Count, Write
 user wants analysis and explanation from the assistant.: Analyze, Propose, Explain
-user is confirming or cancelling an action.: Cancelling, Action, Confirmation
-user mixes explanation with a requested config change action.: Explain, Then, Do
-user is requesting planning workflows (master plan, plan, then a decision).: Planning, Workflow, Decision
-user needs help with privileged file editing and safety guidance.: Fix, Explain, Risks
+user is confirming or cancelling an action.: Cancelling, Continuing, Confirming
+user mixes explanation with a requested config change action.: Explain, Then, Action
+user is requesting planning workflows (master plan, plan, then a decision).: Planning, Decision, Proceed
+user needs help with privileged file editing and safety guidance.: Fix, Sudo, Explain
 user wants package manager commands and verification steps.: Install, Verify, Uninstall
 user wants advice and tuning recommendations for model performance.: Suggest, Llamacpp, Flags
-user wants safe cleanup commands with a dry-run first.: Preview, Delete, Confirm
+user wants safe cleanup commands with a dry-run first.: Confirm, Execute, Delete

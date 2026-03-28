@@ -9,8 +9,6 @@ tmpdir="$(mktemp -d)"
 cleanup() { rm -rf "$tmpdir"; }
 trap cleanup EXIT
 
-export LLAMA_BASE_URL="${LLAMA_BASE_URL:-http://localhost:8080}"
-
 run_case() {
   local name="$1"
   local input="$2"

@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use reqwest::Url;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{self, Write};
 use std::io::IsTerminal;
 use std::path::Path;
@@ -13,8 +15,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[command(name = "elma-cli", version, about = "Minimal chat CLI for llama.cpp /v1/chat/completions")]
 struct Args {
     /// Base URL of the server (example: http://192.168.1.186:8080)
-    #[arg(long, env = "LLAMA_BASE_URL", default_value = "http://localhost:8080")]
-    base_url: String,
+    #[arg(long, env = "LLAMA_BASE_URL")]
+    base_url: Option<String>,
 
     /// Optional model override. If omitted, we fetch the first model id from GET /v1/models.
     #[arg(long, env = "LLAMA_MODEL")]
@@ -69,6 +71,64 @@ fn sessions_root_path(sessions_root: &str) -> Result<PathBuf> {
     Ok(repo_root()?.join(sessions_root))
 }
 
+fn discover_saved_base_url(config_root: &Path, model_hint: Option<&str>) -> Option<String> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Some(model_id) = model_hint {
+        let hinted = config_root.join(sanitize_model_folder_name(model_id));
+        if hinted.is_dir() {
+            candidates.push(hinted);
+        }
+    }
+
+    if let Ok(rd) = std::fs::read_dir(config_root) {
+        let mut dirs: Vec<PathBuf> = rd
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.is_dir())
+            .collect();
+        dirs.sort();
+        for dir in dirs {
+            if !candidates.contains(&dir) {
+                candidates.push(dir);
+            }
+        }
+    }
+
+    for dir in candidates {
+        let elma_cfg_path = dir.join("_elma.config");
+        if elma_cfg_path.exists() {
+            if let Ok(cfg) = load_agent_config(&elma_cfg_path) {
+                let url = cfg.base_url.trim();
+                if !url.is_empty() {
+                    return Some(url.to_string());
+                }
+            }
+        }
+
+        let router_cal_path = dir.join("router_calibration.toml");
+        if router_cal_path.exists() {
+            if let Ok(cal) = load_router_calibration(&router_cal_path) {
+                let url = cal.base_url.trim();
+                if !url.is_empty() {
+                    return Some(url.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_base_url(config_root: &Path, explicit: Option<&str>, model_hint: Option<&str>) -> (String, &'static str) {
+    if let Some(url) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        return (url.to_string(), "cli_or_env");
+    }
+    if let Some(url) = discover_saved_base_url(config_root, model_hint) {
+        return (url, "saved_config");
+    }
+    ("http://localhost:8080".to_string(), "fallback_default")
+}
+
 fn load_agent_config(path: &PathBuf) -> Result<Profile> {
     let bytes = std::fs::read(&path)
         .with_context(|| format!("Failed to read config file at {}", path.display()))?;
@@ -94,6 +154,13 @@ fn save_router_calibration(path: &PathBuf, c: &RouterCalibration) -> Result<()> 
     Ok(())
 }
 
+fn load_router_calibration(path: &PathBuf) -> Result<RouterCalibration> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("Failed to read router calibration at {}", path.display()))?;
+    let s = String::from_utf8(bytes).context("router calibration is not valid UTF-8")?;
+    toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct RouterCalibration {
     version: u32,
@@ -102,6 +169,242 @@ struct RouterCalibration {
     n_probs: u32,
     supports_logprobs: bool,
     routes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CalibrationManifest {
+    version: u32,
+    scenarios: Vec<CalibrationScenario>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CalibrationScenario {
+    file: String,
+    speech_act: String,
+    workflow: String,
+    #[serde(default)]
+    mode: Option<String>,
+    route: String,
+    #[serde(default)]
+    notes: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CalibrationMetric {
+    total: usize,
+    correct: usize,
+    accuracy: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CalibrationConfusion {
+    expected: String,
+    predicted: String,
+    count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ScenarioCalibrationResult {
+    file: String,
+    notes: String,
+    speech_act_expected: String,
+    speech_act_predicted: String,
+    speech_act_probability: f64,
+    speech_act_ok: bool,
+    workflow_expected: String,
+    workflow_predicted: String,
+    workflow_probability: f64,
+    workflow_ok: bool,
+    mode_expected: Option<String>,
+    mode_predicted: Option<String>,
+    mode_probability: Option<f64>,
+    mode_ok: Option<bool>,
+    route_expected: String,
+    route_predicted: String,
+    route_probability: f64,
+    route_ok: bool,
+    program_signature: String,
+    program_parse_ok: bool,
+    program_parse_error: String,
+    program_shape_ok: bool,
+    program_shape_reason: String,
+    program_policy_ok: bool,
+    program_policy_reason: String,
+    program_consistency_ok: bool,
+    executed_in_tune: bool,
+    execution_ok: Option<bool>,
+    critic_ok: Option<bool>,
+    critic_reason: Option<String>,
+    response_ok: Option<bool>,
+    response_reason: Option<String>,
+    response_plain_text: Option<bool>,
+    all_ok: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CalibrationSummary {
+    total_cases: usize,
+    speech_act: CalibrationMetric,
+    workflow: CalibrationMetric,
+    mode: CalibrationMetric,
+    route: CalibrationMetric,
+    program_parse: CalibrationMetric,
+    program_shape: CalibrationMetric,
+    program_policy: CalibrationMetric,
+    program_consistency: CalibrationMetric,
+    execution: CalibrationMetric,
+    critic: CalibrationMetric,
+    response: CalibrationMetric,
+    all_ok: CalibrationMetric,
+    certified: bool,
+    certification_rule: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CalibrationReport {
+    version: u32,
+    model: String,
+    base_url: String,
+    supports_logprobs: bool,
+    n_probs: u32,
+    summary: CalibrationSummary,
+    speech_act_confusions: Vec<CalibrationConfusion>,
+    workflow_confusions: Vec<CalibrationConfusion>,
+    mode_confusions: Vec<CalibrationConfusion>,
+    route_confusions: Vec<CalibrationConfusion>,
+    scenarios: Vec<ScenarioCalibrationResult>,
+}
+
+#[derive(Debug, Clone)]
+struct ProgramEvaluation {
+    parsed: bool,
+    parse_error: String,
+    shape_ok: bool,
+    shape_reason: String,
+    policy_ok: bool,
+    policy_reason: String,
+    executable_in_tune: bool,
+    signature: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CalibrationJudgeVerdict {
+    status: String,
+    #[serde(default)]
+    reason: String,
+    #[serde(default)]
+    answered_request: bool,
+    #[serde(default)]
+    faithful_to_evidence: bool,
+    #[serde(default)]
+    plain_text: bool,
+}
+
+#[derive(Debug, Clone)]
+struct RouteDecision {
+    route: String,
+    source: String,
+    distribution: Vec<(String, f64)>,
+    margin: f64,
+    entropy: f64,
+    speech_act: ProbabilityDecision,
+    workflow: ProbabilityDecision,
+    mode: ProbabilityDecision,
+}
+
+#[derive(Debug, Clone)]
+struct ProbabilityDecision {
+    choice: String,
+    source: String,
+    distribution: Vec<(String, f64)>,
+    margin: f64,
+    entropy: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Program {
+    objective: String,
+    steps: Vec<Step>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct StepCommon {
+    #[serde(default)]
+    purpose: String,
+    #[serde(default)]
+    depends_on: Vec<String>,
+    #[serde(default)]
+    success_condition: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+enum Step {
+    #[serde(rename = "shell")]
+    Shell {
+        id: String,
+        cmd: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    #[serde(rename = "plan")]
+    Plan {
+        id: String,
+        goal: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    #[serde(rename = "masterplan")]
+    MasterPlan {
+        id: String,
+        goal: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    #[serde(rename = "decide")]
+    Decide {
+        id: String,
+        prompt: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    #[serde(rename = "summarize")]
+    Summarize {
+        id: String,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        instructions: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    #[serde(rename = "reply")]
+    Reply {
+        id: String,
+        instructions: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CriticVerdict {
+    status: String,
+    #[serde(default)]
+    reason: String,
+    #[serde(default)]
+    program: Option<Program>,
+}
+
+#[derive(Debug, Clone)]
+struct StepResult {
+    id: String,
+    kind: String,
+    purpose: String,
+    depends_on: Vec<String>,
+    success_condition: String,
+    ok: bool,
+    summary: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -342,6 +645,88 @@ fn default_tooler_config(base_url: &str, model: &str) -> Profile {
     }
 }
 
+fn default_orchestrator_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "orchestrator".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.2,
+        top_p: 0.95,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 2048,
+        timeout_s: 120,
+        system_prompt: "You are Elma's reasoning orchestrator.\n\nReturn ONLY one valid JSON object. No prose. No code fences. No backticks.\n\nSTRICT JSON RULES:\n- The first character must be '{'.\n- The last character must be '}'.\n- No text before or after the JSON object.\n\nYour JSON is a Program with steps executed in order.\n\nSchema:\n{\n  \"objective\": \"string\",\n  \"steps\": [\n    {\"id\":\"s1\",\"type\":\"shell\",\"cmd\":\"<one liner>\"},\n    {\"id\":\"p1\",\"type\":\"plan\",\"goal\":\"...\"},\n    {\"id\":\"m1\",\"type\":\"masterplan\",\"goal\":\"...\"},\n    {\"id\":\"d1\",\"type\":\"decide\",\"prompt\":\"...\"},\n    {\"id\":\"sum1\",\"type\":\"summarize\",\"text\":\"...\",\"instructions\":\"...\"},\n    {\"id\":\"r1\",\"type\":\"reply\",\"instructions\":\"...\"}\n  ]\n}\n\nROUTER PRIOR RULES:\n- You will receive a probabilistic route prior over CHAT, SHELL, PLAN, MASTERPLAN, and DECIDE.\n- Treat the route prior as evidence, not a hard rule.\n- If the route prior is uncertain or the user request is genuinely ambiguous, you may output a Program with a single reply step that asks one concise clarifying question.\n\nEVIDENCE-FIRST RULES:\n- If the request is about the current project, codebase, files, functions, symbols, or config, you must inspect workspace evidence before replying.\n- If the request names a file, inspect that file first.\n- If the request names a function or symbol, use rg in source files and exclude target/.\n- Prefer rg over grep.\n- A shell step is for real workspace inspection or execution only. Never use shell steps to print prose, plan lines, or explanations.\n- If the user asks for one concrete step-by-step plan, use a plan step.\n- If the user asks for a higher-level overall plan across phases, use a masterplan step.\n- Do not emit plan text through shell commands.\n- Do not invent file paths, symbols, signatures, or repo facts.\n- Do not include network, remote, or destructive commands.\n- If no tool use is needed, output a Program with a single reply step.\n- reply step must instruct the final assistant response in plain terminal text with no Markdown unless the user asked for it.\n\nExamples:\nUser: What is my current project about?\nOutput:\n{\"objective\":\"understand current project from workspace evidence\",\"steps\":[{\"id\":\"s1\",\"type\":\"shell\",\"cmd\":\"cat Cargo.toml\"},{\"id\":\"s2\",\"type\":\"shell\",\"cmd\":\"rg -n --glob '!target/**' '^(fn|struct|enum|mod|pub fn|pub struct)' src config tests || true\"},{\"id\":\"r1\",\"type\":\"reply\",\"instructions\":\"Using the shell outputs as evidence, explain what the current project is about in plain text. Mention uncertainty if the evidence is incomplete.\"}]}\n\nUser: find where fetch_ctx_max is defined and show me the function signature\nOutput:\n{\"objective\":\"locate symbol definition and report its signature from source\",\"steps\":[{\"id\":\"s1\",\"type\":\"shell\",\"cmd\":\"rg -n --glob '!target/**' '^((async )?fn) fetch_ctx_max' src || true\"},{\"id\":\"s2\",\"type\":\"shell\",\"cmd\":\"sed -n '1,260p' src/main.rs\"},{\"id\":\"r1\",\"type\":\"reply\",\"instructions\":\"Using only the shell outputs, tell the user where fetch_ctx_max is defined and show the exact function signature in plain text without Markdown.\"}]}\n"
+            .to_string(),
+    }
+}
+
+fn default_critic_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "critic".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1024,
+        timeout_s: 120,
+        system_prompt: "You are Elma's execution critic.\n\nReturn ONLY one valid JSON object. No prose. No code fences.\n\nSchema:\n{\n  \"status\": \"ok\" | \"retry\",\n  \"reason\": \"one short sentence\",\n  \"program\": <Program>\n}\n\nRules:\n- Omit program or set it to null when status is ok.\n- If the request is about project/code/files/functions/symbols and there is no workspace evidence in the step results, choose retry.\n- If the user asked for a step-by-step plan and there is no plan step result, choose retry and provide a corrected Program that uses type \"plan\".\n- If the user asked for an overall or master plan and there is no masterplan step result, choose retry and provide a corrected Program that uses type \"masterplan\".\n- If a shell step only prints prose or plan text instead of inspecting or executing something real in the workspace, choose retry.\n- If the result is incomplete, unsupported by workspace evidence, or likely hallucinated, choose retry and provide a corrected Program.\n- Do not invent file paths or outputs.\n"
+            .to_string(),
+    }
+}
+
+fn default_router_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "router".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1,
+        timeout_s: 120,
+        system_prompt: "You are Elma's workflow gate estimator.\n\nReturn exactly one digit and nothing else.\n\nMapping:\n1 = CHAT\n2 = WORKFLOW\n\nInterpretation:\n- 1 CHAT: answer directly without an internal workflow.\n- 2 WORKFLOW: use internal reasoning steps, workspace evidence, or another intel unit before the final answer.\n\nImportant distinctions:\n- Greetings or general knowledge questions are usually 1.\n- Questions about the current project, files, code, commands, or tasks that need planning or decisions are usually 2.\n\nRules:\n- Output must be exactly one digit from 1 to 2.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents whether Elma should enter workflow mode.\n".to_string(),
+    }
+}
+
+fn default_mode_router_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "mode_router".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1,
+        timeout_s: 120,
+        system_prompt: "You are Elma's workflow mode estimator.\n\nReturn exactly one digit and nothing else.\n\nMapping:\n1 = INSPECT\n2 = EXECUTE\n3 = PLAN\n4 = MASTERPLAN\n5 = DECIDE\n\nInterpretation:\n- 1 INSPECT: inspect workspace evidence, files, code, or configuration.\n- 2 EXECUTE: run commands or carry out direct terminal actions.\n- 3 PLAN: create one concrete step-by-step plan.\n- 4 MASTERPLAN: create a higher-level overall plan across phases.\n- 5 DECIDE: return a concise decision or label.\n\nImportant distinctions:\n- \"What is my current project about?\", \"read Cargo.toml and summarize it\", and \"find where fetch_ctx_max is defined\" are usually 1.\n- \"list files\", \"run tests\", and \"build the project\" are usually 2.\n- \"Create a step-by-step plan\" is 3, not 4.\n- Only choose 4 when the user truly wants an overall master plan.\n\nRules:\n- Output must be exactly one digit from 1 to 5.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents the workflow mode.\n".to_string(),
+    }
+}
+
+fn default_speech_act_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "speech_act".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1,
+        timeout_s: 120,
+        system_prompt: "You are Elma's speech-act estimator.\n\nReturn exactly one digit and nothing else.\n\nMapping:\n1 = CAPABILITY_CHECK\n2 = INFO_REQUEST\n3 = ACTION_REQUEST\n\nInterpretation:\n- 1 CAPABILITY_CHECK: the user is asking whether Elma can do something, not asking Elma to do it now.\n- 2 INFO_REQUEST: the user wants information or an answer; a workflow may still be needed to inspect evidence.\n- 3 ACTION_REQUEST: the user wants Elma to actually do something now, including indirect polite requests.\n\nImportant distinctions:\n- \"Are you able to list files here?\" is usually 1.\n- \"What is my current project about?\" is usually 2.\n- \"Can you list files?\" and \"Could you run the tests?\" are usually 3 in normal English, because they are indirect requests.\n\nRules:\n- Output must be exactly one digit from 1 to 3.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents the user's speech act.\n".to_string(),
+    }
+}
+
 fn default_action_type_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -426,6 +811,40 @@ fn default_summarizer_config(base_url: &str, model: &str) -> Profile {
     }
 }
 
+fn default_formatter_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "formatter".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1024,
+        timeout_s: 120,
+        system_prompt: "Rewrite the assistant answer into plain terminal text.\n\nRules:\n- No Markdown.\n- No code fences.\n- No backticks.\n- Preserve technical accuracy.\n- If there is a function signature, show it as plain text on its own line.\n"
+            .to_string(),
+    }
+}
+
+fn default_calibration_judge_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "calibration_judge".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 512,
+        timeout_s: 120,
+        system_prompt: "You evaluate whether Elma's final answer satisfied a calibration scenario.\n\nReturn ONLY one valid JSON object. No prose. No code fences.\n\nSchema:\n{\n  \"status\": \"pass\" | \"fail\",\n  \"reason\": \"one short sentence\",\n  \"answered_request\": true | false,\n  \"faithful_to_evidence\": true | false,\n  \"plain_text\": true | false\n}\n\nRules:\n- Pass only when the answer clearly addresses the user's final request.\n- faithful_to_evidence must be true only if the answer stays within the provided evidence or clearly marks uncertainty.\n- plain_text must be false if the answer uses Markdown and the user did not ask for Markdown.\n- Be strict.\n"
+            .to_string(),
+    }
+}
+
 fn default_intention_tune_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -495,9 +914,32 @@ fn ensure_model_config_folder(
     if !action_type_path.exists() {
         save_agent_config(&action_type_path, &default_action_type_config(base_url, model_id))?;
     }
+    let router_path = dir.join("router.toml");
+    if !router_path.exists() {
+        save_agent_config(&router_path, &default_router_config(base_url, model_id))?;
+    }
+    let mode_router_path = dir.join("mode_router.toml");
+    if !mode_router_path.exists() {
+        save_agent_config(&mode_router_path, &default_mode_router_config(base_url, model_id))?;
+    }
+    let speech_act_path = dir.join("speech_act.toml");
+    if !speech_act_path.exists() {
+        save_agent_config(&speech_act_path, &default_speech_act_config(base_url, model_id))?;
+    }
     let summarizer_path = dir.join("summarizer.toml");
     if !summarizer_path.exists() {
         save_agent_config(&summarizer_path, &default_summarizer_config(base_url, model_id))?;
+    }
+    let formatter_path = dir.join("formatter.toml");
+    if !formatter_path.exists() {
+        save_agent_config(&formatter_path, &default_formatter_config(base_url, model_id))?;
+    }
+    let calibration_judge_path = dir.join("calibration_judge.toml");
+    if !calibration_judge_path.exists() {
+        save_agent_config(
+            &calibration_judge_path,
+            &default_calibration_judge_config(base_url, model_id),
+        )?;
     }
     let router_cal_path = dir.join("router_calibration.toml");
     if !router_cal_path.exists() {
@@ -508,17 +950,30 @@ fn ensure_model_config_folder(
                 version: 1,
                 model: model_id.to_string(),
                 base_url: base_url.to_string(),
-                n_probs: 32,
+                n_probs: 64,
                 supports_logprobs: false,
                 routes: vec![
                     "CHAT".to_string(),
-                    "SHELL".to_string(),
+                    "WORKFLOW".to_string(),
+                    "INSPECT".to_string(),
+                    "EXECUTE".to_string(),
                     "PLAN".to_string(),
                     "MASTERPLAN".to_string(),
                     "DECIDE".to_string(),
+                    "CAPABILITY_CHECK".to_string(),
+                    "INFO_REQUEST".to_string(),
+                    "ACTION_REQUEST".to_string(),
                 ],
             },
         )?;
+    }
+    let orch_path = dir.join("orchestrator.toml");
+    if !orch_path.exists() {
+        save_agent_config(&orch_path, &default_orchestrator_config(base_url, model_id))?;
+    }
+    let critic_path = dir.join("critic.toml");
+    if !critic_path.exists() {
+        save_agent_config(&critic_path, &default_critic_config(base_url, model_id))?;
     }
 
     Ok(dir)
@@ -535,6 +990,17 @@ fn maybe_upgrade_system_prompt(profile: &mut Profile, expected_name: &str, patch
     // without overwriting user customizations.
     profile.system_prompt.push_str("\n\n");
     profile.system_prompt.push_str(patch);
+    true
+}
+
+fn replace_system_prompt_if_missing(profile: &mut Profile, expected_name: &str, must_contain: &str, replacement: String) -> bool {
+    if profile.name != expected_name {
+        return false;
+    }
+    if profile.system_prompt.contains(must_contain) {
+        return false;
+    }
+    profile.system_prompt = replacement;
     true
 }
 
@@ -587,6 +1053,435 @@ fn gather_workspace_context(repo_root: &Path) -> String {
         s.push_str(&format!("os: {os_uname}\n"));
     }
     s.trim().to_string()
+}
+
+fn gather_workspace_brief(repo_root: &Path) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Ok(rd) = std::fs::read_dir(repo_root) {
+        let mut names: Vec<String> = rd
+            .filter_map(|e| e.ok())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n != "target" && n != "sessions" && !n.starts_with(".git"))
+            .collect();
+        names.sort();
+        parts.push(format!(
+            "top_level: {}",
+            names.into_iter().take(24).collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    let cargo = repo_root.join("Cargo.toml");
+    if let Ok(text) = std::fs::read_to_string(&cargo) {
+        let excerpt = text.lines().take(24).collect::<Vec<_>>().join("\n");
+        parts.push(format!("Cargo.toml:\n{excerpt}"));
+    }
+
+    let src_dir = repo_root.join("src");
+    if let Ok(rd) = std::fs::read_dir(&src_dir) {
+        let mut names: Vec<String> = rd
+            .filter_map(|e| e.ok())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect();
+        names.sort();
+        parts.push(format!("src_files: {}", names.join(", ")));
+    }
+
+    parts.join("\n\n")
+}
+
+fn extract_first_json_object(text: &str) -> Option<&str> {
+    let bytes = text.as_bytes();
+    let mut start = None;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (i, &b) in bytes.iter().enumerate() {
+        if start.is_none() {
+            if b == b'{' {
+                start = Some(i);
+                depth = 1;
+            }
+            continue;
+        }
+
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match b {
+            b'"' => in_string = true,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    let s = start?;
+                    return text.get(s..=i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_json_loose<T: DeserializeOwned>(text: &str) -> Result<T> {
+    if let Ok(v) = serde_json::from_str::<T>(text.trim()) {
+        return Ok(v);
+    }
+    if let Some(obj) = extract_first_json_object(text) {
+        return serde_json::from_str::<T>(obj.trim()).context("Failed to parse extracted JSON object");
+    }
+    anyhow::bail!("No JSON object found")
+}
+
+fn workflow_code_pairs() -> &'static [(&'static str, &'static str)] {
+    &[("1", "CHAT"), ("2", "WORKFLOW")]
+}
+
+fn mode_code_pairs() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("1", "INSPECT"),
+        ("2", "EXECUTE"),
+        ("3", "PLAN"),
+        ("4", "MASTERPLAN"),
+        ("5", "DECIDE"),
+    ]
+}
+
+fn speech_act_code_pairs() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("1", "CAPABILITY_CHECK"),
+        ("2", "INFO_REQUEST"),
+        ("3", "ACTION_REQUEST"),
+    ]
+}
+
+fn route_label_from_router_output(
+    raw: &str,
+    pairs: &'static [(&'static str, &'static str)],
+) -> Option<&'static str> {
+    let token = raw
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '\'')
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim();
+    for (code, label) in pairs {
+        if token == *code || token.eq_ignore_ascii_case(label) {
+            return Some(label);
+        }
+    }
+    None
+}
+
+fn logsumexp(values: &[f64]) -> f64 {
+    let max_v = values
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !max_v.is_finite() {
+        return f64::NEG_INFINITY;
+    }
+    let sum = values.iter().map(|v| (v - max_v).exp()).sum::<f64>();
+    max_v + sum.ln()
+}
+
+fn parse_router_distribution(
+    logprobs: &serde_json::Value,
+    pairs: &'static [(&'static str, &'static str)],
+) -> Option<Vec<(String, f64)>> {
+    let top_logprobs = logprobs
+        .get("content")
+        .and_then(|v| v.as_array())
+        .and_then(|items| items.first())
+        .and_then(|v| v.get("top_logprobs"))
+        .and_then(|v| v.as_array())?;
+
+    let mut route_logprobs: HashMap<String, Vec<f64>> = HashMap::new();
+    for item in top_logprobs {
+        let token = item.get("token").and_then(|v| v.as_str()).unwrap_or("").trim();
+        let Some(logprob) = item.get("logprob").and_then(|v| v.as_f64()) else {
+            continue;
+        };
+        if let Some(label) = route_label_from_router_output(token, pairs) {
+            route_logprobs
+                .entry(label.to_string())
+                .or_default()
+                .push(logprob);
+        }
+    }
+    if route_logprobs.is_empty() {
+        return None;
+    }
+
+    let mut entries: Vec<(String, f64)> = pairs
+        .iter()
+        .map(|(_, label)| {
+            let lp = route_logprobs
+                .get(*label)
+                .map(|values| logsumexp(values))
+                .unwrap_or(f64::NEG_INFINITY);
+            ((*label).to_string(), lp)
+        })
+        .collect();
+
+    let max_lp = entries
+        .iter()
+        .map(|(_, lp)| *lp)
+        .filter(|lp| lp.is_finite())
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !max_lp.is_finite() {
+        return None;
+    }
+    let denom = entries
+        .iter()
+        .map(|(_, lp)| if lp.is_finite() { (lp - max_lp).exp() } else { 0.0 })
+        .sum::<f64>();
+    if denom <= 0.0 {
+        return None;
+    }
+    for (_, lp) in &mut entries {
+        let p = if lp.is_finite() {
+            (*lp - max_lp).exp() / denom
+        } else {
+            0.0
+        };
+        *lp = p;
+    }
+    entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    Some(entries)
+}
+
+fn route_margin(distribution: &[(String, f64)]) -> f64 {
+    let top = distribution.first().map(|(_, p)| *p).unwrap_or(0.0);
+    let second = distribution.get(1).map(|(_, p)| *p).unwrap_or(0.0);
+    top - second
+}
+
+fn route_entropy(distribution: &[(String, f64)]) -> f64 {
+    distribution
+        .iter()
+        .map(|(_, p)| if *p > 0.0 { -p * p.ln() } else { 0.0 })
+        .sum()
+}
+
+fn format_route_distribution(distribution: &[(String, f64)]) -> String {
+    distribution
+        .iter()
+        .map(|(route, p)| format!("{route}:{p:.2}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn probability_of(distribution: &[(String, f64)], label: &str) -> f64 {
+    distribution
+        .iter()
+        .find(|(name, _)| name == label)
+        .map(|(_, p)| *p)
+        .unwrap_or(0.0)
+}
+
+async fn infer_digit_router(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    router_cfg: &Profile,
+    router_cal: &RouterCalibration,
+    prompt: String,
+    pairs: &'static [(&'static str, &'static str)],
+) -> Result<ProbabilityDecision> {
+    let req = ChatCompletionRequest {
+        model: router_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: router_cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            },
+        ],
+        temperature: router_cfg.temperature,
+        top_p: router_cfg.top_p,
+        stream: false,
+        max_tokens: router_cfg.max_tokens,
+        n_probs: Some(router_cal.n_probs.max(16)),
+        repeat_penalty: Some(router_cfg.repeat_penalty),
+        reasoning_format: Some(router_cfg.reasoning_format.clone()),
+    };
+    let resp = chat_once(client, chat_url, &req).await?;
+    let raw = resp
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default();
+    let fallback_choice = pairs
+        .first()
+        .map(|(_, label)| (*label).to_string())
+        .unwrap_or_else(|| "CHAT".to_string());
+    let chosen = route_label_from_router_output(&raw, pairs)
+        .unwrap_or(fallback_choice.as_str())
+        .to_string();
+
+    let logprob_distribution = resp
+        .choices
+        .get(0)
+        .and_then(|c| c.logprobs.as_ref())
+        .and_then(|v| parse_router_distribution(v, pairs));
+    let used_logprobs = logprob_distribution.is_some();
+    let mut distribution = logprob_distribution.unwrap_or_else(|| {
+        pairs
+            .iter()
+            .map(|(_, label)| {
+                (
+                    (*label).to_string(),
+                    if *label == chosen { 1.0 } else { 0.0 },
+                )
+            })
+            .collect()
+    });
+    distribution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let source = if used_logprobs { "logprobs" } else { "token_only" };
+
+    let route = distribution
+        .first()
+        .map(|(label, _)| label.clone())
+        .unwrap_or(chosen);
+
+    Ok(ProbabilityDecision {
+        choice: route,
+        source: source.to_string(),
+        margin: route_margin(&distribution),
+        entropy: route_entropy(&distribution),
+        distribution,
+    })
+}
+
+async fn infer_route_prior(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    speech_act_cfg: &Profile,
+    workflow_router_cfg: &Profile,
+    mode_router_cfg: &Profile,
+    router_cal: &RouterCalibration,
+    user_message: &str,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    recent_messages: &[ChatMessage],
+) -> Result<RouteDecision> {
+    let conversation = recent_messages
+        .iter()
+        .skip(1)
+        .rev()
+        .take(12)
+        .rev()
+        .map(|m| format!("{}: {}", m.role, m.content.replace('\n', " ")))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let workflow_prompt = format!(
+        "User message:\n{user_message}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
+        workspace_facts.trim(),
+        workspace_brief.trim(),
+        conversation
+    );
+    let workflow = infer_digit_router(
+        client,
+        chat_url,
+        workflow_router_cfg,
+        router_cal,
+        workflow_prompt,
+        workflow_code_pairs(),
+    )
+    .await?;
+
+    let mode_prompt = format!(
+        "User message:\n{user_message}\n\nWorkflow prior:\n- choice: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
+        workflow.choice,
+        format_route_distribution(&workflow.distribution),
+        workflow.margin,
+        workflow.entropy,
+        workspace_facts.trim(),
+        workspace_brief.trim(),
+        conversation
+    );
+    let mode = infer_digit_router(
+        client,
+        chat_url,
+        mode_router_cfg,
+        router_cal,
+        mode_prompt,
+        mode_code_pairs(),
+    )
+    .await?;
+
+    let speech_prompt = format!(
+        "User message:\n{user_message}\n\nConversation so far (most recent last):\n{}",
+        conversation
+    );
+    let speech_act = infer_digit_router(
+        client,
+        chat_url,
+        speech_act_cfg,
+        router_cal,
+        speech_prompt,
+        speech_act_code_pairs(),
+    )
+    .await?;
+
+    let chat_p = probability_of(&workflow.distribution, "CHAT");
+    let workflow_p = probability_of(&workflow.distribution, "WORKFLOW");
+    let shell_p = workflow_p
+        * (probability_of(&mode.distribution, "INSPECT")
+            + probability_of(&mode.distribution, "EXECUTE"));
+    let plan_p = workflow_p * probability_of(&mode.distribution, "PLAN");
+    let masterplan_p = workflow_p * probability_of(&mode.distribution, "MASTERPLAN");
+    let decide_p = workflow_p * probability_of(&mode.distribution, "DECIDE");
+    let mut distribution = vec![
+        ("CHAT".to_string(), chat_p),
+        ("SHELL".to_string(), shell_p),
+        ("PLAN".to_string(), plan_p),
+        ("MASTERPLAN".to_string(), masterplan_p),
+        ("DECIDE".to_string(), decide_p),
+    ];
+    let capability_p = probability_of(&speech_act.distribution, "CAPABILITY_CHECK");
+    for (label, p) in &mut distribution {
+        if label == "CHAT" {
+            *p = capability_p + (1.0 - capability_p) * *p;
+        } else {
+            *p *= 1.0 - capability_p;
+        }
+    }
+    distribution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let route = distribution
+        .first()
+        .map(|(label, _)| label.clone())
+        .unwrap_or_else(|| "CHAT".to_string());
+
+    Ok(RouteDecision {
+        route,
+        source: format!(
+            "speech:{} workflow:{} mode:{}",
+            speech_act.source, workflow.source, mode.source
+        ),
+        margin: route_margin(&distribution),
+        entropy: route_entropy(&distribution),
+        distribution,
+        speech_act,
+        workflow,
+        mode,
+    })
 }
 
 fn looks_like_path_token(s: &str) -> bool {
@@ -685,6 +1580,90 @@ fn normalize_shell_cmd(cmd: &str) -> String {
     c.to_string()
 }
 
+fn summarize_shell_output(output: &str) -> String {
+    const MAX_CHARS: usize = 12_000;
+    let trimmed = output.trim();
+    if trimmed.len() <= MAX_CHARS {
+        return trimmed.to_string();
+    }
+    let mut s = trimmed[..MAX_CHARS].to_string();
+    s.push_str("\n[truncated]");
+    s
+}
+
+fn looks_like_markdown(text: &str) -> bool {
+    let t = text.trim();
+    t.contains("```")
+        || t.contains('`')
+        || t.lines().any(|l| l.trim_start().starts_with("#"))
+        || t.lines().any(|l| l.trim_start().starts_with("* "))
+}
+
+fn user_requested_markdown(text: &str) -> bool {
+    let t = text.to_lowercase();
+    t.contains("markdown")
+}
+
+fn program_safety_check(cmd: &str) -> bool {
+    is_command_sane(cmd) && is_command_allowed(cmd)
+}
+
+fn step_kind(s: &Step) -> &'static str {
+    match s {
+        Step::Shell { .. } => "shell",
+        Step::Plan { .. } => "plan",
+        Step::MasterPlan { .. } => "masterplan",
+        Step::Decide { .. } => "decide",
+        Step::Summarize { .. } => "summarize",
+        Step::Reply { .. } => "reply",
+    }
+}
+
+fn step_id(s: &Step) -> &str {
+    match s {
+        Step::Shell { id, .. } => id,
+        Step::Plan { id, .. } => id,
+        Step::MasterPlan { id, .. } => id,
+        Step::Decide { id, .. } => id,
+        Step::Summarize { id, .. } => id,
+        Step::Reply { id, .. } => id,
+    }
+}
+
+fn step_common(s: &Step) -> &StepCommon {
+    match s {
+        Step::Shell { common, .. } => common,
+        Step::Plan { common, .. } => common,
+        Step::MasterPlan { common, .. } => common,
+        Step::Decide { common, .. } => common,
+        Step::Summarize { common, .. } => common,
+        Step::Reply { common, .. } => common,
+    }
+}
+
+fn step_purpose(s: &Step) -> String {
+    let common = step_common(s);
+    if !common.purpose.trim().is_empty() {
+        return common.purpose.trim().to_string();
+    }
+    match s {
+        Step::Shell { .. } => "shell".to_string(),
+        Step::Plan { .. } => "plan".to_string(),
+        Step::MasterPlan { .. } => "masterplan".to_string(),
+        Step::Decide { .. } => "decide".to_string(),
+        Step::Summarize { .. } => "summarize".to_string(),
+        Step::Reply { .. } => "answer".to_string(),
+    }
+}
+
+fn step_success_condition(s: &Step) -> String {
+    step_common(s).success_condition.trim().to_string()
+}
+
+fn step_depends_on(s: &Step) -> Vec<String> {
+    step_common(s).depends_on.clone()
+}
+
 #[derive(Debug, Clone)]
 struct SessionPaths {
     root: PathBuf,
@@ -780,21 +1759,237 @@ fn is_command_allowed(cmd: &str) -> bool {
     // For now: workspace-only, no network/remote, no destructive operations.
     // This is intentionally strict to keep "no internet" and avoid dangerous commands.
     let lower = cmd.to_lowercase();
-    let banned = [
+    let tokens: Vec<String> = lower
+        .split(|c: char| c.is_whitespace() || matches!(c, ';' | '|' | '&' | '(' | ')' | '<' | '>'))
+        .filter(|s| !s.is_empty())
+        .map(|s| s.rsplit('/').next().unwrap_or(s).to_string())
+        .collect();
+
+    let banned_cmds = [
         "curl",
         "wget",
         "ssh",
         "scp",
         "rsync",
-        "nc ",
+        "nc",
         "netcat",
         "ping",
-        "rm -rf",
         "sudo",
         "shutdown",
         "reboot",
     ];
-    !banned.iter().any(|b| lower.contains(b))
+
+    if tokens.iter().any(|t| banned_cmds.contains(&t.as_str())) {
+        return false;
+    }
+
+    for pair in tokens.windows(2) {
+        if pair[0] == "rm" && (pair[1] == "-rf" || pair[1] == "-fr") {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn command_is_readonly(cmd: &str) -> bool {
+    let lower = cmd.to_lowercase();
+    if lower.contains(" >")
+        || lower.contains(">>")
+        || lower.contains(">|")
+        || lower.contains("tee ")
+        || lower.contains("sed -i")
+        || lower.contains("perl -pi")
+    {
+        return false;
+    }
+
+    let tokens: Vec<&str> = lower
+        .split(|c: char| c.is_whitespace() || matches!(c, ';' | '|' | '&' | '(' | ')' | '<' | '>'))
+        .filter(|s| !s.is_empty())
+        .collect();
+    if tokens.is_empty() {
+        return false;
+    }
+
+    let first = tokens[0].rsplit('/').next().unwrap_or(tokens[0]);
+    match first {
+        "ls" | "pwd" | "cat" | "head" | "tail" | "rg" | "grep" | "find" | "awk" | "cut"
+        | "sort" | "uniq" | "wc" | "basename" | "dirname" | "stat" | "tree" | "fd"
+        | "jq" | "uname" | "whoami" | "tty" => return true,
+        "sed" => return !tokens.iter().any(|t| *t == "-i"),
+        "git" => {
+            let sub = tokens.get(1).copied().unwrap_or("");
+            return matches!(sub, "status" | "diff" | "log" | "show" | "branch" | "rev-parse");
+        }
+        _ => {}
+    }
+
+    false
+}
+
+fn program_signature(program: &Program) -> String {
+    program
+        .steps
+        .iter()
+        .map(|step| match step {
+            Step::Shell { cmd, .. } => format!("shell:{}", normalize_shell_cmd(cmd)),
+            Step::Plan { .. } => "plan".to_string(),
+            Step::MasterPlan { .. } => "masterplan".to_string(),
+            Step::Decide { .. } => "decide".to_string(),
+            Step::Summarize { .. } => "summarize".to_string(),
+            Step::Reply { .. } => "reply".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn evaluate_program_for_scenario(program: &Program, scenario: &CalibrationScenario) -> ProgramEvaluation {
+    let mut ids: HashMap<String, usize> = HashMap::new();
+    let mut has_reply = false;
+    let mut has_shell = false;
+    let mut has_plan = false;
+    let mut has_masterplan = false;
+    let mut has_decide = false;
+    let mut shape_errors = Vec::new();
+    let mut policy_errors = Vec::new();
+    let mut executable_in_tune = true;
+
+    for step in &program.steps {
+        let sid = step_id(step).to_string();
+        *ids.entry(sid.clone()).or_insert(0usize) += 1;
+        if step_purpose(step).trim().is_empty() {
+            shape_errors.push(format!("step {sid} missing purpose"));
+        }
+        if step_success_condition(step).trim().is_empty() {
+            shape_errors.push(format!("step {sid} missing success_condition"));
+        }
+
+        match step {
+            Step::Shell { cmd, .. } => {
+                has_shell = true;
+                let normalized = normalize_shell_cmd(cmd);
+                if !program_safety_check(&normalized) {
+                    policy_errors.push(format!("shell step {sid} blocked by policy"));
+                }
+                if scenario.mode.as_deref() == Some("INSPECT") && !command_is_readonly(&normalized) {
+                    policy_errors.push(format!("inspect shell step {sid} is not read-only"));
+                }
+                if !command_is_readonly(&normalized) {
+                    executable_in_tune = false;
+                }
+            }
+            Step::Plan { .. } => has_plan = true,
+            Step::MasterPlan { .. } => has_masterplan = true,
+            Step::Decide { .. } => has_decide = true,
+            Step::Summarize { .. } => {}
+            Step::Reply { .. } => has_reply = true,
+        }
+    }
+
+    for (id, count) in ids {
+        if count > 1 {
+            shape_errors.push(format!("duplicate step id {id}"));
+        }
+    }
+
+    if program.steps.is_empty() {
+        shape_errors.push("program has no steps".to_string());
+    }
+    if !has_reply {
+        shape_errors.push("program has no reply step".to_string());
+    }
+
+    match scenario.route.as_str() {
+        "CHAT" => {
+            if has_shell || has_plan || has_masterplan || has_decide {
+                shape_errors.push("chat route should not execute workflow steps".to_string());
+            }
+        }
+        "SHELL" => {
+            if !has_shell {
+                shape_errors.push("shell route missing shell step".to_string());
+            }
+        }
+        "PLAN" => {
+            if !has_plan {
+                shape_errors.push("plan route missing plan step".to_string());
+            }
+        }
+        "MASTERPLAN" => {
+            if !has_masterplan {
+                shape_errors.push("masterplan route missing masterplan step".to_string());
+            }
+        }
+        "DECIDE" => {
+            if !has_decide {
+                shape_errors.push("decide route missing decide step".to_string());
+            }
+        }
+        _ => {}
+    }
+
+    if scenario.speech_act == "CAPABILITY_CHECK" && (has_shell || has_plan || has_masterplan || has_decide) {
+        shape_errors.push("capability check should not execute or plan".to_string());
+    }
+
+    ProgramEvaluation {
+        parsed: true,
+        parse_error: String::new(),
+        shape_ok: shape_errors.is_empty(),
+        shape_reason: if shape_errors.is_empty() {
+            "program structure matches scenario expectations".to_string()
+        } else {
+            shape_errors.join("; ")
+        },
+        policy_ok: policy_errors.is_empty(),
+        policy_reason: if policy_errors.is_empty() {
+            "program policy is acceptable".to_string()
+        } else {
+            policy_errors.join("; ")
+        },
+        executable_in_tune: executable_in_tune && policy_errors.is_empty(),
+        signature: program_signature(program),
+    }
+}
+
+fn capability_guard_threshold(route_decision: &RouteDecision) -> bool {
+    route_decision
+        .speech_act
+        .choice
+        .eq_ignore_ascii_case("CAPABILITY_CHECK")
+        && probability_of(&route_decision.speech_act.distribution, "CAPABILITY_CHECK") >= 0.65
+}
+
+fn apply_capability_guard(program: &mut Program, route_decision: &RouteDecision) -> bool {
+    if !capability_guard_threshold(route_decision) {
+        return false;
+    }
+    let has_non_reply = program
+        .steps
+        .iter()
+        .any(|s| !matches!(s, Step::Reply { .. }));
+    if !has_non_reply {
+        return false;
+    }
+
+    let existing_reply = program.steps.iter().find_map(|s| match s {
+        Step::Reply { instructions, .. } => Some(instructions.clone()),
+        _ => None,
+    });
+    let instructions = existing_reply.unwrap_or_else(|| {
+        "Answer the user's capability question in plain text. Do not execute commands. If helpful, say what Elma can do in this workspace and that you can do it if the user asks.".to_string()
+    });
+    program.steps = vec![Step::Reply {
+        id: "r_cap".to_string(),
+        instructions,
+        common: StepCommon {
+            purpose: "answer capability question without executing".to_string(),
+            depends_on: Vec::new(),
+            success_condition: "the user receives a plain-text capability answer with no command execution".to_string(),
+        },
+    }];
+    true
 }
 
 fn is_command_sane(cmd: &str) -> bool {
@@ -924,6 +2119,298 @@ fn write_gate_why(tune_dir: &PathBuf, text: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+async fn execute_program(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    session: &SessionPaths,
+    workdir: &PathBuf,
+    program: &Program,
+    planner_cfg: &Profile,
+    planner_master_cfg: &Profile,
+    decider_cfg: &Profile,
+    summarizer_cfg: &Profile,
+    emit_shell_output: bool,
+    readonly_only: bool,
+) -> Result<(Vec<StepResult>, Option<String>)> {
+    let mut step_results: Vec<StepResult> = Vec::new();
+    let mut final_reply: Option<String> = None;
+    let mut artifacts: HashMap<String, String> = HashMap::new();
+
+    for step in program.steps.clone() {
+        let sid = step_id(&step).to_string();
+        let kind = step_kind(&step).to_string();
+        let purpose = step_purpose(&step);
+        let depends_on = step_depends_on(&step);
+        let success_condition = step_success_condition(&step);
+        trace(
+            args,
+            &format!(
+                "step id={sid} type={kind} purpose={} depends_on={}",
+                purpose,
+                if depends_on.is_empty() {
+                    "-".to_string()
+                } else {
+                    depends_on.join(",")
+                }
+            ),
+        );
+
+        match step {
+            Step::Shell { id: _, cmd, .. } => {
+                let cmd = normalize_shell_cmd(&cmd);
+                if !program_safety_check(&cmd) {
+                    trace(args, &format!("step_blocked id={sid} cmd={}", cmd.replace('\n', " ")));
+                    step_results.push(StepResult {
+                        id: sid,
+                        kind,
+                        purpose,
+                        depends_on,
+                        success_condition,
+                        ok: false,
+                        summary: "blocked_by_policy".to_string(),
+                    });
+                    continue;
+                }
+                if readonly_only && !command_is_readonly(&cmd) {
+                    trace(args, &format!("step_skipped_readonly_only id={sid} cmd={}", cmd.replace('\n', " ")));
+                    step_results.push(StepResult {
+                        id: sid,
+                        kind,
+                        purpose,
+                        depends_on,
+                        success_condition,
+                        ok: false,
+                        summary: "skipped_by_calibration_policy".to_string(),
+                    });
+                    continue;
+                }
+                let path = write_shell_action(&session.shell_dir, &cmd)?;
+                trace(args, &format!("shell_saved={}", path.display()));
+                let (code, output) = run_shell_one_liner(&cmd, workdir)?;
+                let out_path = write_shell_output(&session.shell_dir, &path, &output)?;
+                trace(args, &format!("shell_output_saved={}", out_path.display()));
+                trace(args, &format!("exec_exit_code={code}"));
+                if emit_shell_output {
+                    println!("elma> exit_code={code}\n{output}");
+                }
+                artifacts.insert(sid.clone(), output.clone());
+                step_results.push(StepResult {
+                    id: sid,
+                    kind,
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: code == 0,
+                    summary: summarize_shell_output(&output),
+                });
+            }
+            Step::Summarize {
+                id: _,
+                mut text,
+                instructions,
+                ..
+            } => {
+                if text.trim().is_empty() && !depends_on.is_empty() {
+                    text = depends_on
+                        .iter()
+                        .filter_map(|dep| artifacts.get(dep))
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                }
+                let sum_req = ChatCompletionRequest {
+                    model: summarizer_cfg.model.clone(),
+                    messages: vec![
+                        ChatMessage {
+                            role: "system".to_string(),
+                            content: summarizer_cfg.system_prompt.clone(),
+                        },
+                        ChatMessage {
+                            role: "user".to_string(),
+                            content: format!(
+                                "Instructions:\n{}\n\nText:\n{}",
+                                instructions.trim(),
+                                text
+                            ),
+                        },
+                    ],
+                    temperature: summarizer_cfg.temperature,
+                    top_p: summarizer_cfg.top_p,
+                    stream: false,
+                    max_tokens: summarizer_cfg.max_tokens,
+                    n_probs: None,
+                    repeat_penalty: Some(summarizer_cfg.repeat_penalty),
+                    reasoning_format: Some(summarizer_cfg.reasoning_format.clone()),
+                };
+                let sum_resp = chat_once(client, chat_url, &sum_req).await?;
+                let sum_text = sum_resp
+                    .choices
+                    .get(0)
+                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                artifacts.insert(sid.clone(), sum_text.clone());
+                step_results.push(StepResult {
+                    id: sid,
+                    kind,
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: !sum_text.is_empty(),
+                    summary: sum_text,
+                });
+            }
+            Step::Plan { id: _, goal, .. } => {
+                let req = ChatCompletionRequest {
+                    model: planner_cfg.model.clone(),
+                    messages: vec![
+                        ChatMessage {
+                            role: "system".to_string(),
+                            content: planner_cfg.system_prompt.clone(),
+                        },
+                        ChatMessage {
+                            role: "user".to_string(),
+                            content: format!(
+                                "Goal:\n{goal}\n\nMaster plan (_master.md):\n{}",
+                                std::fs::read_to_string(session.plans_dir.join("_master.md"))
+                                    .unwrap_or_default()
+                            ),
+                        },
+                    ],
+                    temperature: planner_cfg.temperature,
+                    top_p: planner_cfg.top_p,
+                    stream: false,
+                    max_tokens: planner_cfg.max_tokens,
+                    n_probs: None,
+                    repeat_penalty: Some(planner_cfg.repeat_penalty),
+                    reasoning_format: Some(planner_cfg.reasoning_format.clone()),
+                };
+                let resp = chat_once(client, chat_url, &req).await?;
+                let text = resp
+                    .choices
+                    .get(0)
+                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+                    .unwrap_or_default();
+                let plan_path =
+                    write_plan_file(&session.plans_dir, &(text.trim().to_string() + "\n"))?;
+                append_master_link(&session.plans_dir, &plan_path, &goal)?;
+                trace(args, &format!("plan_saved={}", plan_path.display()));
+                artifacts.insert(sid.clone(), text.trim().to_string());
+                step_results.push(StepResult {
+                    id: sid,
+                    kind,
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: true,
+                    summary: format!("saved {}", plan_path.display()),
+                });
+            }
+            Step::MasterPlan { id: _, goal, .. } => {
+                let req = ChatCompletionRequest {
+                    model: planner_master_cfg.model.clone(),
+                    messages: vec![
+                        ChatMessage {
+                            role: "system".to_string(),
+                            content: planner_master_cfg.system_prompt.clone(),
+                        },
+                        ChatMessage {
+                            role: "user".to_string(),
+                            content: format!("Goal:\n{goal}\n\nUpdate the master plan."),
+                        },
+                    ],
+                    temperature: planner_master_cfg.temperature,
+                    top_p: planner_master_cfg.top_p,
+                    stream: false,
+                    max_tokens: planner_master_cfg.max_tokens,
+                    n_probs: None,
+                    repeat_penalty: Some(planner_master_cfg.repeat_penalty),
+                    reasoning_format: Some(planner_master_cfg.reasoning_format.clone()),
+                };
+                let resp = chat_once(client, chat_url, &req).await?;
+                let text = resp
+                    .choices
+                    .get(0)
+                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+                    .unwrap_or_default();
+                let p = session.plans_dir.join("_master.md");
+                std::fs::write(&p, squash_blank_lines(text.trim()).trim().to_string() + "\n")
+                    .with_context(|| format!("write {}", p.display()))?;
+                trace(args, &format!("masterplan_saved={}", p.display()));
+                artifacts.insert(sid.clone(), text.trim().to_string());
+                step_results.push(StepResult {
+                    id: sid,
+                    kind,
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: true,
+                    summary: format!("saved {}", p.display()),
+                });
+            }
+            Step::Decide { id: _, prompt, .. } => {
+                let req = ChatCompletionRequest {
+                    model: decider_cfg.model.clone(),
+                    messages: vec![
+                        ChatMessage {
+                            role: "system".to_string(),
+                            content: decider_cfg.system_prompt.clone(),
+                        },
+                        ChatMessage {
+                            role: "user".to_string(),
+                            content: prompt,
+                        },
+                    ],
+                    temperature: decider_cfg.temperature,
+                    top_p: decider_cfg.top_p,
+                    stream: false,
+                    max_tokens: decider_cfg.max_tokens,
+                    n_probs: None,
+                    repeat_penalty: Some(decider_cfg.repeat_penalty),
+                    reasoning_format: Some(decider_cfg.reasoning_format.clone()),
+                };
+                let resp = chat_once(client, chat_url, &req).await?;
+                let word = resp
+                    .choices
+                    .get(0)
+                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+                    .unwrap_or_default();
+                let word = word.trim().split_whitespace().next().unwrap_or("").to_string();
+                let path = write_decision(&session.decisions_dir, &word)?;
+                trace(args, &format!("decision_saved={}", path.display()));
+                artifacts.insert(sid.clone(), word.clone());
+                step_results.push(StepResult {
+                    id: sid,
+                    kind,
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: true,
+                    summary: word,
+                });
+            }
+            Step::Reply { id: _, instructions, .. } => {
+                final_reply = Some(instructions.clone());
+                artifacts.insert(sid.clone(), instructions);
+                step_results.push(StepResult {
+                    id: sid,
+                    kind,
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: true,
+                    summary: "reply".to_string(),
+                });
+            }
+        }
+    }
+
+    Ok((step_results, final_reply))
+}
+
 fn read_expected_line(s: &str) -> Option<String> {
     for line in s.lines() {
         let l = line.trim();
@@ -1035,15 +2522,527 @@ fn list_intention_scenario_paths() -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+fn load_calibration_manifest() -> Result<CalibrationManifest> {
+    let path = repo_root()?
+        .join("scenarios")
+        .join("intention")
+        .join("manifest.toml");
+    let bytes = std::fs::read(&path)
+        .with_context(|| format!("Failed to read calibration manifest at {}", path.display()))?;
+    let s = String::from_utf8(bytes).context("calibration manifest is not valid UTF-8")?;
+    toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
+fn parse_scenario_dialog(s: &str) -> (String, Vec<ChatMessage>) {
+    let mut messages = Vec::new();
+    for line in s.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("user:") {
+            messages.push(ChatMessage {
+                role: "user".to_string(),
+                content: rest.trim().to_string(),
+            });
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("elma:") {
+            messages.push(ChatMessage {
+                role: "assistant".to_string(),
+                content: rest.trim().to_string(),
+            });
+        }
+    }
+    let user_message = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_else(|| s.trim().to_string());
+    (user_message, messages)
+}
+
+fn calibration_metric(correct: usize, total: usize) -> CalibrationMetric {
+    CalibrationMetric {
+        total,
+        correct,
+        accuracy: if total == 0 {
+            0.0
+        } else {
+            correct as f64 / total as f64
+        },
+    }
+}
+
+fn build_confusions(pairs: &[(String, String)]) -> Vec<CalibrationConfusion> {
+    let mut counts: HashMap<(String, String), usize> = HashMap::new();
+    for (expected, predicted) in pairs {
+        *counts
+            .entry((expected.clone(), predicted.clone()))
+            .or_insert(0usize) += 1;
+    }
+    let mut out: Vec<CalibrationConfusion> = counts
+        .into_iter()
+        .map(|((expected, predicted), count)| CalibrationConfusion {
+            expected,
+            predicted,
+            count,
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.expected
+            .cmp(&b.expected)
+            .then(a.predicted.cmp(&b.predicted))
+    });
+    out
+}
+
+fn save_calibration_report(path: &PathBuf, report: &CalibrationReport) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let s = serde_json::to_string_pretty(report).context("Failed to serialize calibration report")?;
+    std::fs::write(path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn conversation_excerpt(messages: &[ChatMessage], max_items: usize) -> String {
+    messages
+        .iter()
+        .skip(1)
+        .rev()
+        .take(max_items)
+        .rev()
+        .map(|m| format!("{}: {}", m.role, m.content.replace('\n', " ")))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn build_orchestrator_user_content(
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> String {
+    format!(
+        "User message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
+        route_decision.speech_act.choice,
+        route_decision.speech_act.source,
+        format_route_distribution(&route_decision.speech_act.distribution),
+        route_decision.speech_act.margin,
+        route_decision.speech_act.entropy,
+        route_decision.workflow.choice,
+        route_decision.workflow.source,
+        format_route_distribution(&route_decision.workflow.distribution),
+        route_decision.workflow.margin,
+        route_decision.workflow.entropy,
+        route_decision.mode.choice,
+        route_decision.mode.source,
+        format_route_distribution(&route_decision.mode.distribution),
+        route_decision.mode.margin,
+        route_decision.mode.entropy,
+        route_decision.route,
+        route_decision.source,
+        format_route_distribution(&route_decision.distribution),
+        route_decision.margin,
+        route_decision.entropy,
+        ws.trim(),
+        ws_brief.trim(),
+        conversation_excerpt(messages, 12)
+    )
+}
+
+async fn orchestrate_program_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    orchestrator_cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<(Program, String)> {
+    let prompt = build_orchestrator_user_content(line, route_decision, ws, ws_brief, messages);
+    let orch_req = ChatCompletionRequest {
+        model: orchestrator_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: orchestrator_cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt.clone(),
+            },
+        ],
+        temperature: orchestrator_cfg.temperature,
+        top_p: orchestrator_cfg.top_p,
+        stream: false,
+        max_tokens: orchestrator_cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
+        reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
+    };
+    let orch_resp = chat_once(client, chat_url, &orch_req).await?;
+    let orch_text = orch_resp
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default();
+
+    if let Ok(program) = parse_json_loose(&orch_text) {
+        return Ok((program, orch_text));
+    }
+
+    let repair_req = ChatCompletionRequest {
+        model: orchestrator_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: orchestrator_cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: format!(
+                    "Your previous answer was invalid. Return ONLY a valid Program JSON object for this request.\n\n{}\n\nPrevious invalid output:\n{}",
+                    prompt,
+                    orch_text.trim()
+                ),
+            },
+        ],
+        temperature: orchestrator_cfg.temperature,
+        top_p: orchestrator_cfg.top_p,
+        stream: false,
+        max_tokens: orchestrator_cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
+        reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
+    };
+    let repaired = chat_once(client, chat_url, &repair_req).await?;
+    let repaired_text = repaired
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default();
+    let program = parse_json_loose(&repaired_text)?;
+    Ok((program, repaired_text))
+}
+
+async fn run_critic_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    critic_cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    program: &Program,
+    step_results: &[StepResult],
+    attempt: u32,
+) -> Result<CriticVerdict> {
+    let critic_req = ChatCompletionRequest {
+        model: critic_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: critic_cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "user_message": line,
+                    "objective": program.objective,
+                    "speech_act_prior": {
+                        "choice": route_decision.speech_act.choice,
+                        "source": route_decision.speech_act.source,
+                        "distribution": route_decision.speech_act.distribution.iter().map(|(route, p)| {
+                            serde_json::json!({"route": route, "p": p})
+                        }).collect::<Vec<_>>(),
+                        "margin": route_decision.speech_act.margin,
+                        "entropy": route_decision.speech_act.entropy,
+                    },
+                    "workflow_prior": {
+                        "choice": route_decision.workflow.choice,
+                        "source": route_decision.workflow.source,
+                        "distribution": route_decision.workflow.distribution.iter().map(|(route, p)| {
+                            serde_json::json!({"route": route, "p": p})
+                        }).collect::<Vec<_>>(),
+                        "margin": route_decision.workflow.margin,
+                        "entropy": route_decision.workflow.entropy,
+                    },
+                    "mode_prior": {
+                        "choice": route_decision.mode.choice,
+                        "source": route_decision.mode.source,
+                        "distribution": route_decision.mode.distribution.iter().map(|(route, p)| {
+                            serde_json::json!({"route": route, "p": p})
+                        }).collect::<Vec<_>>(),
+                        "margin": route_decision.mode.margin,
+                        "entropy": route_decision.mode.entropy,
+                    },
+                    "route_prior": {
+                        "route": route_decision.route,
+                        "source": route_decision.source,
+                        "distribution": route_decision.distribution.iter().map(|(route, p)| {
+                            serde_json::json!({"route": route, "p": p})
+                        }).collect::<Vec<_>>(),
+                        "margin": route_decision.margin,
+                        "entropy": route_decision.entropy,
+                    },
+                    "attempt": attempt,
+                    "program_steps": program.steps.iter().map(|s| {
+                        serde_json::json!({
+                            "id": step_id(s),
+                            "type": step_kind(s),
+                            "purpose": step_purpose(s),
+                            "depends_on": step_depends_on(s),
+                            "success_condition": step_success_condition(s),
+                        })
+                    }).collect::<Vec<_>>(),
+                    "step_results": step_results.iter().map(|r| {
+                        serde_json::json!({
+                            "id": r.id,
+                            "type": r.kind,
+                            "purpose": r.purpose,
+                            "depends_on": r.depends_on,
+                            "success_condition": r.success_condition,
+                            "ok": r.ok,
+                            "summary": r.summary,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: critic_cfg.temperature,
+        top_p: critic_cfg.top_p,
+        stream: false,
+        max_tokens: critic_cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(critic_cfg.repeat_penalty),
+        reasoning_format: Some(critic_cfg.reasoning_format.clone()),
+    };
+    let verdict_resp = chat_once(client, chat_url, &critic_req).await?;
+    let verdict_text = verdict_resp
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default();
+    parse_json_loose(&verdict_text)
+}
+
+async fn generate_final_answer_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    elma_cfg: &Profile,
+    formatter_cfg: &Profile,
+    system_content: &str,
+    line: &str,
+    step_results: &[StepResult],
+    reply_instructions: &str,
+) -> Result<String> {
+    let reply_req = ChatCompletionRequest {
+        model: elma_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: system_content.to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "user_message": line,
+                    "instructions": reply_instructions,
+                    "step_results": step_results.iter().map(|r| {
+                        serde_json::json!({
+                            "id": r.id,
+                            "type": r.kind,
+                            "ok": r.ok,
+                            "summary": r.summary,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: elma_cfg.temperature,
+        top_p: elma_cfg.top_p,
+        stream: false,
+        max_tokens: elma_cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(elma_cfg.repeat_penalty),
+        reasoning_format: Some(elma_cfg.reasoning_format.clone()),
+    };
+    let parsed = chat_once(client, chat_url, &reply_req).await?;
+    let msg = &parsed
+        .choices
+        .get(0)
+        .context("No choices[0] in response")?
+        .message;
+    let mut final_text = msg.content.as_deref().unwrap_or("").trim().to_string();
+    if !user_requested_markdown(line) && looks_like_markdown(&final_text) {
+        let fmt_req = ChatCompletionRequest {
+            model: formatter_cfg.model.clone(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: formatter_cfg.system_prompt.clone(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: final_text.clone(),
+                },
+            ],
+            temperature: formatter_cfg.temperature,
+            top_p: formatter_cfg.top_p,
+            stream: false,
+            max_tokens: formatter_cfg.max_tokens,
+            n_probs: None,
+            repeat_penalty: Some(formatter_cfg.repeat_penalty),
+            reasoning_format: Some(formatter_cfg.reasoning_format.clone()),
+        };
+        if let Ok(fmt_resp) = chat_once(client, chat_url, &fmt_req).await {
+            let formatted = fmt_resp
+                .choices
+                .get(0)
+                .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+                .unwrap_or_default();
+            if !formatted.trim().is_empty() {
+                final_text = formatted.trim().to_string();
+            }
+        }
+    }
+    Ok(final_text)
+}
+
+async fn judge_final_answer_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    judge_cfg: &Profile,
+    scenario: &CalibrationScenario,
+    user_message: &str,
+    step_results: &[StepResult],
+    final_text: &str,
+) -> Result<CalibrationJudgeVerdict> {
+    let req = ChatCompletionRequest {
+        model: judge_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: judge_cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "scenario_notes": scenario.notes,
+                    "expected_route": scenario.route,
+                    "expected_speech_act": scenario.speech_act,
+                    "user_message": user_message,
+                    "step_results": step_results.iter().map(|r| {
+                        serde_json::json!({
+                            "id": r.id,
+                            "type": r.kind,
+                            "ok": r.ok,
+                            "summary": r.summary,
+                        })
+                    }).collect::<Vec<_>>(),
+                    "final_answer": final_text,
+                    "markdown_requested": user_requested_markdown(user_message),
+                }).to_string(),
+            },
+        ],
+        temperature: judge_cfg.temperature,
+        top_p: judge_cfg.top_p,
+        stream: false,
+        max_tokens: judge_cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(judge_cfg.repeat_penalty),
+        reasoning_format: Some(judge_cfg.reasoning_format.clone()),
+    };
+    let resp = chat_once(client, chat_url, &req).await?;
+    let text = resp
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default();
+    parse_json_loose(&text)
+}
+
 async fn tune_model(
     args: &Args,
     client: &reqwest::Client,
     chat_url: &Url,
+    base_url: &str,
     model_cfg_dir: &PathBuf,
     model_id: &str,
     intention_tune_cfg: &Profile,
 ) -> Result<()> {
-    // 1) Build intention_mapping.txt from scenario files.
+    let elma_cfg = load_agent_config(&model_cfg_dir.join("_elma.config"))?;
+    let router_cfg = load_agent_config(&model_cfg_dir.join("router.toml"))?;
+    let mode_router_cfg = load_agent_config(&model_cfg_dir.join("mode_router.toml"))?;
+    let speech_act_cfg = load_agent_config(&model_cfg_dir.join("speech_act.toml"))?;
+    let planner_master_cfg = load_agent_config(&model_cfg_dir.join("planner_master.toml"))?;
+    let planner_cfg = load_agent_config(&model_cfg_dir.join("planner.toml"))?;
+    let decider_cfg = load_agent_config(&model_cfg_dir.join("decider.toml"))?;
+    let summarizer_cfg = load_agent_config(&model_cfg_dir.join("summarizer.toml"))?;
+    let formatter_cfg = load_agent_config(&model_cfg_dir.join("formatter.toml"))?;
+    let orchestrator_cfg = load_agent_config(&model_cfg_dir.join("orchestrator.toml"))?;
+    let critic_cfg = load_agent_config(&model_cfg_dir.join("critic.toml"))?;
+    let calibration_judge_cfg =
+        load_agent_config(&model_cfg_dir.join("calibration_judge.toml"))?;
+
+    // 1) Router calibration: check whether server returns logprobs for top_logprobs.
+    // We can't perfectly guarantee inclusion in top_logprobs, but we can verify support and
+    // choose an n_probs default that is "big enough".
+    let routes = vec![
+        "CHAT".to_string(),
+        "WORKFLOW".to_string(),
+        "INSPECT".to_string(),
+        "EXECUTE".to_string(),
+        "PLAN".to_string(),
+        "MASTERPLAN".to_string(),
+        "DECIDE".to_string(),
+        "CAPABILITY_CHECK".to_string(),
+        "INFO_REQUEST".to_string(),
+        "ACTION_REQUEST".to_string(),
+    ];
+    let n_probs = 64u32;
+    let cal_req = ChatCompletionRequest {
+        model: model_id.to_string(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "Return exactly one digit: 1.\nNo other text.".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: "ping".to_string(),
+            },
+        ],
+        temperature: 0.0,
+        top_p: 1.0,
+        stream: false,
+        max_tokens: 1,
+        n_probs: Some(n_probs),
+        repeat_penalty: None,
+        reasoning_format: None,
+    };
+    let cal_resp = chat_once(client, chat_url, &cal_req).await?;
+    let supports_logprobs = cal_resp
+        .choices
+        .get(0)
+        .and_then(|c| c.logprobs.as_ref())
+        .is_some();
+
+    let cal = RouterCalibration {
+        version: 1,
+        model: model_id.to_string(),
+        base_url: base_url.to_string(),
+        n_probs,
+        supports_logprobs,
+        routes,
+    };
+    let cal_path = model_cfg_dir.join("router_calibration.toml");
+    save_router_calibration(&cal_path, &cal)?;
+    trace(args, &format!("tune_router_calibration_saved={}", cal_path.display()));
+
+    // 2) Build intention_mapping.txt from scenario files.
     let scenario_paths = list_intention_scenario_paths()?;
     let mut lines: Vec<String> = Vec::new();
     for p in scenario_paths {
@@ -1085,55 +3084,432 @@ async fn tune_model(
         .with_context(|| format!("write {}", mapping_path.display()))?;
     trace(args, &format!("tune_intention_mapping_saved={}", mapping_path.display()));
 
-    // 2) Router calibration: check whether server returns logprobs for top_logprobs.
-    // We can't perfectly guarantee inclusion in top_logprobs, but we can verify support and
-    // choose an n_probs default that is "big enough".
-    let routes = vec![
-        "CHAT".to_string(),
-        "SHELL".to_string(),
-        "PLAN".to_string(),
-        "MASTERPLAN".to_string(),
-        "DECIDE".to_string(),
-    ];
-    let n_probs = 64u32;
-    let cal_req = ChatCompletionRequest {
-        model: model_id.to_string(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: "Return exactly one token: CHAT.\nNo other text.".to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: "ping".to_string(),
-            },
-        ],
-        temperature: 0.0,
-        top_p: 1.0,
-        stream: false,
-        max_tokens: 1,
-        n_probs: Some(n_probs),
-        repeat_penalty: None,
-        reasoning_format: None,
-    };
-    let cal_resp = chat_once(client, chat_url, &cal_req).await?;
-    let supports_logprobs = cal_resp
-        .choices
-        .get(0)
-        .and_then(|c| c.logprobs.as_ref())
-        .is_some();
+    // 3) Golden-corpus calibration for runtime probabilistic control.
+    let manifest = load_calibration_manifest()?;
+    if manifest.version != 1 {
+        anyhow::bail!("Unsupported calibration manifest version {}", manifest.version);
+    }
+    let repo = repo_root()?;
+    let ws = gather_workspace_context(&repo);
+    let ws_brief = gather_workspace_brief(&repo);
+    let mut system_content = elma_cfg.system_prompt.clone();
+    if !ws.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE CONTEXT (facts):\n");
+        system_content.push_str(ws.trim());
+    }
+    if !ws_brief.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE BRIEF:\n");
+        system_content.push_str(ws_brief.trim());
+    }
+    let tune_sessions_root = sessions_root_path(&args.sessions_root)?.join("_tune");
+    let mut speech_pairs = Vec::new();
+    let mut workflow_pairs = Vec::new();
+    let mut mode_pairs = Vec::new();
+    let mut route_pairs = Vec::new();
+    let mut scenario_results = Vec::new();
+    let mut speech_correct = 0usize;
+    let mut workflow_correct = 0usize;
+    let mut mode_correct = 0usize;
+    let mut mode_total = 0usize;
+    let mut route_correct = 0usize;
+    let mut program_parse_correct = 0usize;
+    let mut program_shape_correct = 0usize;
+    let mut program_policy_correct = 0usize;
+    let mut program_consistency_correct = 0usize;
+    let mut execution_correct = 0usize;
+    let mut execution_total = 0usize;
+    let mut critic_correct = 0usize;
+    let mut critic_total = 0usize;
+    let mut response_correct = 0usize;
+    let mut response_total = 0usize;
+    let mut all_ok_correct = 0usize;
 
-    let cal = RouterCalibration {
+    for scenario in manifest.scenarios {
+        let scenario_path = repo_root()?
+            .join("scenarios")
+            .join("intention")
+            .join(&scenario.file);
+        let txt = std::fs::read_to_string(&scenario_path)
+            .with_context(|| format!("read {}", scenario_path.display()))?;
+        let (user_message, recent_messages) = parse_scenario_dialog(&txt);
+        let mut conversation_messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: String::new(),
+        }];
+        conversation_messages.extend(recent_messages.clone());
+        let decision = infer_route_prior(
+            client,
+            chat_url,
+            &speech_act_cfg,
+            &router_cfg,
+            &mode_router_cfg,
+            &cal,
+            &user_message,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await?;
+
+        let speech_ok = decision.speech_act.choice.eq_ignore_ascii_case(&scenario.speech_act);
+        let workflow_ok = decision.workflow.choice.eq_ignore_ascii_case(&scenario.workflow);
+        let mode_ok = scenario
+            .mode
+            .as_ref()
+            .map(|m| decision.mode.choice.eq_ignore_ascii_case(m));
+        let route_ok = decision.route.eq_ignore_ascii_case(&scenario.route);
+        let all_ok = speech_ok
+            && workflow_ok
+            && mode_ok.unwrap_or(true)
+            && route_ok;
+
+        if speech_ok {
+            speech_correct += 1;
+        }
+        if workflow_ok {
+            workflow_correct += 1;
+        }
+        if let Some(ok) = mode_ok {
+            mode_total += 1;
+            if ok {
+                mode_correct += 1;
+            }
+        }
+        if route_ok {
+            route_correct += 1;
+        }
+
+        speech_pairs.push((
+            scenario.speech_act.clone(),
+            decision.speech_act.choice.clone(),
+        ));
+        workflow_pairs.push((
+            scenario.workflow.clone(),
+            decision.workflow.choice.clone(),
+        ));
+        if let Some(expected_mode) = scenario.mode.clone() {
+            mode_pairs.push((expected_mode, decision.mode.choice.clone()));
+        }
+        route_pairs.push((scenario.route.clone(), decision.route.clone()));
+
+        let (program_signature, program_parse_ok, program_parse_error, program_shape_ok, program_shape_reason, program_policy_ok, program_policy_reason, program_consistency_ok, executed_in_tune, execution_ok, critic_ok, critic_reason, response_ok, response_reason, response_plain_text, all_ok) =
+            {
+                let mut program_opt: Option<Program> = None;
+                let mut program_eval = ProgramEvaluation {
+                    parsed: false,
+                    parse_error: String::new(),
+                    shape_ok: false,
+                    shape_reason: "program not produced".to_string(),
+                    policy_ok: false,
+                    policy_reason: "program not produced".to_string(),
+                    executable_in_tune: false,
+                    signature: String::new(),
+                };
+
+                match orchestrate_program_once(
+                    client,
+                    chat_url,
+                    &orchestrator_cfg,
+                    &user_message,
+                    &decision,
+                    &ws,
+                    &ws_brief,
+                    &conversation_messages,
+                )
+                .await
+                {
+                    Ok((mut program, _raw)) => {
+                        if apply_capability_guard(&mut program, &decision) {
+                            trace(args, &format!("tune_guard=capability_reply_only file={}", scenario.file));
+                        }
+                        program_eval = evaluate_program_for_scenario(&program, &scenario);
+                        program_opt = Some(program);
+                    }
+                    Err(e) => {
+                        program_eval.parse_error = e.to_string();
+                        program_eval.shape_reason = "program parse failed".to_string();
+                        program_eval.policy_reason = "program parse failed".to_string();
+                    }
+                }
+
+                if program_eval.parsed {
+                    program_parse_correct += 1;
+                }
+                if program_eval.shape_ok {
+                    program_shape_correct += 1;
+                }
+                if program_eval.policy_ok {
+                    program_policy_correct += 1;
+                }
+
+                let mut consistency_ok = false;
+                if let Some(ref program) = program_opt {
+                    if let Ok((mut second_program, _)) = orchestrate_program_once(
+                        client,
+                        chat_url,
+                        &orchestrator_cfg,
+                        &user_message,
+                        &decision,
+                        &ws,
+                        &ws_brief,
+                        &conversation_messages,
+                    )
+                    .await
+                    {
+                        let _ = apply_capability_guard(&mut second_program, &decision);
+                        consistency_ok = program_signature(program) == program_signature(&second_program);
+                    }
+                }
+                if consistency_ok {
+                    program_consistency_correct += 1;
+                }
+
+                let mut executed_in_tune = false;
+                let mut execution_ok = None;
+                let mut critic_ok = None;
+                let mut critic_reason = None;
+                let mut response_ok = None;
+                let mut response_reason = None;
+                let mut response_plain_text = None;
+
+                if let Some(program) = program_opt.clone() {
+                    if program_eval.parsed && program_eval.shape_ok && program_eval.policy_ok && program_eval.executable_in_tune {
+                        executed_in_tune = true;
+                        execution_total += 1;
+                        let session = ensure_session_layout(&tune_sessions_root)?;
+                        let (step_results, final_reply) = execute_program(
+                            args,
+                            client,
+                            chat_url,
+                            &session,
+                            &repo,
+                            &program,
+                            &planner_cfg,
+                            &planner_master_cfg,
+                            &decider_cfg,
+                            &summarizer_cfg,
+                            false,
+                            true,
+                        )
+                        .await?;
+                        let step_exec_ok = step_results.iter().all(|r| r.ok);
+                        execution_ok = Some(step_exec_ok);
+                        if step_exec_ok {
+                            execution_correct += 1;
+                        }
+
+                        let expected_critic_ok = step_exec_ok;
+                        critic_total += 1;
+                        match run_critic_once(
+                            client,
+                            chat_url,
+                            &critic_cfg,
+                            &user_message,
+                            &decision,
+                            &program,
+                            &step_results,
+                            0,
+                        )
+                        .await
+                        {
+                            Ok(verdict) => {
+                                let ok = verdict.status.eq_ignore_ascii_case(if expected_critic_ok { "ok" } else { "retry" });
+                                if ok {
+                                    critic_correct += 1;
+                                }
+                                critic_reason = Some(verdict.reason.clone());
+                                critic_ok = Some(ok);
+                            }
+                            Err(e) => {
+                                critic_reason = Some(format!("critic error: {e}"));
+                                critic_ok = Some(false);
+                            }
+                        }
+
+                        let reply_instructions = final_reply.clone().unwrap_or_else(|| {
+                            "Respond to the user in plain terminal text. Use any step outputs as evidence."
+                                .to_string()
+                        });
+                        response_total += 1;
+                        match generate_final_answer_once(
+                            client,
+                            chat_url,
+                            &elma_cfg,
+                            &formatter_cfg,
+                            &system_content,
+                            &user_message,
+                            &step_results,
+                            &reply_instructions,
+                        )
+                        .await
+                        {
+                            Ok(final_text) => {
+                                match judge_final_answer_once(
+                                    client,
+                                    chat_url,
+                                    &calibration_judge_cfg,
+                                    &scenario,
+                                    &user_message,
+                                    &step_results,
+                                    &final_text,
+                                )
+                                .await
+                                {
+                                    Ok(verdict) => {
+                                        let ok = verdict.status.eq_ignore_ascii_case("pass")
+                                            && verdict.answered_request
+                                            && verdict.faithful_to_evidence
+                                            && verdict.plain_text;
+                                        if ok {
+                                            response_correct += 1;
+                                        }
+                                        response_plain_text = Some(verdict.plain_text);
+                                        response_reason = Some(verdict.reason);
+                                        response_ok = Some(ok);
+                                    }
+                                    Err(e) => {
+                                        response_reason = Some(format!("judge error: {e}"));
+                                        response_ok = Some(false);
+                                        response_plain_text = Some(!looks_like_markdown(&final_text));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                response_reason = Some(format!("reply error: {e}"));
+                                response_ok = Some(false);
+                                response_plain_text = Some(false);
+                            }
+                        }
+                    }
+                }
+
+                let all_ok = speech_ok
+                    && workflow_ok
+                    && mode_ok.unwrap_or(true)
+                    && route_ok
+                    && program_eval.parsed
+                    && program_eval.shape_ok
+                    && program_eval.policy_ok
+                    && consistency_ok
+                    && execution_ok.unwrap_or(true)
+                    && critic_ok.unwrap_or(true)
+                    && response_ok.unwrap_or(true);
+                if all_ok {
+                    all_ok_correct += 1;
+                }
+
+                (
+                    program_eval.signature,
+                    program_eval.parsed,
+                    program_eval.parse_error,
+                    program_eval.shape_ok,
+                    program_eval.shape_reason,
+                    program_eval.policy_ok,
+                    program_eval.policy_reason,
+                    consistency_ok,
+                    executed_in_tune,
+                    execution_ok,
+                    critic_ok,
+                    critic_reason,
+                    response_ok,
+                    response_reason,
+                    response_plain_text,
+                    all_ok,
+                )
+            };
+
+        scenario_results.push(ScenarioCalibrationResult {
+            file: scenario.file,
+            notes: scenario.notes,
+            speech_act_expected: scenario.speech_act.clone(),
+            speech_act_predicted: decision.speech_act.choice.clone(),
+            speech_act_probability: probability_of(
+                &decision.speech_act.distribution,
+                &scenario.speech_act,
+            ),
+            speech_act_ok: speech_ok,
+            workflow_expected: scenario.workflow.clone(),
+            workflow_predicted: decision.workflow.choice.clone(),
+            workflow_probability: probability_of(
+                &decision.workflow.distribution,
+                &scenario.workflow,
+            ),
+            workflow_ok,
+            mode_expected: scenario.mode.clone(),
+            mode_predicted: scenario.mode.as_ref().map(|_| decision.mode.choice.clone()),
+            mode_probability: scenario
+                .mode
+                .as_ref()
+                .map(|m| probability_of(&decision.mode.distribution, m)),
+            mode_ok,
+            route_expected: scenario.route.clone(),
+            route_predicted: decision.route.clone(),
+            route_probability: probability_of(&decision.distribution, &scenario.route),
+            route_ok,
+            program_signature,
+            program_parse_ok,
+            program_parse_error,
+            program_shape_ok,
+            program_shape_reason,
+            program_policy_ok,
+            program_policy_reason,
+            program_consistency_ok,
+            executed_in_tune,
+            execution_ok,
+            critic_ok,
+            critic_reason,
+            response_ok,
+            response_reason,
+            response_plain_text,
+            all_ok,
+        });
+    }
+
+    let total = scenario_results.len();
+    let summary = CalibrationSummary {
+        total_cases: total,
+        speech_act: calibration_metric(speech_correct, total),
+        workflow: calibration_metric(workflow_correct, total),
+        mode: calibration_metric(mode_correct, mode_total),
+        route: calibration_metric(route_correct, total),
+        program_parse: calibration_metric(program_parse_correct, total),
+        program_shape: calibration_metric(program_shape_correct, total),
+        program_policy: calibration_metric(program_policy_correct, total),
+        program_consistency: calibration_metric(program_consistency_correct, total),
+        execution: calibration_metric(execution_correct, execution_total),
+        critic: calibration_metric(critic_correct, critic_total),
+        response: calibration_metric(response_correct, response_total),
+        all_ok: calibration_metric(all_ok_correct, total),
+        certified: total > 0
+            && calibration_metric(speech_correct, total).accuracy >= 0.80
+            && calibration_metric(workflow_correct, total).accuracy >= 0.85
+            && calibration_metric(mode_correct, mode_total).accuracy >= 0.80
+            && calibration_metric(route_correct, total).accuracy >= 0.85
+            && calibration_metric(program_parse_correct, total).accuracy >= 0.95
+            && calibration_metric(program_shape_correct, total).accuracy >= 0.85
+            && calibration_metric(program_policy_correct, total).accuracy >= 0.95
+            && calibration_metric(program_consistency_correct, total).accuracy >= 0.80
+            && calibration_metric(execution_correct, execution_total).accuracy >= 0.80
+            && calibration_metric(critic_correct, critic_total).accuracy >= 0.80
+            && calibration_metric(response_correct, response_total).accuracy >= 0.80,
+        certification_rule: "speech_act>=0.80 workflow>=0.85 mode>=0.80 route>=0.85 parse>=0.95 shape>=0.85 policy>=0.95 consistency>=0.80 execution>=0.80 critic>=0.80 response>=0.80".to_string(),
+    };
+    let report = CalibrationReport {
         version: 1,
         model: model_id.to_string(),
-        base_url: args.base_url.clone(),
-        n_probs,
+        base_url: base_url.to_string(),
         supports_logprobs,
-        routes,
+        n_probs,
+        summary,
+        speech_act_confusions: build_confusions(&speech_pairs),
+        workflow_confusions: build_confusions(&workflow_pairs),
+        mode_confusions: build_confusions(&mode_pairs),
+        route_confusions: build_confusions(&route_pairs),
+        scenarios: scenario_results,
     };
-    let cal_path = model_cfg_dir.join("router_calibration.toml");
-    save_router_calibration(&cal_path, &cal)?;
-    trace(args, &format!("tune_router_calibration_saved={}", cal_path.display()));
+    let report_path = model_cfg_dir.join("calibration_report.json");
+    save_calibration_report(&report_path, &report)?;
+    trace(args, &format!("tune_calibration_report_saved={}", report_path.display()));
 
     Ok(())
 }
@@ -1471,29 +3847,46 @@ async fn chat_once(
     chat_url: &Url,
     req: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse> {
-    let resp = client
-        .post(chat_url.clone())
-        .json(req)
-        .send()
-        .await
-        .context("POST /v1/chat/completions failed")?;
+    let mut last_error = String::new();
+    for attempt in 0..3u32 {
+        match client.post(chat_url.clone()).json(req).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.context("Failed to read response body")?;
+                if !status.is_success() {
+                    if status.is_server_error() && attempt < 2 {
+                        tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
+                        last_error = format!("Server returned HTTP {status}: {text}");
+                        continue;
+                    }
+                    anyhow::bail!("Server returned HTTP {status}: {text}");
+                }
 
-    let status = resp.status();
-    let text = resp.text().await.context("Failed to read response body")?;
-    if !status.is_success() {
-        anyhow::bail!("Server returned HTTP {status}: {text}");
+                let parsed: ChatCompletionResponse =
+                    serde_json::from_str(&text).context("Invalid JSON from server")?;
+                return Ok(parsed);
+            }
+            Err(e) => {
+                last_error = format!("{e:#}");
+                if attempt < 2 {
+                    tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
+                    continue;
+                }
+            }
+        }
     }
-
-    let parsed: ChatCompletionResponse =
-        serde_json::from_str(&text).context("Invalid JSON from server")?;
-    Ok(parsed)
+    anyhow::bail!("POST /v1/chat/completions failed after retries: {last_error}")
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let base = Url::parse(&args.base_url).context("Invalid --base-url")?;
+    let cfg_root = config_root_path(&args.config_root)?;
+    let (base_url, base_url_source) =
+        resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref());
+
+    let base = Url::parse(&base_url).context("Invalid --base-url")?;
     let chat_url = base
         .join("/v1/chat/completions")
         .context("Failed to build /v1/chat/completions URL")?;
@@ -1509,55 +3902,221 @@ async fn main() -> Result<()> {
         fetch_first_model_id(&client, &base).await?
     };
 
-    let cfg_root = config_root_path(&args.config_root)?;
-    let model_cfg_dir = ensure_model_config_folder(&cfg_root, &args.base_url, &model_id)?;
-
-    let elma_cfg_path = model_cfg_dir.join("_elma.config");
-    let gate_cfg_path = model_cfg_dir.join("gate.toml");
-    let gate_why_cfg_path = model_cfg_dir.join("gate_why.toml");
-    let intention_cfg_path = model_cfg_dir.join("intention.toml");
-    let tooler_cfg_path = model_cfg_dir.join("tooler.toml");
-    let planner_master_cfg_path = model_cfg_dir.join("planner_master.toml");
-    let planner_cfg_path = model_cfg_dir.join("planner.toml");
-    let decider_cfg_path = model_cfg_dir.join("decider.toml");
-    let intention_tune_cfg_path = model_cfg_dir.join("intention_tune.toml");
-    let action_type_cfg_path = model_cfg_dir.join("action_type.toml");
-    let summarizer_cfg_path = model_cfg_dir.join("summarizer.toml");
-
-    let mut elma_cfg = load_agent_config(&elma_cfg_path)?;
-    let _gate_cfg = load_agent_config(&gate_cfg_path)?;
-    let gate_why_cfg = load_agent_config(&gate_why_cfg_path)?;
-    let intention_cfg = load_agent_config(&intention_cfg_path)?;
-    let tooler_cfg = load_agent_config(&tooler_cfg_path)?;
-    let planner_master_cfg = load_agent_config(&planner_master_cfg_path)?;
-    let planner_cfg = load_agent_config(&planner_cfg_path)?;
-    let decider_cfg = load_agent_config(&decider_cfg_path)?;
-    let intention_tune_cfg = load_agent_config(&intention_tune_cfg_path)?;
-    let mut action_type_cfg = load_agent_config(&action_type_cfg_path)?;
-    let summarizer_cfg = load_agent_config(&summarizer_cfg_path)?;
+    let model_cfg_dir = ensure_model_config_folder(&cfg_root, &base_url, &model_id)?;
 
     if args.tune {
         let model_ids = fetch_all_model_ids(&client, &base).await?;
         for mid in model_ids {
-            let dir = ensure_model_config_folder(&cfg_root, &args.base_url, &mid)?;
+            let dir = ensure_model_config_folder(&cfg_root, &base_url, &mid)?;
             let tune_cfg = load_agent_config(&dir.join("intention_tune.toml"))?;
-            tune_model(&args, &client, &chat_url, &dir, &mid, &tune_cfg).await?;
+            tune_model(&args, &client, &chat_url, &base_url, &dir, &mid, &tune_cfg).await?;
         }
         return Ok(());
     }
 
+    let elma_cfg_path = model_cfg_dir.join("_elma.config");
+    let planner_master_cfg_path = model_cfg_dir.join("planner_master.toml");
+    let planner_cfg_path = model_cfg_dir.join("planner.toml");
+    let decider_cfg_path = model_cfg_dir.join("decider.toml");
+    let summarizer_cfg_path = model_cfg_dir.join("summarizer.toml");
+    let formatter_cfg_path = model_cfg_dir.join("formatter.toml");
+    let orchestrator_cfg_path = model_cfg_dir.join("orchestrator.toml");
+    let critic_cfg_path = model_cfg_dir.join("critic.toml");
+    let router_cfg_path = model_cfg_dir.join("router.toml");
+    let mode_router_cfg_path = model_cfg_dir.join("mode_router.toml");
+    let speech_act_cfg_path = model_cfg_dir.join("speech_act.toml");
+    let router_cal_path = model_cfg_dir.join("router_calibration.toml");
+
+    let mut elma_cfg = load_agent_config(&elma_cfg_path)?;
+    let planner_master_cfg = load_agent_config(&planner_master_cfg_path)?;
+    let planner_cfg = load_agent_config(&planner_cfg_path)?;
+    let decider_cfg = load_agent_config(&decider_cfg_path)?;
+    let summarizer_cfg = load_agent_config(&summarizer_cfg_path)?;
+    let formatter_cfg = load_agent_config(&formatter_cfg_path)?;
+    let mut orchestrator_cfg = load_agent_config(&orchestrator_cfg_path)?;
+    let mut critic_cfg = load_agent_config(&critic_cfg_path)?;
+    let mut router_cfg = load_agent_config(&router_cfg_path)?;
+    let mut mode_router_cfg = load_agent_config(&mode_router_cfg_path)?;
+    let mut speech_act_cfg = load_agent_config(&speech_act_cfg_path)?;
+    let router_cal = load_router_calibration(&router_cal_path)?;
+
     // Ensure these configs track current base/model (user can still edit files manually).
-    elma_cfg.base_url = args.base_url.clone();
+    elma_cfg.base_url = base_url.clone();
     elma_cfg.model = model_id.clone();
     save_agent_config(&elma_cfg_path, &elma_cfg)?;
 
-    // Router prompt upgrade: ensure CHAT exists as an allowed route.
-    if !action_type_cfg.system_prompt.contains("Allowed routes:")
-        || !action_type_cfg.system_prompt.contains("\nCHAT\n")
-    {
-        action_type_cfg.system_prompt = default_action_type_config(&args.base_url, &model_id).system_prompt;
-        trace(&args, "upgraded=action_type.system_prompt");
-        save_agent_config(&action_type_cfg_path, &action_type_cfg)?;
+    if replace_system_prompt_if_missing(
+        &mut router_cfg,
+        "router",
+        "2 = WORKFLOW",
+        default_router_config(&base_url, &model_id).system_prompt,
+    ) {
+        trace(&args, "upgraded=router.system_prompt");
+        save_agent_config(&router_cfg_path, &router_cfg)?;
+    }
+    if replace_system_prompt_if_missing(
+        &mut mode_router_cfg,
+        "mode_router",
+        "1 = INSPECT",
+        default_mode_router_config(&base_url, &model_id).system_prompt,
+    ) {
+        trace(&args, "upgraded=mode_router.system_prompt");
+        save_agent_config(&mode_router_cfg_path, &mode_router_cfg)?;
+    }
+    if replace_system_prompt_if_missing(
+        &mut speech_act_cfg,
+        "speech_act",
+        "1 = CAPABILITY_CHECK",
+        default_speech_act_config(&base_url, &model_id).system_prompt,
+    ) {
+        trace(&args, "upgraded=speech_act.system_prompt");
+        save_agent_config(&speech_act_cfg_path, &speech_act_cfg)?;
+    }
+    if replace_system_prompt_if_missing(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "EVIDENCE-FIRST RULES",
+        default_orchestrator_config(&base_url, &model_id).system_prompt,
+    ) {
+        trace(&args, "upgraded=orchestrator.system_prompt");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if replace_system_prompt_if_missing(
+        &mut critic_cfg,
+        "critic",
+        "there is no workspace evidence in the step results",
+        default_critic_config(&base_url, &model_id).system_prompt,
+    ) {
+        trace(&args, "upgraded=critic.system_prompt");
+        save_agent_config(&critic_cfg_path, &critic_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "ROUTER PRIOR RULES:\n- You will receive a probabilistic route prior over CHAT, SHELL, PLAN, MASTERPLAN, and DECIDE.\n- Treat the route prior as evidence, not a hard rule.\n- If the route prior is uncertain or the user request is genuinely ambiguous, you may output a Program with a single reply step that asks one concise clarifying question.",
+    ) {
+        trace(&args, "upgraded=orchestrator.router_prior");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "- A shell step is for real workspace inspection or execution only. Never use shell steps to print prose, plan lines, or explanations.\n- If the user asks for a plan, prefer a plan or masterplan step plus an optional reply step. Do not emit plan text through shell commands.",
+    ) {
+        trace(&args, "upgraded=orchestrator.shell_rules");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "- If the user asks for one concrete step-by-step plan, use a plan step.\n- If the user asks for a higher-level overall plan across phases, use a masterplan step.",
+    ) {
+        trace(&args, "upgraded=orchestrator.plan_distinction");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "STRUCTURE RULES:\n- Every step must include purpose and success_condition.\n- Use depends_on to reference earlier step ids when a later step consumes prior results.\n- For summarize steps that summarize earlier outputs, leave text empty and set depends_on.\n- Keep programs minimal. Remove any step that does not directly advance the objective.",
+    ) {
+        trace(&args, "upgraded=orchestrator.structure_rules");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "PLAN EXAMPLE:\nUser: Create a step-by-step plan to add a new config file to this Rust project.\nOutput:\n{\"objective\":\"create a concrete plan for adding a config file\",\"steps\":[{\"id\":\"p1\",\"type\":\"plan\",\"goal\":\"Add a new config file to this Rust project.\",\"purpose\":\"plan\",\"depends_on\":[],\"success_condition\":\"a concrete step-by-step plan is saved\"},{\"id\":\"r1\",\"type\":\"reply\",\"instructions\":\"Tell the user a step-by-step plan was created and summarize it briefly in plain text.\",\"purpose\":\"answer\",\"depends_on\":[\"p1\"],\"success_condition\":\"the user receives a concise plain-text summary of the saved plan\"}]}",
+    ) {
+        trace(&args, "upgraded=orchestrator.plan_example");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "MINIMALITY RULES:\n- For a step-by-step plan request, default to one plan step plus an optional reply step.\n- Do not inspect src/main.rs, config files, or prompt files just because examples mention them.\n- Only add shell inspection to a plan request when the plan truly depends on current workspace evidence.",
+    ) {
+        trace(&args, "upgraded=orchestrator.minimality_rules");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut router_cfg,
+        "router",
+        "Important distinctions:\n- Greetings or general knowledge questions are usually 1.\n- Questions about the current project, files, code, or tasks that need planning or decisions are usually 2.",
+    ) {
+        trace(&args, "upgraded=router.examples");
+        save_agent_config(&router_cfg_path, &router_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut router_cfg,
+        "router",
+        "- Output must be exactly one digit from 1 to 2.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents whether Elma should enter workflow mode.",
+    ) {
+        trace(&args, "upgraded=router.workflow_rules");
+        save_agent_config(&router_cfg_path, &router_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut mode_router_cfg,
+        "mode_router",
+        "Important distinctions:\n- \"What is my current project about?\", \"read Cargo.toml and summarize it\", and \"find where fetch_ctx_max is defined\" are usually 1.\n- \"list files\", \"run tests\", and \"build the project\" are usually 2.\n- \"Create a step-by-step plan\" is 3, not 4.\n- Only choose 4 when the user truly wants an overall master plan.",
+    ) {
+        trace(&args, "upgraded=mode_router.examples");
+        save_agent_config(&mode_router_cfg_path, &mode_router_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut speech_act_cfg,
+        "speech_act",
+        "Important distinctions:\n- \"Are you able to list files here?\" is usually 1.\n- \"What is my current project about?\" is usually 2.\n- \"Can you list files?\" and \"Could you run the tests?\" are usually 3 in normal English, because they are indirect requests.",
+    ) {
+        trace(&args, "upgraded=speech_act.examples");
+        save_agent_config(&speech_act_cfg_path, &speech_act_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut critic_cfg,
+        "critic",
+        "- If a shell step only prints prose or plan text instead of inspecting or executing something real in the workspace, choose retry.",
+    ) {
+        trace(&args, "upgraded=critic.shell_rules");
+        save_agent_config(&critic_cfg_path, &critic_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut critic_cfg,
+        "critic",
+        "- If the user asked for a step-by-step plan and there is no plan step result, choose retry and provide a corrected Program that uses type \"plan\".\n- If the user asked for an overall or master plan and there is no masterplan step result, choose retry and provide a corrected Program that uses type \"masterplan\".",
+    ) {
+        trace(&args, "upgraded=critic.plan_distinction");
+        save_agent_config(&critic_cfg_path, &critic_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut critic_cfg,
+        "critic",
+        "EVALUATION RULES:\n- Judge whether each step's purpose and success_condition actually advanced the objective.\n- If a step has depends_on, verify the dependent outputs were meaningfully used.\n- For planning requests, reject shell steps unless they gather clearly necessary workspace evidence.\n- Prefer the simplest valid program that can satisfy the request.",
+    ) {
+        trace(&args, "upgraded=critic.evaluation_rules");
+        save_agent_config(&critic_cfg_path, &critic_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut critic_cfg,
+        "critic",
+        "PLAN VALIDATION HINTS:\n- If any successful step_result has type \"plan\", the step-by-step plan requirement is satisfied.\n- If any successful step_result has type \"masterplan\", the master plan requirement is satisfied.\n- For a step-by-step plan request, reject unnecessary shell inspection and prefer a corrected program with only a plan step and an optional reply step.",
+    ) {
+        trace(&args, "upgraded=critic.plan_validation_hints");
+        save_agent_config(&critic_cfg_path, &critic_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "SPEECH-ACT RULES:\n- You will receive a probabilistic speech-act prior over CAPABILITY_CHECK, INFO_REQUEST, and ACTION_REQUEST.\n- If CAPABILITY_CHECK dominates, prefer a reply step that answers whether Elma can do it. Do not execute commands unless the user also asked for action now.\n- INFO_REQUEST may still require workspace inspection before answering.\n- ACTION_REQUEST may use shell, plan, masterplan, or decide steps as needed.",
+    ) {
+        trace(&args, "upgraded=orchestrator.speech_act_rules");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut critic_cfg,
+        "critic",
+        "SPEECH-ACT VALIDATION:\n- If speech_act is CAPABILITY_CHECK and the program executed shell or planning actions without explicit user intent to do so now, choose retry and replace it with a reply-only program.\n- If speech_act is ACTION_REQUEST, reject answers that only talk about capability without attempting the task when it is allowed.",
+    ) {
+        trace(&args, "upgraded=critic.speech_act_rules");
+        save_agent_config(&critic_cfg_path, &critic_cfg)?;
     }
 
     let ctx_max = fetch_ctx_max(&client, &base).await.unwrap_or(None);
@@ -1569,21 +4128,36 @@ async fn main() -> Result<()> {
     // into Elma's context so she doesn't hallucinate access constraints.
     let repo = repo_root()?;
     let ws = gather_workspace_context(&repo);
+    let ws_brief = gather_workspace_brief(&repo);
     if !ws.is_empty() {
         let p = session.root.join("workspace.txt");
         std::fs::write(&p, ws.trim().to_string() + "\n")
             .with_context(|| format!("write {}", p.display()))?;
         trace(&args, &format!("workspace_context_saved={}", p.display()));
     }
+    if !ws_brief.is_empty() {
+        let p = session.root.join("workspace_brief.txt");
+        std::fs::write(&p, ws_brief.trim().to_string() + "\n")
+            .with_context(|| format!("write {}", p.display()))?;
+        trace(&args, &format!("workspace_brief_saved={}", p.display()));
+    }
+    trace(
+        &args,
+        &format!("base_url_source={base_url_source} value={base_url}"),
+    );
 
     let mut system_content = elma_cfg.system_prompt.clone();
     if !ws.trim().is_empty() {
         system_content.push_str("\n\nWORKSPACE CONTEXT (facts):\n");
         system_content.push_str(ws.trim());
     }
+    if !ws_brief.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE BRIEF:\n");
+        system_content.push_str(ws_brief.trim());
+    }
     let mut messages: Vec<ChatMessage> = vec![ChatMessage {
         role: "system".to_string(),
-        content: system_content,
+        content: system_content.clone(),
     }];
 
     eprintln!("Connected target: {chat_url}");
@@ -1615,460 +4189,505 @@ async fn main() -> Result<()> {
             content: line.to_string(),
         });
 
-        // Always run freeform one-word intent tag (used for scenario helper + better gating).
-        let classify_req = ChatCompletionRequest {
-            model: intention_cfg.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: intention_cfg.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: line.to_string(),
-                },
-            ],
-            temperature: intention_cfg.temperature,
-            top_p: intention_cfg.top_p,
-            stream: false,
-            max_tokens: intention_cfg.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(intention_cfg.repeat_penalty),
-            reasoning_format: Some(intention_cfg.reasoning_format.clone()),
-        };
-        let classify = chat_once(&client, &chat_url, &classify_req)
-            .await
-            .ok()
-            .and_then(|r| {
-                r.choices
-                    .get(0)
-                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
-            })
-            .unwrap_or_default();
-        let intent_tag = classify.trim().split_whitespace().next().unwrap_or("");
-
-        // Scenario helper (best-effort) based on the freeform intent tag.
-        let mapping = load_intention_mapping(&model_cfg_dir).unwrap_or_default();
-        let (scenario, conf) = scenario_helper(intent_tag, &mapping);
-        if conf >= 0.65 {
-            if let Some(s) = scenario.as_ref() {
-                trace(&args, &format!("scenario=\"{}\" conf={:.0}%", s, conf * 100.0));
-            }
-        } else {
-            trace(&args, &format!("scenario=(none) conf={:.0}%", conf * 100.0));
-        }
-
-        // Route: single router decides CHAT vs action types.
-        let router_system = format!(
-            "{}\n\nContext:\nIntent tag: {intent_tag}\nBest scenario: {}\nScenario confidence: {:.0}%",
-            action_type_cfg.system_prompt,
-            scenario.clone().unwrap_or_else(|| "(none)".to_string()),
-            conf * 100.0
+        let route_decision = infer_route_prior(
+            &client,
+            &chat_url,
+            &speech_act_cfg,
+            &router_cfg,
+            &mode_router_cfg,
+            &router_cal,
+            line,
+            &ws,
+            &ws_brief,
+            &messages,
+        )
+        .await?;
+        trace(
+            &args,
+            &format!(
+                "speech_act_dist={}",
+                format_route_distribution(&route_decision.speech_act.distribution)
+            ),
         );
-        let at_req = ChatCompletionRequest {
-            model: action_type_cfg.model.clone(),
+        trace(
+            &args,
+            &format!(
+                "speech_act={} p={:.2} margin={:.2} entropy={:.2} source={}",
+                route_decision.speech_act.choice,
+                route_decision
+                    .speech_act
+                    .distribution
+                    .first()
+                    .map(|(_, p)| *p)
+                    .unwrap_or(0.0),
+                route_decision.speech_act.margin,
+                route_decision.speech_act.entropy,
+                route_decision.speech_act.source
+            ),
+        );
+        trace(
+            &args,
+            &format!(
+                "workflow_dist={}",
+                format_route_distribution(&route_decision.workflow.distribution)
+            ),
+        );
+        trace(
+            &args,
+            &format!(
+                "workflow={} p={:.2} margin={:.2} entropy={:.2} source={}",
+                route_decision.workflow.choice,
+                route_decision
+                    .workflow
+                    .distribution
+                    .first()
+                    .map(|(_, p)| *p)
+                    .unwrap_or(0.0),
+                route_decision.workflow.margin,
+                route_decision.workflow.entropy,
+                route_decision.workflow.source
+            ),
+        );
+        trace(
+            &args,
+            &format!("mode_dist={}", format_route_distribution(&route_decision.mode.distribution)),
+        );
+        trace(
+            &args,
+            &format!(
+                "mode={} p={:.2} margin={:.2} entropy={:.2} source={}",
+                route_decision.mode.choice,
+                route_decision
+                    .mode
+                    .distribution
+                    .first()
+                    .map(|(_, p)| *p)
+                    .unwrap_or(0.0),
+                route_decision.mode.margin,
+                route_decision.mode.entropy,
+                route_decision.mode.source
+            ),
+        );
+        trace(
+            &args,
+            &format!("route_dist={}", format_route_distribution(&route_decision.distribution)),
+        );
+        let route_p = route_decision
+            .distribution
+            .first()
+            .map(|(_, p)| *p)
+            .unwrap_or(0.0);
+        trace(
+            &args,
+            &format!(
+                "route={} p={route_p:.2} margin={:.2} entropy={:.2} source={}",
+                route_decision.route,
+                route_decision.margin,
+                route_decision.entropy,
+                route_decision.source
+            ),
+        );
+
+        // Reasoning-centered: ask the orchestrator for a Program every turn.
+        let orch_req = ChatCompletionRequest {
+            model: orchestrator_cfg.model.clone(),
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content: router_system,
+                    content: orchestrator_cfg.system_prompt.clone(),
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: line.to_string(),
+                    content: format!(
+                        "User message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
+                        route_decision.speech_act.choice,
+                        route_decision.speech_act.source,
+                        format_route_distribution(&route_decision.speech_act.distribution),
+                        route_decision.speech_act.margin,
+                        route_decision.speech_act.entropy,
+                        route_decision.workflow.choice,
+                        route_decision.workflow.source,
+                        format_route_distribution(&route_decision.workflow.distribution),
+                        route_decision.workflow.margin,
+                        route_decision.workflow.entropy,
+                        route_decision.mode.choice,
+                        route_decision.mode.source,
+                        format_route_distribution(&route_decision.mode.distribution),
+                        route_decision.mode.margin,
+                        route_decision.mode.entropy,
+                        route_decision.route,
+                        route_decision.source,
+                        format_route_distribution(&route_decision.distribution),
+                        route_decision.margin,
+                        route_decision.entropy,
+                        ws.trim(),
+                        ws_brief.trim(),
+                        messages
+                            .iter()
+                            .skip(1)
+                            .rev()
+                            .take(12)
+                            .rev()
+                            .map(|m| format!("{}: {}", m.role, m.content.replace('\n', " ")))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ),
                 },
             ],
-            temperature: action_type_cfg.temperature,
-            top_p: action_type_cfg.top_p,
+            temperature: orchestrator_cfg.temperature,
+            top_p: orchestrator_cfg.top_p,
             stream: false,
-            max_tokens: action_type_cfg.max_tokens,
+            max_tokens: orchestrator_cfg.max_tokens,
             n_probs: None,
-            repeat_penalty: Some(action_type_cfg.repeat_penalty),
-            reasoning_format: Some(action_type_cfg.reasoning_format.clone()),
+            repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
+            reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         };
-        let at_resp = chat_once(&client, &chat_url, &at_req).await?;
-        let route_out = at_resp
+
+        let orch_resp = chat_once(&client, &chat_url, &orch_req).await?;
+        let orch_text = orch_resp
             .choices
             .get(0)
             .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
             .unwrap_or_default();
-        let route = route_out.trim().split_whitespace().next().unwrap_or("CHAT");
-        trace(&args, &format!("route={route}"));
 
-        if route.eq_ignore_ascii_case("CHAT") && conf >= 0.65 {
-            // Ask the model why it picked CHAT (debug loop).
-            let why_req = ChatCompletionRequest {
-                model: gate_why_cfg.model.clone(),
-                messages: vec![
-                    ChatMessage {
-                        role: "system".to_string(),
-                        content: gate_why_cfg.system_prompt.clone(),
-                    },
-                    ChatMessage {
-                        role: "user".to_string(),
-                        content: format!(
-                            "User message: {line}\nIntent tag: {intent_tag}\nBest scenario: {}\nConfidence: {:.0}%",
-                            scenario.clone().unwrap_or_else(|| "(none)".to_string()),
-                            conf * 100.0
-                        ),
-                    },
-                ],
-                temperature: gate_why_cfg.temperature,
-                top_p: gate_why_cfg.top_p,
-                stream: false,
-                max_tokens: gate_why_cfg.max_tokens,
-                n_probs: None,
-                repeat_penalty: Some(gate_why_cfg.repeat_penalty),
-                reasoning_format: Some(gate_why_cfg.reasoning_format.clone()),
-            };
-            if let Ok(why_resp) = chat_once(&client, &chat_url, &why_req).await {
-                let why = why_resp
-                    .choices
-                    .get(0)
-                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
-                    .unwrap_or_default();
-                if !why.trim().is_empty() {
-                    let p = write_gate_why(&session.tune_dir, &why)?;
-                    trace(&args, &format!("route_why=\"{}\" saved={}", why.trim(), p.display()));
-                }
-            }
-        }
-
-        if !route.eq_ignore_ascii_case("CHAT") {
-            trace(&args, &format!("intent_tag={}", intent_tag));
-
-            // Low scenario confidence should never block ACTION execution; we still proceed.
-            if conf < 0.65 {
-                trace(&args, "scenario_confidence=low (continuing)");
-            }
-
-            if route.eq_ignore_ascii_case("SHELL") {
-                // If the user asked to "read X and summarize", do it as a 2-step formula:
-                // 1) read the file content via shell
-                // 2) summarize it via the summarizer intel unit
-                let lower = line.to_ascii_lowercase();
-                let wants_summary = lower.contains("summarize") || lower.contains("summary");
-                let maybe_path = extract_first_path_from_user_text(line);
-                if wants_summary {
-                    if let Some(p) = maybe_path.clone() {
-                        // Basic sanity: prevent injection by reusing the tooler+policy pipeline.
-                        let read_cmd = format!("cat {}", shell_quote(&p));
-                        if is_command_sane(&read_cmd) && is_command_allowed(&read_cmd) {
-                            let path = write_shell_action(&session.shell_dir, &read_cmd)?;
-                            trace(&args, &format!("shell_saved={}", path.display()));
-                            let (code, output) = run_shell_one_liner(&read_cmd, &repo_root()? )?;
-                            let out_path = write_shell_output(&session.shell_dir, &path, &output)?;
-                            trace(&args, &format!("shell_output_saved={}", out_path.display()));
-                            trace(&args, &format!("exec_exit_code={code}"));
-
-                            // Summarize.
-                            let sum_req = ChatCompletionRequest {
-                                model: summarizer_cfg.model.clone(),
-                                messages: vec![
-                                    ChatMessage {
-                                        role: "system".to_string(),
-                                        content: summarizer_cfg.system_prompt.clone(),
-                                    },
-                                    ChatMessage {
-                                        role: "user".to_string(),
-                                        content: format!(
-                                            "User request:\n{line}\n\nFile path:\n{p}\n\nFile contents:\n{}",
-                                            output
-                                        ),
-                                    },
-                                ],
-                                temperature: summarizer_cfg.temperature,
-                                top_p: summarizer_cfg.top_p,
-                                stream: false,
-                                max_tokens: summarizer_cfg.max_tokens,
-                                n_probs: None,
-                                repeat_penalty: Some(summarizer_cfg.repeat_penalty),
-                                reasoning_format: Some(summarizer_cfg.reasoning_format.clone()),
-                            };
-                            let sum_resp = chat_once(&client, &chat_url, &sum_req).await?;
-                            let sum_text = sum_resp
-                                .choices
-                                .get(0)
-                                .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
-                                .unwrap_or_default();
-                            let sum_text = sum_text.trim().to_string();
-                            println!(
-                                "{}",
-                                if args.no_color {
-                                    format!("bot> {sum_text}")
-                                } else {
-                                    ansi_orange(&format!("bot> {sum_text}"))
-                                }
-                            );
-                            println!();
-                            // Store summary in chat history as assistant reply.
-                            if !sum_text.trim().is_empty() {
-                                messages.push(ChatMessage {
-                                    role: "assistant".to_string(),
-                                    content: sum_text.trim().to_string(),
-                                });
-                            }
-                            continue;
-                        }
-                    }
-                }
-
-                let tool_req = ChatCompletionRequest {
-                    model: tooler_cfg.model.clone(),
+        let mut program: Program = match parse_json_loose(&orch_text) {
+            Ok(p) => p,
+            Err(e) => {
+                trace(&args, &format!("orchestrator_parse_error={e}"));
+                // Ask the orchestrator once more to repair its own output into valid JSON.
+                let repair_req = ChatCompletionRequest {
+                    model: orchestrator_cfg.model.clone(),
                     messages: vec![
                         ChatMessage {
                             role: "system".to_string(),
-                            content: tooler_cfg.system_prompt.clone(),
-                        },
-                        ChatMessage {
-                            role: "user".to_string(),
-                            content: line.to_string(),
-                        },
-                    ],
-                    temperature: tooler_cfg.temperature,
-                    top_p: tooler_cfg.top_p,
-                    stream: false,
-                    max_tokens: tooler_cfg.max_tokens,
-                    n_probs: None,
-                    repeat_penalty: Some(tooler_cfg.repeat_penalty),
-                    reasoning_format: Some(tooler_cfg.reasoning_format.clone()),
-                };
-                let tool_resp = chat_once(&client, &chat_url, &tool_req).await?;
-                let tool_msg = tool_resp
-                    .choices
-                    .get(0)
-                    .context("No choices[0] in tooler response")?
-                    .message
-                    .content
-                    .as_deref()
-                    .filter(|s| !s.trim().is_empty())
-                    .or(tool_resp
-                        .choices
-                        .get(0)
-                        .and_then(|c| c.message.reasoning_content.as_deref())
-                        .filter(|s| !s.trim().is_empty()))
-                    .unwrap_or("")
-                    .trim()
-                    .to_string();
-                println!("tool> {tool_msg}\n");
-                trace(&args, &format!("tooler_json={}", tool_msg.replace('\n', " ")));
-
-                let cmd_line = serde_json::from_str::<serde_json::Value>(&tool_msg)
-                    .ok()
-                    .and_then(|v| v.get("cmd").and_then(|c| c.as_str()).map(|s| s.to_string()))
-                    .unwrap_or_else(|| tool_msg.clone());
-
-                let cmd_line = cmd_line.trim().to_string();
-                let cmd_line = normalize_shell_cmd(&cmd_line);
-                if !is_command_sane(&cmd_line) {
-                    println!("elma> Tooler produced an invalid command; skipping execution.");
-                    continue;
-                }
-                if !is_command_allowed(&cmd_line) {
-                    println!("elma> Command blocked by local policy (no network/destructive).");
-                    trace(&args, "exec=blocked");
-                    continue;
-                }
-
-                let path = write_shell_action(&session.shell_dir, &cmd_line)?;
-                trace(&args, &format!("shell_saved={}", path.display()));
-                let (code, output) = run_shell_one_liner(&cmd_line, &repo_root()? )?;
-                let out_path = write_shell_output(&session.shell_dir, &path, &output)?;
-                trace(&args, &format!("shell_output_saved={}", out_path.display()));
-                println!("elma> exit_code={code}\n{output}");
-                trace(&args, &format!("exec_exit_code={code}"));
-                continue;
-            }
-
-            if route.eq_ignore_ascii_case("PLAN") {
-                // Route to /plan workflow using the goal as-is.
-                let goal = line;
-                let req = ChatCompletionRequest {
-                    model: planner_cfg.model.clone(),
-                    messages: vec![
-                        ChatMessage {
-                            role: "system".to_string(),
-                            content: planner_cfg.system_prompt.clone(),
+                            content: orchestrator_cfg.system_prompt.clone(),
                         },
                         ChatMessage {
                             role: "user".to_string(),
                             content: format!(
-                                "Goal:\n{goal}\n\nMaster plan (_master.md):\n{}",
-                                std::fs::read_to_string(session.plans_dir.join("_master.md"))
-                                    .unwrap_or_default()
+                                "Your previous answer was invalid. Return ONLY a valid Program JSON object for this request.\n\nUser message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nPrevious invalid output:\n{}",
+                                route_decision.speech_act.choice,
+                                route_decision.speech_act.source,
+                                format_route_distribution(&route_decision.speech_act.distribution),
+                                route_decision.speech_act.margin,
+                                route_decision.speech_act.entropy,
+                                route_decision.workflow.choice,
+                                route_decision.workflow.source,
+                                format_route_distribution(&route_decision.workflow.distribution),
+                                route_decision.workflow.margin,
+                                route_decision.workflow.entropy,
+                                route_decision.mode.choice,
+                                route_decision.mode.source,
+                                format_route_distribution(&route_decision.mode.distribution),
+                                route_decision.mode.margin,
+                                route_decision.mode.entropy,
+                                route_decision.route,
+                                route_decision.source,
+                                format_route_distribution(&route_decision.distribution),
+                                route_decision.margin,
+                                route_decision.entropy,
+                                ws.trim(),
+                                ws_brief.trim(),
+                                orch_text.trim()
                             ),
                         },
                     ],
-                    temperature: planner_cfg.temperature,
-                    top_p: planner_cfg.top_p,
+                    temperature: orchestrator_cfg.temperature,
+                    top_p: orchestrator_cfg.top_p,
                     stream: false,
-                    max_tokens: planner_cfg.max_tokens,
+                    max_tokens: orchestrator_cfg.max_tokens,
                     n_probs: None,
-                    repeat_penalty: Some(planner_cfg.repeat_penalty),
-                    reasoning_format: Some(planner_cfg.reasoning_format.clone()),
+                    repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
+                    reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
                 };
-                let resp = chat_once(&client, &chat_url, &req).await?;
-                let text = resp
+                let repaired = chat_once(&client, &chat_url, &repair_req).await?;
+                let repaired_text = repaired
                     .choices
                     .get(0)
                     .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
                     .unwrap_or_default();
-                let plan_path = write_plan_file(&session.plans_dir, &(text.trim().to_string() + "\n"))?;
-                append_master_link(&session.plans_dir, &plan_path, goal)?;
-                println!("workflow> plan saved: {}\n", plan_path.display());
-                continue;
-            }
-
-            if route.eq_ignore_ascii_case("MASTERPLAN") {
-                let goal = line;
-                let req = ChatCompletionRequest {
-                    model: planner_master_cfg.model.clone(),
-                    messages: vec![
-                        ChatMessage {
-                            role: "system".to_string(),
-                            content: planner_master_cfg.system_prompt.clone(),
-                        },
-                        ChatMessage {
-                            role: "user".to_string(),
-                            content: format!("Goal:\n{goal}\n\nUpdate the master plan."),
-                        },
-                    ],
-                    temperature: planner_master_cfg.temperature,
-                    top_p: planner_master_cfg.top_p,
-                    stream: false,
-                    max_tokens: planner_master_cfg.max_tokens,
-                    n_probs: None,
-                    repeat_penalty: Some(planner_master_cfg.repeat_penalty),
-                    reasoning_format: Some(planner_master_cfg.reasoning_format.clone()),
-                };
-                let resp = chat_once(&client, &chat_url, &req).await?;
-                let text = resp
-                    .choices
-                    .get(0)
-                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
-                    .unwrap_or_default();
-                let p = session.plans_dir.join("_master.md");
-                std::fs::write(&p, squash_blank_lines(text.trim()).trim().to_string() + "\n")
-                    .with_context(|| format!("write {}", p.display()))?;
-                println!("workflow> masterplan saved: {}\n", p.display());
-                continue;
-            }
-
-            if route.eq_ignore_ascii_case("DECIDE") {
-                let req = ChatCompletionRequest {
-                    model: decider_cfg.model.clone(),
-                    messages: vec![
-                        ChatMessage {
-                            role: "system".to_string(),
-                            content: decider_cfg.system_prompt.clone(),
-                        },
-                        ChatMessage {
-                            role: "user".to_string(),
-                            content: line.to_string(),
-                        },
-                    ],
-                    temperature: decider_cfg.temperature,
-                    top_p: decider_cfg.top_p,
-                    stream: false,
-                    max_tokens: decider_cfg.max_tokens,
-                    n_probs: None,
-                    repeat_penalty: Some(decider_cfg.repeat_penalty),
-                    reasoning_format: Some(decider_cfg.reasoning_format.clone()),
-                };
-                let resp = chat_once(&client, &chat_url, &req).await?;
-                let word = resp
-                    .choices
-                    .get(0)
-                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
-                    .unwrap_or_default();
-                let word = word.trim().split_whitespace().next().unwrap_or("").to_string();
-                let path = write_decision(&session.decisions_dir, &word)?;
-                println!("workflow> decision: {word} (saved: {})\n", path.display());
-                continue;
-            }
-        }
-
-        let req = ChatCompletionRequest {
-            model: elma_cfg.model.clone(),
-            messages: messages.clone(),
-            temperature: elma_cfg.temperature,
-            top_p: elma_cfg.top_p,
-            stream: false,
-            max_tokens: elma_cfg.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(elma_cfg.repeat_penalty),
-            reasoning_format: Some(elma_cfg.reasoning_format.clone()),
-        };
-
-        let parsed = chat_once(&client, &chat_url, &req).await?;
-
-        let msg = &parsed
-            .choices
-            .get(0)
-            .context("No choices[0] in response")?
-            .message;
-
-        let final_text = msg.content.as_deref().unwrap_or("").trim();
-        let thinking_text = msg.reasoning_content.as_deref().unwrap_or("").trim();
-
-        let (tag_thinking, effective_final) =
-            split_thinking_and_final(msg.content.as_deref(), msg.reasoning_content.as_deref());
-
-        let paint_grey = |s: String| if args.no_color { s } else { ansi_grey(&s) };
-        let paint_orange = |s: String| if args.no_color { s } else { ansi_orange(&s) };
-
-        // Display "thinking" only when it is separable (structured or tagged). If the backend
-        // provides only reasoning_content, we treat that as the visible output and don't
-        // duplicate it as both think+final.
-        let thinking_for_display = if !final_text.is_empty() && !thinking_text.is_empty() {
-            Some(thinking_text.to_string())
-        } else {
-            tag_thinking
-        };
-
-        if args.show_thinking {
-            if let Some(t) = thinking_for_display.as_deref().filter(|t| !t.trim().is_empty()) {
-                println!("{}", paint_grey(format!("think> {t}")));
-            }
-        }
-
-        let final_for_display = squash_blank_lines(effective_final.trim());
-        let final_for_display = final_for_display.trim().to_string();
-        if !final_for_display.is_empty() {
-            println!("{}", paint_orange(format!("bot> {final_for_display}")));
-        } else {
-            println!("{}", paint_orange("bot> (empty response)".to_string()));
-        }
-
-        // Display only the ctx usage line (like llama.cpp WebUI "context used/total"),
-        // formatted compactly in "k" units.
-        if let (Some(ctx), Some(u)) = (ctx_max, parsed.usage.as_ref()) {
-            if let Some(total) = u.total_tokens {
-                let pct = (total as f64 / ctx as f64) * 100.0;
-                let used_k = {
-                    let k = ((total as f64) / 1000.0).round() as u64;
-                    if total > 0 { k.max(1) } else { 0 }
-                };
-                let ctx_k = ((ctx as f64) / 1000.0).round() as u64;
-                let line = format!("ctx: {used_k}k/{ctx_k}k [{pct:.1}%]");
-                println!(
-                    "{}",
-                    if args.no_color {
-                        line
-                    } else {
-                        ansi_pale_yellow(&line)
+                match parse_json_loose(&repaired_text) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        trace(&args, &format!("orchestrator_repair_parse_error={e}"));
+                        Program {
+                            objective: "fallback_chat".to_string(),
+                            steps: vec![Step::Reply {
+                                id: "r1".to_string(),
+                                instructions: "Reply to the user in plain terminal text. Do not invent workspace facts you did not inspect.".to_string(),
+                                common: StepCommon::default(),
+                            }],
+                        }
                     }
-                );
+                }
             }
+        };
+        if apply_capability_guard(&mut program, &route_decision) {
+            trace(&args, "guard=capability_reply_only");
         }
-        println!();
 
-        // Store assistant visible text in history (not the thinking).
-        if !final_for_display.is_empty() {
-            messages.push(ChatMessage {
-                role: "assistant".to_string(),
-                content: final_for_display.to_string(),
+        let workdir = repo_root()?;
+        let (mut step_results, mut final_reply) = execute_program(
+            &args,
+            &client,
+            &chat_url,
+            &session,
+            &workdir,
+            &program,
+            &planner_cfg,
+            &planner_master_cfg,
+            &decider_cfg,
+            &summarizer_cfg,
+            true,
+            false,
+        )
+        .await?;
+
+        // Critic repair loop (1 retry max).
+        let mut replied = false;
+        for attempt in 0..=1u32 {
+            if replied {
+                break;
+            }
+            let critic_req = ChatCompletionRequest {
+                model: critic_cfg.model.clone(),
+                messages: vec![
+                    ChatMessage {
+                        role: "system".to_string(),
+                        content: critic_cfg.system_prompt.clone(),
+                    },
+                    ChatMessage {
+                        role: "user".to_string(),
+                        content: serde_json::json!({
+                            "user_message": line,
+                            "objective": program.objective,
+                            "speech_act_prior": {
+                                "choice": route_decision.speech_act.choice,
+                                "source": route_decision.speech_act.source,
+                                "distribution": route_decision.speech_act.distribution.iter().map(|(route, p)| {
+                                    serde_json::json!({"route": route, "p": p})
+                                }).collect::<Vec<_>>(),
+                                "margin": route_decision.speech_act.margin,
+                                "entropy": route_decision.speech_act.entropy,
+                            },
+                            "workflow_prior": {
+                                "choice": route_decision.workflow.choice,
+                                "source": route_decision.workflow.source,
+                                "distribution": route_decision.workflow.distribution.iter().map(|(route, p)| {
+                                    serde_json::json!({"route": route, "p": p})
+                                }).collect::<Vec<_>>(),
+                                "margin": route_decision.workflow.margin,
+                                "entropy": route_decision.workflow.entropy,
+                            },
+                            "mode_prior": {
+                                "choice": route_decision.mode.choice,
+                                "source": route_decision.mode.source,
+                                "distribution": route_decision.mode.distribution.iter().map(|(route, p)| {
+                                    serde_json::json!({"route": route, "p": p})
+                                }).collect::<Vec<_>>(),
+                                "margin": route_decision.mode.margin,
+                                "entropy": route_decision.mode.entropy,
+                            },
+                            "route_prior": {
+                                "route": route_decision.route,
+                                "source": route_decision.source,
+                                "distribution": route_decision.distribution.iter().map(|(route, p)| {
+                                    serde_json::json!({"route": route, "p": p})
+                                }).collect::<Vec<_>>(),
+                                "margin": route_decision.margin,
+                                "entropy": route_decision.entropy,
+                            },
+                            "attempt": attempt,
+                            "program_steps": program.steps.iter().map(|s| {
+                                serde_json::json!({
+                                    "id": step_id(s),
+                                    "type": step_kind(s),
+                                    "purpose": step_purpose(s),
+                                    "depends_on": step_depends_on(s),
+                                    "success_condition": step_success_condition(s),
+                                })
+                            }).collect::<Vec<_>>(),
+                            "step_results": step_results.iter().map(|r| {
+                                serde_json::json!({
+                                    "id": r.id,
+                                    "type": r.kind,
+                                    "purpose": r.purpose,
+                                    "depends_on": r.depends_on,
+                                    "success_condition": r.success_condition,
+                                    "ok": r.ok,
+                                    "summary": r.summary,
+                                })
+                            }).collect::<Vec<_>>(),
+                        })
+                        .to_string(),
+                    },
+                ],
+                temperature: critic_cfg.temperature,
+                top_p: critic_cfg.top_p,
+                stream: false,
+                max_tokens: critic_cfg.max_tokens,
+                n_probs: None,
+                repeat_penalty: Some(critic_cfg.repeat_penalty),
+                reasoning_format: Some(critic_cfg.reasoning_format.clone()),
+            };
+            let verdict_resp = chat_once(&client, &chat_url, &critic_req).await?;
+            let verdict_text = verdict_resp
+                .choices
+                .get(0)
+                .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+                .unwrap_or_default();
+            let verdict: CriticVerdict = match parse_json_loose(&verdict_text) {
+                Ok(v) => v,
+                Err(e) => {
+                    trace(&args, &format!("critic_parse_error={e}"));
+                    CriticVerdict {
+                        status: "ok".to_string(),
+                        reason: "critic_parse_error".to_string(),
+                        program: None,
+                    }
+                }
+            };
+            trace(&args, &format!("critic_status={} reason={}", verdict.status, verdict.reason));
+
+            if verdict.status.eq_ignore_ascii_case("retry") {
+                if let Some(p) = verdict.program {
+                    program = p;
+                    if apply_capability_guard(&mut program, &route_decision) {
+                        trace(&args, "guard=capability_reply_only_retry");
+                    }
+                    let (retry_results, retry_reply) = execute_program(
+                        &args,
+                        &client,
+                        &chat_url,
+                        &session,
+                        &workdir,
+                        &program,
+                        &planner_cfg,
+                        &planner_master_cfg,
+                        &decider_cfg,
+                        &summarizer_cfg,
+                        true,
+                        false,
+                    )
+                    .await?;
+                    step_results.extend(retry_results);
+                    if retry_reply.is_some() {
+                        final_reply = retry_reply;
+                    }
+                    continue;
+                }
+            }
+
+            // Produce final response via Elma using tool outputs.
+            let reply_instructions = final_reply.clone().unwrap_or_else(|| {
+                "Respond to the user in plain terminal text. Use any step outputs as evidence."
+                    .to_string()
             });
+            let reply_req = ChatCompletionRequest {
+                model: elma_cfg.model.clone(),
+                messages: vec![
+                    ChatMessage {
+                        role: "system".to_string(),
+                        content: system_content.clone(),
+                    },
+                    ChatMessage {
+                        role: "user".to_string(),
+                        content: serde_json::json!({
+                            "user_message": line,
+                            "instructions": reply_instructions,
+                            "step_results": step_results.iter().map(|r| {
+                                serde_json::json!({
+                                    "id": r.id,
+                                    "type": r.kind,
+                                    "ok": r.ok,
+                                    "summary": r.summary,
+                                })
+                            }).collect::<Vec<_>>(),
+                        })
+                        .to_string(),
+                    },
+                ],
+                temperature: elma_cfg.temperature,
+                top_p: elma_cfg.top_p,
+                stream: false,
+                max_tokens: elma_cfg.max_tokens,
+                n_probs: None,
+                repeat_penalty: Some(elma_cfg.repeat_penalty),
+                reasoning_format: Some(elma_cfg.reasoning_format.clone()),
+            };
+
+            let parsed = chat_once(&client, &chat_url, &reply_req).await?;
+            let msg = &parsed
+                .choices
+                .get(0)
+                .context("No choices[0] in response")?
+                .message;
+            let mut final_text = msg.content.as_deref().unwrap_or("").trim().to_string();
+            if !user_requested_markdown(line) && looks_like_markdown(&final_text) {
+                let fmt_req = ChatCompletionRequest {
+                    model: formatter_cfg.model.clone(),
+                    messages: vec![
+                        ChatMessage {
+                            role: "system".to_string(),
+                            content: formatter_cfg.system_prompt.clone(),
+                        },
+                        ChatMessage {
+                            role: "user".to_string(),
+                            content: final_text.clone(),
+                        },
+                    ],
+                    temperature: formatter_cfg.temperature,
+                    top_p: formatter_cfg.top_p,
+                    stream: false,
+                    max_tokens: formatter_cfg.max_tokens,
+                    n_probs: None,
+                    repeat_penalty: Some(formatter_cfg.repeat_penalty),
+                    reasoning_format: Some(formatter_cfg.reasoning_format.clone()),
+                };
+                if let Ok(fmt_resp) = chat_once(&client, &chat_url, &fmt_req).await {
+                    let formatted = fmt_resp
+                        .choices
+                        .get(0)
+                        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+                        .unwrap_or_default();
+                    if !formatted.trim().is_empty() {
+                        final_text = formatted.trim().to_string();
+                    }
+                }
+            }
+            println!("{}", if args.no_color { format!("bot> {final_text}") } else { ansi_orange(&format!("bot> {final_text}")) });
+
+            if let (Some(ctx), Some(u)) = (ctx_max, parsed.usage.as_ref()) {
+                if let Some(total) = u.total_tokens {
+                    let pct = (total as f64 / ctx as f64) * 100.0;
+                    let used_k = {
+                        let k = ((total as f64) / 1000.0).round() as u64;
+                        if total > 0 { k.max(1) } else { 0 }
+                    };
+                    let ctx_k = ((ctx as f64) / 1000.0).round() as u64;
+                    let line = format!("ctx: {used_k}k/{ctx_k}k [{pct:.1}%]");
+                    println!(
+                        "{}",
+                        if args.no_color {
+                            line
+                        } else {
+                            ansi_pale_yellow(&line)
+                        }
+                    );
+                }
+            }
+            println!();
+
+            if !final_text.is_empty() {
+                messages.push(ChatMessage {
+                    role: "assistant".to_string(),
+                    content: final_text,
+                });
+            }
+            replied = true;
         }
+
+        continue;
     }
 
     Ok(())

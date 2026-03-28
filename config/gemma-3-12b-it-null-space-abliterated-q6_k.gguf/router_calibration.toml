@@ -5,8 +5,13 @@ n_probs = 64
 supports_logprobs = true
 routes = [
     "CHAT",
-    "SHELL",
+    "WORKFLOW",
+    "INSPECT",
+    "EXECUTE",
     "PLAN",
     "MASTERPLAN",
     "DECIDE",
+    "CAPABILITY_CHECK",
+    "INFO_REQUEST",
+    "ACTION_REQUEST",
 ]
