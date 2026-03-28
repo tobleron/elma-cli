@@ -201,6 +201,17 @@ pub(crate) fn shell_command_trace(args: &Args, cmd: &str) {
     }
 }
 
+pub(crate) fn print_elma_message(args: &Args, text: &str) {
+    println!(
+        "{}",
+        if args.no_color {
+            format!("Elma: {text}")
+        } else {
+            ansi_orange(&format!("Elma: {text}"))
+        }
+    );
+}
+
 /// Strip <think>...</think> blocks. If an opening tag is found without a closing tag,
 /// drop the rest to avoid leaking partial reasoning.
 pub(crate) fn strip_think_tags(s: &str) -> String {

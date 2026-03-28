@@ -524,7 +524,7 @@ fn emit_startup_banner(
         eprintln!("  model    {model_id}");
         eprintln!("  config   {}", model_cfg_dir.display());
         eprintln!("  session  {session_name}");
-        eprintln!("  commands /exit  /reset\n");
+        eprintln!("  commands /exit  /reset  /snapshot  /rollback <id>\n");
         return;
     }
 
@@ -533,5 +533,8 @@ fn emit_startup_banner(
     eprintln!("{} {model_id}", ansi_grey("  model   "));
     eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
     eprintln!("{} {session_name}", ansi_grey("  session "));
-    eprintln!("{} /exit  /reset\n", ansi_grey("  commands"));
+    eprintln!(
+        "{} /exit  /reset  /snapshot  /rollback <id>\n",
+        ansi_grey("  commands")
+    );
 }

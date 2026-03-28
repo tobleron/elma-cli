@@ -714,6 +714,38 @@ pub(crate) struct FormulaMemoryRecord {
     pub(crate) artifact_mode_capable: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct SnapshotManifest {
+    pub(crate) version: u32,
+    pub(crate) snapshot_id: String,
+    pub(crate) created_unix_s: u64,
+    pub(crate) automatic: bool,
+    pub(crate) reason: String,
+    pub(crate) repo_root: String,
+    pub(crate) git_aware: bool,
+    pub(crate) scope_mode: String,
+    pub(crate) file_count: u64,
+    pub(crate) files: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SnapshotCreateResult {
+    pub(crate) snapshot_id: String,
+    pub(crate) snapshot_dir: PathBuf,
+    pub(crate) manifest_path: PathBuf,
+    pub(crate) file_count: u64,
+    pub(crate) automatic: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RollbackResult {
+    pub(crate) snapshot_id: String,
+    pub(crate) manifest_path: PathBuf,
+    pub(crate) restored_files: u64,
+    pub(crate) removed_files: u64,
+    pub(crate) verified_files: u64,
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct ModelsList {
     pub(crate) data: Option<Vec<ModelItem>>,

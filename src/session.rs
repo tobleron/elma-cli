@@ -4,6 +4,8 @@ use crate::*;
 pub(crate) struct SessionPaths {
     pub(crate) root: PathBuf,
     pub(crate) shell_dir: PathBuf,
+    pub(crate) artifacts_dir: PathBuf,
+    pub(crate) snapshots_dir: PathBuf,
     pub(crate) plans_dir: PathBuf,
     pub(crate) decisions_dir: PathBuf,
     pub(crate) tune_dir: PathBuf,
@@ -23,12 +25,18 @@ pub(crate) fn ensure_session_layout(sessions_root: &PathBuf) -> Result<SessionPa
     let sid = new_session_id()?;
     let root = sessions_root.join(&sid);
     let shell_dir = root.join("shell");
+    let artifacts_dir = root.join("artifacts");
+    let snapshots_dir = root.join("snapshots");
     let plans_dir = root.join("plans");
     let decisions_dir = root.join("decisions");
     let tune_dir = root.join("tune");
 
     std::fs::create_dir_all(&shell_dir)
         .with_context(|| format!("mkdir {}", shell_dir.display()))?;
+    std::fs::create_dir_all(&artifacts_dir)
+        .with_context(|| format!("mkdir {}", artifacts_dir.display()))?;
+    std::fs::create_dir_all(&snapshots_dir)
+        .with_context(|| format!("mkdir {}", snapshots_dir.display()))?;
     std::fs::create_dir_all(&plans_dir)
         .with_context(|| format!("mkdir {}", plans_dir.display()))?;
     std::fs::create_dir_all(&decisions_dir)
@@ -47,6 +55,8 @@ pub(crate) fn ensure_session_layout(sessions_root: &PathBuf) -> Result<SessionPa
     Ok(SessionPaths {
         root,
         shell_dir,
+        artifacts_dir,
+        snapshots_dir,
         plans_dir,
         decisions_dir,
         tune_dir,
@@ -88,6 +98,64 @@ pub(crate) fn write_shell_output(shell_dir: &PathBuf, seq_path: &PathBuf, output
         .unwrap_or_else(|| "000".to_string());
     let path = shell_dir.join(format!("{stem}.out"));
     std::fs::write(&path, output).with_context(|| format!("write {}", path.display()))?;
+    Ok(path)
+}
+
+pub(crate) fn next_artifact_seq(artifacts_dir: &PathBuf) -> Result<u32> {
+    let mut max_n = 0u32;
+    for ent in std::fs::read_dir(artifacts_dir)
+        .with_context(|| format!("read_dir {}", artifacts_dir.display()))?
+    {
+        let ent = ent?;
+        let name = ent.file_name().to_string_lossy().to_string();
+        let digits = name
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>();
+        if digits.len() >= 3 {
+            if let Ok(n) = digits[..3].parse::<u32>() {
+                max_n = max_n.max(n);
+            }
+        }
+    }
+    Ok(max_n + 1)
+}
+
+pub(crate) fn reserve_artifact_path(
+    artifacts_dir: &PathBuf,
+    kind: &str,
+    extension: &str,
+) -> Result<(String, PathBuf)> {
+    let n = next_artifact_seq(artifacts_dir)?;
+    let artifact_id = format!("a_{n:03}");
+    let safe_kind = kind
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let ext = extension.trim_start_matches('.');
+    let path = artifacts_dir.join(format!("{n:03}_{safe_kind}.{ext}"));
+    Ok((artifact_id, path))
+}
+
+pub(crate) fn append_artifact_manifest_record(
+    artifacts_dir: &PathBuf,
+    record: &ArtifactRecord,
+) -> Result<PathBuf> {
+    let path = artifacts_dir.join("manifest.jsonl");
+    let line = serde_json::to_string(record).context("serialize artifact record")?;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("open {}", path.display()))?
+        .write_all(format!("{line}\n").as_bytes())
+        .with_context(|| format!("append {}", path.display()))?;
     Ok(path)
 }
 

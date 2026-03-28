@@ -19,6 +19,14 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             eprintln!("(history reset)");
             continue;
         }
+        if line == "/snapshot" {
+            handle_manual_snapshot(runtime)?;
+            continue;
+        }
+        if let Some(snapshot_id) = line.strip_prefix("/rollback") {
+            handle_manual_rollback(runtime, snapshot_id.trim())?;
+            continue;
+        }
 
         runtime.messages.push(ChatMessage {
             role: "user".to_string(),
@@ -175,6 +183,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 role: "assistant".to_string(),
                 content: final_text,
             });
+        }
+        if step_results
+            .iter()
+            .any(|step| step.kind == "edit" && step.ok)
+        {
+            refresh_runtime_workspace(runtime)?;
         }
     }
 
@@ -481,14 +495,7 @@ fn print_final_output(
     final_usage_total: Option<u64>,
     final_text: &str,
 ) {
-    println!(
-        "{}",
-        if args.no_color {
-            format!("Elma: {final_text}")
-        } else {
-            ansi_orange(&format!("Elma: {final_text}"))
-        }
-    );
+    print_elma_message(args, final_text);
 
     if let Some(ctx) = ctx_max {
         if let Some(total) = final_usage_total {
@@ -514,6 +521,151 @@ fn print_final_output(
         }
     }
     println!();
+}
+
+fn handle_manual_snapshot(runtime: &mut AppRuntime) -> Result<()> {
+    operator_trace(&runtime.args, "creating a recovery snapshot");
+    let snapshot = match create_workspace_snapshot(
+        &runtime.session,
+        &runtime.repo,
+        "manual snapshot",
+        false,
+    ) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            print_elma_message(
+                &runtime.args,
+                &format!("Snapshot failed: {error}"),
+            );
+            println!();
+            return Ok(());
+        }
+    };
+    trace(
+        &runtime.args,
+        &format!(
+            "snapshot_saved id={} path={} files={} automatic={}",
+            snapshot.snapshot_id,
+            snapshot.snapshot_dir.display(),
+            snapshot.file_count,
+            snapshot.automatic
+        ),
+    );
+    print_elma_message(
+        &runtime.args,
+        &format!(
+            "Created snapshot {} with {} files. Manifest: {}",
+            snapshot.snapshot_id,
+            snapshot.file_count,
+            snapshot.manifest_path.display()
+        ),
+    );
+    println!();
+    Ok(())
+}
+
+fn handle_manual_rollback(runtime: &mut AppRuntime, snapshot_id: &str) -> Result<()> {
+    let snapshot_id = snapshot_id.trim();
+    if snapshot_id.is_empty() {
+        print_elma_message(&runtime.args, "Usage: /rollback <snapshot_id>");
+        println!();
+        return Ok(());
+    }
+    operator_trace(
+        &runtime.args,
+        &format!("rolling back to snapshot {}", snapshot_id),
+    );
+    let result = match rollback_workspace_snapshot(&runtime.session, &runtime.repo, snapshot_id) {
+        Ok(result) => result,
+        Err(error) => {
+            print_elma_message(
+                &runtime.args,
+                &format!("Rollback failed: {error}"),
+            );
+            println!();
+            return Ok(());
+        }
+    };
+    trace(
+        &runtime.args,
+        &format!(
+            "rollback_completed id={} restored={} removed={} verified={} manifest={}",
+            result.snapshot_id,
+            result.restored_files,
+            result.removed_files,
+            result.verified_files,
+            result.manifest_path.display()
+        ),
+    );
+    refresh_runtime_workspace(runtime)?;
+    print_elma_message(
+        &runtime.args,
+        &format!(
+            "Rolled back to {}. Restored {} files, removed {} files, verified {} files.",
+            result.snapshot_id,
+            result.restored_files,
+            result.removed_files,
+            result.verified_files
+        ),
+    );
+    println!();
+    Ok(())
+}
+
+fn refresh_runtime_workspace(runtime: &mut AppRuntime) -> Result<()> {
+    runtime.ws = gather_workspace_context(&runtime.repo);
+    runtime.ws_brief = gather_workspace_brief(&runtime.repo);
+    runtime.system_content = rebuild_system_content(
+        &runtime.profiles.elma_cfg.system_prompt,
+        &runtime.ws,
+        &runtime.ws_brief,
+    );
+    if let Some(system_message) = runtime.messages.first_mut() {
+        if system_message.role == "system" {
+            system_message.content = runtime.system_content.clone();
+        }
+    }
+    persist_runtime_workspace_intel(
+        &runtime.args,
+        &runtime.session,
+        &runtime.ws,
+        &runtime.ws_brief,
+    )?;
+    Ok(())
+}
+
+fn rebuild_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {
+    let mut system_content = base_prompt.to_string();
+    if !ws.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE CONTEXT (facts):\n");
+        system_content.push_str(ws.trim());
+    }
+    if !ws_brief.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE BRIEF:\n");
+        system_content.push_str(ws_brief.trim());
+    }
+    system_content
+}
+
+fn persist_runtime_workspace_intel(
+    args: &Args,
+    session: &SessionPaths,
+    ws: &str,
+    ws_brief: &str,
+) -> Result<()> {
+    if !ws.is_empty() {
+        let path = session.root.join("workspace.txt");
+        std::fs::write(&path, ws.trim().to_string() + "\n")
+            .with_context(|| format!("write {}", path.display()))?;
+        trace(args, &format!("workspace_context_saved={}", path.display()));
+    }
+    if !ws_brief.is_empty() {
+        let path = session.root.join("workspace_brief.txt");
+        std::fs::write(&path, ws_brief.trim().to_string() + "\n")
+            .with_context(|| format!("write {}", path.display()))?;
+        trace(args, &format!("workspace_brief_saved={}", path.display()));
+    }
+    Ok(())
 }
 
 async fn maybe_save_formula_memory(
