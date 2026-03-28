@@ -185,6 +185,132 @@ fn next_program_is_stale(plan: &AgentPlan, next_program: &Program) -> bool {
     program_signature(&plan.current_program) == program_signature(next_program)
 }
 
+fn program_has_shell_or_edit(program: &Program) -> bool {
+    program.steps.iter().any(|step| matches!(step, Step::Shell { .. } | Step::Edit { .. }))
+}
+
+fn step_results_have_shell_or_edit(step_results: &[StepResult]) -> bool {
+    step_results
+        .iter()
+        .any(|result| matches!(result.kind.as_str(), "shell" | "edit"))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_staged_reviewers_once(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    logical_reviewer_cfg: &Profile,
+    efficiency_reviewer_cfg: &Profile,
+    risk_reviewer_cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    program: &Program,
+    step_results: &[StepResult],
+    sufficiency: Option<&ExecutionSufficiencyVerdict>,
+    attempt: u32,
+) -> (Option<CriticVerdict>, Option<CriticVerdict>, Option<RiskReviewVerdict>, bool) {
+    let mut reasoning_clean = true;
+
+    let logical = match run_critic_once(
+        client,
+        chat_url,
+        logical_reviewer_cfg,
+        line,
+        route_decision,
+        program,
+        step_results,
+        sufficiency,
+        attempt,
+    )
+    .await
+    {
+        Ok(verdict) => {
+            trace(
+                args,
+                &format!(
+                    "logical_review={} reason={}",
+                    verdict.status.trim(),
+                    verdict.reason.trim()
+                ),
+            );
+            Some(verdict)
+        }
+        Err(error) => {
+            reasoning_clean = false;
+            trace(args, &format!("logical_review_parse_error={error}"));
+            None
+        }
+    };
+
+    let efficiency = match run_critic_once(
+        client,
+        chat_url,
+        efficiency_reviewer_cfg,
+        line,
+        route_decision,
+        program,
+        step_results,
+        sufficiency,
+        attempt,
+    )
+    .await
+    {
+        Ok(verdict) => {
+            trace(
+                args,
+                &format!(
+                    "efficiency_review={} reason={}",
+                    verdict.status.trim(),
+                    verdict.reason.trim()
+                ),
+            );
+            Some(verdict)
+        }
+        Err(error) => {
+            reasoning_clean = false;
+            trace(args, &format!("efficiency_review_parse_error={error}"));
+            None
+        }
+    };
+
+    let risk = if program_has_shell_or_edit(program) || step_results_have_shell_or_edit(step_results) {
+        match orchestration_helpers::request_risk_review(
+            client,
+            chat_url,
+            risk_reviewer_cfg,
+            line,
+            route_decision,
+            program,
+            step_results,
+            attempt,
+        )
+        .await
+        {
+            Ok(verdict) => {
+                trace(
+                    args,
+                    &format!(
+                        "risk_review={} reason={}",
+                        verdict.status.trim(),
+                        verdict.reason.trim()
+                    ),
+                );
+                Some(verdict)
+            }
+            Err(error) => {
+                reasoning_clean = false;
+                trace(args, &format!("risk_review_parse_error={error}"));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    (logical, efficiency, risk, reasoning_clean)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_autonomous_loop(
     args: &Args,
@@ -215,6 +341,9 @@ pub(crate) async fn run_autonomous_loop(
     outcome_verifier_cfg: &Profile,
     execution_sufficiency_cfg: &Profile,
     critic_cfg: &Profile,
+    logical_reviewer_cfg: &Profile,
+    efficiency_reviewer_cfg: &Profile,
+    risk_reviewer_cfg: &Profile,
 ) -> Result<AutonomousLoopOutcome> {
     let user_message = messages
         .iter()
@@ -347,7 +476,57 @@ pub(crate) async fn run_autonomous_loop(
             ),
         );
         if sufficiency.status.eq_ignore_ascii_case("retry") {
-            let mut next_program = sufficiency.program.clone();
+            let (logical_review, efficiency_review, risk_review, reviewers_clean) =
+                run_staged_reviewers_once(
+                    args,
+                    client,
+                    chat_url,
+                    logical_reviewer_cfg,
+                    efficiency_reviewer_cfg,
+                    risk_reviewer_cfg,
+                    &user_message,
+                    route_decision,
+                    &merged_program,
+                    &step_results,
+                    Some(&sufficiency),
+                    plan.attempts,
+                )
+                .await;
+            reasoning_clean &= reviewers_clean;
+            let review_reason = [
+                logical_review
+                    .as_ref()
+                    .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                    .map(|review| format!("logical: {}", review.reason.trim())),
+                efficiency_review
+                    .as_ref()
+                    .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                    .map(|review| format!("efficiency: {}", review.reason.trim())),
+                risk_review
+                    .as_ref()
+                    .filter(|review| review.status.eq_ignore_ascii_case("caution"))
+                    .map(|review| format!("risk: {}", review.reason.trim())),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+            let mut next_program = sufficiency
+                .program
+                .clone()
+                .or_else(|| {
+                    logical_review
+                        .as_ref()
+                        .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                        .and_then(|review| review.program.clone())
+                })
+                .or_else(|| {
+                    efficiency_review
+                        .as_ref()
+                        .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                        .and_then(|review| review.program.clone())
+                });
             if next_program.is_none() {
                 operator_trace(args, "repairing the workflow plan");
                 next_program = recover_program_once(
@@ -363,7 +542,12 @@ pub(crate) async fn run_autonomous_loop(
                     ws,
                     ws_brief,
                     messages,
-                    &format!("execution_sufficiency_retry_without_program: {}", sufficiency.reason),
+                    &format!(
+                        "execution_sufficiency_retry_without_program: {}{}{}",
+                        sufficiency.reason,
+                        if review_reason.is_empty() { "" } else { " | " },
+                        review_reason
+                    ),
                     Some(&merged_program),
                     &step_results,
                 )
@@ -440,7 +624,57 @@ pub(crate) async fn run_autonomous_loop(
             &format!("critic_status={} reason={}", critic.status, critic.reason),
         );
         if critic.status.eq_ignore_ascii_case("retry") {
-            let mut next_program = critic.program.clone();
+            let (logical_review, efficiency_review, risk_review, reviewers_clean) =
+                run_staged_reviewers_once(
+                    args,
+                    client,
+                    chat_url,
+                    logical_reviewer_cfg,
+                    efficiency_reviewer_cfg,
+                    risk_reviewer_cfg,
+                    &user_message,
+                    route_decision,
+                    &merged_program,
+                    &step_results,
+                    Some(&sufficiency),
+                    plan.attempts,
+                )
+                .await;
+            reasoning_clean &= reviewers_clean;
+            let review_reason = [
+                logical_review
+                    .as_ref()
+                    .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                    .map(|review| format!("logical: {}", review.reason.trim())),
+                efficiency_review
+                    .as_ref()
+                    .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                    .map(|review| format!("efficiency: {}", review.reason.trim())),
+                risk_review
+                    .as_ref()
+                    .filter(|review| review.status.eq_ignore_ascii_case("caution"))
+                    .map(|review| format!("risk: {}", review.reason.trim())),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+            let mut next_program = critic
+                .program
+                .clone()
+                .or_else(|| {
+                    logical_review
+                        .as_ref()
+                        .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                        .and_then(|review| review.program.clone())
+                })
+                .or_else(|| {
+                    efficiency_review
+                        .as_ref()
+                        .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                        .and_then(|review| review.program.clone())
+                });
             if next_program.is_none() {
                 operator_trace(args, "repairing the workflow plan");
                 next_program = recover_program_once(
@@ -456,7 +690,12 @@ pub(crate) async fn run_autonomous_loop(
                     ws,
                     ws_brief,
                     messages,
-                    &format!("critic_retry_without_program: {}", critic.reason),
+                    &format!(
+                        "critic_retry_without_program: {}{}{}",
+                        critic.reason,
+                        if review_reason.is_empty() { "" } else { " | " },
+                        review_reason
+                    ),
                     Some(&merged_program),
                     &step_results,
                 )

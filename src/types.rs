@@ -461,6 +461,14 @@ pub(crate) struct CriticVerdict {
     pub(crate) program: Option<Program>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct RiskReviewVerdict {
+    #[serde(default)]
+    pub(crate) status: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct AgentPlan {
     pub(crate) objective: String,

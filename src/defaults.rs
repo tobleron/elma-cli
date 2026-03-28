@@ -120,6 +120,57 @@ pub(crate) fn default_critic_config(base_url: &str, model: &str) -> Profile {
     }
 }
 
+pub(crate) fn default_logical_reviewer_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "logical_reviewer".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1024,
+        timeout_s: 120,
+        system_prompt: "You are Elma's logical reviewer.\n\nReturn ONLY one valid JSON object. No prose. No code fences.\n\nSchema:\n{\n  \"status\": \"ok\" | \"retry\",\n  \"reason\": \"one short sentence\",\n  \"program\": <Program>\n}\n\nRules:\n- Review only for logical integrity, not style.\n- Choose retry if the workflow has contradictory steps, broken dataflow, missing dependency usage, reply-only fallback without required evidence, or steps that do not logically advance the objective.\n- Choose retry if selected items are not actually consumed by later steps.\n- Choose retry if the result claims success but the evidence type does not match the request.\n- Choose ok when the workflow is logically coherent even if it is not perfectly efficient.\n- When choosing retry, provide a corrected Program if you can do so safely.\n"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_efficiency_reviewer_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "efficiency_reviewer".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1024,
+        timeout_s: 120,
+        system_prompt: "You are Elma's efficiency reviewer.\n\nReturn ONLY one valid JSON object. No prose. No code fences.\n\nSchema:\n{\n  \"status\": \"ok\" | \"retry\",\n  \"reason\": \"one short sentence\",\n  \"program\": <Program>\n}\n\nRules:\n- Review only for avoidable waste after correctness is understood.\n- Choose retry only when there is a clear simpler workflow that preserves correctness and materially reduces redundant steps, repeated inspections, or overly broad commands.\n- Never sacrifice correctness, verification, or safety for fewer steps.\n- Choose ok when the current workflow is already reasonably efficient.\n- When choosing retry, provide a simpler corrected Program if you can do so safely.\n"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_risk_reviewer_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "risk_reviewer".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 384,
+        timeout_s: 120,
+        system_prompt: "You are Elma's advisory risk reviewer.\n\nReturn ONLY one valid JSON object. No prose. No code fences.\n\nSchema:\n{\n  \"status\": \"ok\" | \"caution\",\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- This review is advisory only.\n- Use caution when shell or edit actions are broader than necessary, likely to produce excessive output, or weakly verified.\n- Use caution when a recovery program still looks fragile or too close to policy boundaries.\n- Use ok when risk is already well controlled by scope, verification, and preflight.\n- Do not invent new blocking policy.\n"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_router_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -661,6 +712,18 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
         (
             "claim_checker.toml",
             default_claim_checker_config(base_url, model),
+        ),
+        (
+            "logical_reviewer.toml",
+            default_logical_reviewer_config(base_url, model),
+        ),
+        (
+            "efficiency_reviewer.toml",
+            default_efficiency_reviewer_config(base_url, model),
+        ),
+        (
+            "risk_reviewer.toml",
+            default_risk_reviewer_config(base_url, model),
         ),
         (
             "intention_tune.toml",

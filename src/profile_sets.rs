@@ -419,6 +419,27 @@ pub(crate) fn ensure_model_config_folder(
             &default_claim_checker_config(base_url, model_id),
         )?;
     }
+    let logical_reviewer_path = dir.join("logical_reviewer.toml");
+    if !logical_reviewer_path.exists() {
+        save_agent_config(
+            &logical_reviewer_path,
+            &default_logical_reviewer_config(base_url, model_id),
+        )?;
+    }
+    let efficiency_reviewer_path = dir.join("efficiency_reviewer.toml");
+    if !efficiency_reviewer_path.exists() {
+        save_agent_config(
+            &efficiency_reviewer_path,
+            &default_efficiency_reviewer_config(base_url, model_id),
+        )?;
+    }
+    let risk_reviewer_path = dir.join("risk_reviewer.toml");
+    if !risk_reviewer_path.exists() {
+        save_agent_config(
+            &risk_reviewer_path,
+            &default_risk_reviewer_config(base_url, model_id),
+        )?;
+    }
     let router_cal_path = dir.join("router_calibration.toml");
     if !router_cal_path.exists() {
         // Placeholder; real values written by --tune.

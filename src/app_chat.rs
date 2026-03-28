@@ -144,6 +144,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.profiles.outcome_verifier_cfg,
             &runtime.profiles.execution_sufficiency_cfg,
             &runtime.profiles.critic_cfg,
+            &runtime.profiles.logical_reviewer_cfg,
+            &runtime.profiles.efficiency_reviewer_cfg,
+            &runtime.profiles.risk_reviewer_cfg,
         )
         .await?;
         let mut program = loop_outcome.program;

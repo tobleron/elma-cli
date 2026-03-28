@@ -63,6 +63,38 @@ pub(crate) async fn request_program_or_repair(
     Ok((program, repaired_text))
 }
 
+pub(crate) async fn request_recovery_program(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    orchestrator_cfg: &Profile,
+    prompt: &str,
+) -> Result<Program> {
+    let recovery_req = ChatCompletionRequest {
+        model: orchestrator_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: format!(
+                    "{}\n\nRECOVERY MODE:\n- A previous workflow attempt failed or was unusable.\n- Return ONLY one valid Program JSON object.\n- Do not output reply-only for a non-CHAT route unless asking one concise clarifying question is the only safe next step.\n- Use current_program_steps and observed_step_results to repair the workflow, not to restate or hallucinate completion.\n- If the task asks to choose, rank, prioritize, or select workspace items, inspect evidence first, then decide or summarize, then reply.\n- If a select step exists or should exist, later shell steps that consume that selection should normally reference it directly with a placeholder such as {{sel1|shell_words}}.\n- If the task asks to show file contents, inspect the selected files before replying.\n- Prefer the smallest valid program that can still satisfy the request.",
+                    orchestrator_cfg.system_prompt
+                ),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            },
+        ],
+        temperature: 0.0,
+        top_p: 1.0,
+        stream: false,
+        max_tokens: orchestrator_cfg.max_tokens.min(1536),
+        n_probs: None,
+        repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
+        reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
+    };
+    chat_json_with_repair(client, chat_url, &recovery_req).await
+}
+
 pub(crate) async fn request_critic_verdict(
     client: &reqwest::Client,
     chat_url: &Url,
@@ -71,6 +103,7 @@ pub(crate) async fn request_critic_verdict(
     route_decision: &RouteDecision,
     program: &Program,
     step_results: &[StepResult],
+    sufficiency: Option<&ExecutionSufficiencyVerdict>,
     attempt: u32,
 ) -> Result<CriticVerdict> {
     let critic_req = ChatCompletionRequest {
@@ -122,26 +155,14 @@ pub(crate) async fn request_critic_verdict(
                         "entropy": route_decision.entropy,
                     },
                     "attempt": attempt,
-                    "program_steps": program.steps.iter().map(|step| {
+                    "sufficiency_verdict": sufficiency.map(|verdict| {
                         serde_json::json!({
-                            "id": step_id(step),
-                            "type": step_kind(step),
-                            "purpose": step_purpose(step),
-                            "depends_on": step_depends_on(step),
-                            "success_condition": step_success_condition(step),
+                            "status": verdict.status,
+                            "reason": verdict.reason,
                         })
-                    }).collect::<Vec<_>>(),
-                    "step_results": step_results.iter().map(|result| {
-                        serde_json::json!({
-                            "id": result.id,
-                            "type": result.kind,
-                            "purpose": result.purpose,
-                            "depends_on": result.depends_on,
-                            "success_condition": result.success_condition,
-                            "ok": result.ok,
-                            "summary": result.summary,
-                        })
-                    }).collect::<Vec<_>>(),
+                    }),
+                    "program_steps": program.steps.iter().map(program_step_json).collect::<Vec<_>>(),
+                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
                 })
                 .to_string(),
             },
@@ -154,9 +175,47 @@ pub(crate) async fn request_critic_verdict(
         repeat_penalty: Some(critic_cfg.repeat_penalty),
         reasoning_format: Some(critic_cfg.reasoning_format.clone()),
     };
-    let verdict_resp = chat_once(client, chat_url, &critic_req).await?;
-    let verdict_text = extract_response_text(&verdict_resp);
-    parse_json_loose(&verdict_text)
+    chat_json_with_repair(client, chat_url, &critic_req).await
+}
+
+pub(crate) async fn request_risk_review(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    risk_cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    program: &Program,
+    step_results: &[StepResult],
+    attempt: u32,
+) -> Result<RiskReviewVerdict> {
+    let risk_req = ChatCompletionRequest {
+        model: risk_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: risk_cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "user_message": line,
+                    "route": route_decision.route,
+                    "attempt": attempt,
+                    "program_steps": program.steps.iter().map(program_step_json).collect::<Vec<_>>(),
+                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: risk_cfg.temperature,
+        top_p: risk_cfg.top_p,
+        stream: false,
+        max_tokens: risk_cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(risk_cfg.repeat_penalty),
+        reasoning_format: Some(risk_cfg.reasoning_format.clone()),
+    };
+    chat_json_with_repair(client, chat_url, &risk_req).await
 }
 
 pub(crate) async fn request_chat_final_text(
@@ -180,14 +239,7 @@ pub(crate) async fn request_chat_final_text(
                 content: serde_json::json!({
                     "user_message": line,
                     "instructions": reply_instructions,
-                    "step_results": step_results.iter().map(|result| {
-                        serde_json::json!({
-                            "id": result.id,
-                            "type": result.kind,
-                            "ok": result.ok,
-                            "summary": result.summary,
-                        })
-                    }).collect::<Vec<_>>(),
+                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
                 })
                 .to_string(),
             },
@@ -217,6 +269,7 @@ pub(crate) async fn maybe_revise_presented_result(
     claim_checker_cfg: &Profile,
     line: &str,
     route_decision: &RouteDecision,
+    evidence_mode: &EvidenceModeDecision,
     step_results: &[StepResult],
     reply_instructions: &str,
     final_text: String,
@@ -226,6 +279,7 @@ pub(crate) async fn maybe_revise_presented_result(
         chat_url,
         claim_checker_cfg,
         line,
+        evidence_mode,
         step_results,
         &final_text,
     )
@@ -238,6 +292,7 @@ pub(crate) async fn maybe_revise_presented_result(
                 presenter_cfg,
                 line,
                 route_decision,
+                evidence_mode,
                 step_results,
                 &format!(
                     "{}\n\nRevision guidance:\n{}",
@@ -329,14 +384,7 @@ pub(crate) async fn request_judge_verdict(
                     "expected_route": scenario.route,
                     "expected_speech_act": scenario.speech_act,
                     "user_message": user_message,
-                    "step_results": step_results.iter().map(|result| {
-                        serde_json::json!({
-                            "id": result.id,
-                            "type": result.kind,
-                            "ok": result.ok,
-                            "summary": result.summary,
-                        })
-                    }).collect::<Vec<_>>(),
+                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
                     "final_answer": final_text,
                     "markdown_requested": user_requested_markdown(user_message),
                 })
@@ -351,19 +399,5 @@ pub(crate) async fn request_judge_verdict(
         repeat_penalty: Some(judge_cfg.repeat_penalty),
         reasoning_format: Some(judge_cfg.reasoning_format.clone()),
     };
-    let resp = chat_once(client, chat_url, &req).await?;
-    let text = extract_response_text(&resp);
-    parse_json_loose(&text)
-}
-
-fn extract_response_text(resp: &ChatCompletionResponse) -> String {
-    resp.choices
-        .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
-        .unwrap_or_default()
+    chat_json_with_repair(client, chat_url, &req).await
 }
