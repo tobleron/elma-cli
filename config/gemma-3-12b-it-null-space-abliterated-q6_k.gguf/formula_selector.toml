@@ -15,14 +15,30 @@ Return ONLY one valid JSON object.
 
 Schema:
 {
-  "primary": "reply_only" | "inspect_reply" | "inspect_summarize_reply" | "inspect_decide_reply" | "execute_reply" | "plan_reply" | "masterplan_reply",
+  "primary": "one formula name",
   "alternatives": ["...", "..."],
-  "reason": "one short sentence"
+  "reason": "one short sentence",
+  "memory_id": "optional formula memory id or empty string"
 }
 
+Preferred built-in formulas:
+- capability_reply
+- reply_only
+- inspect_reply
+- inspect_summarize_reply
+- inspect_decide_reply
+- execute_reply
+- plan_reply
+- masterplan_reply
+- cleanup_safety_review
+- code_search_and_quote
+- config_compare
+
 Rules:
-- Cleanup safety questions should usually prefer inspect_decide_reply.
-- Code/file understanding should usually prefer inspect_reply or inspect_summarize_reply.
-- Direct terminal execution requests should prefer execute_reply.
-- Keep alternatives short and from the allowed set.
+- Use the provided scope and memory candidates.
+- If a memory candidate is a strong fit, return its id in memory_id.
+- Cleanup safety questions should usually prefer cleanup_safety_review or inspect_decide_reply.
+- Code/file understanding should usually prefer code_search_and_quote, inspect_reply, or inspect_summarize_reply.
+- Direct terminal execution requests should usually prefer execute_reply.
+- Keep alternatives short and relevant.
 """

@@ -2,5 +2,6 @@
 target/
 sessions/
 config/*/fallback/
+config/*/formula_memory/
 config/*/tune/
 config/*/trace_debug.log

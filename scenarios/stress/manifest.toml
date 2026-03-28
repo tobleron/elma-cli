@@ -1,0 +1,195 @@
+version = 1
+
+[[scenarios]]
+file = "stress_001_capability_list_files.md"
+speech_act = "CAPABILITY_CHECK"
+workflow = "CHAT"
+route = "CHAT"
+notes = "A capability question should stay reply-only."
+expected_formula = "capability_reply"
+expected_answer_keywords = ["can", "if you want"]
+avoid_answer_keywords = ["Cargo.toml", "src/main.rs"]
+minimum_step_count = 1
+maximum_step_count = 1
+
+[[scenarios]]
+file = "stress_002_indirect_request_list_files.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "A polite question asking for action should execute."
+expected_formula = "execute_reply"
+minimum_step_count = 1
+maximum_step_count = 2
+
+[[scenarios]]
+file = "stress_003_project_summary.md"
+speech_act = "INFO_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Project summary should inspect the repo before answering."
+expected_formula = "inspect_summarize_reply"
+expected_scope_terms = ["Cargo.toml", "src"]
+forbidden_scope_terms = ["sessions", "target"]
+expected_answer_keywords = ["elma-cli", "rust"]
+minimum_step_count = 2
+maximum_step_count = 3
+
+[[scenarios]]
+file = "stress_004_cargo_summary.md"
+speech_act = "INFO_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Cargo.toml summary should focus tightly on the manifest."
+expected_formula = "inspect_summarize_reply"
+expected_scope_terms = ["Cargo.toml"]
+forbidden_scope_terms = ["sessions", "target"]
+expected_answer_keywords = ["edition", "elma-cli"]
+minimum_step_count = 2
+maximum_step_count = 3
+
+[[scenarios]]
+file = "stress_005_code_search_symbol.md"
+speech_act = "INFO_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Symbol lookup should focus on source files and quote the signature plainly."
+expected_formula = "code_search_and_quote"
+expected_scope_terms = ["src", "main.rs", "fetch_ctx_max"]
+forbidden_scope_terms = ["target", "sessions"]
+expected_answer_keywords = ["fetch_ctx_max", "async fn"]
+minimum_step_count = 2
+maximum_step_count = 3
+
+[[scenarios]]
+file = "stress_006_cleanup_review.md"
+speech_act = "INFO_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Cleanup safety review should inspect and classify, not guess."
+expected_formula = "cleanup_safety_review"
+expected_scope_terms = ["target", "sessions", ".gitignore"]
+forbidden_scope_terms = ["baseline", "fallback"]
+expected_answer_keywords = ["target", "sessions", "safe"]
+expected_categories = ["safe", "keep"]
+minimum_step_count = 2
+maximum_step_count = 4
+
+[[scenarios]]
+file = "stress_007_cleanup_help_decide.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Helping decide cleanup targets still requires evidence first."
+expected_formula = "cleanup_safety_review"
+expected_scope_terms = ["target", "sessions"]
+forbidden_scope_terms = ["baseline", "fallback"]
+expected_answer_keywords = ["safe", "keep"]
+expected_categories = ["safe", "keep"]
+minimum_step_count = 2
+maximum_step_count = 4
+
+[[scenarios]]
+file = "stress_008_config_compare.md"
+speech_act = "INFO_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Config comparison should inspect the current model config, not answer abstractly."
+expected_formula = "config_compare"
+expected_scope_terms = ["config", "router.toml", "speech_act.toml"]
+forbidden_scope_terms = ["sessions", "target"]
+expected_answer_keywords = ["temperature", "router", "speech_act"]
+minimum_step_count = 2
+maximum_step_count = 3
+
+[[scenarios]]
+file = "stress_009_plan_add_profile.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "PLAN"
+route = "PLAN"
+notes = "A concrete plan request should save a plan."
+expected_formula = "plan_reply"
+expected_answer_keywords = ["plan"]
+minimum_step_count = 1
+maximum_step_count = 2
+
+[[scenarios]]
+file = "stress_010_masterplan_autonomy.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "MASTERPLAN"
+route = "MASTERPLAN"
+notes = "A long-horizon roadmap request should use the master plan path."
+expected_formula = "masterplan_reply"
+minimum_step_count = 1
+maximum_step_count = 2
+
+[[scenarios]]
+file = "stress_011_decide_cargolock.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "DECIDE"
+route = "DECIDE"
+notes = "One-word decision requests should stay one-word and not drift into prose."
+expected_formula = "inspect_decide_reply"
+expected_answer_keywords = ["keep"]
+minimum_step_count = 1
+maximum_step_count = 2
+
+[[scenarios]]
+file = "stress_012_execute_cargo_test.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "Direct execution requests should route to shell even if tuning does not run them."
+expected_formula = "execute_reply"
+expected_scope_terms = ["Cargo.toml", "tests"]
+minimum_step_count = 1
+maximum_step_count = 2
+
+[[scenarios]]
+file = "stress_013_write_gitignore.md"
+speech_act = "ACTION_REQUEST"
+workflow = "WORKFLOW"
+mode = "EXECUTE"
+route = "SHELL"
+notes = "A write request should still produce a coherent executable program."
+expected_formula = "execute_reply"
+expected_scope_terms = [".gitignore"]
+minimum_step_count = 1
+maximum_step_count = 2
+
+[[scenarios]]
+file = "stress_014_generated_dirs.md"
+speech_act = "INFO_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Generated-artifact identification should classify directories conservatively."
+expected_formula = "cleanup_safety_review"
+expected_scope_terms = ["target", "sessions"]
+forbidden_scope_terms = ["src/main.rs"]
+expected_answer_keywords = ["target", "sessions", "generated"]
+expected_categories = ["safe", "ignore"]
+minimum_step_count = 2
+maximum_step_count = 3
+
+[[scenarios]]
+file = "stress_015_capability_cleanup.md"
+speech_act = "CAPABILITY_CHECK"
+workflow = "CHAT"
+route = "CHAT"
+notes = "A capability question about cleanup should not execute or plan."
+expected_formula = "capability_reply"
+expected_answer_keywords = ["can", "confirm"]
+minimum_step_count = 1
+maximum_step_count = 1

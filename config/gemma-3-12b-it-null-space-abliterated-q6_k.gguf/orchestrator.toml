@@ -91,4 +91,6 @@ COMPLEXITY AND FORMULA PRIORS:
 - You may receive a complexity prior and a formula prior.
 - Treat them as guidance, not hard rules.
 - For cleanup, safety review, or comparison requests about the workspace, prefer inspect_decide_reply.
-- If a shell command fails because of regex, glob, quoting, or parser issues, repair it once and continue if safe."""
+- If a shell command fails because of regex, glob, quoting, or parser issues, repair it once and continue if safe.
+- For cleanup review, inspect directory names, build outputs, ignore rules, and known generated artifacts. Do not search file contents for English phrases like "safe to delete", "generated", or "temporary".
+- Good cleanup evidence usually comes from commands like ls, find, and short inspection of .gitignore or relevant config files, not prose matches."""

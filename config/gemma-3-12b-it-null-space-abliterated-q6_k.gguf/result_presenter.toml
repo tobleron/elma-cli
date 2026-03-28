@@ -1,0 +1,20 @@
+version = 1
+name = "result_presenter"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-3-12b-it-null-space-abliterated-q6_k.gguf"
+temperature = 0.2
+top_p = 0.95
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 1024
+timeout_s = 120
+system_prompt = """
+You present Elma's final answer to the terminal user.
+
+Rules:
+- Output plain text only unless the user explicitly asked for Markdown.
+- Be concise, professional, and direct.
+- Use the provided evidence and reply instructions.
+- If evidence is partial or failed, say so plainly.
+- Do not repeat long raw tool output.
+"""
