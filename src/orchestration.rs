@@ -170,6 +170,348 @@ pub(crate) async fn derive_planning_prior(
     (None, complexity, scope, formula, true)
 }
 
+fn merged_program_from_history(plan: &AgentPlan) -> Program {
+    let mut steps = Vec::new();
+    for program in &plan.program_history {
+        steps.extend(program.steps.clone());
+    }
+    Program {
+        objective: plan.objective.clone(),
+        steps,
+    }
+}
+
+fn next_program_is_stale(plan: &AgentPlan, next_program: &Program) -> bool {
+    program_signature(&plan.current_program) == program_signature(next_program)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_autonomous_loop(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    session: &SessionPaths,
+    workdir: &PathBuf,
+    initial_program: Program,
+    route_decision: &RouteDecision,
+    workflow_plan: Option<&WorkflowPlannerOutput>,
+    complexity: &ComplexityAssessment,
+    scope: &ScopePlan,
+    formula: &FormulaSelection,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+    orchestrator_cfg: &Profile,
+    planner_cfg: &Profile,
+    planner_master_cfg: &Profile,
+    decider_cfg: &Profile,
+    selector_cfg: &Profile,
+    summarizer_cfg: &Profile,
+    command_repair_cfg: &Profile,
+    command_preflight_cfg: &Profile,
+    task_semantics_guard_cfg: &Profile,
+    evidence_compactor_cfg: &Profile,
+    artifact_classifier_cfg: &Profile,
+    outcome_verifier_cfg: &Profile,
+    execution_sufficiency_cfg: &Profile,
+    critic_cfg: &Profile,
+) -> Result<AutonomousLoopOutcome> {
+    let user_message = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
+    let mut plan = AgentPlan {
+        objective: initial_program.objective.clone(),
+        current_program: initial_program.clone(),
+        program_history: vec![initial_program],
+        attempts: 0,
+        executed_steps: 0,
+        max_steps: 8,
+        recovery_failures: 0,
+    };
+    let mut step_results = Vec::new();
+    let mut final_reply = None;
+    let mut reasoning_clean = true;
+    let strict_post_judgment = !route_decision.route.eq_ignore_ascii_case("CHAT");
+
+    loop {
+        if plan.executed_steps >= plan.max_steps {
+            final_reply = Some(
+                "Tell the user plainly that Elma stopped because the workflow hit the maximum step budget before reaching a reliable conclusion. Suggest one narrower next step."
+                    .to_string(),
+            );
+            break;
+        }
+
+        let (mut batch_results, batch_reply) = execute_program(
+            args,
+            client,
+            chat_url,
+            session,
+            workdir,
+            &plan.current_program,
+            planner_cfg,
+            planner_master_cfg,
+            decider_cfg,
+            selector_cfg,
+            summarizer_cfg,
+            Some(command_repair_cfg),
+            Some(command_preflight_cfg),
+            Some(task_semantics_guard_cfg),
+            Some(evidence_compactor_cfg),
+            Some(artifact_classifier_cfg),
+            scope,
+            complexity,
+            formula,
+            &plan.current_program.objective,
+            false,
+            false,
+        )
+        .await?;
+        if batch_reply.is_some() {
+            final_reply = batch_reply;
+        }
+
+        reasoning_clean &= verify_nontrivial_step_outcomes(
+            args,
+            client,
+            chat_url,
+            outcome_verifier_cfg,
+            &user_message,
+            route_decision,
+            &plan.current_program,
+            &mut batch_results,
+        )
+        .await;
+
+        plan.executed_steps += batch_results
+            .iter()
+            .filter(|result| !result.kind.eq_ignore_ascii_case("reply"))
+            .count();
+        step_results.extend(batch_results);
+
+        if route_decision.route.eq_ignore_ascii_case("CHAT") {
+            return Ok(AutonomousLoopOutcome {
+                program: merged_program_from_history(&plan),
+                step_results,
+                final_reply,
+                reasoning_clean,
+            });
+        }
+
+        if step_results.iter().any(|result| {
+            result.summary.starts_with("preflight_rejected:")
+                || result.summary == "preflight_requires_clarification"
+        }) {
+            break;
+        }
+
+        let merged_program = merged_program_from_history(&plan);
+        let sufficiency = match check_execution_sufficiency_once(
+            client,
+            chat_url,
+            execution_sufficiency_cfg,
+            &user_message,
+            route_decision,
+            &merged_program,
+            &step_results,
+        )
+        .await
+        {
+            Ok(verdict) => verdict,
+            Err(error) => {
+                reasoning_clean = false;
+                trace(args, &format!("sufficiency_parse_error={error}"));
+                if strict_post_judgment {
+                    ExecutionSufficiencyVerdict {
+                        status: "retry".to_string(),
+                        reason: "sufficiency_parse_error".to_string(),
+                        program: None,
+                    }
+                } else {
+                    ExecutionSufficiencyVerdict {
+                        status: "ok".to_string(),
+                        reason: "sufficiency_parse_error".to_string(),
+                        program: None,
+                    }
+                }
+            }
+        };
+        trace(
+            args,
+            &format!(
+                "sufficiency_status={} reason={}",
+                sufficiency.status, sufficiency.reason
+            ),
+        );
+        if sufficiency.status.eq_ignore_ascii_case("retry") {
+            let mut next_program = sufficiency.program.clone();
+            if next_program.is_none() {
+                operator_trace(args, "repairing the workflow plan");
+                next_program = recover_program_once(
+                    client,
+                    chat_url,
+                    orchestrator_cfg,
+                    &user_message,
+                    route_decision,
+                    workflow_plan,
+                    complexity,
+                    scope,
+                    formula,
+                    ws,
+                    ws_brief,
+                    messages,
+                    &format!("execution_sufficiency_retry_without_program: {}", sufficiency.reason),
+                    Some(&merged_program),
+                    &step_results,
+                )
+                .await
+                .ok();
+            }
+
+            let Some(next_program) = next_program else {
+                plan.recovery_failures += 1;
+                if plan.recovery_failures >= 2 {
+                    final_reply = Some(
+                        format!(
+                            "Tell the user plainly that Elma could not repair the workflow after failure. Reason: {}. Ask one concise clarifying question or suggest a narrower next step.",
+                            sufficiency.reason
+                        ),
+                    );
+                    break;
+                }
+                continue;
+            };
+
+            if next_program_is_stale(&plan, &next_program) {
+                plan.recovery_failures += 1;
+                if plan.recovery_failures >= 2 {
+                    final_reply = Some(
+                        "Tell the user plainly that Elma stopped because recovery kept producing the same stale workflow. Ask for a narrower scope or a more specific next step."
+                            .to_string(),
+                    );
+                    break;
+                }
+            } else {
+                plan.recovery_failures = 0;
+            }
+            plan.attempts += 1;
+            plan.current_program = next_program.clone();
+            plan.program_history.push(next_program);
+            continue;
+        }
+
+        let critic = match run_critic_once(
+            client,
+            chat_url,
+            critic_cfg,
+            &user_message,
+            route_decision,
+            &merged_program,
+            &step_results,
+            Some(&sufficiency),
+            plan.attempts,
+        )
+        .await
+        {
+            Ok(verdict) => verdict,
+            Err(error) => {
+                reasoning_clean = false;
+                trace(args, &format!("critic_parse_error={error}"));
+                if strict_post_judgment {
+                    CriticVerdict {
+                        status: "retry".to_string(),
+                        reason: "critic_parse_error".to_string(),
+                        program: None,
+                    }
+                } else {
+                    CriticVerdict {
+                        status: "ok".to_string(),
+                        reason: "critic_parse_error".to_string(),
+                        program: None,
+                    }
+                }
+            }
+        };
+        trace(
+            args,
+            &format!("critic_status={} reason={}", critic.status, critic.reason),
+        );
+        if critic.status.eq_ignore_ascii_case("retry") {
+            let mut next_program = critic.program.clone();
+            if next_program.is_none() {
+                operator_trace(args, "repairing the workflow plan");
+                next_program = recover_program_once(
+                    client,
+                    chat_url,
+                    orchestrator_cfg,
+                    &user_message,
+                    route_decision,
+                    workflow_plan,
+                    complexity,
+                    scope,
+                    formula,
+                    ws,
+                    ws_brief,
+                    messages,
+                    &format!("critic_retry_without_program: {}", critic.reason),
+                    Some(&merged_program),
+                    &step_results,
+                )
+                .await
+                .ok();
+            }
+
+            let Some(next_program) = next_program else {
+                plan.recovery_failures += 1;
+                if plan.recovery_failures >= 2 {
+                    final_reply = Some(
+                        format!(
+                            "Tell the user plainly that Elma could not validate the workflow result after repeated recovery failure. Reason: {}. Ask one concise clarifying question or suggest a narrower next step.",
+                            critic.reason
+                        ),
+                    );
+                    break;
+                }
+                continue;
+            };
+
+            if next_program_is_stale(&plan, &next_program) {
+                plan.recovery_failures += 1;
+                if plan.recovery_failures >= 2 {
+                    final_reply = Some(
+                        "Tell the user plainly that Elma stopped because critic recovery kept reproducing the same stale workflow. Ask for a narrower scope or a more specific next step."
+                            .to_string(),
+                    );
+                    break;
+                }
+            } else {
+                plan.recovery_failures = 0;
+            }
+            plan.attempts += 1;
+            plan.current_program = next_program.clone();
+            plan.program_history.push(next_program);
+            continue;
+        }
+
+        return Ok(AutonomousLoopOutcome {
+            program: merged_program,
+            step_results,
+            final_reply,
+            reasoning_clean,
+        });
+    }
+
+    Ok(AutonomousLoopOutcome {
+        program: merged_program_from_history(&plan),
+        step_results,
+        final_reply,
+        reasoning_clean,
+    })
+}
+
 pub(crate) async fn orchestrate_program_once(
     client: &reqwest::Client,
     chat_url: &Url,

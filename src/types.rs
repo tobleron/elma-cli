@@ -462,6 +462,25 @@ pub(crate) struct CriticVerdict {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct AgentPlan {
+    pub(crate) objective: String,
+    pub(crate) current_program: Program,
+    pub(crate) program_history: Vec<Program>,
+    pub(crate) attempts: u32,
+    pub(crate) executed_steps: usize,
+    pub(crate) max_steps: usize,
+    pub(crate) recovery_failures: u32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AutonomousLoopOutcome {
+    pub(crate) program: Program,
+    pub(crate) step_results: Vec<StepResult>,
+    pub(crate) final_reply: Option<String>,
+    pub(crate) reasoning_clean: bool,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct StepResult {
     pub(crate) id: String,
     pub(crate) kind: String,
