@@ -135,21 +135,29 @@ pub(crate) fn load_recent_formula_memories(
     if !dir.exists() {
         return Ok(Vec::new());
     }
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+    let mut out = Vec::new();
+    for path in std::fs::read_dir(&dir)
         .with_context(|| format!("read_dir {}", dir.display()))?
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
-        .collect();
-    paths.sort();
-    paths.reverse();
-    let mut out = Vec::new();
-    for path in paths.into_iter().take(limit) {
+    {
         let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
         let s = String::from_utf8(bytes).context("formula memory is not valid UTF-8")?;
         if let Ok(record) = serde_json::from_str::<FormulaMemoryRecord>(&s) {
-            out.push(record);
+            if !record.disabled {
+                out.push(record);
+            }
         }
     }
+    out.sort_by(|a, b| {
+        let a_key = a.last_success_unix_s.max(a.created_unix_s);
+        let b_key = b.last_success_unix_s.max(b.created_unix_s);
+        b_key
+            .cmp(&a_key)
+            .then_with(|| b.success_count.cmp(&a.success_count))
+            .then_with(|| a.failure_count.cmp(&b.failure_count))
+    });
+    out.truncate(limit);
     Ok(out)
 }
 
@@ -160,6 +168,46 @@ pub(crate) fn save_formula_memory(model_cfg_dir: &Path, record: &FormulaMemoryRe
     let body = serde_json::to_string_pretty(record).context("serialize formula memory")?;
     std::fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
     Ok(path)
+}
+
+pub(crate) fn load_formula_memory_by_id(
+    model_cfg_dir: &Path,
+    memory_id: &str,
+) -> Result<Option<FormulaMemoryRecord>> {
+    let path = model_formula_memory_dir(model_cfg_dir).join(format!("{memory_id}.json"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+    let s = String::from_utf8(bytes).context("formula memory is not valid UTF-8")?;
+    let record = serde_json::from_str::<FormulaMemoryRecord>(&s)
+        .with_context(|| format!("parse {}", path.display()))?;
+    Ok(Some(record))
+}
+
+pub(crate) fn record_formula_memory_reuse(
+    model_cfg_dir: &Path,
+    memory_id: &str,
+    success: bool,
+    artifact_mode_capable: bool,
+) -> Result<Option<FormulaMemoryRecord>> {
+    let Some(mut record) = load_formula_memory_by_id(model_cfg_dir, memory_id)? else {
+        return Ok(None);
+    };
+    let now = now_unix_s()?;
+    if success {
+        record.success_count = record.success_count.saturating_add(1);
+        record.last_success_unix_s = now;
+        record.artifact_mode_capable |= artifact_mode_capable;
+    } else {
+        record.failure_count = record.failure_count.saturating_add(1);
+        record.last_failure_unix_s = now;
+        if record.failure_count >= 3 {
+            record.disabled = true;
+        }
+    }
+    let _ = save_formula_memory(model_cfg_dir, &record)?;
+    Ok(Some(record))
 }
 
 pub(crate) fn ensure_model_config_folder(
@@ -208,6 +256,10 @@ pub(crate) fn ensure_model_config_folder(
     let decider_path = dir.join("decider.toml");
     if !decider_path.exists() {
         save_agent_config(&decider_path, &default_decider_config(base_url, model_id))?;
+    }
+    let selector_path = dir.join("selector.toml");
+    if !selector_path.exists() {
+        save_agent_config(&selector_path, &default_selector_config(base_url, model_id))?;
     }
     let tune_path = dir.join("intention_tune.toml");
     if !tune_path.exists() {
@@ -276,11 +328,53 @@ pub(crate) fn ensure_model_config_folder(
             &default_formula_selector_config(base_url, model_id),
         )?;
     }
+    let evidence_mode_path = dir.join("evidence_mode.toml");
+    if !evidence_mode_path.exists() {
+        save_agent_config(
+            &evidence_mode_path,
+            &default_evidence_mode_config(base_url, model_id),
+        )?;
+    }
     let command_repair_path = dir.join("command_repair.toml");
     if !command_repair_path.exists() {
         save_agent_config(
             &command_repair_path,
             &default_command_repair_config(base_url, model_id),
+        )?;
+    }
+    let task_semantics_guard_path = dir.join("task_semantics_guard.toml");
+    if !task_semantics_guard_path.exists() {
+        save_agent_config(
+            &task_semantics_guard_path,
+            &default_task_semantics_guard_config(base_url, model_id),
+        )?;
+    }
+    let execution_sufficiency_path = dir.join("execution_sufficiency.toml");
+    if !execution_sufficiency_path.exists() {
+        save_agent_config(
+            &execution_sufficiency_path,
+            &default_execution_sufficiency_config(base_url, model_id),
+        )?;
+    }
+    let outcome_verifier_path = dir.join("outcome_verifier.toml");
+    if !outcome_verifier_path.exists() {
+        save_agent_config(
+            &outcome_verifier_path,
+            &default_outcome_verifier_config(base_url, model_id),
+        )?;
+    }
+    let memory_gate_path = dir.join("memory_gate.toml");
+    if !memory_gate_path.exists() {
+        save_agent_config(
+            &memory_gate_path,
+            &default_memory_gate_config(base_url, model_id),
+        )?;
+    }
+    let command_preflight_path = dir.join("command_preflight.toml");
+    if !command_preflight_path.exists() {
+        save_agent_config(
+            &command_preflight_path,
+            &default_command_preflight_config(base_url, model_id),
         )?;
     }
     let scope_builder_path = dir.join("scope_builder.toml");
@@ -369,6 +463,67 @@ pub(crate) fn maybe_upgrade_system_prompt(profile: &mut Profile, expected_name: 
     profile.system_prompt.push_str("\n\n");
     profile.system_prompt.push_str(patch);
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_formula_root(label: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!("elma_formula_test_{label}_{stamp}"))
+    }
+
+    #[test]
+    fn formula_memory_reuse_updates_success_and_disables_after_failures() -> Result<()> {
+        let root = temp_formula_root("reuse");
+        std::fs::create_dir_all(&root)?;
+
+        let record = FormulaMemoryRecord {
+            id: "fm_test".to_string(),
+            created_unix_s: 1,
+            model_id: "model".to_string(),
+            active_run_id: "run".to_string(),
+            user_message: "msg".to_string(),
+            route: "SHELL".to_string(),
+            complexity: "INVESTIGATE".to_string(),
+            formula: "inspect_reply".to_string(),
+            objective: "obj".to_string(),
+            title: "title".to_string(),
+            program_signature: "shell:pwd | reply".to_string(),
+            last_success_unix_s: 0,
+            last_failure_unix_s: 0,
+            success_count: 0,
+            failure_count: 0,
+            disabled: false,
+            artifact_mode_capable: false,
+        };
+        save_formula_memory(&root, &record)?;
+
+        let updated = record_formula_memory_reuse(&root, "fm_test", true, true)?
+            .context("missing updated memory after success")?;
+        assert_eq!(updated.success_count, 1);
+        assert!(updated.artifact_mode_capable);
+        assert!(!updated.disabled);
+
+        let fail1 = record_formula_memory_reuse(&root, "fm_test", false, false)?
+            .context("missing updated memory after fail1")?;
+        let fail2 = record_formula_memory_reuse(&root, "fm_test", false, false)?
+            .context("missing updated memory after fail2")?;
+        let fail3 = record_formula_memory_reuse(&root, "fm_test", false, false)?
+            .context("missing updated memory after fail3")?;
+
+        assert_eq!(fail1.failure_count, 1);
+        assert_eq!(fail2.failure_count, 2);
+        assert_eq!(fail3.failure_count, 3);
+        assert!(fail3.disabled);
+
+        let _ = std::fs::remove_dir_all(&root);
+        Ok(())
+    }
 }
 
 pub(crate) fn replace_system_prompt_if_missing(

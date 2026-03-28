@@ -11,8 +11,11 @@ pub(crate) async fn handle_program_step(
     planner_cfg: &Profile,
     planner_master_cfg: &Profile,
     decider_cfg: &Profile,
+    selector_cfg: &Profile,
     summarizer_cfg: &Profile,
     command_repair_cfg: Option<&Profile>,
+    command_preflight_cfg: Option<&Profile>,
+    task_semantics_guard_cfg: Option<&Profile>,
     evidence_compactor_cfg: Option<&Profile>,
     artifact_classifier_cfg: Option<&Profile>,
     scope: &ScopePlan,
@@ -54,6 +57,8 @@ pub(crate) async fn handle_program_step(
                 session,
                 workdir,
                 command_repair_cfg,
+                command_preflight_cfg,
+                task_semantics_guard_cfg,
                 evidence_compactor_cfg,
                 artifact_classifier_cfg,
                 scope,
@@ -71,6 +76,75 @@ pub(crate) async fn handle_program_step(
                 state,
             )
             .await?;
+        }
+        Step::Select {
+            id: _,
+            instructions,
+            ..
+        } => {
+            let evidence = depends_on
+                .iter()
+                .filter_map(|dep| state.artifacts.get(dep))
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            let selection = select_items_once(
+                client,
+                chat_url,
+                selector_cfg,
+                objective,
+                &purpose,
+                &instructions,
+                &evidence,
+            )
+            .await?;
+            let items = selection
+                .items
+                .into_iter()
+                .map(|item| item.trim().to_string())
+                .filter(|item| !item.is_empty())
+                .collect::<Vec<_>>();
+            let selection_text = items.join("\n");
+            state.artifacts.insert(sid.clone(), selection_text.clone());
+            trace(
+                args,
+                &format!(
+                    "selection id={sid} count={} reason={}",
+                    items.len(),
+                    selection.reason.trim()
+                ),
+            );
+            state.step_results.push(StepResult {
+                id: sid,
+                kind,
+                purpose,
+                depends_on,
+                success_condition,
+                ok: !items.is_empty(),
+                summary: if items.is_empty() {
+                    format!("selection_empty: {}", selection.reason.trim())
+                } else {
+                    format!(
+                        "selected {} item(s)\n{}",
+                        items.len(),
+                        preview_text(&selection_text, 8)
+                    )
+                },
+                command: None,
+                raw_output: Some(selection_text),
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: Some("selection".to_string()),
+                outcome_status: None,
+                outcome_reason: None,
+            });
+            if items.is_empty() {
+                state.halt = true;
+            }
         }
         Step::Summarize {
             id: _,
@@ -129,7 +203,30 @@ pub(crate) async fn handle_program_step(
                 success_condition,
                 ok: !sum_text.is_empty(),
                 summary: sum_text,
+                command: None,
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
             });
+        }
+        Step::Edit { id: _, spec, .. } => {
+            handle_edit_step(
+                args,
+                workdir,
+                sid,
+                kind,
+                purpose,
+                depends_on,
+                success_condition,
+                spec,
+                state,
+            )?;
         }
         Step::Plan { id: _, goal, .. } => {
             let req = ChatCompletionRequest {
@@ -179,6 +276,16 @@ pub(crate) async fn handle_program_step(
                 success_condition,
                 ok: true,
                 summary: format!("saved {}\n{}", plan_path.display(), preview_text(text.trim(), 8)),
+                command: None,
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
             });
         }
         Step::MasterPlan { id: _, goal, .. } => {
@@ -226,6 +333,16 @@ pub(crate) async fn handle_program_step(
                 success_condition,
                 ok: true,
                 summary: format!("saved {}\n{}", path.display(), preview_text(text.trim(), 8)),
+                command: None,
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
             });
         }
         Step::Decide { id: _, prompt, .. } => {
@@ -277,6 +394,16 @@ pub(crate) async fn handle_program_step(
                 success_condition,
                 ok: true,
                 summary: word,
+                command: None,
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
             });
         }
         Step::Reply {
@@ -294,10 +421,133 @@ pub(crate) async fn handle_program_step(
                 success_condition,
                 ok: true,
                 summary: "reply".to_string(),
+                command: None,
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
             });
         }
     }
 
+    Ok(())
+}
+
+fn handle_edit_step(
+    args: &Args,
+    workdir: &PathBuf,
+    sid: String,
+    kind: String,
+    purpose: String,
+    depends_on: Vec<String>,
+    success_condition: String,
+    spec: EditSpec,
+    state: &mut ExecutionState,
+) -> Result<()> {
+    let operation = spec.operation.trim();
+    if !edit_operation_is_supported(operation) {
+        state.step_results.push(StepResult {
+            id: sid,
+            kind,
+            purpose,
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: format!("unsupported edit operation: {}", spec.operation.trim()),
+            command: None,
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return Ok(());
+    }
+
+    let path = resolve_workspace_edit_path(workdir, &spec.path)?;
+    let parent = path
+        .parent()
+        .context("edit target has no parent directory")?;
+    std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+
+    let summary = match operation {
+        "write_file" => {
+            std::fs::write(&path, spec.content.as_bytes())
+                .with_context(|| format!("write {}", path.display()))?;
+            format!("wrote {}", path.display())
+        }
+        "append_text" => {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .with_context(|| format!("open {}", path.display()))?;
+            file.write_all(spec.content.as_bytes())
+                .with_context(|| format!("append {}", path.display()))?;
+            format!("appended {}", path.display())
+        }
+        "replace_text" => {
+            let original =
+                std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+            if spec.find.is_empty() {
+                anyhow::bail!("replace_text requires non-empty find");
+            }
+            let replaced = original.replace(&spec.find, &spec.replace);
+            if replaced == original {
+                anyhow::bail!("replace_text found no matches in {}", path.display());
+            }
+            std::fs::write(&path, replaced.as_bytes())
+                .with_context(|| format!("write {}", path.display()))?;
+            format!("updated {}", path.display())
+        }
+        _ => unreachable!(),
+    };
+
+    trace(
+        args,
+        &format!(
+            "edit_saved path={} operation={}",
+            path.display(),
+            operation
+        ),
+    );
+    state.artifacts.insert(
+        sid.clone(),
+        format!(
+            "{}\noperation: {}\npath: {}",
+            summary,
+            operation,
+            path.display()
+        ),
+    );
+    state.step_results.push(StepResult {
+        id: sid,
+        kind,
+        purpose,
+        depends_on,
+        success_condition,
+        ok: true,
+        summary,
+        command: None,
+        raw_output: None,
+        exit_code: None,
+        output_bytes: None,
+        truncated: false,
+        timed_out: false,
+        artifact_path: None,
+        artifact_kind: None,
+        outcome_status: None,
+        outcome_reason: None,
+    });
     Ok(())
 }
 
@@ -309,6 +559,8 @@ async fn handle_shell_step(
     session: &SessionPaths,
     workdir: &PathBuf,
     command_repair_cfg: Option<&Profile>,
+    command_preflight_cfg: Option<&Profile>,
+    task_semantics_guard_cfg: Option<&Profile>,
     evidence_compactor_cfg: Option<&Profile>,
     artifact_classifier_cfg: Option<&Profile>,
     scope: &ScopePlan,
@@ -325,7 +577,33 @@ async fn handle_shell_step(
     cmd: String,
     state: &mut ExecutionState,
 ) -> Result<()> {
-    let cmd = normalize_shell_cmd(&cmd);
+    let cmd = match resolve_command_placeholders(&normalize_shell_cmd(&cmd), &state.artifacts) {
+        Ok(cmd) => cmd,
+        Err(error) => {
+            trace(args, &format!("shell_template_error id={sid} error={error}"));
+            state.halt = true;
+            state.step_results.push(StepResult {
+                id: sid,
+                kind,
+                purpose,
+                depends_on,
+                success_condition,
+                ok: false,
+                summary: format!("template_resolution_failed: {error}"),
+                command: Some(cmd),
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
+            });
+            return Ok(());
+        }
+    };
     if !program_safety_check(&cmd) {
         trace(
             args,
@@ -339,6 +617,16 @@ async fn handle_shell_step(
             success_condition,
             ok: false,
             summary: "blocked_by_policy".to_string(),
+            command: Some(cmd.clone()),
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
         });
         return Ok(());
     }
@@ -358,14 +646,185 @@ async fn handle_shell_step(
             success_condition,
             ok: false,
             summary: "skipped_by_calibration_policy".to_string(),
+            command: Some(cmd.clone()),
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
         });
         return Ok(());
     }
 
+    let mut cmd = cmd;
+    let mut execution_mode = "INLINE".to_string();
+    let mut artifact_kind = "shell_output".to_string();
+    if let Some(preflight_cfg) = command_preflight_cfg {
+        if let Ok(preflight) = preflight_command_once(
+            client,
+            chat_url,
+            preflight_cfg,
+            objective,
+            &purpose,
+            scope,
+            complexity,
+            formula,
+            &cmd,
+        )
+        .await
+        {
+            trace(
+                args,
+                &format!(
+                    "preflight id={sid} status={} reason={}",
+                    preflight.status.trim(),
+                    preflight.reason.trim()
+                ),
+            );
+            if !preflight.execution_mode.trim().is_empty() {
+                execution_mode = preflight.execution_mode.trim().to_uppercase();
+            }
+            if !preflight.artifact_kind.trim().is_empty() {
+                artifact_kind = preflight.artifact_kind.trim().to_string();
+            }
+            if preflight.status.eq_ignore_ascii_case("revise") {
+                let revised = normalize_shell_cmd(preflight.cmd.trim());
+                if !revised.is_empty()
+                    && revised != cmd
+                    && program_safety_check(&revised)
+                    && (!readonly_only || command_is_readonly(&revised))
+                {
+                    let mut accepted = true;
+                    if let Some(guard_cfg) = task_semantics_guard_cfg {
+                        if let Ok(guard) = guard_repair_semantics_once(
+                            client,
+                            chat_url,
+                            guard_cfg,
+                            objective,
+                            &purpose,
+                            &cmd,
+                            &revised,
+                            "",
+                        )
+                        .await
+                        {
+                            trace(
+                                args,
+                                &format!(
+                                    "preflight_semantics id={sid} status={} reason={}",
+                                    guard.status.trim(),
+                                    guard.reason.trim()
+                                ),
+                            );
+                            accepted = guard.status.eq_ignore_ascii_case("accept");
+                        }
+                    }
+                    if accepted {
+                        cmd = revised;
+                    }
+                }
+            } else if preflight.status.eq_ignore_ascii_case("reject") {
+                state.final_reply = Some(
+                    "Explain briefly that the requested shell action was not executed because it is too broad or would produce excessive output. Ask the user to narrow the scope or request a bounded preview."
+                        .to_string(),
+                );
+                state.halt = true;
+                state.artifacts.insert(
+                    sid.clone(),
+                    if preflight.question.trim().is_empty() {
+                        preflight.reason.trim().to_string()
+                    } else {
+                        preflight.question.trim().to_string()
+                    },
+                );
+                state.step_results.push(StepResult {
+                    id: sid,
+                    kind,
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: false,
+                    summary: format!(
+                        "preflight_rejected: {}",
+                        if preflight.question.trim().is_empty() {
+                            preflight.reason.trim()
+                        } else {
+                            preflight.question.trim()
+                        }
+                    ),
+                    command: Some(cmd),
+                    raw_output: None,
+                    exit_code: None,
+                    output_bytes: None,
+                    truncated: false,
+                    timed_out: false,
+                    artifact_path: None,
+                    artifact_kind: None,
+                    outcome_status: None,
+                    outcome_reason: None,
+                });
+                return Ok(());
+            }
+        }
+    }
+    if execution_mode.eq_ignore_ascii_case("ASK") {
+        state.final_reply = Some(
+            "Explain briefly that the shell action needs narrowing before execution. Ask one concise clarifying question or offer a bounded preview."
+                .to_string(),
+        );
+        state.halt = true;
+        state.artifacts.insert(
+            sid.clone(),
+            "The shell action needs narrowing before execution.".to_string(),
+        );
+        state.step_results.push(StepResult {
+            id: sid,
+            kind,
+            purpose,
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: "preflight_requires_clarification".to_string(),
+            command: Some(cmd),
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return Ok(());
+    }
+
+    let artifact_reservation = if execution_mode.eq_ignore_ascii_case("ARTIFACT") {
+        Some(reserve_artifact_path(
+            &session.artifacts_dir,
+            &artifact_kind,
+            "txt",
+        )?)
+    } else {
+        None
+    };
+
     let path = write_shell_action(&session.shell_dir, &cmd)?;
     trace(args, &format!("shell_saved={}", path.display()));
     shell_command_trace(args, &cmd);
-    let (mut code, mut output) = run_shell_one_liner(&cmd, workdir)?;
+    let mut shell_result = run_shell_one_liner(
+        &cmd,
+        workdir,
+        artifact_reservation
+            .as_ref()
+            .map(|(_, path)| (path, artifact_kind.as_str())),
+    )?;
+    let mut code = shell_result.exit_code;
+    let mut output = shell_result.inline_text.clone();
     let mut output_path_base = path.clone();
     let mut repaired_cmd: Option<String> = None;
 
@@ -382,6 +841,72 @@ async fn handle_shell_step(
                     && program_safety_check(&repaired)
                     && (!readonly_only || command_is_readonly(&repaired))
                 {
+                    if let Some(guard_cfg) = task_semantics_guard_cfg {
+                        if let Ok(guard) = guard_repair_semantics_once(
+                            client,
+                            chat_url,
+                            guard_cfg,
+                            objective,
+                            &purpose,
+                            &cmd,
+                            &repaired,
+                            &output,
+                        )
+                        .await
+                        {
+                            trace(
+                                args,
+                                &format!(
+                                    "repair_semantics id={sid} status={} reason={}",
+                                    guard.status.trim(),
+                                    guard.reason.trim()
+                                ),
+                            );
+                            if !guard.status.eq_ignore_ascii_case("accept") {
+                                state.final_reply = Some(
+                                    "Explain briefly that the repaired shell command was rejected because it changed the task semantics. Ask the user to narrow or restate the request if needed."
+                                        .to_string(),
+                                );
+                                state.halt = true;
+                                let out_path =
+                                    write_shell_output(&session.shell_dir, &output_path_base, &output)?;
+                                trace(args, &format!("shell_output_saved={}", out_path.display()));
+                                trace(args, &format!("exec_exit_code={code}"));
+                                if emit_shell_output || code != 0 {
+                                    println!("elma> exit_code={code}\n{output}");
+                                }
+                                state.artifacts.insert(format!("{sid}:raw"), output.clone());
+                                state.artifacts.insert(sid.clone(), output.clone());
+                                state.step_results.push(StepResult {
+                                    id: sid,
+                                    kind,
+                                    purpose,
+                                    depends_on,
+                                    success_condition,
+                                    ok: false,
+                                    summary: format!(
+                                        "repair_rejected: {}\n{}",
+                                        repaired,
+                                        summarize_shell_output(&output)
+                                    ),
+                                    command: Some(cmd),
+                                    raw_output: Some(output),
+                                    exit_code: Some(code),
+                                    output_bytes: Some(shell_result.bytes_written),
+                    truncated: shell_result.truncated,
+                    timed_out: shell_result.timed_out,
+                    artifact_path: shell_result
+                        .artifact_path
+                        .as_ref()
+                        .map(|p| p.display().to_string()),
+                    artifact_kind: shell_result.artifact_kind.clone(),
+                    outcome_status: None,
+                    outcome_reason: None,
+                });
+                                return Ok(());
+                            }
+                        }
+                    }
                     trace(
                         args,
                         &format!(
@@ -395,20 +920,62 @@ async fn handle_shell_step(
                     trace(args, &format!("shell_saved={}", repair_path.display()));
                     output_path_base = repair_path;
                     shell_command_trace(args, &repaired);
-                    let (repair_code, repair_output) = run_shell_one_liner(&repaired, workdir)?;
-                    code = repair_code;
-                    output = repair_output;
+                    shell_result = run_shell_one_liner(
+                        &repaired,
+                        workdir,
+                        artifact_reservation
+                            .as_ref()
+                            .map(|(_, path)| (path, artifact_kind.as_str())),
+                    )?;
+                    code = shell_result.exit_code;
+                    output = shell_result.inline_text.clone();
                     repaired_cmd = Some(repaired);
                 }
             }
         }
     }
 
-    let out_path = write_shell_output(&session.shell_dir, &output_path_base, &output)?;
+    if let Some((artifact_id, artifact_path)) = &artifact_reservation {
+        if let Some(actual_path) = &shell_result.artifact_path {
+            let record = ArtifactRecord {
+                artifact_id: artifact_id.clone(),
+                source_step_id: sid.clone(),
+                kind: shell_result
+                    .artifact_kind
+                    .clone()
+                    .unwrap_or_else(|| artifact_kind.clone()),
+                path: actual_path.display().to_string(),
+                bytes_written: shell_result.bytes_written,
+                truncated: shell_result.truncated,
+                timed_out: shell_result.timed_out,
+                created_unix_s: now_unix_s().unwrap_or_default(),
+            };
+            let _ = append_artifact_manifest_record(&session.artifacts_dir, &record);
+            trace(
+                args,
+                &format!(
+                    "artifact_saved id={} path={}",
+                    artifact_id,
+                    artifact_path.display()
+                ),
+            );
+        }
+    }
+
+    let shell_preview = if let Some(path) = shell_result.artifact_path.as_ref() {
+        format!(
+            "{}\n[artifact: {}]",
+            output.trim_end(),
+            path.display()
+        )
+    } else {
+        output.clone()
+    };
+    let out_path = write_shell_output(&session.shell_dir, &output_path_base, &shell_preview)?;
     trace(args, &format!("shell_output_saved={}", out_path.display()));
     trace(args, &format!("exec_exit_code={code}"));
     if emit_shell_output || code != 0 {
-        println!("elma> exit_code={code}\n{output}");
+        println!("elma> exit_code={code}\n{shell_preview}");
     }
     state.artifacts.insert(format!("{sid}:raw"), output.clone());
 
@@ -434,7 +1001,14 @@ async fn handle_shell_step(
         }
     }
     if !state.artifacts.contains_key(&sid) {
-        state.artifacts.insert(sid.clone(), output.clone());
+        if let Some(path) = shell_result.artifact_path.as_ref() {
+            state.artifacts.insert(
+                sid.clone(),
+                format!("{}\nartifact: {}", output.trim_end(), path.display()),
+            );
+        } else {
+            state.artifacts.insert(sid.clone(), output.clone());
+        }
     }
     if let Some(classifier_cfg) = artifact_classifier_cfg {
         if should_classify_artifacts(complexity, formula) {
@@ -471,6 +1045,19 @@ async fn handle_shell_step(
         } else {
             compact_summary
         },
+        command: Some(cmd),
+        raw_output: Some(output),
+        exit_code: Some(code),
+        output_bytes: Some(shell_result.bytes_written),
+        truncated: shell_result.truncated,
+        timed_out: shell_result.timed_out,
+        artifact_path: shell_result
+            .artifact_path
+            .as_ref()
+            .map(|p| p.display().to_string()),
+        artifact_kind: shell_result.artifact_kind,
+        outcome_status: None,
+        outcome_reason: None,
     });
     Ok(())
 }

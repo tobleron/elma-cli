@@ -112,8 +112,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.profiles.planner_cfg,
             &runtime.profiles.planner_master_cfg,
             &runtime.profiles.decider_cfg,
+            &runtime.profiles.selector_cfg,
             &runtime.profiles.summarizer_cfg,
             Some(&runtime.profiles.command_repair_cfg),
+            Some(&runtime.profiles.command_preflight_cfg),
+            Some(&runtime.profiles.task_semantics_guard_cfg),
             Some(&runtime.profiles.evidence_compactor_cfg),
             Some(&runtime.profiles.artifact_classifier_cfg),
             &scope,
@@ -125,7 +128,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         )
         .await?;
 
-        let (final_text, final_usage_total) = resolve_final_text(
+        let (final_text, final_usage_total, reasoning_clean) = resolve_final_text(
             runtime,
             line,
             &route_decision,
@@ -141,6 +144,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         print_final_output(&runtime.args, runtime.ctx_max, final_usage_total, &final_text);
         maybe_save_formula_memory(
             &runtime.args,
+            &runtime.client,
+            &runtime.chat_url,
+            &runtime.profiles.memory_gate_cfg,
+            &runtime.model_id,
             &runtime.model_cfg_dir,
             line,
             &route_decision,
@@ -149,7 +156,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &scope,
             &program,
             &step_results,
-        )?;
+            reasoning_clean,
+        )
+        .await?;
         if !final_text.is_empty() {
             runtime.messages.push(ChatMessage {
                 role: "assistant".to_string(),
@@ -380,12 +389,44 @@ async fn build_program(
                 &runtime.args,
                 &format!("orchestrator_repair_parse_error={error}"),
             );
+            if !route_decision.route.eq_ignore_ascii_case("CHAT") {
+                operator_trace(&runtime.args, "repairing the workflow plan");
+                if let Ok(program) = recover_program_once(
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.profiles.orchestrator_cfg,
+                    line,
+                    route_decision,
+                    complexity,
+                    scope,
+                    formula,
+                    &runtime.ws,
+                    &runtime.ws_brief,
+                    &runtime.messages,
+                    &format!("orchestrator_parse_error: {error}"),
+                    None,
+                    &[],
+                )
+                .await
+                {
+                    trace(&runtime.args, "workflow_recovery=ok source=orchestrator_parse_error");
+                    return program;
+                }
+                trace(
+                    &runtime.args,
+                    "workflow_recovery=failed source=orchestrator_parse_error",
+                );
+            }
             Program {
-                objective: "fallback_chat".to_string(),
+                objective: "fallback_clarification".to_string(),
                 steps: vec![Step::Reply {
                     id: "r1".to_string(),
-                    instructions: "Reply to the user in plain terminal text. Do not invent workspace facts you did not inspect.".to_string(),
-                    common: StepCommon::default(),
+                    instructions: "Tell the user plainly that Elma could not form a safe valid workflow for this request yet. Ask one concise clarifying question or ask the user to narrow the scope. Do not invent outputs or workspace facts.".to_string(),
+                    common: StepCommon {
+                        purpose: "ask for clarification after workflow recovery failure".to_string(),
+                        depends_on: Vec::new(),
+                        success_condition: "the user receives one concise honest clarification request".to_string(),
+                    },
                 }],
             }
         }
@@ -402,37 +443,100 @@ async fn resolve_final_text(
     program: &mut Program,
     step_results: &mut Vec<StepResult>,
     final_reply: &mut Option<String>,
-) -> Result<(String, Option<u64>)> {
-    for attempt in 0..=1u32 {
-        let verdict = match run_critic_once(
+) -> Result<(String, Option<u64>, bool)> {
+    let mut reasoning_clean = true;
+    reasoning_clean &= verify_nontrivial_step_outcomes(
+        &runtime.args,
+        &runtime.client,
+        &runtime.chat_url,
+        &runtime.profiles.outcome_verifier_cfg,
+        line,
+        route_decision,
+        program,
+        step_results,
+    )
+    .await;
+    let skip_post_judgment = step_results.iter().any(|result| {
+        result.summary.starts_with("preflight_rejected:")
+            || result.summary == "preflight_requires_clarification"
+    });
+    let strict_post_judgment = !route_decision.route.eq_ignore_ascii_case("CHAT");
+
+    if skip_post_judgment {
+        let reply_instructions = final_reply.clone().unwrap_or_else(|| {
+            "Respond to the user in plain terminal text. Use any step outputs as evidence."
+                .to_string()
+        });
+        let (final_text, usage_total) = match generate_final_answer_once(
             &runtime.client,
             &runtime.chat_url,
-            &runtime.profiles.critic_cfg,
+            &runtime.profiles.elma_cfg,
+            &runtime.profiles.evidence_mode_cfg,
+            &runtime.profiles.result_presenter_cfg,
+            &runtime.profiles.claim_checker_cfg,
+            &runtime.profiles.formatter_cfg,
+            &runtime.system_content,
+            line,
+            route_decision,
+            step_results,
+            &reply_instructions,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                reasoning_clean = false;
+                trace(&runtime.args, &format!("reply_generation_error={error}"));
+                (
+                    "I ran into a reply-generation error after executing the workflow."
+                        .to_string(),
+                    None,
+                )
+            }
+        };
+        return Ok((final_text, usage_total, reasoning_clean));
+    }
+
+    for attempt in 0..=1u32 {
+        let sufficiency = match check_execution_sufficiency_once(
+            &runtime.client,
+            &runtime.chat_url,
+            &runtime.profiles.execution_sufficiency_cfg,
             line,
             route_decision,
             program,
             step_results,
-            attempt,
         )
         .await
         {
             Ok(verdict) => verdict,
             Err(error) => {
-                trace(&runtime.args, &format!("critic_parse_error={error}"));
-                CriticVerdict {
-                    status: "ok".to_string(),
-                    reason: "critic_parse_error".to_string(),
-                    program: None,
+                reasoning_clean = false;
+                trace(&runtime.args, &format!("sufficiency_parse_error={error}"));
+                if strict_post_judgment {
+                    ExecutionSufficiencyVerdict {
+                        status: "retry".to_string(),
+                        reason: "sufficiency_parse_error".to_string(),
+                        program: None,
+                    }
+                } else {
+                    ExecutionSufficiencyVerdict {
+                        status: "ok".to_string(),
+                        reason: "sufficiency_parse_error".to_string(),
+                        program: None,
+                    }
                 }
             }
         };
         trace(
             &runtime.args,
-            &format!("critic_status={} reason={}", verdict.status, verdict.reason),
+            &format!(
+                "sufficiency_status={} reason={}",
+                sufficiency.status, sufficiency.reason
+            ),
         );
-
-        if verdict.status.eq_ignore_ascii_case("retry") {
-            if let Some(retry_program) = verdict.program {
+        if sufficiency.status.eq_ignore_ascii_case("retry") {
+            if let Some(retry_program) = sufficiency.program.clone() {
                 *program = retry_program;
                 if apply_capability_guard(program, route_decision) {
                     trace(&runtime.args, "guard=capability_reply_only_retry");
@@ -447,8 +551,11 @@ async fn resolve_final_text(
                     &runtime.profiles.planner_cfg,
                     &runtime.profiles.planner_master_cfg,
                     &runtime.profiles.decider_cfg,
+                    &runtime.profiles.selector_cfg,
                     &runtime.profiles.summarizer_cfg,
                     Some(&runtime.profiles.command_repair_cfg),
+                    Some(&runtime.profiles.command_preflight_cfg),
+                    Some(&runtime.profiles.task_semantics_guard_cfg),
                     Some(&runtime.profiles.evidence_compactor_cfg),
                     Some(&runtime.profiles.artifact_classifier_cfg),
                     scope,
@@ -465,6 +572,282 @@ async fn resolve_final_text(
                 }
                 continue;
             }
+            if attempt == 0 {
+                operator_trace(&runtime.args, "repairing the workflow plan");
+                match recover_program_once(
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.profiles.orchestrator_cfg,
+                    line,
+                    route_decision,
+                    complexity,
+                    scope,
+                    formula,
+                    &runtime.ws,
+                    &runtime.ws_brief,
+                    &runtime.messages,
+                    &format!("execution_sufficiency_retry_without_program: {}", sufficiency.reason),
+                    Some(program),
+                    step_results,
+                )
+                .await
+                {
+                    Ok(retry_program) => {
+                        *program = retry_program;
+                        let (retry_results, retry_reply) = execute_program(
+                            &runtime.args,
+                            &runtime.client,
+                            &runtime.chat_url,
+                            &runtime.session,
+                            &runtime.repo,
+                            program,
+                            &runtime.profiles.planner_cfg,
+                            &runtime.profiles.planner_master_cfg,
+                            &runtime.profiles.decider_cfg,
+                            &runtime.profiles.selector_cfg,
+                            &runtime.profiles.summarizer_cfg,
+                            Some(&runtime.profiles.command_repair_cfg),
+                            Some(&runtime.profiles.command_preflight_cfg),
+                            Some(&runtime.profiles.task_semantics_guard_cfg),
+                            Some(&runtime.profiles.evidence_compactor_cfg),
+                            Some(&runtime.profiles.artifact_classifier_cfg),
+                            scope,
+                            complexity,
+                            formula,
+                            &program.objective,
+                            false,
+                            false,
+                        )
+                        .await?;
+                        step_results.extend(retry_results);
+                        if retry_reply.is_some() {
+                            *final_reply = retry_reply;
+                        }
+                        continue;
+                    }
+                    Err(error) => {
+                        reasoning_clean = false;
+                        trace(&runtime.args, &format!("workflow_recovery_failed={error}"));
+                        let reply_instructions = format!(
+                            "Tell the user plainly that the previous workflow did not satisfy the request. Reason: {}. Ask one concise clarifying question or ask the user to narrow the scope. Do not invent outputs.",
+                            sufficiency.reason
+                        );
+                        let (final_text, usage_total) = generate_final_answer_once(
+                            &runtime.client,
+                            &runtime.chat_url,
+                            &runtime.profiles.elma_cfg,
+                            &runtime.profiles.evidence_mode_cfg,
+                            &runtime.profiles.result_presenter_cfg,
+                            &runtime.profiles.claim_checker_cfg,
+                            &runtime.profiles.formatter_cfg,
+                            &runtime.system_content,
+                            line,
+                            route_decision,
+                            step_results,
+                            &reply_instructions,
+                        )
+                        .await?;
+                        return Ok((final_text, usage_total, reasoning_clean));
+                    }
+                }
+            } else {
+                let reply_instructions = format!(
+                    "Tell the user plainly that Elma could not verify that the workflow satisfied the request after retry. Reason: {}. Do not invent outputs. Ask one concise clarifying question or suggest a narrower next step.",
+                    sufficiency.reason
+                );
+                let (final_text, usage_total) = generate_final_answer_once(
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.profiles.elma_cfg,
+                    &runtime.profiles.evidence_mode_cfg,
+                    &runtime.profiles.result_presenter_cfg,
+                    &runtime.profiles.claim_checker_cfg,
+                    &runtime.profiles.formatter_cfg,
+                    &runtime.system_content,
+                    line,
+                    route_decision,
+                    step_results,
+                    &reply_instructions,
+                )
+                .await?;
+                return Ok((final_text, usage_total, reasoning_clean));
+            }
+        }
+
+        let verdict = match run_critic_once(
+            &runtime.client,
+            &runtime.chat_url,
+            &runtime.profiles.critic_cfg,
+            line,
+            route_decision,
+            program,
+            step_results,
+            Some(&sufficiency),
+            attempt,
+        )
+        .await
+        {
+            Ok(verdict) => verdict,
+            Err(error) => {
+                reasoning_clean = false;
+                trace(&runtime.args, &format!("critic_parse_error={error}"));
+                if strict_post_judgment {
+                    CriticVerdict {
+                        status: "retry".to_string(),
+                        reason: "critic_parse_error".to_string(),
+                        program: None,
+                    }
+                } else {
+                    CriticVerdict {
+                        status: "ok".to_string(),
+                        reason: "critic_parse_error".to_string(),
+                        program: None,
+                    }
+                }
+            }
+        };
+        trace(
+            &runtime.args,
+            &format!("critic_status={} reason={}", verdict.status, verdict.reason),
+        );
+
+        if verdict.status.eq_ignore_ascii_case("retry") {
+            if let Some(retry_program) = verdict.program.clone() {
+                *program = retry_program;
+                if apply_capability_guard(program, route_decision) {
+                    trace(&runtime.args, "guard=capability_reply_only_retry");
+                }
+                let (retry_results, retry_reply) = execute_program(
+                    &runtime.args,
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.session,
+                    &runtime.repo,
+                    program,
+                    &runtime.profiles.planner_cfg,
+                    &runtime.profiles.planner_master_cfg,
+                    &runtime.profiles.decider_cfg,
+                    &runtime.profiles.selector_cfg,
+                    &runtime.profiles.summarizer_cfg,
+                    Some(&runtime.profiles.command_repair_cfg),
+                    Some(&runtime.profiles.command_preflight_cfg),
+                    Some(&runtime.profiles.task_semantics_guard_cfg),
+                    Some(&runtime.profiles.evidence_compactor_cfg),
+                    Some(&runtime.profiles.artifact_classifier_cfg),
+                    scope,
+                    complexity,
+                    formula,
+                    &program.objective,
+                    false,
+                    false,
+                )
+                .await?;
+                step_results.extend(retry_results);
+                if retry_reply.is_some() {
+                    *final_reply = retry_reply;
+                }
+                continue;
+            }
+            if attempt == 0 {
+                operator_trace(&runtime.args, "repairing the workflow plan");
+                match recover_program_once(
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.profiles.orchestrator_cfg,
+                    line,
+                    route_decision,
+                    complexity,
+                    scope,
+                    formula,
+                    &runtime.ws,
+                    &runtime.ws_brief,
+                    &runtime.messages,
+                    &format!("critic_retry_without_program: {}", verdict.reason),
+                    Some(program),
+                    step_results,
+                )
+                .await
+                {
+                    Ok(retry_program) => {
+                        *program = retry_program;
+                        let (retry_results, retry_reply) = execute_program(
+                            &runtime.args,
+                            &runtime.client,
+                            &runtime.chat_url,
+                            &runtime.session,
+                            &runtime.repo,
+                            program,
+                            &runtime.profiles.planner_cfg,
+                            &runtime.profiles.planner_master_cfg,
+                            &runtime.profiles.decider_cfg,
+                            &runtime.profiles.selector_cfg,
+                            &runtime.profiles.summarizer_cfg,
+                            Some(&runtime.profiles.command_repair_cfg),
+                            Some(&runtime.profiles.command_preflight_cfg),
+                            Some(&runtime.profiles.task_semantics_guard_cfg),
+                            Some(&runtime.profiles.evidence_compactor_cfg),
+                            Some(&runtime.profiles.artifact_classifier_cfg),
+                            scope,
+                            complexity,
+                            formula,
+                            &program.objective,
+                            false,
+                            false,
+                        )
+                        .await?;
+                        step_results.extend(retry_results);
+                        if retry_reply.is_some() {
+                            *final_reply = retry_reply;
+                        }
+                        continue;
+                    }
+                    Err(error) => {
+                        reasoning_clean = false;
+                        trace(&runtime.args, &format!("workflow_recovery_failed={error}"));
+                        let reply_instructions = format!(
+                            "Tell the user plainly that Elma could not complete the request from the current workflow. Reason: {}. Ask one concise clarifying question or ask the user to narrow the scope. Do not invent outputs.",
+                            verdict.reason
+                        );
+                        let (final_text, usage_total) = generate_final_answer_once(
+                            &runtime.client,
+                            &runtime.chat_url,
+                            &runtime.profiles.elma_cfg,
+                            &runtime.profiles.evidence_mode_cfg,
+                            &runtime.profiles.result_presenter_cfg,
+                            &runtime.profiles.claim_checker_cfg,
+                            &runtime.profiles.formatter_cfg,
+                            &runtime.system_content,
+                            line,
+                            route_decision,
+                            step_results,
+                            &reply_instructions,
+                        )
+                        .await?;
+                        return Ok((final_text, usage_total, reasoning_clean));
+                    }
+                }
+            } else {
+                let reply_instructions = format!(
+                    "Tell the user plainly that Elma could not validate the workflow result after retry. Reason: {}. Do not invent outputs. Ask one concise clarifying question or suggest a narrower next step.",
+                    verdict.reason
+                );
+                let (final_text, usage_total) = generate_final_answer_once(
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.profiles.elma_cfg,
+                    &runtime.profiles.evidence_mode_cfg,
+                    &runtime.profiles.result_presenter_cfg,
+                    &runtime.profiles.claim_checker_cfg,
+                    &runtime.profiles.formatter_cfg,
+                    &runtime.system_content,
+                    line,
+                    route_decision,
+                    step_results,
+                    &reply_instructions,
+                )
+                .await?;
+                return Ok((final_text, usage_total, reasoning_clean));
+            }
         }
 
         let reply_instructions = final_reply.clone().unwrap_or_else(|| {
@@ -475,6 +858,7 @@ async fn resolve_final_text(
             &runtime.client,
             &runtime.chat_url,
             &runtime.profiles.elma_cfg,
+            &runtime.profiles.evidence_mode_cfg,
             &runtime.profiles.result_presenter_cfg,
             &runtime.profiles.claim_checker_cfg,
             &runtime.profiles.formatter_cfg,
@@ -488,6 +872,7 @@ async fn resolve_final_text(
         {
             Ok(value) => value,
             Err(error) => {
+                reasoning_clean = false;
                 trace(&runtime.args, &format!("reply_generation_error={error}"));
                 (
                     "I ran into a reply-generation error after executing the workflow."
@@ -496,10 +881,10 @@ async fn resolve_final_text(
                 )
             }
         };
-        return Ok((final_text, usage_total));
+        return Ok((final_text, usage_total, reasoning_clean));
     }
 
-    Ok((String::new(), None))
+    Ok((String::new(), None, reasoning_clean))
 }
 
 fn print_final_output(
@@ -543,8 +928,12 @@ fn print_final_output(
     println!();
 }
 
-fn maybe_save_formula_memory(
+async fn maybe_save_formula_memory(
     args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    memory_gate_cfg: &Profile,
+    model_id: &str,
     model_cfg_dir: &PathBuf,
     line: &str,
     route_decision: &RouteDecision,
@@ -553,15 +942,75 @@ fn maybe_save_formula_memory(
     scope: &ScopePlan,
     program: &Program,
     step_results: &[StepResult],
+    reasoning_clean: bool,
 ) -> Result<()> {
+    if !formula.memory_id.trim().is_empty() {
+        let reuse_success = reasoning_clean && step_results.iter().all(|result| result.ok);
+        let artifact_mode_capable = step_results
+            .iter()
+            .any(|result| result.artifact_path.is_some());
+        if let Ok(Some(record)) = record_formula_memory_reuse(
+            model_cfg_dir,
+            formula.memory_id.trim(),
+            reuse_success,
+            artifact_mode_capable,
+        ) {
+            trace(
+                args,
+                &format!(
+                    "formula_memory_reuse id={} status={} success_count={} failure_count={} disabled={}",
+                    record.id,
+                    if reuse_success { "success" } else { "failure" },
+                    record.success_count,
+                    record.failure_count,
+                    record.disabled
+                ),
+            );
+        }
+        return Ok(());
+    }
+
+    if !reasoning_clean {
+        trace(args, "memory_gate_status=skip reason=unclean_reasoning_fallback");
+        return Ok(());
+    }
     if step_results.iter().all(|result| result.ok)
         && !route_decision.route.eq_ignore_ascii_case("CHAT")
-        && formula.memory_id.trim().is_empty()
     {
+        let gate = gate_formula_memory_once(
+            client,
+            chat_url,
+            memory_gate_cfg,
+            line,
+            route_decision,
+            complexity,
+            formula,
+            scope,
+            program,
+            step_results,
+        )
+        .await
+        .unwrap_or_else(|_| MemoryGateVerdict {
+            status: "skip".to_string(),
+            reason: "memory_gate_error".to_string(),
+        });
+        trace(
+            args,
+            &format!("memory_gate_status={} reason={}", gate.status, gate.reason),
+        );
+        if !gate.status.eq_ignore_ascii_case("save") {
+            return Ok(());
+        }
         let now = now_unix_s()?;
+        let active_run_id = load_active_manifest(&model_active_manifest_path(model_cfg_dir))
+            .ok()
+            .and_then(|m| m.active_run_id)
+            .unwrap_or_default();
         let record = FormulaMemoryRecord {
             id: format!("fm_{now}"),
             created_unix_s: now,
+            model_id: model_id.to_string(),
+            active_run_id,
             user_message: line.to_string(),
             route: route_decision.route.clone(),
             complexity: complexity.complexity.clone(),
@@ -577,6 +1026,14 @@ fn maybe_save_formula_memory(
                 line.to_string()
             },
             program_signature: program_signature(program),
+            last_success_unix_s: now,
+            last_failure_unix_s: 0,
+            success_count: 1,
+            failure_count: 0,
+            disabled: false,
+            artifact_mode_capable: step_results
+                .iter()
+                .any(|result| result.artifact_path.is_some()),
         };
         if let Ok(path) = save_formula_memory(model_cfg_dir, &record) {
             trace(args, &format!("formula_memory_saved={}", path.display()));

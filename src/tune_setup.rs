@@ -22,6 +22,7 @@ pub(crate) async fn prepare_tune_resources(
     let planner_master_cfg = load_agent_config(&model_cfg_dir.join("planner_master.toml"))?;
     let planner_cfg = load_agent_config(&model_cfg_dir.join("planner.toml"))?;
     let decider_cfg = load_agent_config(&model_cfg_dir.join("decider.toml"))?;
+    let selector_cfg = load_agent_config(&model_cfg_dir.join("selector.toml"))?;
     let summarizer_cfg = load_agent_config(&model_cfg_dir.join("summarizer.toml"))?;
     let formatter_cfg = load_agent_config(&model_cfg_dir.join("formatter.toml"))?;
     let complexity_cfg = load_agent_config(&model_cfg_dir.join("complexity_assessor.toml"))?;
@@ -32,6 +33,8 @@ pub(crate) async fn prepare_tune_resources(
         load_agent_config(&model_cfg_dir.join("evidence_compactor.toml"))?;
     let artifact_classifier_cfg =
         load_agent_config(&model_cfg_dir.join("artifact_classifier.toml"))?;
+    let evidence_mode_cfg = load_agent_config(&model_cfg_dir.join("evidence_mode.toml"))?;
+    let outcome_verifier_cfg = load_agent_config(&model_cfg_dir.join("outcome_verifier.toml"))?;
     let result_presenter_cfg = load_agent_config(&model_cfg_dir.join("result_presenter.toml"))?;
     let claim_checker_cfg = load_agent_config(&model_cfg_dir.join("claim_checker.toml"))?;
     let orchestrator_cfg = load_agent_config(&model_cfg_dir.join("orchestrator.toml"))?;
@@ -100,6 +103,7 @@ pub(crate) async fn prepare_tune_resources(
         planner_master_cfg,
         planner_cfg,
         decider_cfg,
+        selector_cfg,
         summarizer_cfg,
         formatter_cfg,
         complexity_cfg,
@@ -108,6 +112,8 @@ pub(crate) async fn prepare_tune_resources(
         scope_builder_cfg,
         evidence_compactor_cfg,
         artifact_classifier_cfg,
+        evidence_mode_cfg,
+        outcome_verifier_cfg,
         result_presenter_cfg,
         claim_checker_cfg,
         orchestrator_cfg,

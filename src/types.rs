@@ -372,6 +372,20 @@ pub(crate) struct StepCommon {
     pub(crate) success_condition: String,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct EditSpec {
+    #[serde(default)]
+    pub(crate) path: String,
+    #[serde(default)]
+    pub(crate) operation: String,
+    #[serde(default)]
+    pub(crate) content: String,
+    #[serde(default)]
+    pub(crate) find: String,
+    #[serde(default)]
+    pub(crate) replace: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub(crate) enum Step {
@@ -379,6 +393,14 @@ pub(crate) enum Step {
     Shell {
         id: String,
         cmd: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    #[serde(rename = "select")]
+    Select {
+        id: String,
+        #[serde(default)]
+        instructions: String,
         #[serde(flatten)]
         common: StepCommon,
     },
@@ -413,6 +435,14 @@ pub(crate) enum Step {
         #[serde(flatten)]
         common: StepCommon,
     },
+    #[serde(rename = "edit")]
+    Edit {
+        id: String,
+        #[serde(flatten)]
+        spec: EditSpec,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "reply")]
     Reply {
         id: String,
@@ -440,6 +470,16 @@ pub(crate) struct StepResult {
     pub(crate) success_condition: String,
     pub(crate) ok: bool,
     pub(crate) summary: String,
+    pub(crate) command: Option<String>,
+    pub(crate) raw_output: Option<String>,
+    pub(crate) exit_code: Option<i32>,
+    pub(crate) output_bytes: Option<u64>,
+    pub(crate) truncated: bool,
+    pub(crate) timed_out: bool,
+    pub(crate) artifact_path: Option<String>,
+    pub(crate) artifact_kind: Option<String>,
+    pub(crate) outcome_status: Option<String>,
+    pub(crate) outcome_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -473,9 +513,77 @@ pub(crate) struct FormulaSelection {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct EvidenceModeDecision {
+    #[serde(default)]
+    pub(crate) mode: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct CommandRepair {
     #[serde(default)]
     pub(crate) cmd: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct RepairSemanticsVerdict {
+    #[serde(default)]
+    pub(crate) status: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct ExecutionSufficiencyVerdict {
+    #[serde(default)]
+    pub(crate) status: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+    #[serde(default)]
+    pub(crate) program: Option<Program>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct OutcomeVerificationVerdict {
+    #[serde(default)]
+    pub(crate) status: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct MemoryGateVerdict {
+    #[serde(default)]
+    pub(crate) status: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct CommandPreflightVerdict {
+    #[serde(default)]
+    pub(crate) status: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+    #[serde(default)]
+    pub(crate) cmd: String,
+    #[serde(default)]
+    pub(crate) question: String,
+    #[serde(default)]
+    pub(crate) execution_mode: String,
+    #[serde(default)]
+    pub(crate) artifact_kind: String,
+    #[serde(default)]
+    pub(crate) preview_strategy: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct SelectionOutput {
+    #[serde(default)]
+    pub(crate) items: Vec<String>,
     #[serde(default)]
     pub(crate) reason: String,
 }
@@ -540,6 +648,10 @@ pub(crate) struct ClaimCheckVerdict {
 pub(crate) struct FormulaMemoryRecord {
     pub(crate) id: String,
     pub(crate) created_unix_s: u64,
+    #[serde(default)]
+    pub(crate) model_id: String,
+    #[serde(default)]
+    pub(crate) active_run_id: String,
     pub(crate) user_message: String,
     pub(crate) route: String,
     pub(crate) complexity: String,
@@ -547,6 +659,18 @@ pub(crate) struct FormulaMemoryRecord {
     pub(crate) objective: String,
     pub(crate) title: String,
     pub(crate) program_signature: String,
+    #[serde(default)]
+    pub(crate) last_success_unix_s: u64,
+    #[serde(default)]
+    pub(crate) last_failure_unix_s: u64,
+    #[serde(default)]
+    pub(crate) success_count: u64,
+    #[serde(default)]
+    pub(crate) failure_count: u64,
+    #[serde(default)]
+    pub(crate) disabled: bool,
+    #[serde(default)]
+    pub(crate) artifact_mode_capable: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -568,7 +692,7 @@ pub(crate) struct ChatMessage {
     pub(crate) content: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct ChatCompletionRequest {
     pub(crate) model: String,
     pub(crate) messages: Vec<ChatMessage>,
@@ -582,6 +706,29 @@ pub(crate) struct ChatCompletionRequest {
     pub(crate) repeat_penalty: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) reasoning_format: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ArtifactRecord {
+    pub(crate) artifact_id: String,
+    pub(crate) source_step_id: String,
+    pub(crate) kind: String,
+    pub(crate) path: String,
+    pub(crate) bytes_written: u64,
+    pub(crate) truncated: bool,
+    pub(crate) timed_out: bool,
+    pub(crate) created_unix_s: u64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ShellExecutionResult {
+    pub(crate) exit_code: i32,
+    pub(crate) inline_text: String,
+    pub(crate) bytes_written: u64,
+    pub(crate) truncated: bool,
+    pub(crate) timed_out: bool,
+    pub(crate) artifact_path: Option<PathBuf>,
+    pub(crate) artifact_kind: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

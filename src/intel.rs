@@ -40,18 +40,7 @@ pub(crate) async fn assess_complexity_once(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    let resp = chat_once(client, chat_url, &req).await?;
-    let text = resp
-        .choices
-        .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
-        .unwrap_or_default();
-    parse_json_loose(&text)
+    chat_json_with_repair(client, chat_url, &req).await
 }
 
 pub(crate) async fn build_scope_once(
@@ -94,18 +83,7 @@ pub(crate) async fn build_scope_once(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    let resp = chat_once(client, chat_url, &req).await?;
-    let text = resp
-        .choices
-        .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
-        .unwrap_or_default();
-    parse_json_loose(&text)
+    chat_json_with_repair(client, chat_url, &req).await
 }
 
 pub(crate) async fn select_formula_once(
@@ -144,6 +122,11 @@ pub(crate) async fn select_formula_once(
                             "objective": m.objective,
                             "example_user_message": m.user_message,
                             "program_signature": m.program_signature,
+                            "success_count": m.success_count,
+                            "failure_count": m.failure_count,
+                            "last_success_unix_s": m.last_success_unix_s,
+                            "artifact_mode_capable": m.artifact_mode_capable,
+                            "active_run_id": m.active_run_id,
                         })
                     }).collect::<Vec<_>>(),
                     "conversation": conversation_excerpt(messages, 12),
@@ -159,18 +142,84 @@ pub(crate) async fn select_formula_once(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    let resp = chat_once(client, chat_url, &req).await?;
-    let text = resp
-        .choices
-        .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
-        .unwrap_or_default();
-    parse_json_loose(&text)
+    chat_json_with_repair(client, chat_url, &req).await
+}
+
+pub(crate) async fn select_items_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    objective: &str,
+    purpose: &str,
+    instructions: &str,
+    evidence: &str,
+) -> Result<SelectionOutput> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "objective": objective,
+                    "purpose": purpose,
+                    "instructions": instructions,
+                    "evidence": evidence,
+                })
+                .to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    chat_json_with_repair(client, chat_url, &req).await
+}
+
+pub(crate) async fn decide_evidence_mode_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    user_message: &str,
+    route_decision: &RouteDecision,
+    reply_instructions: &str,
+    step_results: &[StepResult],
+) -> Result<EvidenceModeDecision> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "user_message": user_message,
+                    "route": route_decision.route,
+                    "speech_act": route_decision.speech_act.choice,
+                    "reply_instructions": reply_instructions,
+                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    chat_json_with_repair(client, chat_url, &req).await
 }
 
 pub(crate) async fn compact_evidence_once(
@@ -210,18 +259,7 @@ pub(crate) async fn compact_evidence_once(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    let resp = chat_once(client, chat_url, &req).await?;
-    let text = resp
-        .choices
-        .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
-        .unwrap_or_default();
-    parse_json_loose(&text)
+    chat_json_with_repair(client, chat_url, &req).await
 }
 
 pub(crate) async fn classify_artifacts_once(
@@ -257,18 +295,7 @@ pub(crate) async fn classify_artifacts_once(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    let resp = chat_once(client, chat_url, &req).await?;
-    let text = resp
-        .choices
-        .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
-        .unwrap_or_default();
-    parse_json_loose(&text)
+    chat_json_with_repair(client, chat_url, &req).await
 }
 
 pub(crate) async fn present_result_once(
@@ -277,6 +304,7 @@ pub(crate) async fn present_result_once(
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
+    evidence_mode: &EvidenceModeDecision,
     step_results: &[StepResult],
     reply_instructions: &str,
 ) -> Result<String> {
@@ -293,16 +321,9 @@ pub(crate) async fn present_result_once(
                     "user_message": user_message,
                     "route": route_decision.route,
                     "speech_act": route_decision.speech_act.choice,
+                    "evidence_mode": evidence_mode,
                     "instructions": reply_instructions,
-                    "step_results": step_results.iter().map(|r| {
-                        serde_json::json!({
-                            "id": r.id,
-                            "type": r.kind,
-                            "purpose": r.purpose,
-                            "ok": r.ok,
-                            "summary": r.summary,
-                        })
-                    }).collect::<Vec<_>>(),
+                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
                 })
                 .to_string(),
             },
@@ -329,60 +350,6 @@ pub(crate) async fn present_result_once(
         .trim()
         .to_string();
     Ok(text)
-}
-
-pub(crate) async fn claim_check_once(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    cfg: &Profile,
-    user_message: &str,
-    step_results: &[StepResult],
-    draft: &str,
-) -> Result<ClaimCheckVerdict> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "draft": draft,
-                    "step_results": step_results.iter().map(|r| {
-                        serde_json::json!({
-                            "id": r.id,
-                            "type": r.kind,
-                            "ok": r.ok,
-                            "summary": r.summary,
-                        })
-                    }).collect::<Vec<_>>(),
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-    };
-    let resp = chat_once(client, chat_url, &req).await?;
-    let text = resp
-        .choices
-        .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
-        .unwrap_or_default();
-    parse_json_loose(&text)
 }
 
 pub(crate) async fn repair_command_once(
@@ -420,16 +387,5 @@ pub(crate) async fn repair_command_once(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    let resp = chat_once(client, chat_url, &req).await?;
-    let text = resp
-        .choices
-        .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
-        .unwrap_or_default();
-    parse_json_loose(&text)
+    chat_json_with_repair(client, chat_url, &req).await
 }

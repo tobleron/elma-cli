@@ -43,6 +43,7 @@ mod tune_summary;
 mod tuning_support;
 mod types;
 mod ui;
+mod verification;
 mod workspace;
 
 pub(crate) use defaults::*;
@@ -65,6 +66,7 @@ pub(crate) use tune::*;
 pub(crate) use tuning_support::*;
 pub(crate) use types::*;
 pub(crate) use ui::*;
+pub(crate) use verification::*;
 pub(crate) use workspace::*;
 
 #[tokio::main]
