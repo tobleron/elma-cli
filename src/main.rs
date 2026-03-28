@@ -4,11 +4,13 @@ use reqwest::Url;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::io::IsTerminal;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Parser, Debug)]
@@ -41,6 +43,26 @@ struct Args {
     /// Run tuning for all models exposed by the endpoint, then exit.
     #[arg(long, default_value_t = false)]
     tune: bool,
+
+    /// Run calibration only for the selected model(s), then exit.
+    #[arg(long, default_value_t = false)]
+    calibrate: bool,
+
+    /// When tuning or calibrating, target all models exposed by the endpoint.
+    #[arg(long, default_value_t = false)]
+    all_models: bool,
+
+    /// Restore the immutable baseline profile set for the selected model, then exit.
+    #[arg(long, default_value_t = false)]
+    restore_base: bool,
+
+    /// Restore the last active profile set for the selected model, then exit.
+    #[arg(long, default_value_t = false)]
+    restore_last: bool,
+
+    /// Show raw machine trace lines in the terminal.
+    #[arg(long, default_value_t = false)]
+    debug_trace: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -161,6 +183,31 @@ fn load_router_calibration(path: &PathBuf) -> Result<RouterCalibration> {
     toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
 }
 
+fn save_active_manifest(path: &PathBuf, m: &ActiveManifest) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let s = toml::to_string_pretty(m).context("Failed to serialize active manifest toml")?;
+    std::fs::write(path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn load_active_manifest(path: &PathBuf) -> Result<ActiveManifest> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("Failed to read active manifest at {}", path.display()))?;
+    let s = String::from_utf8(bytes).context("active manifest is not valid UTF-8")?;
+    toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
+fn save_tune_run_manifest(path: &PathBuf, m: &TuneRunManifest) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let s = toml::to_string_pretty(m).context("Failed to serialize tune run manifest toml")?;
+    std::fs::write(path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct RouterCalibration {
     version: u32,
@@ -169,6 +216,31 @@ struct RouterCalibration {
     n_probs: u32,
     supports_logprobs: bool,
     routes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct ActiveManifest {
+    version: u32,
+    model: String,
+    active_source: String,
+    active_run_id: Option<String>,
+    activated_unix_s: u64,
+    final_score: f64,
+    certified: bool,
+    restore_last_dir: String,
+    restore_base_dir: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct TuneRunManifest {
+    version: u32,
+    run_id: String,
+    model: String,
+    mode: String,
+    started_unix_s: u64,
+    activated: bool,
+    final_score: f64,
+    certified: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -189,21 +261,21 @@ struct CalibrationScenario {
     notes: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CalibrationMetric {
     total: usize,
     correct: usize,
     accuracy: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CalibrationConfusion {
     expected: String,
     predicted: String,
     count: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ScenarioCalibrationResult {
     file: String,
     notes: String,
@@ -241,7 +313,7 @@ struct ScenarioCalibrationResult {
     all_ok: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CalibrationSummary {
     total_cases: usize,
     speech_act: CalibrationMetric,
@@ -260,7 +332,7 @@ struct CalibrationSummary {
     certification_rule: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CalibrationReport {
     version: u32,
     model: String,
@@ -298,6 +370,23 @@ struct CalibrationJudgeVerdict {
     faithful_to_evidence: bool,
     #[serde(default)]
     plain_text: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CandidateScore {
+    name: String,
+    dir: PathBuf,
+    report: CalibrationReport,
+    score: f64,
+    hard_rejected: bool,
+}
+
+#[derive(Debug, Clone)]
+struct SearchCandidate {
+    name: String,
+    dir: PathBuf,
+    score: f64,
+    hard_rejected: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -405,6 +494,42 @@ struct StepResult {
     success_condition: String,
     ok: bool,
     summary: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct ComplexityAssessment {
+    #[serde(default)]
+    complexity: String,
+    #[serde(default)]
+    needs_evidence: bool,
+    #[serde(default)]
+    needs_tools: bool,
+    #[serde(default)]
+    needs_decision: bool,
+    #[serde(default)]
+    needs_plan: bool,
+    #[serde(default)]
+    risk: String,
+    #[serde(default)]
+    suggested_pattern: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct FormulaSelection {
+    #[serde(default)]
+    primary: String,
+    #[serde(default)]
+    alternatives: Vec<String>,
+    #[serde(default)]
+    reason: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct CommandRepair {
+    #[serde(default)]
+    cmd: String,
+    #[serde(default)]
+    reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -845,6 +970,57 @@ fn default_calibration_judge_config(base_url: &str, model: &str) -> Profile {
     }
 }
 
+fn default_complexity_assessor_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "complexity_assessor".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 256,
+        timeout_s: 120,
+        system_prompt: "You assess task complexity for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"complexity\": \"DIRECT\" | \"INVESTIGATE\" | \"MULTISTEP\" | \"OPEN_ENDED\",\n  \"needs_evidence\": true | false,\n  \"needs_tools\": true | false,\n  \"needs_decision\": true | false,\n  \"needs_plan\": true | false,\n  \"risk\": \"LOW\" | \"MEDIUM\" | \"HIGH\",\n  \"suggested_pattern\": \"reply\" | \"inspect_reply\" | \"inspect_summarize_reply\" | \"inspect_decide_reply\" | \"execute_reply\" | \"plan_reply\" | \"masterplan_reply\"\n}\n\nRules:\n- Cleanup, safety review, comparison, and 'what is safe to remove' tasks are usually MULTISTEP with suggested_pattern inspect_decide_reply.\n- Questions about the current project, code, files, or configuration usually need evidence.\n- Be strict.\n"
+            .to_string(),
+    }
+}
+
+fn default_formula_selector_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "formula_selector".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 256,
+        timeout_s: 120,
+        system_prompt: "You select reasoning formulas for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"primary\": \"reply_only\" | \"inspect_reply\" | \"inspect_summarize_reply\" | \"inspect_decide_reply\" | \"execute_reply\" | \"plan_reply\" | \"masterplan_reply\",\n  \"alternatives\": [\"...\", \"...\"],\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Cleanup safety questions should usually prefer inspect_decide_reply.\n- Code/file understanding should usually prefer inspect_reply or inspect_summarize_reply.\n- Direct terminal execution requests should prefer execute_reply.\n- Keep alternatives short and from the allowed set.\n"
+            .to_string(),
+    }
+}
+
+fn default_command_repair_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "command_repair".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 256,
+        timeout_s: 120,
+        system_prompt: "You repair one failed shell command for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\"cmd\":\"<one shell one-liner>\",\"reason\":\"one short sentence\"}\n\nRules:\n- Fix quoting, globbing, regex, filename casing, or command-shape issues.\n- Keep the same intent.\n- Prefer rg over grep.\n- Do not introduce network, remote, destructive, or privileged commands.\n- If the command cannot be safely repaired, return the original command.\n"
+            .to_string(),
+    }
+}
+
 fn default_intention_tune_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -860,6 +1036,157 @@ fn default_intention_tune_config(base_url: &str, model: &str) -> Profile {
         system_prompt: "You label the user's scenario intent.\n\nGiven a scenario dialog, output EXACTLY 3 words, each on its own line.\n\nSTRICT RULES:\n- Output must be exactly 3 lines.\n- Each line must be exactly one word.\n- Each word must match: ^[A-Za-z]+$\n- No punctuation.\n- No explanation.\n"
             .to_string(),
     }
+}
+
+fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'static str, Profile)> {
+    vec![
+        ("_elma.config", default_elma_config(base_url, model)),
+        ("intention.toml", default_intention_config(base_url, model)),
+        ("gate.toml", default_gate_config(base_url, model)),
+        ("gate_why.toml", default_gate_why_config(base_url, model)),
+        ("tooler.toml", default_tooler_config(base_url, model)),
+        ("action_type.toml", default_action_type_config(base_url, model)),
+        ("planner_master.toml", default_planner_master_config(base_url, model)),
+        ("planner.toml", default_planner_config(base_url, model)),
+        ("decider.toml", default_decider_config(base_url, model)),
+        ("summarizer.toml", default_summarizer_config(base_url, model)),
+        ("formatter.toml", default_formatter_config(base_url, model)),
+        ("calibration_judge.toml", default_calibration_judge_config(base_url, model)),
+        ("complexity_assessor.toml", default_complexity_assessor_config(base_url, model)),
+        ("formula_selector.toml", default_formula_selector_config(base_url, model)),
+        ("command_repair.toml", default_command_repair_config(base_url, model)),
+        ("intention_tune.toml", default_intention_tune_config(base_url, model)),
+        ("router.toml", default_router_config(base_url, model)),
+        ("mode_router.toml", default_mode_router_config(base_url, model)),
+        ("speech_act.toml", default_speech_act_config(base_url, model)),
+        ("orchestrator.toml", default_orchestrator_config(base_url, model)),
+        ("critic.toml", default_critic_config(base_url, model)),
+    ]
+}
+
+fn managed_profile_file_names() -> Vec<&'static str> {
+    managed_profile_specs("http://localhost:8080", "model")
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+fn new_tune_run_id() -> Result<String> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("System time before UNIX_EPOCH")?;
+    Ok(format!("run_{:010}_{}", now.as_secs(), now.subsec_nanos()))
+}
+
+fn now_unix_s() -> Result<u64> {
+    Ok(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("System time before UNIX_EPOCH")?
+        .as_secs())
+}
+
+fn model_baseline_dir(model_cfg_dir: &Path) -> PathBuf {
+    model_cfg_dir.join("baseline")
+}
+
+fn model_fallback_last_active_dir(model_cfg_dir: &Path) -> PathBuf {
+    model_cfg_dir.join("fallback").join("last_active")
+}
+
+fn model_tune_runs_dir(model_cfg_dir: &Path) -> PathBuf {
+    model_cfg_dir.join("tune").join("runs")
+}
+
+fn model_active_manifest_path(model_cfg_dir: &Path) -> PathBuf {
+    model_cfg_dir.join("tune").join("active_manifest.toml")
+}
+
+fn write_profile_specs_to_dir(dir: &Path, specs: &[(&str, Profile)]) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("mkdir {}", dir.display()))?;
+    for (filename, profile) in specs {
+        save_agent_config(&dir.join(filename), profile)?;
+    }
+    Ok(())
+}
+
+fn ensure_baseline_profile_set(model_cfg_dir: &Path, base_url: &str, model: &str) -> Result<PathBuf> {
+    let dir = model_baseline_dir(model_cfg_dir);
+    if !dir.exists() {
+        let specs = managed_profile_specs(base_url, model);
+        write_profile_specs_to_dir(&dir, &specs)?;
+    }
+    Ok(dir)
+}
+
+fn copy_profile_set(src_dir: &Path, dst_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dst_dir).with_context(|| format!("mkdir {}", dst_dir.display()))?;
+    for filename in managed_profile_file_names() {
+        let src = src_dir.join(filename);
+        if !src.exists() {
+            continue;
+        }
+        let dst = dst_dir.join(filename);
+        std::fs::copy(&src, &dst)
+            .with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+    }
+    Ok(())
+}
+
+fn snapshot_active_profile_set(model_cfg_dir: &Path, snapshot_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(snapshot_dir).with_context(|| format!("mkdir {}", snapshot_dir.display()))?;
+    for filename in managed_profile_file_names() {
+        let src = model_cfg_dir.join(filename);
+        if !src.exists() {
+            continue;
+        }
+        let dst = snapshot_dir.join(filename);
+        std::fs::copy(&src, &dst)
+            .with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+    }
+    Ok(())
+}
+
+fn sync_profile_dir_base_url_and_model(dir: &Path, base_url: &str, model: &str) -> Result<()> {
+    for filename in managed_profile_file_names() {
+        let path = dir.join(filename);
+        if !path.exists() {
+            continue;
+        }
+        let mut profile = load_agent_config(&path)?;
+        profile.base_url = base_url.to_string();
+        profile.model = model.to_string();
+        save_agent_config(&path, &profile)?;
+    }
+    Ok(())
+}
+
+fn activate_profile_set(
+    model_cfg_dir: &Path,
+    src_dir: &Path,
+    base_url: &str,
+    model: &str,
+    active_source: &str,
+    active_run_id: Option<String>,
+    final_score: f64,
+    certified: bool,
+) -> Result<()> {
+    let fallback_dir = model_fallback_last_active_dir(model_cfg_dir);
+    snapshot_active_profile_set(model_cfg_dir, &fallback_dir)?;
+    copy_profile_set(src_dir, model_cfg_dir)?;
+    sync_profile_dir_base_url_and_model(model_cfg_dir, base_url, model)?;
+    let manifest = ActiveManifest {
+        version: 1,
+        model: model.to_string(),
+        active_source: active_source.to_string(),
+        active_run_id,
+        activated_unix_s: now_unix_s()?,
+        final_score,
+        certified,
+        restore_last_dir: fallback_dir.display().to_string(),
+        restore_base_dir: model_baseline_dir(model_cfg_dir).display().to_string(),
+    };
+    save_active_manifest(&model_active_manifest_path(model_cfg_dir), &manifest)?;
+    Ok(())
 }
 
 fn ensure_model_config_folder(
@@ -941,6 +1268,27 @@ fn ensure_model_config_folder(
             &default_calibration_judge_config(base_url, model_id),
         )?;
     }
+    let complexity_assessor_path = dir.join("complexity_assessor.toml");
+    if !complexity_assessor_path.exists() {
+        save_agent_config(
+            &complexity_assessor_path,
+            &default_complexity_assessor_config(base_url, model_id),
+        )?;
+    }
+    let formula_selector_path = dir.join("formula_selector.toml");
+    if !formula_selector_path.exists() {
+        save_agent_config(
+            &formula_selector_path,
+            &default_formula_selector_config(base_url, model_id),
+        )?;
+    }
+    let command_repair_path = dir.join("command_repair.toml");
+    if !command_repair_path.exists() {
+        save_agent_config(
+            &command_repair_path,
+            &default_command_repair_config(base_url, model_id),
+        )?;
+    }
     let router_cal_path = dir.join("router_calibration.toml");
     if !router_cal_path.exists() {
         // Placeholder; real values written by --tune.
@@ -975,6 +1323,7 @@ fn ensure_model_config_folder(
     if !critic_path.exists() {
         save_agent_config(&critic_path, &default_critic_config(base_url, model_id))?;
     }
+    let _ = ensure_baseline_profile_set(&dir, base_url, model_id)?;
 
     Ok(dir)
 }
@@ -2130,6 +2479,8 @@ async fn execute_program(
     planner_master_cfg: &Profile,
     decider_cfg: &Profile,
     summarizer_cfg: &Profile,
+    command_repair_cfg: Option<&Profile>,
+    objective: &str,
     emit_shell_output: bool,
     readonly_only: bool,
 ) -> Result<(Vec<StepResult>, Option<String>)> {
@@ -2155,6 +2506,9 @@ async fn execute_program(
                 }
             ),
         );
+        if !matches!(step, Step::Reply { .. }) {
+            operator_trace(args, &purpose);
+        }
 
         match step {
             Step::Shell { id: _, cmd, .. } => {
@@ -2187,8 +2541,49 @@ async fn execute_program(
                 }
                 let path = write_shell_action(&session.shell_dir, &cmd)?;
                 trace(args, &format!("shell_saved={}", path.display()));
-                let (code, output) = run_shell_one_liner(&cmd, workdir)?;
-                let out_path = write_shell_output(&session.shell_dir, &path, &output)?;
+                let (mut code, mut output) = run_shell_one_liner(&cmd, workdir)?;
+                let mut output_path_base = path.clone();
+                let mut repaired_cmd: Option<String> = None;
+                if code != 0 {
+                    if let Some(repair_cfg) = command_repair_cfg {
+                        if let Ok(repair) = repair_command_once(
+                            client,
+                            chat_url,
+                            repair_cfg,
+                            objective,
+                            &purpose,
+                            &cmd,
+                            &output,
+                        )
+                        .await
+                        {
+                            let repaired = normalize_shell_cmd(repair.cmd.trim());
+                            if !repaired.is_empty()
+                                && repaired != cmd
+                                && program_safety_check(&repaired)
+                                && (!readonly_only || command_is_readonly(&repaired))
+                            {
+                                trace(
+                                    args,
+                                    &format!(
+                                        "command_repair id={sid} reason={} cmd={}",
+                                        repair.reason.trim(),
+                                        repaired.replace('\n', " ")
+                                    ),
+                                );
+                                operator_trace(args, "repairing a failed shell command");
+                                let repair_path = write_shell_action(&session.shell_dir, &repaired)?;
+                                trace(args, &format!("shell_saved={}", repair_path.display()));
+                                output_path_base = repair_path;
+                                let (repair_code, repair_output) = run_shell_one_liner(&repaired, workdir)?;
+                                code = repair_code;
+                                output = repair_output;
+                                repaired_cmd = Some(repaired);
+                            }
+                        }
+                    }
+                }
+                let out_path = write_shell_output(&session.shell_dir, &output_path_base, &output)?;
                 trace(args, &format!("shell_output_saved={}", out_path.display()));
                 trace(args, &format!("exec_exit_code={code}"));
                 if emit_shell_output {
@@ -2202,7 +2597,15 @@ async fn execute_program(
                     depends_on,
                     success_condition,
                     ok: code == 0,
-                    summary: summarize_shell_output(&output),
+                    summary: if let Some(repaired) = repaired_cmd {
+                        format!(
+                            "repaired_cmd: {}\n{}",
+                            repaired,
+                            summarize_shell_output(&output)
+                        )
+                    } else {
+                        summarize_shell_output(&output)
+                    },
                 });
             }
             Step::Summarize {
@@ -2595,12 +2998,328 @@ fn build_confusions(pairs: &[(String, String)]) -> Vec<CalibrationConfusion> {
     out
 }
 
+fn metric_accuracy_or_neutral(correct: usize, total: usize) -> f64 {
+    if total == 0 {
+        1.0
+    } else {
+        correct as f64 / total as f64
+    }
+}
+
+fn is_workflow_calibration_scenario(scenario: &CalibrationScenario) -> bool {
+    scenario.workflow.eq_ignore_ascii_case("WORKFLOW")
+}
+
+fn is_response_calibration_scenario(scenario: &CalibrationScenario) -> bool {
+    if scenario.route.eq_ignore_ascii_case("CHAT") {
+        return true;
+    }
+    matches!(
+        scenario.mode.as_deref(),
+        Some("INSPECT") | Some("PLAN") | Some("MASTERPLAN") | Some("DECIDE")
+    ) || matches!(
+        scenario.route.as_str(),
+        "PLAN" | "MASTERPLAN" | "DECIDE"
+    )
+}
+
+fn save_stage_score_note(dir: &Path, stage: &str, note: &str) -> Result<()> {
+    let path = dir.join(format!("{stage}_score.txt"));
+    std::fs::write(&path, note).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
 fn save_calibration_report(path: &PathBuf, report: &CalibrationReport) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     let s = serde_json::to_string_pretty(report).context("Failed to serialize calibration report")?;
     std::fs::write(path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn load_calibration_report(path: &PathBuf) -> Result<CalibrationReport> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("Failed to read calibration report at {}", path.display()))?;
+    let s = String::from_utf8(bytes).context("calibration report is not valid UTF-8")?;
+    serde_json::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
+async fn assess_complexity_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    user_message: &str,
+    route_decision: &RouteDecision,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<ComplexityAssessment> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "user_message": user_message,
+                    "route_prior": {
+                        "route": route_decision.route,
+                        "distribution": route_decision.distribution.iter().map(|(route, p)| serde_json::json!({"route": route, "p": p})).collect::<Vec<_>>(),
+                    },
+                    "workspace_facts": workspace_facts,
+                    "workspace_brief": workspace_brief,
+                    "conversation": conversation_excerpt(messages, 12),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    let resp = chat_once(client, chat_url, &req).await?;
+    let text = resp
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default();
+    parse_json_loose(&text)
+}
+
+async fn select_formula_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    user_message: &str,
+    route_decision: &RouteDecision,
+    complexity: &ComplexityAssessment,
+    messages: &[ChatMessage],
+) -> Result<FormulaSelection> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "user_message": user_message,
+                    "speech_act": route_decision.speech_act.choice,
+                    "route": route_decision.route,
+                    "complexity": complexity,
+                    "conversation": conversation_excerpt(messages, 12),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    let resp = chat_once(client, chat_url, &req).await?;
+    let text = resp
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default();
+    parse_json_loose(&text)
+}
+
+async fn repair_command_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    objective: &str,
+    purpose: &str,
+    failed_cmd: &str,
+    output: &str,
+) -> Result<CommandRepair> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "objective": objective,
+                    "purpose": purpose,
+                    "failed_cmd": failed_cmd,
+                    "stderr_or_output": summarize_shell_output(output),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    let resp = chat_once(client, chat_url, &req).await?;
+    let text = resp
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default();
+    parse_json_loose(&text)
+}
+
+fn score_calibration_report(report: &CalibrationReport) -> f64 {
+    let s = &report.summary;
+    (0.10 * s.speech_act.accuracy)
+        + (0.10 * s.workflow.accuracy)
+        + (0.05 * s.mode.accuracy)
+        + (0.10 * s.route.accuracy)
+        + (0.05 * s.program_parse.accuracy)
+        + (0.15 * s.program_shape.accuracy)
+        + (0.10 * s.program_policy.accuracy)
+        + (0.10 * s.program_consistency.accuracy)
+        + (0.10 * s.execution.accuracy)
+        + (0.05 * s.critic.accuracy)
+        + (0.10 * s.response.accuracy)
+}
+
+fn hard_rejects_calibration_report(report: &CalibrationReport) -> bool {
+    report.summary.program_parse.accuracy < 0.95 || report.summary.program_policy.accuracy < 0.95
+}
+
+fn prompt_patch_routing() -> &'static str {
+    "ADDITIONAL EXAMPLES:\n- \"Which files in this project are safe to clean up?\" should prefer WORKFLOW, not CHAT.\n- \"Can you help me decide which files to clean up?\" should not jump directly to DECIDE without evidence.\n- Safety, cleanup, inspection, and comparison questions about the workspace usually require workflow mode."
+}
+
+fn prompt_patch_mode_router() -> &'static str {
+    "ADDITIONAL EXAMPLES:\n- \"Which files in this project are safe to clean up?\" is usually INSPECT first, not DECIDE.\n- If the user asks to compare workspace candidates or identify safe cleanup targets, prefer INSPECT so evidence is gathered before any decision.\n- Use DECIDE only when the task is truly label-like and does not need fresh workspace evidence."
+}
+
+fn prompt_patch_orchestrator_cleanup() -> &'static str {
+    "CLEANUP AND SAFETY RULES:\n- For cleanup, safety review, or \"what is safe to remove\" requests, default to inspect_decide_reply.\n- Gather workspace evidence first: list tracked files, generated artifacts, build output dirs, and obvious system clutter.\n- Distinguish safe generated artifacts, maybe-safe regenerable files, and files that should normally stay.\n- Never answer cleanup safety questions from general knowledge alone when workspace evidence is available.\n- If a shell command fails with regex, glob, quoting, or parser errors, inspect stderr and retry once with a corrected command instead of proceeding as if the evidence was valid."
+}
+
+fn prompt_patch_critic_cleanup() -> &'static str {
+    "CLEANUP VALIDATION:\n- If the user asked what is safe to clean up and there is no inspected workspace evidence, choose retry.\n- If a cleanup answer classifies files without evidence or after a failed shell step, choose retry.\n- If the program used DECIDE without first inspecting relevant workspace files for a cleanup task, choose retry."
+}
+
+fn prompt_patch_elma_grounding() -> &'static str {
+    "GROUNDING RULES:\n- Base answers on the provided step results.\n- If a shell step failed or evidence is incomplete, say so plainly.\n- Do not silently replace failed evidence with generic advice unless you clearly mark it as general guidance."
+}
+
+fn apply_prompt_bundle(dir: &Path, bundle: &str) -> Result<()> {
+    match bundle {
+        "routing_bundle" => {
+            let mut router = load_agent_config(&dir.join("router.toml"))?;
+            let mut mode_router = load_agent_config(&dir.join("mode_router.toml"))?;
+            let mut speech_act = load_agent_config(&dir.join("speech_act.toml"))?;
+            let _ = maybe_upgrade_system_prompt(&mut router, "router", prompt_patch_routing());
+            let _ = maybe_upgrade_system_prompt(&mut mode_router, "mode_router", prompt_patch_mode_router());
+            let _ = maybe_upgrade_system_prompt(&mut speech_act, "speech_act", "ADDITIONAL EXAMPLES:\n- \"Can you help me decide which files to clean up?\" is usually ACTION_REQUEST because the user is asking Elma to help now.\n- \"Which files in this project are safe to clean up?\" is usually INFO_REQUEST, but it still may require workflow inspection.");
+            save_agent_config(&dir.join("router.toml"), &router)?;
+            save_agent_config(&dir.join("mode_router.toml"), &mode_router)?;
+            save_agent_config(&dir.join("speech_act.toml"), &speech_act)?;
+        }
+        "workflow_bundle" => {
+            let mut orch = load_agent_config(&dir.join("orchestrator.toml"))?;
+            let mut critic = load_agent_config(&dir.join("critic.toml"))?;
+            let _ = maybe_upgrade_system_prompt(&mut orch, "orchestrator", prompt_patch_orchestrator_cleanup());
+            let _ = maybe_upgrade_system_prompt(&mut critic, "critic", prompt_patch_critic_cleanup());
+            save_agent_config(&dir.join("orchestrator.toml"), &orch)?;
+            save_agent_config(&dir.join("critic.toml"), &critic)?;
+        }
+        "response_bundle" => {
+            let mut elma = load_agent_config(&dir.join("_elma.config"))?;
+            let mut critic = load_agent_config(&dir.join("critic.toml"))?;
+            let _ = maybe_upgrade_system_prompt(&mut elma, "_elma", prompt_patch_elma_grounding());
+            let _ = maybe_upgrade_system_prompt(&mut critic, "critic", "RESPONSE VALIDATION:\n- If the final answer ignores a failed shell step, choose retry.\n- If the answer gives generic advice where evidence was expected, choose retry unless the uncertainty is explicit.");
+            save_agent_config(&dir.join("_elma.config"), &elma)?;
+            save_agent_config(&dir.join("critic.toml"), &critic)?;
+        }
+        "comprehensive_bundle" => {
+            apply_prompt_bundle(dir, "routing_bundle")?;
+            apply_prompt_bundle(dir, "workflow_bundle")?;
+            apply_prompt_bundle(dir, "response_bundle")?;
+        }
+        "none" => {}
+        other => anyhow::bail!("Unknown prompt bundle: {other}"),
+    }
+    Ok(())
+}
+
+fn apply_router_param_variant(dir: &Path, variant: &str) -> Result<()> {
+    let settings = match variant {
+        "router_strict" => (0.0, 1.0, 1u32),
+        "router_soft" => (0.1, 1.0, 2u32),
+        other => anyhow::bail!("Unknown router variant: {other}"),
+    };
+    for name in ["router.toml", "mode_router.toml", "speech_act.toml"] {
+        let path = dir.join(name);
+        let mut profile = load_agent_config(&path)?;
+        profile.temperature = settings.0;
+        profile.top_p = settings.1;
+        profile.max_tokens = settings.2;
+        save_agent_config(&path, &profile)?;
+    }
+    Ok(())
+}
+
+fn apply_orchestrator_param_variant(dir: &Path, variant: &str) -> Result<()> {
+    let (temperature, top_p, max_tokens) = match variant {
+        "orch_conservative" => (0.0, 0.90, 1024),
+        "orch_balanced" => (0.2, 0.95, 2048),
+        "orch_creative" => (0.3, 1.0, 2048),
+        other => anyhow::bail!("Unknown orchestrator variant: {other}"),
+    };
+    let path = dir.join("orchestrator.toml");
+    let mut profile = load_agent_config(&path)?;
+    profile.temperature = temperature;
+    profile.top_p = top_p;
+    profile.max_tokens = max_tokens;
+    save_agent_config(&path, &profile)?;
+    Ok(())
+}
+
+fn apply_response_param_variant(dir: &Path, variant: &str) -> Result<()> {
+    let (elma_temp, elma_top_p, sum_temp, plan_temp, max_tokens) = match variant {
+        "response_stable" => (0.3, 0.90, 0.0, 0.4, 2048),
+        "response_balanced" => (0.5, 0.95, 0.2, 0.6, 4096),
+        "response_creative" => (0.7, 1.0, 0.3, 0.8, 4096),
+        other => anyhow::bail!("Unknown response variant: {other}"),
+    };
+    let mut elma = load_agent_config(&dir.join("_elma.config"))?;
+    elma.temperature = elma_temp;
+    elma.top_p = elma_top_p;
+    elma.max_tokens = max_tokens;
+    save_agent_config(&dir.join("_elma.config"), &elma)?;
+
+    let mut summarizer = load_agent_config(&dir.join("summarizer.toml"))?;
+    summarizer.temperature = sum_temp;
+    save_agent_config(&dir.join("summarizer.toml"), &summarizer)?;
+
+    for name in ["planner.toml", "planner_master.toml"] {
+        let path = dir.join(name);
+        let mut planner = load_agent_config(&path)?;
+        planner.temperature = plan_temp;
+        planner.top_p = 0.95;
+        planner.max_tokens = max_tokens;
+        save_agent_config(&path, &planner)?;
+    }
     Ok(())
 }
 
@@ -2619,12 +3338,14 @@ fn conversation_excerpt(messages: &[ChatMessage], max_items: usize) -> String {
 fn build_orchestrator_user_content(
     line: &str,
     route_decision: &RouteDecision,
+    complexity: &ComplexityAssessment,
+    formula: &FormulaSelection,
     ws: &str,
     ws_brief: &str,
     messages: &[ChatMessage],
 ) -> String {
     format!(
-        "User message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
+        "User message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nComplexity prior:\n{}\n\nFormula prior:\n{}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
         route_decision.speech_act.choice,
         route_decision.speech_act.source,
         format_route_distribution(&route_decision.speech_act.distribution),
@@ -2645,6 +3366,8 @@ fn build_orchestrator_user_content(
         format_route_distribution(&route_decision.distribution),
         route_decision.margin,
         route_decision.entropy,
+        serde_json::to_string_pretty(complexity).unwrap_or_else(|_| "{}".to_string()),
+        serde_json::to_string_pretty(formula).unwrap_or_else(|_| "{}".to_string()),
         ws.trim(),
         ws_brief.trim(),
         conversation_excerpt(messages, 12)
@@ -2657,11 +3380,21 @@ async fn orchestrate_program_once(
     orchestrator_cfg: &Profile,
     line: &str,
     route_decision: &RouteDecision,
+    complexity: &ComplexityAssessment,
+    formula: &FormulaSelection,
     ws: &str,
     ws_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<(Program, String)> {
-    let prompt = build_orchestrator_user_content(line, route_decision, ws, ws_brief, messages);
+    let prompt = build_orchestrator_user_content(
+        line,
+        route_decision,
+        complexity,
+        formula,
+        ws,
+        ws_brief,
+        messages,
+    );
     let orch_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
@@ -2964,6 +3697,878 @@ async fn judge_final_answer_once(
     parse_json_loose(&text)
 }
 
+async fn evaluate_routing_suite(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    candidate_dir: &PathBuf,
+    model_id: &str,
+) -> Result<(f64, bool, String)> {
+    let speech_act_cfg = load_agent_config(&candidate_dir.join("speech_act.toml"))?;
+    let router_cfg = load_agent_config(&candidate_dir.join("router.toml"))?;
+    let mode_router_cfg = load_agent_config(&candidate_dir.join("mode_router.toml"))?;
+    let cal = load_router_calibration(&candidate_dir.join("router_calibration.toml")).unwrap_or(
+        RouterCalibration {
+            version: 1,
+            model: model_id.to_string(),
+            base_url: String::new(),
+            n_probs: 64,
+            supports_logprobs: false,
+            routes: vec![
+                "CHAT".to_string(),
+                "WORKFLOW".to_string(),
+                "INSPECT".to_string(),
+                "EXECUTE".to_string(),
+                "PLAN".to_string(),
+                "MASTERPLAN".to_string(),
+                "DECIDE".to_string(),
+                "CAPABILITY_CHECK".to_string(),
+                "INFO_REQUEST".to_string(),
+                "ACTION_REQUEST".to_string(),
+            ],
+        },
+    );
+    let manifest = load_calibration_manifest()?;
+    let repo = repo_root()?;
+    let ws = gather_workspace_context(&repo);
+    let ws_brief = gather_workspace_brief(&repo);
+
+    let mut speech_correct = 0usize;
+    let mut workflow_correct = 0usize;
+    let mut mode_correct = 0usize;
+    let mut mode_total = 0usize;
+    let mut route_correct = 0usize;
+    let total = manifest.scenarios.len();
+
+    for scenario in manifest.scenarios {
+        let scenario_path = repo
+            .join("scenarios")
+            .join("intention")
+            .join(&scenario.file);
+        let txt = std::fs::read_to_string(&scenario_path)
+            .with_context(|| format!("read {}", scenario_path.display()))?;
+        let (user_message, recent_messages) = parse_scenario_dialog(&txt);
+        let mut conversation_messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: String::new(),
+        }];
+        conversation_messages.extend(recent_messages);
+
+        let decision = infer_route_prior(
+            client,
+            chat_url,
+            &speech_act_cfg,
+            &router_cfg,
+            &mode_router_cfg,
+            &cal,
+            &user_message,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await?;
+
+        if decision.speech_act.choice.eq_ignore_ascii_case(&scenario.speech_act) {
+            speech_correct += 1;
+        }
+        if decision.workflow.choice.eq_ignore_ascii_case(&scenario.workflow) {
+            workflow_correct += 1;
+        }
+        if let Some(expected_mode) = scenario.mode.as_ref() {
+            mode_total += 1;
+            if decision.mode.choice.eq_ignore_ascii_case(expected_mode) {
+                mode_correct += 1;
+            }
+        }
+        if decision.route.eq_ignore_ascii_case(&scenario.route) {
+            route_correct += 1;
+        }
+    }
+
+    let speech_acc = metric_accuracy_or_neutral(speech_correct, total);
+    let workflow_acc = metric_accuracy_or_neutral(workflow_correct, total);
+    let mode_acc = metric_accuracy_or_neutral(mode_correct, mode_total);
+    let route_acc = metric_accuracy_or_neutral(route_correct, total);
+    let score = (speech_acc * 0.25) + (workflow_acc * 0.25) + (mode_acc * 0.10) + (route_acc * 0.40);
+    let hard_rejected = speech_acc < 0.65 || workflow_acc < 0.70 || route_acc < 0.70;
+    let note = format!(
+        "routing_score={score:.4}\nspeech={speech_acc:.3}\nworkflow={workflow_acc:.3}\nmode={mode_acc:.3}\nroute={route_acc:.3}\nhard_rejected={hard_rejected}\n"
+    );
+    Ok((score, hard_rejected, note))
+}
+
+async fn evaluate_workflow_suite(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    candidate_dir: &PathBuf,
+    model_id: &str,
+) -> Result<(f64, bool, String)> {
+    let speech_act_cfg = load_agent_config(&candidate_dir.join("speech_act.toml"))?;
+    let router_cfg = load_agent_config(&candidate_dir.join("router.toml"))?;
+    let mode_router_cfg = load_agent_config(&candidate_dir.join("mode_router.toml"))?;
+    let complexity_cfg = load_agent_config(&candidate_dir.join("complexity_assessor.toml"))?;
+    let formula_cfg = load_agent_config(&candidate_dir.join("formula_selector.toml"))?;
+    let orchestrator_cfg = load_agent_config(&candidate_dir.join("orchestrator.toml"))?;
+    let critic_cfg = load_agent_config(&candidate_dir.join("critic.toml"))?;
+    let planner_master_cfg = load_agent_config(&candidate_dir.join("planner_master.toml"))?;
+    let planner_cfg = load_agent_config(&candidate_dir.join("planner.toml"))?;
+    let decider_cfg = load_agent_config(&candidate_dir.join("decider.toml"))?;
+    let summarizer_cfg = load_agent_config(&candidate_dir.join("summarizer.toml"))?;
+    let command_repair_cfg = load_agent_config(&candidate_dir.join("command_repair.toml"))?;
+    let cal = load_router_calibration(&candidate_dir.join("router_calibration.toml")).unwrap_or(
+        RouterCalibration {
+            version: 1,
+            model: model_id.to_string(),
+            base_url: String::new(),
+            n_probs: 64,
+            supports_logprobs: false,
+            routes: vec![],
+        },
+    );
+    let manifest = load_calibration_manifest()?;
+    let repo = repo_root()?;
+    let ws = gather_workspace_context(&repo);
+    let ws_brief = gather_workspace_brief(&repo);
+    let tune_sessions_root = sessions_root_path(&args.sessions_root)?.join("_tune_search");
+
+    let scenarios: Vec<CalibrationScenario> = manifest
+        .scenarios
+        .into_iter()
+        .filter(is_workflow_calibration_scenario)
+        .collect();
+
+    let mut route_correct = 0usize;
+    let mut parse_correct = 0usize;
+    let mut shape_correct = 0usize;
+    let mut policy_correct = 0usize;
+    let mut consistency_correct = 0usize;
+    let mut execution_correct = 0usize;
+    let mut execution_total = 0usize;
+    let mut critic_correct = 0usize;
+    let mut critic_total = 0usize;
+
+    for scenario in &scenarios {
+        let scenario_path = repo
+            .join("scenarios")
+            .join("intention")
+            .join(&scenario.file);
+        let txt = std::fs::read_to_string(&scenario_path)
+            .with_context(|| format!("read {}", scenario_path.display()))?;
+        let (user_message, recent_messages) = parse_scenario_dialog(&txt);
+        let mut conversation_messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: String::new(),
+        }];
+        conversation_messages.extend(recent_messages);
+
+        let decision = infer_route_prior(
+            client,
+            chat_url,
+            &speech_act_cfg,
+            &router_cfg,
+            &mode_router_cfg,
+            &cal,
+            &user_message,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await?;
+        if decision.route.eq_ignore_ascii_case(&scenario.route) {
+            route_correct += 1;
+        }
+
+        let complexity = assess_complexity_once(
+            client,
+            chat_url,
+            &complexity_cfg,
+            &user_message,
+            &decision,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await
+        .unwrap_or_default();
+        let formula = select_formula_once(
+            client,
+            chat_url,
+            &formula_cfg,
+            &user_message,
+            &decision,
+            &complexity,
+            &conversation_messages,
+        )
+        .await
+        .unwrap_or_default();
+
+        let (mut program, _) = match orchestrate_program_once(
+            client,
+            chat_url,
+            &orchestrator_cfg,
+            &user_message,
+            &decision,
+            &complexity,
+            &formula,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let _ = apply_capability_guard(&mut program, &decision);
+        let program_eval = evaluate_program_for_scenario(&program, scenario);
+        if program_eval.parsed {
+            parse_correct += 1;
+        }
+        if program_eval.shape_ok {
+            shape_correct += 1;
+        }
+        if program_eval.policy_ok {
+            policy_correct += 1;
+        }
+
+        if let Ok((mut second_program, _)) = orchestrate_program_once(
+            client,
+            chat_url,
+            &orchestrator_cfg,
+            &user_message,
+            &decision,
+            &complexity,
+            &formula,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await
+        {
+            let _ = apply_capability_guard(&mut second_program, &decision);
+            if program_signature(&program) == program_signature(&second_program) {
+                consistency_correct += 1;
+            }
+        }
+
+        if program_eval.parsed
+            && program_eval.shape_ok
+            && program_eval.policy_ok
+            && program_eval.executable_in_tune
+        {
+            execution_total += 1;
+            let session = ensure_session_layout(&tune_sessions_root)?;
+            let (step_results, _) = execute_program(
+                args,
+                client,
+                chat_url,
+                &session,
+                &repo,
+                &program,
+                &planner_cfg,
+                &planner_master_cfg,
+                &decider_cfg,
+                &summarizer_cfg,
+                Some(&command_repair_cfg),
+                &program.objective,
+                false,
+                true,
+            )
+            .await?;
+            let step_ok = step_results.iter().all(|r| r.ok);
+            if step_ok {
+                execution_correct += 1;
+            }
+
+            critic_total += 1;
+            if let Ok(verdict) = run_critic_once(
+                client,
+                chat_url,
+                &critic_cfg,
+                &user_message,
+                &decision,
+                &program,
+                &step_results,
+                0,
+            )
+            .await
+            {
+                let expected = if step_ok { "ok" } else { "retry" };
+                if verdict.status.eq_ignore_ascii_case(expected) {
+                    critic_correct += 1;
+                }
+            }
+        }
+    }
+
+    let total = scenarios.len();
+    let route_acc = metric_accuracy_or_neutral(route_correct, total);
+    let parse_acc = metric_accuracy_or_neutral(parse_correct, total);
+    let shape_acc = metric_accuracy_or_neutral(shape_correct, total);
+    let policy_acc = metric_accuracy_or_neutral(policy_correct, total);
+    let consistency_acc = metric_accuracy_or_neutral(consistency_correct, total);
+    let execution_acc = metric_accuracy_or_neutral(execution_correct, execution_total);
+    let critic_acc = metric_accuracy_or_neutral(critic_correct, critic_total);
+    let score = (route_acc * 0.10)
+        + (parse_acc * 0.20)
+        + (shape_acc * 0.25)
+        + (policy_acc * 0.20)
+        + (consistency_acc * 0.15)
+        + (execution_acc * 0.05)
+        + (critic_acc * 0.05);
+    let hard_rejected = parse_acc < 0.90 || policy_acc < 0.95 || shape_acc < 0.70;
+    let note = format!(
+        "workflow_score={score:.4}\nroute={route_acc:.3}\nparse={parse_acc:.3}\nshape={shape_acc:.3}\npolicy={policy_acc:.3}\nconsistency={consistency_acc:.3}\nexecution={execution_acc:.3}\ncritic={critic_acc:.3}\nhard_rejected={hard_rejected}\n"
+    );
+    Ok((score, hard_rejected, note))
+}
+
+async fn evaluate_response_suite(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    candidate_dir: &PathBuf,
+    model_id: &str,
+) -> Result<(f64, bool, String)> {
+    let elma_cfg = load_agent_config(&candidate_dir.join("_elma.config"))?;
+    let formatter_cfg = load_agent_config(&candidate_dir.join("formatter.toml"))?;
+    let calibration_judge_cfg =
+        load_agent_config(&candidate_dir.join("calibration_judge.toml"))?;
+    let speech_act_cfg = load_agent_config(&candidate_dir.join("speech_act.toml"))?;
+    let router_cfg = load_agent_config(&candidate_dir.join("router.toml"))?;
+    let mode_router_cfg = load_agent_config(&candidate_dir.join("mode_router.toml"))?;
+    let complexity_cfg = load_agent_config(&candidate_dir.join("complexity_assessor.toml"))?;
+    let formula_cfg = load_agent_config(&candidate_dir.join("formula_selector.toml"))?;
+    let orchestrator_cfg = load_agent_config(&candidate_dir.join("orchestrator.toml"))?;
+    let planner_master_cfg = load_agent_config(&candidate_dir.join("planner_master.toml"))?;
+    let planner_cfg = load_agent_config(&candidate_dir.join("planner.toml"))?;
+    let decider_cfg = load_agent_config(&candidate_dir.join("decider.toml"))?;
+    let summarizer_cfg = load_agent_config(&candidate_dir.join("summarizer.toml"))?;
+    let command_repair_cfg = load_agent_config(&candidate_dir.join("command_repair.toml"))?;
+    let cal = load_router_calibration(&candidate_dir.join("router_calibration.toml")).unwrap_or(
+        RouterCalibration {
+            version: 1,
+            model: model_id.to_string(),
+            base_url: String::new(),
+            n_probs: 64,
+            supports_logprobs: false,
+            routes: vec![],
+        },
+    );
+    let manifest = load_calibration_manifest()?;
+    let repo = repo_root()?;
+    let ws = gather_workspace_context(&repo);
+    let ws_brief = gather_workspace_brief(&repo);
+    let mut system_content = elma_cfg.system_prompt.clone();
+    if !ws.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE CONTEXT (facts):\n");
+        system_content.push_str(ws.trim());
+    }
+    if !ws_brief.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE BRIEF:\n");
+        system_content.push_str(ws_brief.trim());
+    }
+    let tune_sessions_root = sessions_root_path(&args.sessions_root)?.join("_tune_search");
+    let scenarios: Vec<CalibrationScenario> = manifest
+        .scenarios
+        .into_iter()
+        .filter(is_response_calibration_scenario)
+        .collect();
+
+    let mut response_correct = 0usize;
+    let mut response_total = 0usize;
+    let mut route_correct = 0usize;
+    let mut route_total = 0usize;
+    let mut plain_text_correct = 0usize;
+    let mut plain_text_total = 0usize;
+
+    for scenario in &scenarios {
+        let scenario_path = repo
+            .join("scenarios")
+            .join("intention")
+            .join(&scenario.file);
+        let txt = std::fs::read_to_string(&scenario_path)
+            .with_context(|| format!("read {}", scenario_path.display()))?;
+        let (user_message, recent_messages) = parse_scenario_dialog(&txt);
+        let mut conversation_messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: String::new(),
+        }];
+        conversation_messages.extend(recent_messages);
+
+        let decision = infer_route_prior(
+            client,
+            chat_url,
+            &speech_act_cfg,
+            &router_cfg,
+            &mode_router_cfg,
+            &cal,
+            &user_message,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await?;
+        route_total += 1;
+        if decision.route.eq_ignore_ascii_case(&scenario.route) {
+            route_correct += 1;
+        }
+
+        let complexity = assess_complexity_once(
+            client,
+            chat_url,
+            &complexity_cfg,
+            &user_message,
+            &decision,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await
+        .unwrap_or_default();
+        let formula = select_formula_once(
+            client,
+            chat_url,
+            &formula_cfg,
+            &user_message,
+            &decision,
+            &complexity,
+            &conversation_messages,
+        )
+        .await
+        .unwrap_or_default();
+        let (mut program, _) = match orchestrate_program_once(
+            client,
+            chat_url,
+            &orchestrator_cfg,
+            &user_message,
+            &decision,
+            &complexity,
+            &formula,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let _ = apply_capability_guard(&mut program, &decision);
+        let program_eval = evaluate_program_for_scenario(&program, scenario);
+        if !(program_eval.parsed
+            && program_eval.shape_ok
+            && program_eval.policy_ok
+            && (scenario.route.eq_ignore_ascii_case("CHAT") || program_eval.executable_in_tune))
+        {
+            continue;
+        }
+
+        let session = ensure_session_layout(&tune_sessions_root)?;
+        let (step_results, final_reply) = execute_program(
+            args,
+            client,
+            chat_url,
+            &session,
+            &repo,
+            &program,
+            &planner_cfg,
+            &planner_master_cfg,
+            &decider_cfg,
+            &summarizer_cfg,
+            Some(&command_repair_cfg),
+            &program.objective,
+            false,
+            true,
+        )
+        .await?;
+        let reply_instructions = final_reply.unwrap_or_else(|| {
+            "Respond to the user in plain terminal text. Use any step outputs as evidence."
+                .to_string()
+        });
+        response_total += 1;
+        if let Ok(final_text) = generate_final_answer_once(
+            client,
+            chat_url,
+            &elma_cfg,
+            &formatter_cfg,
+            &system_content,
+            &user_message,
+            &step_results,
+            &reply_instructions,
+        )
+        .await
+        {
+            plain_text_total += 1;
+            if !looks_like_markdown(&final_text) {
+                plain_text_correct += 1;
+            }
+            if let Ok(verdict) = judge_final_answer_once(
+                client,
+                chat_url,
+                &calibration_judge_cfg,
+                scenario,
+                &user_message,
+                &step_results,
+                &final_text,
+            )
+            .await
+            {
+                if verdict.status.eq_ignore_ascii_case("pass")
+                    && verdict.answered_request
+                    && verdict.faithful_to_evidence
+                    && verdict.plain_text
+                {
+                    response_correct += 1;
+                }
+            }
+        }
+    }
+
+    let route_acc = metric_accuracy_or_neutral(route_correct, route_total);
+    let response_acc = metric_accuracy_or_neutral(response_correct, response_total);
+    let plain_text_acc = metric_accuracy_or_neutral(plain_text_correct, plain_text_total);
+    let score = (route_acc * 0.15) + (response_acc * 0.70) + (plain_text_acc * 0.15);
+    let hard_rejected = response_total == 0 || response_acc < 0.60 || plain_text_acc < 0.80;
+    let note = format!(
+        "response_score={score:.4}\nroute={route_acc:.3}\nresponse={response_acc:.3}\nplain_text={plain_text_acc:.3}\ncovered={response_total}\nhard_rejected={hard_rejected}\n"
+    );
+    Ok((score, hard_rejected, note))
+}
+
+async fn evaluate_candidate_dir(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    base_url: &str,
+    candidate_dir: &PathBuf,
+    model_id: &str,
+    emit_progress: bool,
+) -> Result<CandidateScore> {
+    sync_profile_dir_base_url_and_model(candidate_dir, base_url, model_id)?;
+    let tune_cfg = load_agent_config(&candidate_dir.join("intention_tune.toml"))?;
+    tune_model(
+        args,
+        client,
+        chat_url,
+        base_url,
+        candidate_dir,
+        model_id,
+        &tune_cfg,
+        emit_progress,
+    )
+    .await?;
+    let report = load_calibration_report(&candidate_dir.join("calibration_report.json"))?;
+    let score = score_calibration_report(&report);
+    let hard_rejected = hard_rejects_calibration_report(&report);
+    Ok(CandidateScore {
+        name: candidate_dir
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "candidate".to_string()),
+        dir: candidate_dir.clone(),
+        report,
+        score,
+        hard_rejected,
+    })
+}
+
+fn make_candidate_dir(run_root: &Path, name: &str) -> Result<PathBuf> {
+    let safe = name
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
+    let dir = run_root.join("candidates").join(safe);
+    std::fs::create_dir_all(&dir).with_context(|| format!("mkdir {}", dir.display()))?;
+    Ok(dir)
+}
+
+fn select_top_beam(candidates: Vec<CandidateScore>, beam_width: usize) -> Vec<CandidateScore> {
+    let mut sorted = candidates;
+    sorted.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let mut out = Vec::new();
+    for candidate in sorted {
+        if candidate.hard_rejected {
+            continue;
+        }
+        out.push(candidate);
+        if out.len() >= beam_width {
+            break;
+        }
+    }
+    out
+}
+
+fn select_top_search_beam(candidates: Vec<SearchCandidate>, beam_width: usize) -> Vec<SearchCandidate> {
+    let mut sorted = candidates;
+    sorted.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let mut out = Vec::new();
+    for candidate in sorted {
+        if candidate.hard_rejected {
+            continue;
+        }
+        out.push(candidate);
+        if out.len() >= beam_width {
+            break;
+        }
+    }
+    out
+}
+
+async fn optimize_model(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    base_url: &str,
+    model_cfg_dir: &PathBuf,
+    model_id: &str,
+) -> Result<CandidateScore> {
+    let run_id = new_tune_run_id()?;
+    let run_root = model_tune_runs_dir(model_cfg_dir).join(&run_id);
+    std::fs::create_dir_all(run_root.join("candidates"))
+        .with_context(|| format!("mkdir {}", run_root.display()))?;
+    snapshot_active_profile_set(model_cfg_dir, &run_root.join("live_before"))?;
+    save_tune_run_manifest(
+        &run_root.join("run_manifest.toml"),
+        &TuneRunManifest {
+            version: 1,
+            run_id: run_id.clone(),
+            model: model_id.to_string(),
+            mode: "tune".to_string(),
+            started_unix_s: now_unix_s()?,
+            activated: false,
+            final_score: 0.0,
+            certified: false,
+        },
+    )?;
+
+    let baseline_dir = make_candidate_dir(&run_root, "00_baseline")?;
+    snapshot_active_profile_set(model_cfg_dir, &baseline_dir)?;
+    let (baseline_score, baseline_reject, baseline_note) =
+        evaluate_routing_suite(client, chat_url, &baseline_dir, model_id).await?;
+    save_stage_score_note(&baseline_dir, "stage1_routing", &baseline_note)?;
+    let baseline = SearchCandidate {
+        name: "00_baseline".to_string(),
+        dir: baseline_dir,
+        score: baseline_score,
+        hard_rejected: baseline_reject,
+    };
+    let mut beam = vec![baseline.clone()];
+    let mut best_search = baseline;
+    let mut best_stage_score = best_search.score;
+    let mut stagnant_rounds = 0usize;
+    let beam_width = 3usize;
+
+    let stage1_variants = ["none", "routing_bundle", "workflow_bundle", "response_bundle", "comprehensive_bundle"];
+    let mut stage1_scores = Vec::new();
+    calibration_progress(args, &format!("tune stage 1/4: routing prompts for {model_id}"));
+    for variant in stage1_variants {
+        let dir = make_candidate_dir(&run_root, &format!("10_prompt_{variant}"))?;
+        copy_profile_set(&beam[0].dir, &dir)?;
+        apply_prompt_bundle(&dir, variant)?;
+        sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
+        let (score, hard_rejected, note) =
+            evaluate_routing_suite(client, chat_url, &dir, model_id).await?;
+        save_stage_score_note(&dir, "stage1_routing", &note)?;
+        let candidate = SearchCandidate {
+            name: dir
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| variant.to_string()),
+            dir,
+            score,
+            hard_rejected,
+        };
+        if candidate.score > best_search.score {
+            best_search = candidate.clone();
+        }
+        stage1_scores.push(candidate);
+    }
+    beam = select_top_search_beam(stage1_scores, beam_width);
+    if beam.is_empty() {
+        beam.push(best_search.clone());
+    }
+    if let Some(top) = beam.first() {
+        if top.score - best_stage_score < 0.02 {
+            stagnant_rounds += 1;
+        } else {
+            stagnant_rounds = 0;
+            best_stage_score = top.score;
+        }
+    }
+
+    if stagnant_rounds < 2 {
+        let router_variants = ["router_strict", "router_soft"];
+        let mut stage2_scores = Vec::new();
+        calibration_progress(args, &format!("tune stage 2/4: routing params for {model_id}"));
+        for parent in &beam {
+            for variant in router_variants {
+                let dir = make_candidate_dir(&run_root, &format!("20_{}_{}", parent.name, variant))?;
+                copy_profile_set(&parent.dir, &dir)?;
+                apply_router_param_variant(&dir, variant)?;
+                sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
+                let (score, hard_rejected, note) =
+                    evaluate_routing_suite(client, chat_url, &dir, model_id).await?;
+                save_stage_score_note(&dir, "stage2_routing", &note)?;
+                let candidate = SearchCandidate {
+                    name: dir
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| variant.to_string()),
+                    dir,
+                    score,
+                    hard_rejected,
+                };
+                if candidate.score > best_search.score {
+                    best_search = candidate.clone();
+                }
+                stage2_scores.push(candidate);
+            }
+        }
+        beam = select_top_search_beam(stage2_scores, beam_width);
+        if beam.is_empty() {
+            beam.push(best_search.clone());
+        }
+        if let Some(top) = beam.first() {
+            if top.score - best_stage_score < 0.02 {
+                stagnant_rounds += 1;
+            } else {
+                stagnant_rounds = 0;
+                best_stage_score = top.score;
+            }
+        }
+    }
+
+    if stagnant_rounds < 2 {
+        let orch_variants = ["orch_conservative", "orch_balanced", "orch_creative"];
+        let mut stage3_scores = Vec::new();
+        calibration_progress(args, &format!("tune stage 3/4: workflow orchestration for {model_id}"));
+        for parent in &beam {
+            for variant in orch_variants {
+                let dir = make_candidate_dir(&run_root, &format!("30_{}_{}", parent.name, variant))?;
+                copy_profile_set(&parent.dir, &dir)?;
+                apply_orchestrator_param_variant(&dir, variant)?;
+                sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
+                let (score, hard_rejected, note) =
+                    evaluate_workflow_suite(args, client, chat_url, &dir, model_id).await?;
+                save_stage_score_note(&dir, "stage3_workflow", &note)?;
+                let candidate = SearchCandidate {
+                    name: dir
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| variant.to_string()),
+                    dir,
+                    score,
+                    hard_rejected,
+                };
+                if candidate.score > best_search.score {
+                    best_search = candidate.clone();
+                }
+                stage3_scores.push(candidate);
+            }
+        }
+        beam = select_top_search_beam(stage3_scores, beam_width);
+        if beam.is_empty() {
+            beam.push(best_search.clone());
+        }
+        if let Some(top) = beam.first() {
+            if top.score - best_stage_score < 0.02 {
+                stagnant_rounds += 1;
+            } else {
+                stagnant_rounds = 0;
+                best_stage_score = top.score;
+            }
+        }
+    }
+
+    if stagnant_rounds < 2 {
+        let response_variants = ["response_stable", "response_balanced", "response_creative"];
+        let mut stage4_scores = Vec::new();
+        calibration_progress(args, &format!("tune stage 4/4: response quality for {model_id}"));
+        for parent in &beam {
+            for variant in response_variants {
+                let dir = make_candidate_dir(&run_root, &format!("40_{}_{}", parent.name, variant))?;
+                copy_profile_set(&parent.dir, &dir)?;
+                apply_response_param_variant(&dir, variant)?;
+                sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
+                let (score, hard_rejected, note) =
+                    evaluate_response_suite(args, client, chat_url, &dir, model_id).await?;
+                save_stage_score_note(&dir, "stage4_response", &note)?;
+                let candidate = SearchCandidate {
+                    name: dir
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| variant.to_string()),
+                    dir,
+                    score,
+                    hard_rejected,
+                };
+                if candidate.score > best_search.score {
+                    best_search = candidate.clone();
+                }
+                stage4_scores.push(candidate);
+            }
+        }
+        let final_pool = select_top_search_beam(stage4_scores, beam_width);
+        if let Some(top) = final_pool.first() {
+            if top.score > best_search.score {
+                best_search = top.clone();
+            }
+        }
+    }
+
+    let search_winner = beam.first().cloned().unwrap_or_else(|| best_search.clone());
+    calibration_progress(args, &format!("tune final validation: {}", search_winner.name));
+    let best_overall = evaluate_candidate_dir(
+        args,
+        client,
+        chat_url,
+        base_url,
+        &search_winner.dir,
+        model_id,
+        false,
+    )
+    .await?;
+
+    let winner_dir = run_root.join("winner");
+    snapshot_active_profile_set(&search_winner.dir, &winner_dir)?;
+    activate_profile_set(
+        model_cfg_dir,
+        &search_winner.dir,
+        base_url,
+        model_id,
+        "tune",
+        Some(run_id.clone()),
+        best_overall.score,
+        best_overall.report.summary.certified,
+    )?;
+    save_tune_run_manifest(
+        &run_root.join("run_manifest.toml"),
+        &TuneRunManifest {
+            version: 1,
+            run_id,
+            model: model_id.to_string(),
+            mode: "tune".to_string(),
+            started_unix_s: now_unix_s()?,
+            activated: true,
+            final_score: best_overall.score,
+            certified: best_overall.report.summary.certified,
+        },
+    )?;
+    Ok(best_overall)
+}
+
 async fn tune_model(
     args: &Args,
     client: &reqwest::Client,
@@ -2972,7 +4577,12 @@ async fn tune_model(
     model_cfg_dir: &PathBuf,
     model_id: &str,
     intention_tune_cfg: &Profile,
+    emit_progress: bool,
 ) -> Result<()> {
+    set_trace_log_path(Some(model_cfg_dir.join("trace_debug.log")));
+    if emit_progress {
+        calibration_progress(args, &format!("calibrating {model_id}: router support"));
+    }
     let elma_cfg = load_agent_config(&model_cfg_dir.join("_elma.config"))?;
     let router_cfg = load_agent_config(&model_cfg_dir.join("router.toml"))?;
     let mode_router_cfg = load_agent_config(&model_cfg_dir.join("mode_router.toml"))?;
@@ -2982,6 +4592,9 @@ async fn tune_model(
     let decider_cfg = load_agent_config(&model_cfg_dir.join("decider.toml"))?;
     let summarizer_cfg = load_agent_config(&model_cfg_dir.join("summarizer.toml"))?;
     let formatter_cfg = load_agent_config(&model_cfg_dir.join("formatter.toml"))?;
+    let complexity_cfg = load_agent_config(&model_cfg_dir.join("complexity_assessor.toml"))?;
+    let formula_cfg = load_agent_config(&model_cfg_dir.join("formula_selector.toml"))?;
+    let command_repair_cfg = load_agent_config(&model_cfg_dir.join("command_repair.toml"))?;
     let orchestrator_cfg = load_agent_config(&model_cfg_dir.join("orchestrator.toml"))?;
     let critic_cfg = load_agent_config(&model_cfg_dir.join("critic.toml"))?;
     let calibration_judge_cfg =
@@ -3045,9 +4658,20 @@ async fn tune_model(
     // 2) Build intention_mapping.txt from scenario files.
     let scenario_paths = list_intention_scenario_paths()?;
     let mut lines: Vec<String> = Vec::new();
-    for p in scenario_paths {
+    let scenario_count = scenario_paths.len();
+    for (index, p) in scenario_paths.into_iter().enumerate() {
         let txt = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
         let Some(expected) = read_expected_line(&txt) else { continue };
+        if emit_progress {
+            calibration_progress(
+                args,
+                &format!(
+                    "calibrating {model_id}: intention tags {}/{}",
+                    index + 1,
+                    scenario_count
+                ),
+            );
+        }
 
         let req = ChatCompletionRequest {
             model: intention_tune_cfg.model.clone(),
@@ -3124,7 +4748,19 @@ async fn tune_model(
     let mut response_total = 0usize;
     let mut all_ok_correct = 0usize;
 
-    for scenario in manifest.scenarios {
+    let scenario_total = manifest.scenarios.len();
+    for (scenario_index, scenario) in manifest.scenarios.into_iter().enumerate() {
+        if emit_progress {
+            calibration_progress(
+                args,
+                &format!(
+                    "calibrating {model_id}: runtime suite {}/{} ({})",
+                    scenario_index + 1,
+                    scenario_total,
+                    scenario.file
+                ),
+            );
+        }
         let scenario_path = repo_root()?
             .join("scenarios")
             .join("intention")
@@ -3194,6 +4830,29 @@ async fn tune_model(
 
         let (program_signature, program_parse_ok, program_parse_error, program_shape_ok, program_shape_reason, program_policy_ok, program_policy_reason, program_consistency_ok, executed_in_tune, execution_ok, critic_ok, critic_reason, response_ok, response_reason, response_plain_text, all_ok) =
             {
+                let complexity = assess_complexity_once(
+                    client,
+                    chat_url,
+                    &complexity_cfg,
+                    &user_message,
+                    &decision,
+                    &ws,
+                    &ws_brief,
+                    &conversation_messages,
+                )
+                .await
+                .unwrap_or_default();
+                let formula = select_formula_once(
+                    client,
+                    chat_url,
+                    &formula_cfg,
+                    &user_message,
+                    &decision,
+                    &complexity,
+                    &conversation_messages,
+                )
+                .await
+                .unwrap_or_default();
                 let mut program_opt: Option<Program> = None;
                 let mut program_eval = ProgramEvaluation {
                     parsed: false,
@@ -3212,6 +4871,8 @@ async fn tune_model(
                     &orchestrator_cfg,
                     &user_message,
                     &decision,
+                    &complexity,
+                    &formula,
                     &ws,
                     &ws_brief,
                     &conversation_messages,
@@ -3250,6 +4911,8 @@ async fn tune_model(
                         &orchestrator_cfg,
                         &user_message,
                         &decision,
+                        &complexity,
+                        &formula,
                         &ws,
                         &ws_brief,
                         &conversation_messages,
@@ -3288,6 +4951,8 @@ async fn tune_model(
                             &planner_master_cfg,
                             &decider_cfg,
                             &summarizer_cfg,
+                            Some(&command_repair_cfg),
+                            &program.objective,
                             false,
                             true,
                         )
@@ -3510,6 +5175,16 @@ async fn tune_model(
     let report_path = model_cfg_dir.join("calibration_report.json");
     save_calibration_report(&report_path, &report)?;
     trace(args, &format!("tune_calibration_report_saved={}", report_path.display()));
+    if emit_progress {
+        calibration_progress(
+            args,
+            &format!(
+                "calibration finished for {model_id}: score {:.3}, certified={}",
+                score_calibration_report(&report),
+                report.summary.certified
+            ),
+        );
+    }
 
     Ok(())
 }
@@ -3629,12 +5304,62 @@ fn ansi_paler_yellow(s: &str) -> String {
     format!("\x1b[38;5;179m{s}\x1b[0m")
 }
 
+static TRACE_LOG_PATH: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+fn trace_log_state() -> &'static Mutex<Option<PathBuf>> {
+    TRACE_LOG_PATH.get_or_init(|| Mutex::new(None))
+}
+
+fn set_trace_log_path(path: Option<PathBuf>) {
+    if let Ok(mut slot) = trace_log_state().lock() {
+        *slot = path;
+    }
+}
+
+fn append_trace_log_line(line: &str) {
+    let path = trace_log_state()
+        .lock()
+        .ok()
+        .and_then(|slot| (*slot).clone());
+    let Some(path) = path else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
 fn trace(args: &Args, msg: &str) {
     let line = format!("trace: {msg}");
-    if args.no_color {
+    append_trace_log_line(&line);
+    if args.debug_trace {
+        if args.no_color {
+            eprintln!("{line}");
+        } else {
+            eprintln!("{}", ansi_paler_yellow(&line));
+        }
+    }
+}
+
+fn calibration_progress(args: &Args, msg: &str) {
+    if args.tune || args.calibrate {
+        let line = format!("tune> {msg}");
+        append_trace_log_line(&line);
         eprintln!("{line}");
-    } else {
-        eprintln!("{}", ansi_paler_yellow(&line));
+        let _ = io::stderr().flush();
+    }
+}
+
+fn operator_trace(args: &Args, msg: &str) {
+    let line = format!("working> {msg}");
+    append_trace_log_line(&line);
+    if !(args.tune || args.calibrate) || args.debug_trace {
+        if args.no_color {
+            eprintln!("{line}");
+        } else {
+            eprintln!("{}", ansi_grey(&line));
+        }
     }
 }
 
@@ -3656,6 +5381,40 @@ fn strip_think_tags(s: &str) -> String {
     }
     out.push_str(rest);
     out.trim().to_string()
+}
+
+fn describe_operator_intent(route: &RouteDecision, complexity: &ComplexityAssessment, formula: &FormulaSelection) -> String {
+    if route
+        .speech_act
+        .choice
+        .eq_ignore_ascii_case("CAPABILITY_CHECK")
+        && probability_of(&route.speech_act.distribution, "CAPABILITY_CHECK") >= 0.65
+    {
+        return "answering a capability question".to_string();
+    }
+    let pattern = if !formula.primary.trim().is_empty() {
+        formula.primary.trim()
+    } else if !complexity.suggested_pattern.trim().is_empty() {
+        complexity.suggested_pattern.trim()
+    } else {
+        ""
+    };
+    match pattern {
+        "inspect_decide_reply" => "checking workspace evidence before making a decision".to_string(),
+        "inspect_summarize_reply" => "inspecting workspace evidence and summarizing it".to_string(),
+        "inspect_reply" => "looking at workspace evidence before answering".to_string(),
+        "execute_reply" => "running a terminal action and preparing the answer".to_string(),
+        "plan_reply" => "building a concrete plan".to_string(),
+        "masterplan_reply" => "building an overall plan".to_string(),
+        "reply" | "reply_only" => "answering directly".to_string(),
+        _ => match route.route.as_str() {
+            "SHELL" => "working through the workspace".to_string(),
+            "PLAN" => "building a concrete plan".to_string(),
+            "MASTERPLAN" => "building an overall plan".to_string(),
+            "DECIDE" => "weighing the options".to_string(),
+            _ => "answering directly".to_string(),
+        },
+    }
 }
 
 fn squash_blank_lines(s: &str) -> String {
@@ -3882,6 +5641,16 @@ async fn chat_once(
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    let mode_flags = [
+        args.tune,
+        args.calibrate,
+        args.restore_base,
+        args.restore_last,
+    ];
+    if mode_flags.into_iter().filter(|v| *v).count() > 1 {
+        anyhow::bail!("Choose only one of --tune, --calibrate, --restore-base, or --restore-last");
+    }
+
     let cfg_root = config_root_path(&args.config_root)?;
     let (base_url, base_url_source) =
         resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref());
@@ -3904,12 +5673,85 @@ async fn main() -> Result<()> {
 
     let model_cfg_dir = ensure_model_config_folder(&cfg_root, &base_url, &model_id)?;
 
-    if args.tune {
-        let model_ids = fetch_all_model_ids(&client, &base).await?;
+    if args.restore_base {
+        let baseline_dir = ensure_baseline_profile_set(&model_cfg_dir, &base_url, &model_id)?;
+        activate_profile_set(
+            &model_cfg_dir,
+            &baseline_dir,
+            &base_url,
+            &model_id,
+            "baseline",
+            None,
+            0.0,
+            false,
+        )?;
+        eprintln!(
+            "Restored baseline profiles for {} from {}",
+            model_id,
+            baseline_dir.display()
+        );
+        return Ok(());
+    }
+
+    if args.restore_last {
+        let fallback_dir = model_fallback_last_active_dir(&model_cfg_dir);
+        if !fallback_dir.exists() {
+            anyhow::bail!(
+                "No last-active profile snapshot found for {} at {}",
+                model_id,
+                fallback_dir.display()
+            );
+        }
+        activate_profile_set(
+            &model_cfg_dir,
+            &fallback_dir,
+            &base_url,
+            &model_id,
+            "fallback_last_active",
+            None,
+            0.0,
+            false,
+        )?;
+        eprintln!(
+            "Restored last active profiles for {} from {}",
+            model_id,
+            fallback_dir.display()
+        );
+        return Ok(());
+    }
+
+    if args.tune || args.calibrate {
+        let model_ids = if args.all_models {
+            fetch_all_model_ids(&client, &base).await?
+        } else {
+            vec![model_id.clone()]
+        };
         for mid in model_ids {
             let dir = ensure_model_config_folder(&cfg_root, &base_url, &mid)?;
-            let tune_cfg = load_agent_config(&dir.join("intention_tune.toml"))?;
-            tune_model(&args, &client, &chat_url, &base_url, &dir, &mid, &tune_cfg).await?;
+            if args.calibrate {
+                let tune_cfg = load_agent_config(&dir.join("intention_tune.toml"))?;
+                tune_model(
+                    &args,
+                    &client,
+                    &chat_url,
+                    &base_url,
+                    &dir,
+                    &mid,
+                    &tune_cfg,
+                    true,
+                )
+                .await?;
+            } else {
+                let winner = optimize_model(&args, &client, &chat_url, &base_url, &dir, &mid).await?;
+                eprintln!(
+                    "Activated tuned profiles for {} with score {:.3} (certified: {}).",
+                    mid,
+                    winner.score,
+                    winner.report.summary.certified
+                );
+                eprintln!("Restore last: cargo run -- --model {} --restore-last", mid);
+                eprintln!("Restore base: cargo run -- --model {} --restore-base", mid);
+            }
         }
         return Ok(());
     }
@@ -3920,6 +5762,9 @@ async fn main() -> Result<()> {
     let decider_cfg_path = model_cfg_dir.join("decider.toml");
     let summarizer_cfg_path = model_cfg_dir.join("summarizer.toml");
     let formatter_cfg_path = model_cfg_dir.join("formatter.toml");
+    let complexity_cfg_path = model_cfg_dir.join("complexity_assessor.toml");
+    let formula_cfg_path = model_cfg_dir.join("formula_selector.toml");
+    let command_repair_cfg_path = model_cfg_dir.join("command_repair.toml");
     let orchestrator_cfg_path = model_cfg_dir.join("orchestrator.toml");
     let critic_cfg_path = model_cfg_dir.join("critic.toml");
     let router_cfg_path = model_cfg_dir.join("router.toml");
@@ -3933,6 +5778,9 @@ async fn main() -> Result<()> {
     let decider_cfg = load_agent_config(&decider_cfg_path)?;
     let summarizer_cfg = load_agent_config(&summarizer_cfg_path)?;
     let formatter_cfg = load_agent_config(&formatter_cfg_path)?;
+    let complexity_cfg = load_agent_config(&complexity_cfg_path)?;
+    let formula_cfg = load_agent_config(&formula_cfg_path)?;
+    let command_repair_cfg = load_agent_config(&command_repair_cfg_path)?;
     let mut orchestrator_cfg = load_agent_config(&orchestrator_cfg_path)?;
     let mut critic_cfg = load_agent_config(&critic_cfg_path)?;
     let mut router_cfg = load_agent_config(&router_cfg_path)?;
@@ -4111,6 +5959,30 @@ async fn main() -> Result<()> {
         save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
     }
     if maybe_upgrade_system_prompt(
+        &mut orchestrator_cfg,
+        "orchestrator",
+        "COMPLEXITY AND FORMULA PRIORS:\n- You may receive a complexity prior and a formula prior.\n- Treat them as guidance, not hard rules.\n- For cleanup, safety review, or comparison requests about the workspace, prefer inspect_decide_reply.\n- If a shell command fails because of regex, glob, quoting, or parser issues, repair it once and continue if safe.",
+    ) {
+        trace(&args, "upgraded=orchestrator.complexity_formula_rules");
+        save_agent_config(&orchestrator_cfg_path, &orchestrator_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut critic_cfg,
+        "critic",
+        "CLEANUP VALIDATION:\n- If the user asked what is safe to clean up and there is no inspected workspace evidence, choose retry.\n- If a cleanup answer classifies files after a failed shell step, choose retry.\n- If a cleanup task used DECIDE without prior inspection, choose retry.",
+    ) {
+        trace(&args, "upgraded=critic.cleanup_rules");
+        save_agent_config(&critic_cfg_path, &critic_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
+        &mut elma_cfg,
+        "_elma",
+        prompt_patch_elma_grounding(),
+    ) {
+        trace(&args, "upgraded=elma.grounding_rules");
+        save_agent_config(&elma_cfg_path, &elma_cfg)?;
+    }
+    if maybe_upgrade_system_prompt(
         &mut critic_cfg,
         "critic",
         "SPEECH-ACT VALIDATION:\n- If speech_act is CAPABILITY_CHECK and the program executed shell or planning actions without explicit user intent to do so now, choose retry and replace it with a reply-only program.\n- If speech_act is ACTION_REQUEST, reject answers that only talk about capability without attempting the task when it is allowed.",
@@ -4123,6 +5995,7 @@ async fn main() -> Result<()> {
 
     let sessions_root = sessions_root_path(&args.sessions_root)?;
     let session = ensure_session_layout(&sessions_root)?;
+    set_trace_log_path(Some(session.root.join("trace_debug.log")));
 
     // Workspace intel unit: gather real facts about where we are and inject them
     // into Elma's context so she doesn't hallucinate access constraints.
@@ -4287,138 +6160,93 @@ async fn main() -> Result<()> {
                 route_decision.source
             ),
         );
-
-        // Reasoning-centered: ask the orchestrator for a Program every turn.
-        let orch_req = ChatCompletionRequest {
-            model: orchestrator_cfg.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: orchestrator_cfg.system_prompt.clone(),
+        let complexity = assess_complexity_once(
+            &client,
+            &chat_url,
+            &complexity_cfg,
+            line,
+            &route_decision,
+            &ws,
+            &ws_brief,
+            &messages,
+        )
+        .await
+        .unwrap_or_default();
+        trace(
+            &args,
+            &format!(
+                "complexity={} pattern={} risk={}",
+                if complexity.complexity.is_empty() {
+                    "UNKNOWN"
+                } else {
+                    &complexity.complexity
                 },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: format!(
-                        "User message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
-                        route_decision.speech_act.choice,
-                        route_decision.speech_act.source,
-                        format_route_distribution(&route_decision.speech_act.distribution),
-                        route_decision.speech_act.margin,
-                        route_decision.speech_act.entropy,
-                        route_decision.workflow.choice,
-                        route_decision.workflow.source,
-                        format_route_distribution(&route_decision.workflow.distribution),
-                        route_decision.workflow.margin,
-                        route_decision.workflow.entropy,
-                        route_decision.mode.choice,
-                        route_decision.mode.source,
-                        format_route_distribution(&route_decision.mode.distribution),
-                        route_decision.mode.margin,
-                        route_decision.mode.entropy,
-                        route_decision.route,
-                        route_decision.source,
-                        format_route_distribution(&route_decision.distribution),
-                        route_decision.margin,
-                        route_decision.entropy,
-                        ws.trim(),
-                        ws_brief.trim(),
-                        messages
-                            .iter()
-                            .skip(1)
-                            .rev()
-                            .take(12)
-                            .rev()
-                            .map(|m| format!("{}: {}", m.role, m.content.replace('\n', " ")))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ),
+                if complexity.suggested_pattern.is_empty() {
+                    "unknown"
+                } else {
+                    &complexity.suggested_pattern
                 },
-            ],
-            temperature: orchestrator_cfg.temperature,
-            top_p: orchestrator_cfg.top_p,
-            stream: false,
-            max_tokens: orchestrator_cfg.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
-            reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
-        };
+                if complexity.risk.is_empty() {
+                    "UNKNOWN"
+                } else {
+                    &complexity.risk
+                }
+            ),
+        );
+        let formula = select_formula_once(
+            &client,
+            &chat_url,
+            &formula_cfg,
+            line,
+            &route_decision,
+            &complexity,
+            &messages,
+        )
+        .await
+        .unwrap_or_default();
+        trace(
+            &args,
+            &format!(
+                "formula={} alt={} reason={}",
+                if formula.primary.is_empty() {
+                    "unknown"
+                } else {
+                    &formula.primary
+                },
+                if formula.alternatives.is_empty() {
+                    "-".to_string()
+                } else {
+                    formula.alternatives.join(",")
+                },
+                formula.reason
+            ),
+        );
+        operator_trace(&args, &describe_operator_intent(&route_decision, &complexity, &formula));
 
-        let orch_resp = chat_once(&client, &chat_url, &orch_req).await?;
-        let orch_text = orch_resp
-            .choices
-            .get(0)
-            .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
-            .unwrap_or_default();
-
-        let mut program: Program = match parse_json_loose(&orch_text) {
-            Ok(p) => p,
+        let mut program = match orchestrate_program_once(
+            &client,
+            &chat_url,
+            &orchestrator_cfg,
+            line,
+            &route_decision,
+            &complexity,
+            &formula,
+            &ws,
+            &ws_brief,
+            &messages,
+        )
+        .await
+        {
+            Ok((p, _raw)) => p,
             Err(e) => {
-                trace(&args, &format!("orchestrator_parse_error={e}"));
-                // Ask the orchestrator once more to repair its own output into valid JSON.
-                let repair_req = ChatCompletionRequest {
-                    model: orchestrator_cfg.model.clone(),
-                    messages: vec![
-                        ChatMessage {
-                            role: "system".to_string(),
-                            content: orchestrator_cfg.system_prompt.clone(),
-                        },
-                        ChatMessage {
-                            role: "user".to_string(),
-                            content: format!(
-                                "Your previous answer was invalid. Return ONLY a valid Program JSON object for this request.\n\nUser message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nPrevious invalid output:\n{}",
-                                route_decision.speech_act.choice,
-                                route_decision.speech_act.source,
-                                format_route_distribution(&route_decision.speech_act.distribution),
-                                route_decision.speech_act.margin,
-                                route_decision.speech_act.entropy,
-                                route_decision.workflow.choice,
-                                route_decision.workflow.source,
-                                format_route_distribution(&route_decision.workflow.distribution),
-                                route_decision.workflow.margin,
-                                route_decision.workflow.entropy,
-                                route_decision.mode.choice,
-                                route_decision.mode.source,
-                                format_route_distribution(&route_decision.mode.distribution),
-                                route_decision.mode.margin,
-                                route_decision.mode.entropy,
-                                route_decision.route,
-                                route_decision.source,
-                                format_route_distribution(&route_decision.distribution),
-                                route_decision.margin,
-                                route_decision.entropy,
-                                ws.trim(),
-                                ws_brief.trim(),
-                                orch_text.trim()
-                            ),
-                        },
-                    ],
-                    temperature: orchestrator_cfg.temperature,
-                    top_p: orchestrator_cfg.top_p,
-                    stream: false,
-                    max_tokens: orchestrator_cfg.max_tokens,
-                    n_probs: None,
-                    repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
-                    reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
-                };
-                let repaired = chat_once(&client, &chat_url, &repair_req).await?;
-                let repaired_text = repaired
-                    .choices
-                    .get(0)
-                    .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
-                    .unwrap_or_default();
-                match parse_json_loose(&repaired_text) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        trace(&args, &format!("orchestrator_repair_parse_error={e}"));
-                        Program {
-                            objective: "fallback_chat".to_string(),
-                            steps: vec![Step::Reply {
-                                id: "r1".to_string(),
-                                instructions: "Reply to the user in plain terminal text. Do not invent workspace facts you did not inspect.".to_string(),
-                                common: StepCommon::default(),
-                            }],
-                        }
-                    }
+                trace(&args, &format!("orchestrator_repair_parse_error={e}"));
+                Program {
+                    objective: "fallback_chat".to_string(),
+                    steps: vec![Step::Reply {
+                        id: "r1".to_string(),
+                        instructions: "Reply to the user in plain terminal text. Do not invent workspace facts you did not inspect.".to_string(),
+                        common: StepCommon::default(),
+                    }],
                 }
             }
         };
@@ -4438,6 +6266,8 @@ async fn main() -> Result<()> {
             &planner_master_cfg,
             &decider_cfg,
             &summarizer_cfg,
+            Some(&command_repair_cfg),
+            &program.objective,
             true,
             false,
         )
@@ -4566,6 +6396,8 @@ async fn main() -> Result<()> {
                         &planner_master_cfg,
                         &decider_cfg,
                         &summarizer_cfg,
+                        Some(&command_repair_cfg),
+                        &program.objective,
                         true,
                         false,
                     )

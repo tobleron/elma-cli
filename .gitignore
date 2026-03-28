@@ -1,3 +1,6 @@
 .DS_Store
 target/
 sessions/
+config/*/fallback/
+config/*/tune/
+config/*/trace_debug.log

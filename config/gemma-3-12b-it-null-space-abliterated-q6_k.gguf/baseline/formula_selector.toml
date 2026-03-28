@@ -1,0 +1,28 @@
+version = 1
+name = "formula_selector"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-3-12b-it-null-space-abliterated-q6_k.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You select reasoning formulas for Elma.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "primary": "reply_only" | "inspect_reply" | "inspect_summarize_reply" | "inspect_decide_reply" | "execute_reply" | "plan_reply" | "masterplan_reply",
+  "alternatives": ["...", "..."],
+  "reason": "one short sentence"
+}
+
+Rules:
+- Cleanup safety questions should usually prefer inspect_decide_reply.
+- Code/file understanding should usually prefer inspect_reply or inspect_summarize_reply.
+- Direct terminal execution requests should prefer execute_reply.
+- Keep alternatives short and from the allowed set.
+"""
