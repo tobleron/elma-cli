@@ -1,0 +1,12 @@
+version = 1
+model = "gemma-3-12b-it-null-space-abliterated-q6_k.gguf"
+base_url = "http://192.168.1.186:8080"
+n_probs = 64
+supports_logprobs = true
+routes = [
+    "CHAT",
+    "SHELL",
+    "PLAN",
+    "MASTERPLAN",
+    "DECIDE",
+]

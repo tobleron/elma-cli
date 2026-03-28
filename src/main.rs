@@ -35,6 +35,10 @@ struct Args {
     /// Disable ANSI colors.
     #[arg(long, default_value_t = false)]
     no_color: bool,
+
+    /// Run tuning for all models exposed by the endpoint, then exit.
+    #[arg(long, default_value_t = false)]
+    tune: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -81,6 +85,25 @@ fn save_agent_config(path: &PathBuf, p: &Profile) -> Result<()> {
     Ok(())
 }
 
+fn save_router_calibration(path: &PathBuf, c: &RouterCalibration) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let s = toml::to_string_pretty(c).context("Failed to serialize router calibration toml")?;
+    std::fs::write(&path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct RouterCalibration {
+    version: u32,
+    model: String,
+    base_url: String,
+    n_probs: u32,
+    supports_logprobs: bool,
+    routes: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct ModelsList {
     data: Option<Vec<ModelItem>>,
@@ -120,6 +143,35 @@ async fn fetch_first_model_id(client: &reqwest::Client, base_url: &Url) -> Resul
         }
     }
     anyhow::bail!("No model ids found in /v1/models response")
+}
+
+async fn fetch_all_model_ids(client: &reqwest::Client, base_url: &Url) -> Result<Vec<String>> {
+    let url = base_url.join("/v1/models").context("Failed to build /v1/models URL")?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .context("GET /v1/models failed")?;
+    let status = resp.status();
+    let text = resp.text().await.context("Failed to read /v1/models body")?;
+    if !status.is_success() {
+        anyhow::bail!("GET /v1/models returned HTTP {status}: {text}");
+    }
+    let parsed: ModelsList = serde_json::from_str(&text).context("Invalid JSON from /v1/models")?;
+    let mut out = Vec::new();
+    let list = parsed.data.or(parsed.models).unwrap_or_default();
+    for item in list {
+        if let Some(id) = item.id.or(item.name).or(item.model) {
+            let id = id.trim().to_string();
+            if !id.is_empty() && !out.contains(&id) {
+                out.push(id);
+            }
+        }
+    }
+    if out.is_empty() {
+        anyhow::bail!("No model ids found in /v1/models response");
+    }
+    Ok(out)
 }
 
 async fn fetch_ctx_max(client: &reqwest::Client, base_url: &Url) -> Result<Option<u64>> {
@@ -446,6 +498,27 @@ fn ensure_model_config_folder(
     let summarizer_path = dir.join("summarizer.toml");
     if !summarizer_path.exists() {
         save_agent_config(&summarizer_path, &default_summarizer_config(base_url, model_id))?;
+    }
+    let router_cal_path = dir.join("router_calibration.toml");
+    if !router_cal_path.exists() {
+        // Placeholder; real values written by --tune.
+        save_router_calibration(
+            &router_cal_path,
+            &RouterCalibration {
+                version: 1,
+                model: model_id.to_string(),
+                base_url: base_url.to_string(),
+                n_probs: 32,
+                supports_logprobs: false,
+                routes: vec![
+                    "CHAT".to_string(),
+                    "SHELL".to_string(),
+                    "PLAN".to_string(),
+                    "MASTERPLAN".to_string(),
+                    "DECIDE".to_string(),
+                ],
+            },
+        )?;
     }
 
     Ok(dir)
@@ -946,6 +1019,125 @@ fn scenario_helper(intent_word: &str, mapping: &[(String, [String; 3])]) -> (Opt
     }
 }
 
+fn list_intention_scenario_paths() -> Result<Vec<PathBuf>> {
+    let dir = repo_root()?.join("scenarios").join("intention");
+    let mut out: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .with_context(|| format!("read_dir {}", dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.starts_with("scenario_") && s.ends_with(".md"))
+                .unwrap_or(false)
+        })
+        .collect();
+    out.sort();
+    Ok(out)
+}
+
+async fn tune_model(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    model_cfg_dir: &PathBuf,
+    model_id: &str,
+    intention_tune_cfg: &Profile,
+) -> Result<()> {
+    // 1) Build intention_mapping.txt from scenario files.
+    let scenario_paths = list_intention_scenario_paths()?;
+    let mut lines: Vec<String> = Vec::new();
+    for p in scenario_paths {
+        let txt = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
+        let Some(expected) = read_expected_line(&txt) else { continue };
+
+        let req = ChatCompletionRequest {
+            model: intention_tune_cfg.model.clone(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: intention_tune_cfg.system_prompt.clone(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: txt,
+                },
+            ],
+            temperature: intention_tune_cfg.temperature,
+            top_p: intention_tune_cfg.top_p,
+            stream: false,
+            max_tokens: intention_tune_cfg.max_tokens,
+            n_probs: None,
+            repeat_penalty: Some(intention_tune_cfg.repeat_penalty),
+            reasoning_format: Some(intention_tune_cfg.reasoning_format.clone()),
+        };
+
+        let resp = chat_once(client, chat_url, &req).await?;
+        let raw = resp
+            .choices
+            .get(0)
+            .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+            .unwrap_or_default();
+        let tags = parse_three_tags(&raw);
+        lines.push(format!("{}: {}, {}, {}", expected, tags[0], tags[1], tags[2]));
+    }
+    let mapping_path = model_cfg_dir.join("intention_mapping.txt");
+    std::fs::write(&mapping_path, lines.join("\n") + "\n")
+        .with_context(|| format!("write {}", mapping_path.display()))?;
+    trace(args, &format!("tune_intention_mapping_saved={}", mapping_path.display()));
+
+    // 2) Router calibration: check whether server returns logprobs for top_logprobs.
+    // We can't perfectly guarantee inclusion in top_logprobs, but we can verify support and
+    // choose an n_probs default that is "big enough".
+    let routes = vec![
+        "CHAT".to_string(),
+        "SHELL".to_string(),
+        "PLAN".to_string(),
+        "MASTERPLAN".to_string(),
+        "DECIDE".to_string(),
+    ];
+    let n_probs = 64u32;
+    let cal_req = ChatCompletionRequest {
+        model: model_id.to_string(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "Return exactly one token: CHAT.\nNo other text.".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: "ping".to_string(),
+            },
+        ],
+        temperature: 0.0,
+        top_p: 1.0,
+        stream: false,
+        max_tokens: 1,
+        n_probs: Some(n_probs),
+        repeat_penalty: None,
+        reasoning_format: None,
+    };
+    let cal_resp = chat_once(client, chat_url, &cal_req).await?;
+    let supports_logprobs = cal_resp
+        .choices
+        .get(0)
+        .and_then(|c| c.logprobs.as_ref())
+        .is_some();
+
+    let cal = RouterCalibration {
+        version: 1,
+        model: model_id.to_string(),
+        base_url: args.base_url.clone(),
+        n_probs,
+        supports_logprobs,
+        routes,
+    };
+    let cal_path = model_cfg_dir.join("router_calibration.toml");
+    save_router_calibration(&cal_path, &cal)?;
+    trace(args, &format!("tune_router_calibration_saved={}", cal_path.display()));
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ChatMessage {
     role: String,
@@ -960,6 +1152,8 @@ struct ChatCompletionRequest {
     top_p: f64,
     stream: bool,
     max_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    n_probs: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     repeat_penalty: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -988,6 +1182,8 @@ struct Choice {
     message: ChoiceMessage,
     #[serde(default)]
     finish_reason: Option<String>,
+    #[serde(default)]
+    logprobs: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1340,6 +1536,16 @@ async fn main() -> Result<()> {
     let mut action_type_cfg = load_agent_config(&action_type_cfg_path)?;
     let summarizer_cfg = load_agent_config(&summarizer_cfg_path)?;
 
+    if args.tune {
+        let model_ids = fetch_all_model_ids(&client, &base).await?;
+        for mid in model_ids {
+            let dir = ensure_model_config_folder(&cfg_root, &args.base_url, &mid)?;
+            let tune_cfg = load_agent_config(&dir.join("intention_tune.toml"))?;
+            tune_model(&args, &client, &chat_url, &dir, &mid, &tune_cfg).await?;
+        }
+        return Ok(());
+    }
+
     // Ensure these configs track current base/model (user can still edit files manually).
     elma_cfg.base_url = args.base_url.clone();
     elma_cfg.model = model_id.clone();
@@ -1426,6 +1632,7 @@ async fn main() -> Result<()> {
             top_p: intention_cfg.top_p,
             stream: false,
             max_tokens: intention_cfg.max_tokens,
+            n_probs: None,
             repeat_penalty: Some(intention_cfg.repeat_penalty),
             reasoning_format: Some(intention_cfg.reasoning_format.clone()),
         };
@@ -1474,6 +1681,7 @@ async fn main() -> Result<()> {
             top_p: action_type_cfg.top_p,
             stream: false,
             max_tokens: action_type_cfg.max_tokens,
+            n_probs: None,
             repeat_penalty: Some(action_type_cfg.repeat_penalty),
             reasoning_format: Some(action_type_cfg.reasoning_format.clone()),
         };
@@ -1508,6 +1716,7 @@ async fn main() -> Result<()> {
                 top_p: gate_why_cfg.top_p,
                 stream: false,
                 max_tokens: gate_why_cfg.max_tokens,
+                n_probs: None,
                 repeat_penalty: Some(gate_why_cfg.repeat_penalty),
                 reasoning_format: Some(gate_why_cfg.reasoning_format.clone()),
             };
@@ -1571,6 +1780,7 @@ async fn main() -> Result<()> {
                                 top_p: summarizer_cfg.top_p,
                                 stream: false,
                                 max_tokens: summarizer_cfg.max_tokens,
+                                n_probs: None,
                                 repeat_penalty: Some(summarizer_cfg.repeat_penalty),
                                 reasoning_format: Some(summarizer_cfg.reasoning_format.clone()),
                             };
@@ -1618,6 +1828,7 @@ async fn main() -> Result<()> {
                     top_p: tooler_cfg.top_p,
                     stream: false,
                     max_tokens: tooler_cfg.max_tokens,
+                    n_probs: None,
                     repeat_penalty: Some(tooler_cfg.repeat_penalty),
                     reasoning_format: Some(tooler_cfg.reasoning_format.clone()),
                 };
@@ -1691,6 +1902,7 @@ async fn main() -> Result<()> {
                     top_p: planner_cfg.top_p,
                     stream: false,
                     max_tokens: planner_cfg.max_tokens,
+                    n_probs: None,
                     repeat_penalty: Some(planner_cfg.repeat_penalty),
                     reasoning_format: Some(planner_cfg.reasoning_format.clone()),
                 };
@@ -1724,6 +1936,7 @@ async fn main() -> Result<()> {
                     top_p: planner_master_cfg.top_p,
                     stream: false,
                     max_tokens: planner_master_cfg.max_tokens,
+                    n_probs: None,
                     repeat_penalty: Some(planner_master_cfg.repeat_penalty),
                     reasoning_format: Some(planner_master_cfg.reasoning_format.clone()),
                 };
@@ -1757,6 +1970,7 @@ async fn main() -> Result<()> {
                     top_p: decider_cfg.top_p,
                     stream: false,
                     max_tokens: decider_cfg.max_tokens,
+                    n_probs: None,
                     repeat_penalty: Some(decider_cfg.repeat_penalty),
                     reasoning_format: Some(decider_cfg.reasoning_format.clone()),
                 };
@@ -1780,6 +1994,7 @@ async fn main() -> Result<()> {
             top_p: elma_cfg.top_p,
             stream: false,
             max_tokens: elma_cfg.max_tokens,
+            n_probs: None,
             repeat_penalty: Some(elma_cfg.repeat_penalty),
             reasoning_format: Some(elma_cfg.reasoning_format.clone()),
         };
