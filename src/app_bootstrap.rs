@@ -3,6 +3,7 @@ use crate::*;
 
 pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
     let args = Args::parse();
+    set_reasoning_display(args.show_thinking && args.debug_trace, args.no_color);
     validate_mode_flags(&args)?;
 
     let cfg_root = config_root_path(&args.config_root)?;

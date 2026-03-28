@@ -135,3 +135,80 @@ pub(crate) async fn fetch_ctx_max(client: &reqwest::Client, base_url: &Url) -> R
         .and_then(|meta| meta.get("n_ctx_train"))
         .and_then(|x| x.as_u64()))
 }
+
+pub(crate) fn isolate_reasoning_fields(resp: &mut ChatCompletionResponse) {
+    for choice in &mut resp.choices {
+        let content = choice.message.content.as_deref();
+        let reasoning = choice.message.reasoning_content.as_deref();
+        let (thinking, final_text) = split_thinking_and_final(content, reasoning);
+
+        choice.message.reasoning_content = thinking.filter(|s| !s.trim().is_empty());
+        choice.message.content = if final_text.trim().is_empty() {
+            match content {
+                Some(existing) if !existing.trim().is_empty() => Some(existing.trim().to_string()),
+                _ => None,
+            }
+        } else {
+            Some(final_text)
+        };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn isolates_reasoning_from_tagged_content() {
+        let mut resp = ChatCompletionResponse {
+            choices: vec![Choice {
+                message: ChoiceMessage {
+                    role: Some("assistant".to_string()),
+                    content: Some(
+                        "<<<reasoning_content_start>>>thoughts<<<reasoning_content_end>>>answer"
+                            .to_string(),
+                    ),
+                    reasoning_content: None,
+                },
+                finish_reason: None,
+                logprobs: None,
+            }],
+            id: None,
+            created: None,
+            model: None,
+            system_fingerprint: None,
+            usage: None,
+            timings: None,
+        };
+        isolate_reasoning_fields(&mut resp);
+        assert_eq!(resp.choices[0].message.content.as_deref(), Some("answer"));
+        assert_eq!(
+            resp.choices[0].message.reasoning_content.as_deref(),
+            Some("thoughts")
+        );
+    }
+
+    #[test]
+    fn keeps_response_usable_when_reasoning_absent() {
+        let mut resp = ChatCompletionResponse {
+            choices: vec![Choice {
+                message: ChoiceMessage {
+                    role: Some("assistant".to_string()),
+                    content: Some("plain answer".to_string()),
+                    reasoning_content: None,
+                },
+                finish_reason: None,
+                logprobs: None,
+            }],
+            id: None,
+            created: None,
+            model: None,
+            system_fingerprint: None,
+            usage: None,
+            timings: None,
+        };
+        isolate_reasoning_fields(&mut resp);
+        assert_eq!(resp.choices[0].message.content.as_deref(), Some("plain answer"));
+        assert!(resp.choices[0].message.reasoning_content.is_none());
+    }
+}

@@ -52,14 +52,25 @@ pub(crate) fn ansi_soft_green(s: &str) -> String {
 }
 
 static TRACE_LOG_PATH: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+static REASONING_DISPLAY: OnceLock<Mutex<(bool, bool)>> = OnceLock::new();
 
 pub(crate) fn trace_log_state() -> &'static Mutex<Option<PathBuf>> {
     TRACE_LOG_PATH.get_or_init(|| Mutex::new(None))
 }
 
+pub(crate) fn reasoning_display_state() -> &'static Mutex<(bool, bool)> {
+    REASONING_DISPLAY.get_or_init(|| Mutex::new((false, false)))
+}
+
 pub(crate) fn set_trace_log_path(path: Option<PathBuf>) {
     if let Ok(mut slot) = trace_log_state().lock() {
         *slot = path;
+    }
+}
+
+pub(crate) fn set_reasoning_display(show_terminal: bool, no_color: bool) {
+    if let Ok(mut slot) = reasoning_display_state().lock() {
+        *slot = (show_terminal, no_color);
     }
 }
 
@@ -74,6 +85,73 @@ pub(crate) fn append_trace_log_line(line: &str) {
     }
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "{line}");
+    }
+}
+
+pub(crate) fn append_reasoning_audit_record(
+    req: &ChatCompletionRequest,
+    resp: &ChatCompletionResponse,
+) {
+    let path = trace_log_state()
+        .lock()
+        .ok()
+        .and_then(|slot| (*slot).clone())
+        .map(|trace_path| trace_path.with_file_name("reasoning_audit.jsonl"));
+    let Some(path) = path else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let system_preview = req
+        .messages
+        .iter()
+        .find(|m| m.role == "system")
+        .map(|m| preview_text(&m.content, 2))
+        .unwrap_or_default();
+    let user_preview = req
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| preview_text(&m.content, 4))
+        .unwrap_or_default();
+    let final_text = extract_response_text(resp);
+    let reasoning_text = extract_response_reasoning(resp);
+    let record = serde_json::json!({
+        "ts_unix_s": SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| d.as_secs()).unwrap_or_default(),
+        "model": req.model,
+        "reasoning_format": req.reasoning_format,
+        "system_preview": system_preview,
+        "user_preview": user_preview,
+        "final_text": final_text,
+        "reasoning_text": reasoning_text,
+        "has_reasoning": !reasoning_text.trim().is_empty(),
+    });
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{record}");
+    }
+}
+
+pub(crate) fn maybe_display_reasoning_trace(resp: &ChatCompletionResponse) {
+    let (show_terminal, no_color) = reasoning_display_state()
+        .lock()
+        .ok()
+        .map(|slot| *slot)
+        .unwrap_or((false, false));
+    if !show_terminal {
+        return;
+    }
+    let reasoning = extract_response_reasoning(resp);
+    if reasoning.trim().is_empty() {
+        return;
+    }
+    for line in preview_text(&reasoning, 6).lines() {
+        let rendered = format!("~ {}", line.trim_end());
+        if no_color {
+            eprintln!("{rendered}");
+        } else {
+            eprintln!("{}", ansi_paler_yellow(&rendered));
+        }
     }
 }
 
@@ -168,6 +246,7 @@ pub(crate) fn describe_operator_intent(
             "checking workspace evidence before making a decision".to_string()
         }
         "inspect_summarize_reply" => "inspecting workspace evidence and summarizing it".to_string(),
+        "inspect_edit_verify_reply" => "editing files and verifying the result".to_string(),
         "inspect_reply" => "looking at workspace evidence before answering".to_string(),
         "execute_reply" => "running a terminal action and preparing the answer".to_string(),
         "plan_reply" => "building a concrete plan".to_string(),
@@ -387,8 +466,11 @@ pub(crate) async fn chat_once(
                     anyhow::bail!("Server returned HTTP {status}: {text}");
                 }
 
-                let parsed: ChatCompletionResponse =
+                let mut parsed: ChatCompletionResponse =
                     serde_json::from_str(&text).context("Invalid JSON from server")?;
+                isolate_reasoning_fields(&mut parsed);
+                append_reasoning_audit_record(req, &parsed);
+                maybe_display_reasoning_trace(&parsed);
                 return Ok(parsed);
             }
             Err(e) => {
@@ -401,4 +483,60 @@ pub(crate) async fn chat_once(
         }
     }
     anyhow::bail!("POST /v1/chat/completions failed after retries: {last_error}")
+}
+
+pub(crate) fn extract_response_text(resp: &ChatCompletionResponse) -> String {
+    resp.choices
+        .get(0)
+        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .unwrap_or_default()
+}
+
+pub(crate) fn extract_response_reasoning(resp: &ChatCompletionResponse) -> String {
+    resp.choices
+        .get(0)
+        .and_then(|c| c.message.reasoning_content.clone())
+        .unwrap_or_default()
+}
+
+pub(crate) async fn chat_json_with_repair<T: DeserializeOwned>(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+) -> Result<T> {
+    let resp = chat_once(client, chat_url, req).await?;
+    let text = extract_response_text(&resp);
+    if let Ok(parsed) = parse_json_loose::<T>(&text) {
+        return Ok(parsed);
+    }
+
+    let repair_context = req
+        .messages
+        .iter()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
+    let mut repair_req = req.clone();
+    repair_req.messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: req
+                .messages
+                .iter()
+                .find(|m| m.role == "system")
+                .map(|m| m.content.clone())
+                .unwrap_or_default(),
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: format!(
+                "Return ONLY one valid JSON object that matches your required schema.\n\nOriginal input:\n{}\n\nYour previous invalid output:\n{}",
+                repair_context.trim(),
+                text.trim()
+            ),
+        },
+    ];
+    let repaired = chat_once(client, chat_url, &repair_req).await?;
+    let repaired_text = extract_response_text(&repaired);
+    parse_json_loose(&repaired_text)
 }
