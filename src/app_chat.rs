@@ -3,7 +3,8 @@ use crate::*;
 
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     loop {
-        let Some(line) = prompt_line("you> ")? else {
+        let prompt = user_prompt_label(&runtime.args);
+        let Some(line) = prompt_line(&prompt)? else {
             break;
         };
         let line = line.trim();

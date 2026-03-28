@@ -59,7 +59,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         role: "system".to_string(),
         content: system_content.clone(),
     }];
-    emit_startup_banner(&chat_url, &model_id, &model_cfg_dir, &session);
+    emit_startup_banner(&args, &chat_url, &model_id, &model_cfg_dir, &session);
 
     Ok(Some(AppRuntime {
         args,
@@ -485,10 +485,40 @@ fn build_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {
     system_content
 }
 
-fn emit_startup_banner(chat_url: &Url, model_id: &str, model_cfg_dir: &Path, session: &SessionPaths) {
-    eprintln!("Connected target: {chat_url}");
-    eprintln!("Model: {model_id}");
-    eprintln!("Config: {}", model_cfg_dir.display());
-    eprintln!("Session: {}", session.root.display());
-    eprintln!("Type /exit to quit, /reset to clear history.\n");
+fn emit_startup_banner(
+    args: &Args,
+    chat_url: &Url,
+    model_id: &str,
+    model_cfg_dir: &Path,
+    session: &SessionPaths,
+) {
+    let target = chat_url
+        .host_str()
+        .map(|host| {
+            let port = chat_url.port().map(|p| format!(":{p}")).unwrap_or_default();
+            format!("{}://{host}{port}", chat_url.scheme())
+        })
+        .unwrap_or_else(|| chat_url.to_string());
+    let session_name = session
+        .root
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| session.root.display().to_string());
+
+    if args.no_color {
+        eprintln!("Elma");
+        eprintln!("  target   {target}");
+        eprintln!("  model    {model_id}");
+        eprintln!("  config   {}", model_cfg_dir.display());
+        eprintln!("  session  {session_name}");
+        eprintln!("  commands /exit  /reset\n");
+        return;
+    }
+
+    eprintln!("{}", ansi_orange("Elma"));
+    eprintln!("{} {target}", ansi_grey("  target  "));
+    eprintln!("{} {model_id}", ansi_grey("  model   "));
+    eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
+    eprintln!("{} {session_name}", ansi_grey("  session "));
+    eprintln!("{} /exit  /reset\n", ansi_grey("  commands"));
 }

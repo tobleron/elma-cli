@@ -13,6 +13,14 @@ pub(crate) fn prompt_line(prompt: &str) -> Result<Option<String>> {
     Ok(Some(line))
 }
 
+pub(crate) fn user_prompt_label(args: &Args) -> String {
+    if args.no_color {
+        "◉ ".to_string()
+    } else {
+        ansi_pale_yellow("◉ ")
+    }
+}
+
 pub(crate) fn ansi_grey(s: &str) -> String {
     // 8-bit grey
     format!("\x1b[90m{s}\x1b[0m")
