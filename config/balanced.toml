@@ -1,0 +1,16 @@
+version = 1
+name = "balanced"
+
+base_url = "http://localhost:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+
+temperature = 0.6
+top_p = 0.95
+repeat_penalty = 1.0
+reasoning_format = "auto"
+
+max_tokens = 16384
+timeout_s = 120
+
+# System prompt for non-thinking mode.
+system_prompt = "You are a helpful assistant."
