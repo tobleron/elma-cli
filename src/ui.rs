@@ -193,17 +193,16 @@ pub(crate) fn maybe_display_reasoning_trace(resp: &ChatCompletionResponse) {
     }
 }
 
+pub(crate) fn trace(args: &Args, msg: &str) {
+    let line = format!("trace: {msg}");
+    append_trace_log_line(&line);
+    // Traces go to log file only, not UI (for debugging)
+}
+
 pub(crate) fn trace_verbose(verbose: bool, msg: &str) {
     let line = format!("trace: {msg}");
     append_trace_log_line(&line);
-    // Show traces when verbose is enabled
-    if verbose {
-        eprintln!("{}", ansi_paler_yellow(&line));
-    }
-}
-
-pub(crate) fn trace(args: &Args, msg: &str) {
-    trace_verbose(args.show_process, msg);
+    // Traces go to log file only, not UI (for debugging)
 }
 
 /// Show a concise process milestone (shown when verbose is enabled)
@@ -217,6 +216,16 @@ pub(crate) fn show_process_step_verbose(verbose: bool, category: &str, msg: &str
 
 pub(crate) fn show_process_step(args: &Args, category: &str, msg: &str) {
     show_process_step_verbose(args.show_process, category, msg);
+}
+
+/// Show intel summary from model-generated feedback (Category 2)
+/// These are situational summaries determined by the model
+pub(crate) fn show_intel_summary(verbose: bool, summary: &str) {
+    let line = format!("💡 {}", summary);
+    append_trace_log_line(&line);
+    if verbose {
+        eprintln!("{}", ansi_soft_gold(&line));
+    }
 }
 
 pub(crate) fn calibration_progress(args: &Args, msg: &str) {
