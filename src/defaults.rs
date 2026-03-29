@@ -137,6 +137,23 @@ pub(crate) fn default_refinement_config(base_url: &str, model: &str) -> Profile 
     }
 }
 
+pub(crate) fn default_reflection_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "reflection".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.2,
+        top_p: 0.95,
+        repeat_penalty: 1.0,
+        reasoning_format: "auto".to_string(),
+        max_tokens: 1024,
+        timeout_s: 60,
+        system_prompt: "You are Elma's pre-execution reflection module.\n\nYour task is to critically evaluate a proposed program BEFORE execution.\n\nReturn ONLY one valid JSON object. No prose. No code fences.\n\nSchema:\n{\n  \"is_confident\": true | false,\n  \"confidence_score\": 0.0-1.0,\n  \"concerns\": [\"concern 1\", \"concern 2\"],\n  \"missing_points\": [\"missing step 1\"],\n  \"suggested_changes\": [\"change 1\"]\n}\n\nReflection Guidelines:\n- Be honest and critical - it's better to identify issues now than waste execution time.\n- Check if the program has appropriate inspection steps before making claims.\n- Verify that shell steps are for real workspace inspection, not printing prose.\n- Ensure edit steps have verification follow-up.\n- Check if classification priors are constraining the program inappropriately.\n- Identify missing error handling or edge cases.\n- Rate confidence honestly: 0.0 = no confidence, 1.0 = very confident.\n\nCritical Issues (should lower confidence):\n- Missing workspace evidence for claims about files/symbols.\n- Shell steps that print prose instead of inspecting/executing.\n- Edit steps without verification.\n- Following priors when the user request clearly requires a different approach.\n- Assumptions not grounded in observed evidence.\n"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_logical_reviewer_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -805,6 +822,10 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
         (
             "refinement.toml",
             default_refinement_config(base_url, model),
+        ),
+        (
+            "reflection.toml",
+            default_reflection_config(base_url, model),
         ),
     ]
 }

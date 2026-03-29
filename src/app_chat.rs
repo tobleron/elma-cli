@@ -121,6 +121,38 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             trace(&runtime.args, "guard=capability_reply_only");
         }
 
+        // Pre-execution reflection (Task 012)
+        let features = ClassificationFeatures::from(&route_decision);
+        match reflect_on_program(
+            &runtime.client,
+            &runtime.chat_url,
+            &runtime.profiles.reflection_cfg,
+            &program,
+            &features,
+            &runtime.ws,
+        ).await {
+            Ok(reflection) => {
+                trace(
+                    &runtime.args,
+                    &format!(
+                        "reflection_confidence={:.2} concerns={} missing={}",
+                        reflection.confidence_score,
+                        reflection.concerns.len(),
+                        reflection.missing_points.len()
+                    ),
+                );
+                if !reflection.is_confident || reflection.confidence_score < 0.6 {
+                    trace(
+                        &runtime.args,
+                        &format!("reflection_warnings={:?}", reflection.concerns),
+                    );
+                }
+            }
+            Err(error) => {
+                trace(&runtime.args, &format!("reflection_failed error={}", error));
+            }
+        }
+
         let mut loop_outcome = run_autonomous_loop(
             &runtime.args,
             &runtime.client,
