@@ -642,6 +642,19 @@ pub(crate) struct StepCommon {
     pub(crate) depends_on: Vec<String>,
     #[serde(default)]
     pub(crate) success_condition: String,
+    
+    // Hierarchy support (Task 023)
+    /// Parent unit ID in decomposition hierarchy (goal → subgoal → task → method → action)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) parent_id: Option<String>,
+    
+    /// Hierarchy level: 1=Goal, 2=Subgoal, 3=Task, 4=Method, 5=Action
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) depth: Option<u8>,
+    
+    /// Unit type in hierarchy (for non-step units like goal, subgoal, task, method)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) unit_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -1183,4 +1196,168 @@ pub(crate) struct Timings {
     pub(crate) predicted_per_second: Option<f64>,
     #[serde(default)]
     pub(crate) cache_n: Option<u64>,
+}
+
+// ============================================================================
+// Hierarchy Support (Task 023: Complexity-Triggered Hierarchical Decomposition)
+// ============================================================================
+
+/// Hierarchical unit types for task decomposition
+/// 
+/// Levels:
+/// 1. Goal - Ultimate desired state (abstract, non-executable)
+/// 2. Subgoal - Intermediate milestone (abstract, non-executable)
+/// 3. Task - Work unit that can be decomposed or executed
+/// 4. Method - Specifies HOW to decompose a task
+/// 5. Action - Primitive executable operation (shell, reply, edit, etc.)
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub enum HierarchyUnitType {
+    #[serde(rename = "goal")]
+    Goal,
+    #[serde(rename = "subgoal")]
+    Subgoal,
+    #[serde(rename = "task")]
+    Task,
+    #[serde(rename = "method")]
+    Method,
+    #[serde(rename = "action")]
+    Action,
+}
+
+/// Level 1: GOAL - The ultimate desired state
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Goal {
+    pub id: String,
+    pub description: String,
+    pub success_state: String,
+    pub phases: Vec<String>,
+    #[serde(default)]
+    pub subgoals: Vec<String>,  // IDs of child subgoals
+    #[serde(default)]
+    pub metadata: Option<HierarchyMetadata>,
+}
+
+/// Level 2: SUBGOAL - Intermediate milestone toward goal
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Subgoal {
+    pub id: String,
+    pub parent_goal_id: String,
+    pub title: String,
+    pub description: String,
+    pub success_criteria: String,
+    pub phase: String,
+    #[serde(default)]
+    pub tasks: Vec<String>,  // IDs of child tasks
+    #[serde(default)]
+    pub completed: bool,
+    #[serde(default)]
+    pub metadata: Option<HierarchyMetadata>,
+}
+
+/// Level 3: TASK - Work unit that achieves a subgoal
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Task {
+    pub id: String,
+    pub parent_subgoal_id: String,
+    pub title: String,
+    pub description: String,
+    pub decomposable: bool,
+    #[serde(default)]
+    pub methods: Vec<String>,  // IDs of child methods
+    #[serde(default)]
+    pub completed: bool,
+    #[serde(default)]
+    pub metadata: Option<HierarchyMetadata>,
+}
+
+/// Level 4: METHOD - Specifies how to decompose a task into actions
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Method {
+    pub id: String,
+    pub parent_task_id: String,
+    pub strategy: String,  // e.g., "systematic_enumeration", "iterative_refinement"
+    pub decomposition: Vec<String>,  // Ordered list of action descriptions
+    #[serde(default)]
+    pub actions: Vec<String>,  // IDs of child actions
+    #[serde(default)]
+    pub metadata: Option<HierarchyMetadata>,
+}
+
+/// Metadata for hierarchy units (optional annotations)
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct HierarchyMetadata {
+    #[serde(default)]
+    pub estimated_complexity: Option<String>,  // DIRECT, INVESTIGATE, MULTISTEP, OPEN_ENDED
+    #[serde(default)]
+    pub estimated_duration: Option<String>,  // e.g., "5min", "1hr"
+    #[serde(default)]
+    pub risk_level: Option<String>,  // LOW, MEDIUM, HIGH
+    #[serde(default)]
+    pub dependencies: Vec<String>,  // IDs of units this depends on
+    #[serde(default)]
+    pub notes: String,
+}
+
+/// Progress tracking for hierarchical execution
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct HierarchyProgress {
+    pub goal_id: Option<String>,
+    pub goal_complete: bool,
+    #[serde(default)]
+    pub subgoals_total: u32,
+    #[serde(default)]
+    pub subgoals_complete: Vec<String>,
+    #[serde(default)]
+    pub current_subgoal: Option<String>,
+    #[serde(default)]
+    pub current_task: Option<String>,
+    #[serde(default)]
+    pub actions_executed: u32,
+    #[serde(default)]
+    pub actions_total: u32,
+    #[serde(default)]
+    pub last_action_result: Option<String>,
+}
+
+/// Decomposition result - breaks a high-level unit into children
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Decomposition {
+    pub parent_id: String,
+    pub parent_type: String,  // goal, subgoal, or task
+    pub children: Vec<HierarchyUnit>,
+    pub strategy_used: String,
+}
+
+/// Unified hierarchy unit enum for flexible handling
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "unit_type")]
+pub enum HierarchyUnit {
+    #[serde(rename = "goal")]
+    Goal(Goal),
+    #[serde(rename = "subgoal")]
+    Subgoal(Subgoal),
+    #[serde(rename = "task")]
+    Task(Task),
+    #[serde(rename = "method")]
+    Method(Method),
+}
+
+impl HierarchyUnit {
+    pub fn id(&self) -> &str {
+        match self {
+            HierarchyUnit::Goal(g) => &g.id,
+            HierarchyUnit::Subgoal(s) => &s.id,
+            HierarchyUnit::Task(t) => &t.id,
+            HierarchyUnit::Method(m) => &m.id,
+        }
+    }
+    
+    pub fn depth(&self) -> u8 {
+        match self {
+            HierarchyUnit::Goal(_) => 1,
+            HierarchyUnit::Subgoal(_) => 2,
+            HierarchyUnit::Task(_) => 3,
+            HierarchyUnit::Method(_) => 4,
+        }
+    }
 }

@@ -565,6 +565,9 @@ async fn build_program(
                         purpose: "ask for clarification after workflow recovery failure".to_string(),
                         depends_on: Vec::new(),
                         success_condition: "the user receives one concise honest clarification request".to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
                     },
                 }],
             }

@@ -330,6 +330,9 @@ pub(crate) fn apply_capability_guard(
             success_condition:
                 "the user receives a plain-text capability answer with no command execution"
                     .to_string(),
+            parent_id: None,
+            depth: None,
+            unit_type: None,
         },
     }];
     true
