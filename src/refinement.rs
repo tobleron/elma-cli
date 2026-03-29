@@ -246,9 +246,12 @@ pub async fn refine_program(
     
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);
-    
+
     // Parse the response as a Program
-    parse_json_loose(&response_text)
+    // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
+    let json_str = crate::routing::extract_first_json_object(&response_text)
+        .unwrap_or(&response_text);
+    parse_json_loose(json_str)
         .context("Failed to parse refined program from model response")
 }
 

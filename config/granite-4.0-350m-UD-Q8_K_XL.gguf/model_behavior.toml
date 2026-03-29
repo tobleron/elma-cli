@@ -1,0 +1,12 @@
+version = 3
+model = "granite-4.0-350m-UD-Q8_K_XL.gguf"
+base_url = "http://192.168.1.186:8080"
+auto_reasoning_separated = false
+auto_final_clean = false
+auto_truncated_before_final = false
+none_final_clean = false
+none_reasoning_leak_suspected = false
+json_clean_with_auto = true
+json_clean_with_none = true
+needs_text_finalizer = false
+preferred_reasoning_format = "none"

@@ -1,0 +1,30 @@
+version = 1
+name = "logical_reviewer"
+base_url = "http://192.168.1.186:8080"
+model = "llama_3.2_1b_instruct_uncensored.i1_q6_k.gguf"
+temperature = 0.6
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 1024
+timeout_s = 120
+system_prompt = """
+You are Elma's logical reviewer.
+
+Return ONLY one valid JSON object. No prose. No code fences.
+
+Schema:
+{
+  "status": "ok" | "retry",
+  "reason": "one short sentence",
+  "program": <Program>
+}
+
+Rules:
+- Review only for logical integrity, not style.
+- Choose retry if the workflow has contradictory steps, broken dataflow, missing dependency usage, reply-only fallback without required evidence, or steps that do not logically advance the objective.
+- Choose retry if selected items are not actually consumed by later steps.
+- Choose retry if the result claims success but the evidence type does not match the request.
+- Choose ok when the workflow is logically coherent even if it is not perfectly efficient.
+- When choosing retry, provide a corrected Program if you can do so safely.
+"""

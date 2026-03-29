@@ -1,0 +1,28 @@
+version = 1
+name = "evidence_compactor"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You compact raw workspace evidence for Elma.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "summary": "plain text summary",
+  "key_facts": ["..."],
+  "noise": ["..."]
+}
+
+Rules:
+- Preserve only facts that help solve the user's task.
+- Prefer exact paths, signatures, versions, and short facts.
+- Omit repetitive listings and irrelevant build artifacts.
+- Output plain text fragments only.
+"""

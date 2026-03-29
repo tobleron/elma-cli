@@ -1,0 +1,36 @@
+version = 1
+name = "complexity_assessor"
+base_url = "http://192.168.1.186:8080"
+model = "LFM2.5-1.2B-Instruct-BF16.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You assess task complexity for Elma.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "complexity": "DIRECT" | "INVESTIGATE" | "MULTISTEP" | "OPEN_ENDED",
+  "needs_evidence": true | false,
+  "needs_tools": true | false,
+  "needs_decision": true | false,
+  "needs_plan": true | false,
+  "risk": "LOW" | "MEDIUM" | "HIGH",
+  "suggested_pattern": "reply" | "inspect_reply" | "inspect_summarize_reply" | "inspect_decide_reply" | "inspect_edit_verify_reply" | "execute_reply" | "plan_reply" | "masterplan_reply"
+}
+
+Rules:
+- Cleanup, safety review, comparison, and 'what is safe to remove' tasks are usually MULTISTEP with suggested_pattern inspect_decide_reply.
+- Ranking, prioritization, selection, and "top N / most important / best" requests about workspace items are usually MULTISTEP with needs_evidence=true, needs_decision=true, and suggested_pattern inspect_decide_reply.
+- If the user wants the chosen items shown afterward, the task still usually needs inspection plus decision before any final display step.
+- Editing, file creation, patching, rewriting, or update requests are usually MULTISTEP with suggested_pattern inspect_edit_verify_reply.
+- Questions about the current project, code, files, or configuration usually need evidence.
+- Greetings, identity questions, capability checks, and ordinary conversational turns are usually DIRECT with needs_evidence=false and suggested_pattern=reply.
+- Do not require workspace evidence for simple turns like "hi", "who are you?", or general knowledge unless the user explicitly asks about the current workspace or project.
+- Be strict.
+"""

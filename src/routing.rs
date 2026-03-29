@@ -1,7 +1,32 @@
 use crate::*;
 
+/// Strip markdown code fences and common prose wrappers from model output.
+/// This handles cases where models output "Here is the JSON: ```json {...} ```"
+/// despite being instructed to output JSON only.
+pub(crate) fn strip_markdown_wrappers(text: &str) -> &str {
+    let mut result = text;
+    
+    // Remove leading prose before first code fence
+    if let Some(fence_start) = result.find("```") {
+        // Check if there's a language specifier like ```json
+        let after_fence = &result[fence_start + 3..];
+        let lang_end = after_fence.find('\n').unwrap_or(0);
+        result = &result[fence_start + 3 + lang_end..];
+    }
+    
+    // Remove trailing code fence
+    if let Some(fence_end) = result.rfind("```") {
+        result = &result[..fence_end];
+    }
+    
+    result.trim()
+}
+
 pub(crate) fn extract_first_json_object(text: &str) -> Option<&str> {
-    let bytes = text.as_bytes();
+    // First strip markdown wrappers that models sometimes add
+    let cleaned = strip_markdown_wrappers(text);
+    
+    let bytes = cleaned.as_bytes();
     let mut start = None;
     let mut depth = 0i32;
     let mut in_string = false;
@@ -34,7 +59,7 @@ pub(crate) fn extract_first_json_object(text: &str) -> Option<&str> {
                 depth -= 1;
                 if depth == 0 {
                     let s = start?;
-                    return text.get(s..=i);
+                    return cleaned.get(s..=i);
                 }
             }
             _ => {}
@@ -317,16 +342,108 @@ mod tests {
         // Run multiple times to ensure it always works (noise is pseudo-random)
         for _ in 0..5 {
             let noisy = inject_classification_noise(&low_entropy, 0.01);
-            
+
             // All probabilities should be at least ~0.001 (with floating point tolerance)
             for (_, p) in &noisy {
                 assert!(*p >= 0.0009, "Probability {} is below minimum", p);
             }
-            
+
             // Probabilities should still sum to ~1.0
             let sum: f64 = noisy.iter().map(|(_, p)| *p).sum();
             assert!((sum - 1.0).abs() < 0.01, "Sum {} is not close to 1.0", sum);
         }
+    }
+
+    #[test]
+    fn strip_markdown_wrappers_removes_code_fences() {
+        let input = r#"Here is a valid JSON object:
+
+```json
+{"objective": "test", "steps": []}
+```"#;
+        let result = strip_markdown_wrappers(input);
+        assert!(result.starts_with('{'));
+        assert!(result.ends_with('}'));
+        assert!(!result.contains("```"));
+    }
+
+    #[test]
+    fn strip_markdown_wrappers_handles_no_fences() {
+        let input = r#"{"objective": "test", "steps": []}"#;
+        let result = strip_markdown_wrappers(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn strip_markdown_wrappers_handles_prose_before_fence() {
+        let input = r#"Here is the JSON you requested:
+
+```
+{"key": "value"}
+```
+
+Hope this helps!"#;
+        let result = strip_markdown_wrappers(input);
+        assert!(result.starts_with('{'));
+        assert!(result.ends_with('}'));
+    }
+
+    #[test]
+    fn extract_json_from_markdown_wrapped() {
+        let input = r#"Here is a valid JSON object that matches the target schema:
+
+```json
+{
+  "objective": "understand current project",
+  "steps": [
+    {"id": "s1", "type": "shell", "cmd": "cat Cargo.toml"}
+  ]
+}
+```"#;
+        let json = extract_first_json_object(input);
+        assert!(json.is_some());
+        let json_str = json.unwrap();
+        assert!(json_str.starts_with('{'));
+        assert!(json_str.ends_with('}'));
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        assert!(parsed.get("objective").is_some());
+        assert!(parsed.get("steps").is_some());
+    }
+
+    #[test]
+    fn extract_json_from_pure_json() {
+        let input = r#"{"objective": "test", "steps": []}"#;
+        let json = extract_first_json_object(input);
+        assert!(json.is_some());
+        assert_eq!(json.unwrap(), input);
+    }
+
+    #[test]
+    fn extract_json_with_prose_after() {
+        // Test actual problematic output from llama_3.2_1b_instruct_uncensored
+        let input = r#"Here is a valid JSON object that matches the target schema:
+
+```
+{
+  "objective": "understand current project",
+  "steps": [
+    {"id": "s1", "type": "shell", "cmd": "cat Cargo.toml"}
+  ]
+}
+```
+
+This JSON object has the following properties:
+- "objective": This is the main objective.
+- "steps": This is an array of steps."#;
+        let json = extract_first_json_object(input);
+        assert!(json.is_some());
+        let json_str = json.unwrap();
+        assert!(json_str.starts_with('{'));
+        assert!(json_str.ends_with('}'));
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        assert!(parsed.get("objective").is_some());
     }
 }
 

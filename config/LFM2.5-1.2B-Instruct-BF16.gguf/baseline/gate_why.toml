@@ -1,0 +1,11 @@
+version = 1
+name = "gate_why"
+base_url = "http://192.168.1.186:8080"
+model = "LFM2.5-1.2B-Instruct-BF16.gguf"
+temperature = 0.4
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 64
+timeout_s = 120
+system_prompt = "Explain in exactly ONE short sentence why you classified the user message as CHAT (not ACTION). Do not include any extra lines."

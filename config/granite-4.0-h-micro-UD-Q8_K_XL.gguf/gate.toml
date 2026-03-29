@@ -1,0 +1,22 @@
+version = 1
+name = "gate"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+temperature = 0.4
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 8
+timeout_s = 120
+system_prompt = """
+Classify the user's message into exactly one token.
+
+Return exactly one of:
+CHAT
+ACTION
+
+Guidance:
+- ACTION if the user wants any terminal/workspace action (commands, file operations, build/test, search, etc).
+- CHAT otherwise.
+
+No other text."""

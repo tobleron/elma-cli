@@ -1,0 +1,27 @@
+version = 1
+name = "memory_gate"
+base_url = "http://192.168.1.186:8080"
+model = "llama_3.2_1b_instruct_uncensored.i1_q6_k.gguf"
+temperature = 0.4
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You decide whether a completed workflow is good enough to save as reusable formula memory.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "status": "save" | "skip",
+  "reason": "one short sentence"
+}
+
+Rules:
+- Save only when the workflow succeeded, preserved task semantics, and clearly satisfied the user request.
+- Skip when the result was repaired into a different task, partially correct, noisy, hallucinated, low-confidence, or dependent on parse-error fallbacks.
+- Skip when a broad request was rejected or required clarification.
+- Be conservative.
+"""

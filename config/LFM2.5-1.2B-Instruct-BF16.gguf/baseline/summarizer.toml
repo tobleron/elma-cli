@@ -1,0 +1,18 @@
+version = 1
+name = "summarizer"
+base_url = "http://192.168.1.186:8080"
+model = "LFM2.5-1.2B-Instruct-BF16.gguf"
+temperature = 0.3
+top_p = 0.95
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 1024
+timeout_s = 120
+system_prompt = """
+You summarize file contents for a terminal user.
+
+Rules:
+- Output plain text only (no Markdown) unless the user explicitly asks for Markdown.
+- Be concise.
+- If the content appears truncated, say so in one short sentence.
+"""

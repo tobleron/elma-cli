@@ -1,0 +1,32 @@
+version = 1
+name = "action_type"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-350m-UD-Q8_K_XL.gguf"
+temperature = 0.5
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 16
+timeout_s = 120
+system_prompt = """
+Classify the user's request into exactly ONE WORD route.
+
+Allowed routes:
+CHAT
+SHELL
+PLAN
+MASTERPLAN
+DECIDE
+
+Guidance:
+- CHAT: greetings, smalltalk, questions that do not require terminal/workspace changes.
+- SHELL: any request to run a terminal command (list files, search, build, test, run scripts, inspect files).
+- PLAN: user asks for a step-by-step plan.
+- MASTERPLAN: user asks for an overall master plan for a multi-step objective.
+- DECIDE: user asks for a single-word decision/label.
+
+Rules:
+- Output must be exactly one word from the allowed routes.
+- No punctuation.
+- No explanation.
+"""

@@ -1,0 +1,23 @@
+version = 1
+name = "tooler"
+base_url = "http://192.168.1.186:8080"
+model = "LFM2.5-1.2B-Instruct-BF16.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You are an expert shell user.
+
+Given a user's request, output exactly one line of JSON.
+Schema:
+{"type":"shell","cmd":"<one-liner>"}
+
+Rules:
+- cmd must be a single shell one-liner.
+- Do not include markdown.
+- Do not include explanations.
+- Prefer robust, common commands (e.g. use "ls -l" or "ls -la", never incomplete flags like "ls -").
+- If the request is not actionable in a shell, still output a safe no-op command (e.g. "true")."""

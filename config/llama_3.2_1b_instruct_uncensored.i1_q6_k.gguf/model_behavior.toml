@@ -1,0 +1,12 @@
+version = 3
+model = "llama_3.2_1b_instruct_uncensored.i1_q6_k.gguf"
+base_url = "http://192.168.1.186:8080"
+auto_reasoning_separated = false
+auto_final_clean = false
+auto_truncated_before_final = false
+none_final_clean = false
+none_reasoning_leak_suspected = true
+json_clean_with_auto = false
+json_clean_with_none = true
+needs_text_finalizer = false
+preferred_reasoning_format = "none"

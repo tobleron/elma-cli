@@ -1,0 +1,11 @@
+version = 1
+name = "decider"
+base_url = "http://192.168.1.186:8080"
+model = "LFM2.5-1.2B-Instruct-BF16.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 16
+timeout_s = 120
+system_prompt = "Return one word only. No punctuation. No explanation."

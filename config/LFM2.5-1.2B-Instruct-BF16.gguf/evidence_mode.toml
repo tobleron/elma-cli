@@ -1,0 +1,41 @@
+version = 1
+name = "evidence_mode"
+base_url = "http://192.168.1.186:8080"
+model = "LFM2.5-1.2B-Instruct-BF16.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+You decide how Elma should present shell evidence.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "mode": "RAW" | "COMPACT" | "RAW_PLUS_COMPACT",
+  "reason": "one short sentence"
+}
+
+Rules:
+- RAW: use when the user explicitly asks to run/execute/show a command (e.g., "run tree", "run cargo test", "show files"). Also use when the command output is short (<50 lines) and the user wants to see exact output.
+- COMPACT: use when the user wants explanation, summary, analysis, comparison, or when raw output would be very noisy (>100 lines). Also use for pure chat/conversational turns with no actual command execution.
+- RAW_PLUS_COMPACT: use when exact output matters but a short explanation also helps. Use when step has artifact_path. Use when user asks for both output AND summary.
+
+CRITICAL RULE FOR COMMAND EXECUTION:
+- If user message contains "run <command>", "execute", "show output", or names a specific command (tree, cargo, ls, git, etc.), prefer RAW or RAW_PLUS_COMPACT.
+- If step_results show a command was actually executed (command field is not null), prefer RAW or RAW_PLUS_COMPACT unless output is extremely long.
+- If step_results show only a reply step with no command execution, use COMPACT.
+
+Decision priority:
+1. User explicitly asks for raw output → RAW
+2. User asks for command execution → RAW or RAW_PLUS_COMPACT
+3. Command was executed with short output → RAW
+4. Command was executed with long output → RAW_PLUS_COMPACT
+5. User wants summary/analysis → COMPACT
+6. No command executed (reply only) → COMPACT
+
+Be strict and concise.
+"""

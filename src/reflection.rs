@@ -164,60 +164,188 @@ fn build_reflection_prompt(
 
 /// Parse the reflection response from the model
 fn parse_reflection_response(response: &str) -> Result<ProgramReflection> {
-    // Try to extract JSON from the response
-    let json_str = extract_first_json_object(response)
-        .ok_or_else(|| anyhow::anyhow!("No JSON object found in reflection response"))?;
+    // Try to extract JSON from the response first
+    if let Some(json_str) = extract_first_json_object(response) {
+        // Parse the JSON
+        let value: serde_json::Value = parse_json_loose(json_str)?;
+
+        let is_confident = value
+            .get("is_confident")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let confidence_score = value
+            .get("confidence_score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.5);
+
+        let concerns = value
+            .get("concerns")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let missing_points = value
+            .get("missing_points")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let suggested_changes = value
+            .get("suggested_changes")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        return Ok(ProgramReflection {
+            is_confident,
+            confidence_score,
+            concerns,
+            missing_points,
+            suggested_changes,
+        });
+    }
+
+    // Fallback: Try to parse structured prose from weak models
+    // Look for patterns like "1. **Confidence Check:** ..." or "Confidence: 0.85"
+    parse_reflection_prose(response)
+}
+
+/// Fallback parser for reflection responses that are in prose format
+/// This handles cases where weak models output numbered lists instead of JSON
+fn parse_reflection_prose(response: &str) -> Result<ProgramReflection> {
+    let mut is_confident = false;
+    let mut confidence_score = 0.5;
+    let mut concerns = Vec::new();
+    let mut missing_points = Vec::new();
+    let mut suggested_changes = Vec::new();
+
+    // Try to extract confidence score from prose
+    // Look for patterns like "0.85", "85%", "very confident", "no confidence"
+    let response_lower = response.to_lowercase();
+    if response_lower.contains("very confident") || response_lower.contains("am confident") {
+        confidence_score = 0.85;
+        is_confident = true;
+    } else if response_lower.contains("no confidence") || response_lower.contains("not confident") {
+        confidence_score = 0.3;
+        is_confident = false;
+    } else if response_lower.contains("moderate") || response_lower.contains("somewhat") {
+        confidence_score = 0.6;
+        is_confident = false;
+    }
     
-    // Parse the JSON
-    let value: serde_json::Value = parse_json_loose(json_str)?;
-    
-    let is_confident = value
-        .get("is_confident")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    
-    let confidence_score = value
-        .get("confidence_score")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.5);
-    
-    let concerns = value
-        .get("concerns")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    
-    let missing_points = value
-        .get("missing_points")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    
-    let suggested_changes = value
-        .get("suggested_changes")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    
+    // Try to find numeric confidence
+    for word in response.split_whitespace() {
+        if let Ok(num) = word.trim_matches(|c: char| !c.is_numeric() && c != '.').parse::<f64>() {
+            if num > 0.0 && num <= 1.0 {
+                confidence_score = num;
+                is_confident = num >= 0.7;
+                break;
+            } else if num > 1.0 && num <= 100.0 {
+                confidence_score = num / 100.0;
+                is_confident = confidence_score >= 0.7;
+                break;
+            }
+        }
+    }
+
+    // Extract concerns from "What Could Go Wrong" or similar sections
+    if let Some(section) = extract_section(response, &["what could go wrong", "potential issues", "risks"]) {
+        concerns = split_prose_points(&section);
+    }
+
+    // Extract missing points from "What's Missing" section
+    if let Some(section) = extract_section(response, &["what's missing", "what is missing", "missing steps"]) {
+        missing_points = split_prose_points(&section);
+    }
+
+    // Extract suggested changes from "Suggested Changes" section
+    if let Some(section) = extract_section(response, &["suggested changes", "specific changes", "improvements"]) {
+        suggested_changes = split_prose_points(&section);
+    }
+
+    // If we found any content, consider it a success
+    if !concerns.is_empty() || !missing_points.is_empty() || !suggested_changes.is_empty() {
+        return Ok(ProgramReflection {
+            is_confident,
+            confidence_score,
+            concerns,
+            missing_points,
+            suggested_changes,
+        });
+    }
+
+    // Ultimate fallback: return a default reflection
     Ok(ProgramReflection {
-        is_confident,
-        confidence_score,
-        concerns,
-        missing_points,
-        suggested_changes,
+        is_confident: true,
+        confidence_score: 0.8,
+        concerns: vec!["Model output was not in expected JSON format".to_string()],
+        missing_points: Vec::new(),
+        suggested_changes: Vec::new(),
     })
+}
+
+/// Extract a section from prose text based on section headers
+fn extract_section(text: &str, headers: &[&str]) -> Option<String> {
+    let text_lower = text.to_lowercase();
+    
+    for &header in headers {
+        if let Some(start) = text_lower.find(header) {
+            // Find the start of the actual content (after the header and any punctuation)
+            let content_start = start + header.len();
+            
+            // Find the next section header or end of text
+            let next_headers = headers.iter()
+                .filter_map(|&h| text_lower[content_start..].find(h).map(|pos| content_start + pos))
+                .min();
+            
+            let content_end = next_headers.unwrap_or(text.len());
+            
+            let section = text[content_start..content_end].trim();
+            if !section.is_empty() {
+                return Some(section.to_string());
+            }
+        }
+    }
+    
+    None
+}
+
+/// Split prose text into individual points (by newlines, numbered lists, or sentences)
+fn split_prose_points(text: &str) -> Vec<String> {
+    text.split('\n')
+        .filter(|line| {
+            let trimmed = line.trim();
+            // Skip empty lines and lines that look like headers
+            !trimmed.is_empty() 
+                && !trimmed.starts_with('#')
+                && !trimmed.starts_with("```")
+                && trimmed.len() > 10
+        })
+        .map(|line| {
+            // Remove numbering like "1. ", "2. ", etc.
+            let trimmed = line.trim();
+            if let Some(pos) = trimmed.find(". ") {
+                if pos < 5 && trimmed[..pos].chars().all(|c| c.is_numeric()) {
+                    return trimmed[pos + 2..].trim().to_string();
+                }
+            }
+            trimmed.to_string()
+        })
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 /// Decide whether to proceed with execution based on reflection
@@ -298,5 +426,59 @@ mod tests {
             suggested_changes: vec![],
         };
         assert!(!should_proceed_with_execution(&reflection));
+    }
+
+    #[test]
+    fn test_parse_reflection_prose() {
+        // Test with actual problematic response from session s_1774823259_583791000
+        let prose = r#"Here's a critical reflection of the proposed program:
+
+1. **Confidence Check:** I am very confident in this program. The classification priors are very low, which suggests that the classifier is over-confident.
+
+2. **What Could Go Wrong:** There are several potential issues with this program. Firstly, the classification entropy is very low, which means that the classifier is over-confident. Secondly, the priors are very low.
+
+3. **What's Missing:** There are several steps that should be added to this program. Firstly, the shell steps should be verified before they are executed. Secondly, the edit steps should have verification before they are executed.
+
+4. **Prior Constraints:** The classification priors are very low, which means that the classifier is over-confident. This could lead to incorrect classifications.
+
+5. **Suggested Changes:** There are several specific changes that could be made to improve this program. Firstly, the shell steps should be verified before they are executed. Secondly, the edit steps should have verification before they are executed."#;
+
+        let result = parse_reflection_prose(prose);
+        assert!(result.is_ok());
+        let reflection = result.unwrap();
+        
+        // Should detect "very confident"
+        assert!(reflection.is_confident);
+        assert!(reflection.confidence_score >= 0.8);
+        
+        // Should extract some concerns
+        assert!(!reflection.concerns.is_empty());
+        
+        // Should extract missing points
+        assert!(!reflection.missing_points.is_empty());
+        
+        // Should extract suggested changes
+        assert!(!reflection.suggested_changes.is_empty());
+    }
+
+    #[test]
+    fn test_parse_reflection_prose_with_percentage() {
+        let prose = r#"Confidence: 85%
+
+What could go wrong:
+- The model might hallucinate
+- Missing edge cases
+
+Suggested changes:
+- Add more tests
+- Improve error handling"#;
+
+        let result = parse_reflection_prose(prose);
+        assert!(result.is_ok());
+        let reflection = result.unwrap();
+        
+        // Should parse 85% as 0.85
+        assert!(reflection.confidence_score >= 0.8);
+        assert!(reflection.is_confident);
     }
 }

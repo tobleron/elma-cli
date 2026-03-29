@@ -1,0 +1,17 @@
+version = 1
+model = "granite-4.0-350m-UD-Q8_K_XL.gguf"
+base_url = "http://192.168.1.186:8080"
+n_probs = 64
+supports_logprobs = false
+routes = [
+    "CHAT",
+    "WORKFLOW",
+    "INSPECT",
+    "EXECUTE",
+    "PLAN",
+    "MASTERPLAN",
+    "DECIDE",
+    "CAPABILITY_CHECK",
+    "INFO_REQUEST",
+    "ACTION_REQUEST",
+]

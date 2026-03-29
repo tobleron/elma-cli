@@ -1289,10 +1289,13 @@ async fn build_program_with_retry(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    
+
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);
-    parse_json_loose(&response_text)
+    // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
+    let json_str = crate::routing::extract_first_json_object(&response_text)
+        .unwrap_or(&response_text);
+    parse_json_loose(json_str)
 }
 
 /// Synthesize a new program from meta-review of all failed attempts.
@@ -1354,8 +1357,11 @@ async fn synthesize_meta_review(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    
+
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);
-    parse_json_loose(&response_text)
+    // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
+    let json_str = crate::routing::extract_first_json_object(&response_text)
+        .unwrap_or(&response_text);
+    parse_json_loose(json_str)
 }
