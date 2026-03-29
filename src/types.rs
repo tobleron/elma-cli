@@ -2,6 +2,94 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Goal state for multi-turn task persistence (Task 014)
+/// 
+/// DESIGN RATIONALE:
+/// Elma doesn't maintain goals across turns. Each message is treated independently,
+/// losing context for multi-step tasks. This struct tracks:
+/// - Active objective across conversation turns
+/// - Completed and pending subgoals
+/// - Blocked state with reason
+/// 
+/// This enables commands like "continue", "what's next?", "skip to testing"
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct GoalState {
+    /// The active objective being worked on
+    #[serde(default)]
+    pub active_objective: Option<String>,
+    /// Subgoals that have been completed
+    #[serde(default)]
+    pub completed_subgoals: Vec<String>,
+    /// Subgoals that are still pending
+    #[serde(default)]
+    pub pending_subgoals: Vec<String>,
+    /// Why the goal is blocked (if applicable)
+    #[serde(default)]
+    pub blocked_reason: Option<String>,
+    /// When this goal state was created
+    #[serde(default)]
+    pub created_at: u64,
+    /// When this goal state was last updated
+    #[serde(default)]
+    pub last_updated: u64,
+}
+
+impl GoalState {
+    /// Create a new goal state from an objective
+    pub fn new(objective: String) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Self {
+            active_objective: Some(objective),
+            completed_subgoals: Vec::new(),
+            pending_subgoals: Vec::new(),
+            blocked_reason: None,
+            created_at: now,
+            last_updated: now,
+        }
+    }
+    
+    /// Mark a subgoal as completed
+    pub fn complete_subgoal(&mut self, subgoal: String) {
+        self.pending_subgoals.retain(|p| p != &subgoal);
+        if !self.completed_subgoals.contains(&subgoal) {
+            self.completed_subgoals.push(subgoal);
+        }
+        self.last_updated = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+    }
+    
+    /// Add a pending subgoal
+    pub fn add_pending_subgoal(&mut self, subgoal: String) {
+        if !self.pending_subgoals.contains(&subgoal) 
+            && !self.completed_subgoals.contains(&subgoal) 
+        {
+            self.pending_subgoals.push(subgoal);
+            self.last_updated = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+        }
+    }
+    
+    /// Clear the goal state (task complete or reset)
+    pub fn clear(&mut self) {
+        self.active_objective = None;
+        self.completed_subgoals.clear();
+        self.pending_subgoals.clear();
+        self.blocked_reason = None;
+    }
+    
+    /// Check if there's an active goal
+    pub fn has_active_goal(&self) -> bool {
+        self.active_objective.is_some() && self.blocked_reason.is_none()
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "elma-cli",

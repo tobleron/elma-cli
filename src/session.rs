@@ -289,3 +289,28 @@ pub(crate) fn append_thinking_to_manifest(
         .with_context(|| format!("append thinking manifest {}", manifest_path.display()))?;
     Ok(manifest_path)
 }
+
+/// Save goal state to session file (Task 014)
+pub(crate) fn save_goal_state(
+    session_root: &PathBuf,
+    goal_state: &GoalState,
+) -> Result<PathBuf> {
+    let path = session_root.join("goal_state.json");
+    let json = serde_json::to_string_pretty(goal_state)
+        .context("serialize goal state")?;
+    std::fs::write(&path, json)
+        .with_context(|| format!("write goal state {}", path.display()))?;
+    Ok(path)
+}
+
+/// Load goal state from session file (Task 014)
+pub(crate) fn load_goal_state(
+    session_root: &PathBuf,
+) -> Option<GoalState> {
+    let path = session_root.join("goal_state.json");
+    if !path.exists() {
+        return None;
+    }
+    let json = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&json).ok()
+}

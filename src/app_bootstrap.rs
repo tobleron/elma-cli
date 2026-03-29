@@ -86,6 +86,13 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         role: "system".to_string(),
         content: system_content.clone(),
     }];
+    
+    // Load goal state from session file if exists (Task 014)
+    let goal_state = load_goal_state(&session.root).unwrap_or_default();
+    if goal_state.has_active_goal() {
+        trace(&args, &format!("loaded_goal_state objective={:?}", goal_state.active_objective));
+    }
+    
     emit_startup_banner(&args, &chat_url, &model_id, &model_cfg_dir, &session);
 
     Ok(Some(AppRuntime {
@@ -102,6 +109,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         system_content,
         messages,
         profiles,
+        goal_state,
     }))
 }
 

@@ -1,6 +1,40 @@
 use crate::app::AppRuntime;
 use crate::*;
 
+/// Show current goal state (Task 014: Multi-Turn Goal Persistence)
+fn handle_show_goals(runtime: &AppRuntime) -> Result<()> {
+    if !runtime.goal_state.has_active_goal() {
+        eprintln!("No active goal. Start by giving me a task!");
+        return Ok(());
+    }
+    
+    println!("\n=== Current Goal ===");
+    if let Some(ref objective) = runtime.goal_state.active_objective {
+        println!("Objective: {}", objective);
+    }
+    
+    if !runtime.goal_state.completed_subgoals.is_empty() {
+        println!("\nCompleted:");
+        for subgoal in &runtime.goal_state.completed_subgoals {
+            println!("  ✓ {}", subgoal);
+        }
+    }
+    
+    if !runtime.goal_state.pending_subgoals.is_empty() {
+        println!("\nPending:");
+        for subgoal in &runtime.goal_state.pending_subgoals {
+            println!("  ○ {}", subgoal);
+        }
+    }
+    
+    if let Some(ref reason) = runtime.goal_state.blocked_reason {
+        println!("\n⚠ Blocked: {}", reason);
+    }
+    
+    println!();
+    Ok(())
+}
+
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     loop {
         let prompt = user_prompt_label(&runtime.args);
@@ -29,6 +63,15 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         }
         if line == "/tune" {
             handle_runtime_tune(runtime).await?;
+            continue;
+        }
+        if line == "/goals" {
+            handle_show_goals(runtime)?;
+            continue;
+        }
+        if line == "/reset-goals" {
+            runtime.goal_state.clear();
+            eprintln!("(goals reset)");
             continue;
         }
 
@@ -232,6 +275,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         {
             refresh_runtime_workspace(runtime)?;
         }
+        
+        // Save goal state for multi-turn persistence (Task 014)
+        let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
     }
 
     Ok(())
