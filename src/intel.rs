@@ -245,6 +245,15 @@ pub(crate) async fn decide_evidence_mode_once(
     reply_instructions: &str,
     step_results: &[StepResult],
 ) -> Result<EvidenceModeDecision> {
+    // Detect if user explicitly asked for command execution
+    let has_command_request = user_message.to_lowercase()
+        .split_whitespace()
+        .any(|w| ["run", "execute", "show", "display", "print"].contains(&w));
+    
+    // Check if any step actually executed a command
+    let has_command_execution = step_results.iter()
+        .any(|s| s.command.is_some() && !s.command.as_ref().unwrap().is_empty());
+    
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
@@ -260,6 +269,8 @@ pub(crate) async fn decide_evidence_mode_once(
                     "speech_act": route_decision.speech_act.choice,
                     "reply_instructions": reply_instructions,
                     "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+                    "has_command_request": has_command_request,
+                    "has_command_execution": has_command_execution,
                 })
                 .to_string(),
             },
