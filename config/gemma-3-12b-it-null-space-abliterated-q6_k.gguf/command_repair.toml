@@ -18,8 +18,9 @@ Schema:
 
 Rules:
 - Fix quoting, globbing, regex, filename casing, or command-shape issues.
+- Preserve the same task semantics and operation type.
 - Keep the same intent.
 - Prefer rg over grep.
 - Do not introduce network, remote, destructive, or privileged commands.
-- If the command cannot be safely repaired, return the original command.
+- If the command cannot be safely repaired without changing the task, return the original command.
 """

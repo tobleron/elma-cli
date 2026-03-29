@@ -6,6 +6,12 @@ pub(crate) async fn evaluate_routing_suite(
     candidate_dir: &PathBuf,
     model_id: &str,
 ) -> Result<(f64, bool, String)> {
+    if let Ok(cfg) = load_agent_config(&candidate_dir.join("json_outputter.toml")) {
+        set_json_outputter_profile(Some(cfg));
+    }
+    if let Ok(cfg) = load_agent_config(&candidate_dir.join("final_answer_extractor.toml")) {
+        set_final_answer_extractor_profile(Some(cfg));
+    }
     evaluation_routing::evaluate_routing_suite_impl(client, chat_url, candidate_dir, model_id).await
 }
 
@@ -16,6 +22,12 @@ pub(crate) async fn evaluate_workflow_suite(
     candidate_dir: &PathBuf,
     model_id: &str,
 ) -> Result<(f64, bool, String)> {
+    if let Ok(cfg) = load_agent_config(&candidate_dir.join("json_outputter.toml")) {
+        set_json_outputter_profile(Some(cfg));
+    }
+    if let Ok(cfg) = load_agent_config(&candidate_dir.join("final_answer_extractor.toml")) {
+        set_final_answer_extractor_profile(Some(cfg));
+    }
     evaluation_workflow::evaluate_workflow_suite_impl(
         args,
         client,
@@ -33,6 +45,12 @@ pub(crate) async fn evaluate_response_suite(
     candidate_dir: &PathBuf,
     model_id: &str,
 ) -> Result<(f64, bool, String)> {
+    if let Ok(cfg) = load_agent_config(&candidate_dir.join("json_outputter.toml")) {
+        set_json_outputter_profile(Some(cfg));
+    }
+    if let Ok(cfg) = load_agent_config(&candidate_dir.join("final_answer_extractor.toml")) {
+        set_final_answer_extractor_profile(Some(cfg));
+    }
     evaluation_response::evaluate_response_suite_impl(
         args,
         client,
@@ -52,6 +70,12 @@ pub(crate) async fn evaluate_candidate_dir(
     model_id: &str,
     emit_progress: bool,
 ) -> Result<CandidateScore> {
+    if let Ok(cfg) = load_agent_config(&candidate_dir.join("json_outputter.toml")) {
+        set_json_outputter_profile(Some(cfg));
+    }
+    if let Ok(cfg) = load_agent_config(&candidate_dir.join("final_answer_extractor.toml")) {
+        set_final_answer_extractor_profile(Some(cfg));
+    }
     sync_profile_dir_base_url_and_model(candidate_dir, base_url, model_id)?;
     let tune_cfg = load_agent_config(&candidate_dir.join("intention_tune.toml"))?;
     tune_model(

@@ -27,8 +27,8 @@ pub(crate) fn ansi_grey(s: &str) -> String {
 }
 
 pub(crate) fn ansi_orange(s: &str) -> String {
-    // 256-color "orange-ish" (208). Falls back to default if terminal doesn't support it.
-    format!("\x1b[38;5;208m{s}\x1b[0m")
+    // Truecolor #de218e.
+    format!("\x1b[38;2;222;33;142m{s}\x1b[0m")
 }
 
 pub(crate) fn ansi_pale_yellow(s: &str) -> String {
@@ -53,6 +53,9 @@ pub(crate) fn ansi_soft_green(s: &str) -> String {
 
 static TRACE_LOG_PATH: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 static REASONING_DISPLAY: OnceLock<Mutex<(bool, bool)>> = OnceLock::new();
+static JSON_OUTPUTTER_PROFILE: OnceLock<Mutex<Option<Profile>>> = OnceLock::new();
+static FINAL_ANSWER_EXTRACTOR_PROFILE: OnceLock<Mutex<Option<Profile>>> = OnceLock::new();
+static MODEL_BEHAVIOR_PROFILE: OnceLock<Mutex<Option<ModelBehaviorProfile>>> = OnceLock::new();
 
 pub(crate) fn trace_log_state() -> &'static Mutex<Option<PathBuf>> {
     TRACE_LOG_PATH.get_or_init(|| Mutex::new(None))
@@ -60,6 +63,18 @@ pub(crate) fn trace_log_state() -> &'static Mutex<Option<PathBuf>> {
 
 pub(crate) fn reasoning_display_state() -> &'static Mutex<(bool, bool)> {
     REASONING_DISPLAY.get_or_init(|| Mutex::new((false, false)))
+}
+
+pub(crate) fn json_outputter_state() -> &'static Mutex<Option<Profile>> {
+    JSON_OUTPUTTER_PROFILE.get_or_init(|| Mutex::new(None))
+}
+
+pub(crate) fn final_answer_extractor_state() -> &'static Mutex<Option<Profile>> {
+    FINAL_ANSWER_EXTRACTOR_PROFILE.get_or_init(|| Mutex::new(None))
+}
+
+pub(crate) fn model_behavior_state() -> &'static Mutex<Option<ModelBehaviorProfile>> {
+    MODEL_BEHAVIOR_PROFILE.get_or_init(|| Mutex::new(None))
 }
 
 pub(crate) fn set_trace_log_path(path: Option<PathBuf>) {
@@ -71,6 +86,24 @@ pub(crate) fn set_trace_log_path(path: Option<PathBuf>) {
 pub(crate) fn set_reasoning_display(show_terminal: bool, no_color: bool) {
     if let Ok(mut slot) = reasoning_display_state().lock() {
         *slot = (show_terminal, no_color);
+    }
+}
+
+pub(crate) fn set_json_outputter_profile(profile: Option<Profile>) {
+    if let Ok(mut slot) = json_outputter_state().lock() {
+        *slot = profile;
+    }
+}
+
+pub(crate) fn set_final_answer_extractor_profile(profile: Option<Profile>) {
+    if let Ok(mut slot) = final_answer_extractor_state().lock() {
+        *slot = profile;
+    }
+}
+
+pub(crate) fn set_model_behavior_profile(profile: Option<ModelBehaviorProfile>) {
+    if let Ok(mut slot) = model_behavior_state().lock() {
+        *slot = profile;
     }
 }
 
@@ -190,7 +223,7 @@ pub(crate) fn operator_trace(args: &Args, msg: &str) {
 
 pub(crate) fn shell_command_trace(args: &Args, cmd: &str) {
     let compact = cmd.replace('\n', " ");
-    let line = format!("cmd> {compact}");
+    let line = format!("-> {compact}");
     append_trace_log_line(&line);
     if !(args.tune || args.calibrate) || args.debug_trace {
         if args.no_color {
@@ -215,21 +248,8 @@ pub(crate) fn print_elma_message(args: &Args, text: &str) {
 /// Strip <think>...</think> blocks. If an opening tag is found without a closing tag,
 /// drop the rest to avoid leaking partial reasoning.
 pub(crate) fn strip_think_tags(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(start) = rest.find("<think>") {
-        out.push_str(&rest[..start]);
-        let after_start = &rest[start + "<think>".len()..];
-        if let Some(end) = after_start.find("</think>") {
-            rest = &after_start[end + "</think>".len()..];
-        } else {
-            // Unclosed tag: drop rest.
-            rest = "";
-            break;
-        }
-    }
-    out.push_str(rest);
-    out.trim().to_string()
+    // Use the centralized thinking_content module
+    thinking_content::strip_think_tags(s)
 }
 
 pub(crate) fn describe_operator_intent(
@@ -303,124 +323,24 @@ const LLAMA_REASONING_START: &str = "<<<reasoning_content_start>>>";
 const LLAMA_REASONING_END: &str = "<<<reasoning_content_end>>>";
 
 pub(crate) fn split_llama_sentinel_reasoning(content: &str) -> (String, Option<String>) {
-    // Mirrors llama.cpp WebUI parseReasoningContent(): split content into plain + reasoning parts
-    // based on sentinel markers. Unterminated reasoning marker consumes rest.
-    let mut plain_parts: Vec<&str> = Vec::new();
-    let mut reasoning_parts: Vec<&str> = Vec::new();
-
-    let mut cursor = 0usize;
-    while cursor < content.len() {
-        let Some(start_idx_rel) = content[cursor..].find(LLAMA_REASONING_START) else {
-            plain_parts.push(&content[cursor..]);
-            break;
-        };
-        let start_idx = cursor + start_idx_rel;
-        plain_parts.push(&content[cursor..start_idx]);
-
-        let reasoning_start = start_idx + LLAMA_REASONING_START.len();
-        if reasoning_start >= content.len() {
-            break;
-        }
-
-        let Some(end_idx_rel) = content[reasoning_start..].find(LLAMA_REASONING_END) else {
-            reasoning_parts.push(&content[reasoning_start..]);
-            break;
-        };
-        let end_idx = reasoning_start + end_idx_rel;
-        reasoning_parts.push(&content[reasoning_start..end_idx]);
-        cursor = end_idx + LLAMA_REASONING_END.len();
-    }
-
-    let plain = plain_parts.join("");
-    let reasoning = if reasoning_parts.is_empty() {
-        None
-    } else {
-        Some(reasoning_parts.join("\n\n"))
-    };
-    (plain, reasoning)
+    // Use the centralized thinking_content module
+    let (plain, thinking) = thinking_content::extract_llama_sentinel_reasoning(content);
+    (plain, thinking)
 }
 
 /// Extract (thinking, final) from either structured fields or tagged output.
 ///
 /// Mirrors the Open WebUI "compatible provider" strategy:
 /// - Prefer `content` if non-empty, else fall back to `reasoning_content`.
-/// - Strip `<think>...</think>` blocks from the final user-visible text.
-/// - If tags are present, also return extracted thinking for display.
+/// - Strip thinking blocks from the final user-visible text.
+/// - If tags are present, also return extracted thinking for display/logging.
 pub(crate) fn split_thinking_and_final(
     content: Option<&str>,
     reasoning_content: Option<&str>,
 ) -> (Option<String>, String) {
-    let c0 = content.unwrap_or("").trim();
-    let r = reasoning_content.unwrap_or("").trim();
-
-    // First, strip llama.cpp sentinel reasoning blocks out of content if present.
-    let (c_plain, c_reasoning_from_sentinels) =
-        if !c0.is_empty() && c0.contains(LLAMA_REASONING_START) {
-            split_llama_sentinel_reasoning(c0)
-        } else {
-            (c0.to_string(), None)
-        };
-    let c = c_plain.trim();
-
-    // If both exist, treat reasoning_content as thinking and content as final.
-    // Also treat sentinel-extracted reasoning as thinking when present.
-    if !c.is_empty() && (!r.is_empty() || c_reasoning_from_sentinels.is_some()) {
-        let thinking = if !r.is_empty() {
-            Some(r.to_string())
-        } else {
-            c_reasoning_from_sentinels
-        };
-        return (thinking, strip_think_tags(c));
-    }
-
-    let text = if !c.is_empty() { c } else { r };
-    if text.is_empty() {
-        return (None, String::new());
-    }
-
-    // Parse <think> tags if present.
-    if text.contains("<think>") {
-        let mut thinking = String::new();
-        let mut final_out = String::new();
-        let mut rest = text;
-
-        while let Some(s) = rest.find("<think>") {
-            final_out.push_str(&rest[..s]);
-            let after_start = &rest[s + "<think>".len()..];
-            if let Some(e) = after_start.find("</think>") {
-                let chunk = &after_start[..e];
-                if !chunk.trim().is_empty() {
-                    if !thinking.is_empty() {
-                        thinking.push_str("\n\n");
-                    }
-                    thinking.push_str(chunk.trim());
-                }
-                rest = &after_start[e + "</think>".len()..];
-            } else {
-                // Unclosed tag: treat remaining as thinking and stop.
-                let chunk = after_start;
-                if !chunk.trim().is_empty() {
-                    if !thinking.is_empty() {
-                        thinking.push_str("\n\n");
-                    }
-                    thinking.push_str(chunk.trim());
-                }
-                rest = "";
-                break;
-            }
-        }
-        final_out.push_str(rest);
-        let final_out = final_out.trim().to_string();
-
-        let thinking_opt = if thinking.trim().is_empty() {
-            None
-        } else {
-            Some(thinking)
-        };
-        return (thinking_opt, final_out);
-    }
-
-    (None, strip_think_tags(text))
+    // Use the centralized thinking_content module
+    let extraction = thinking_content::extract_thinking(content, reasoning_content);
+    (extraction.thinking, extraction.final_answer)
 }
 
 pub(crate) fn extract_final_line(text: &str, prefix: &str) -> Option<String> {
@@ -457,14 +377,193 @@ pub(crate) fn remove_final_lines(text: &str, prefix: &str) -> String {
     out.trim().to_string()
 }
 
-pub(crate) async fn chat_once(
+fn effective_reasoning_format(req: &ChatCompletionRequest) -> Option<String> {
+    let requested = req.reasoning_format.as_deref()?.trim();
+    if requested.is_empty() {
+        return None;
+    }
+    if !requested.eq_ignore_ascii_case("none") {
+        return Some(requested.to_string());
+    }
+    if req.max_tokens <= 16 {
+        return Some("none".to_string());
+    }
+    if request_expects_json(req) {
+        return Some("none".to_string());
+    }
+    let profile = current_model_behavior_profile();
+    let Some(profile) = profile else {
+        return Some("none".to_string());
+    };
+    if profile.preferred_reasoning_format.eq_ignore_ascii_case("auto")
+        && profile.auto_reasoning_separated
+    {
+        return Some("auto".to_string());
+    }
+    Some("none".to_string())
+}
+
+fn current_model_behavior_profile() -> Option<ModelBehaviorProfile> {
+    model_behavior_state()
+        .lock()
+        .ok()
+        .and_then(|slot| (*slot).clone())
+}
+
+fn final_answer_extractor_profile() -> Option<Profile> {
+    final_answer_extractor_state()
+        .lock()
+        .ok()
+        .and_then(|slot| (*slot).clone())
+}
+
+fn request_expects_json(req: &ChatCompletionRequest) -> bool {
+    let system_prompt = req
+        .messages
+        .iter()
+        .find(|m| m.role == "system")
+        .map(|m| m.content.to_ascii_lowercase())
+        .unwrap_or_default();
+    system_prompt.contains("json")
+        || system_prompt.contains("schema:")
+        || system_prompt.contains("output only")
+}
+
+fn maybe_cap_auto_reasoning_tokens(req: &mut ChatCompletionRequest) -> Option<u32> {
+    let profile = current_model_behavior_profile()?;
+    if !profile.needs_text_finalizer {
+        return None;
+    }
+    if request_expects_json(req) {
+        return None;
+    }
+    if !req
+        .reasoning_format
+        .as_deref()
+        .unwrap_or("none")
+        .eq_ignore_ascii_case("auto")
+    {
+        return None;
+    }
+    if req.max_tokens <= 256 {
+        return None;
+    }
+    let previous = req.max_tokens;
+    req.max_tokens = 256;
+    Some(previous)
+}
+
+#[derive(Debug, Deserialize)]
+struct FinalAnswerEnvelope {
+    #[serde(rename = "final")]
+    final_text: String,
+}
+
+fn response_needs_text_finalizer(
+    req: &ChatCompletionRequest,
+    resp: &ChatCompletionResponse,
+) -> bool {
+    let profile = match current_model_behavior_profile() {
+        Some(p) => p,
+        None => return false,
+    };
+    if !profile.needs_text_finalizer || request_expects_json(req) {
+        return false;
+    }
+    let Some(choice) = resp.choices.get(0) else {
+        return false;
+    };
+    let content = choice.message.content.as_deref().unwrap_or("").trim();
+    let reasoning = choice
+        .message
+        .reasoning_content
+        .as_deref()
+        .unwrap_or("")
+        .trim();
+    content.is_empty() && !reasoning.is_empty()
+}
+
+async fn finalize_text_response_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    original_req: &ChatCompletionRequest,
+    resp: &ChatCompletionResponse,
+) -> Result<String> {
+    let Some(cfg) = final_answer_extractor_profile() else {
+        anyhow::bail!("No final-answer extractor profile loaded");
+    };
+    let original_system_prompt = original_req
+        .messages
+        .iter()
+        .find(|m| m.role == "system")
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
+    let original_user_input = original_req
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
+    let choice = resp
+        .choices
+        .get(0)
+        .context("No choices available for final-answer extraction")?;
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "original_system_prompt": original_system_prompt,
+                    "original_user_input": original_user_input,
+                    "assistant_draft": choice.message.content.clone().unwrap_or_default(),
+                    "assistant_reasoning": choice.message.reasoning_content.clone().unwrap_or_default(),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    let envelope: FinalAnswerEnvelope = chat_json_with_repair(client, chat_url, &req).await?;
+    Ok(envelope.final_text.trim().to_string())
+}
+
+async fn chat_once_base(
     client: &reqwest::Client,
     chat_url: &Url,
     req: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse> {
+    let mut effective_req = req.clone();
+    let original_reasoning = req.reasoning_format.clone();
+    effective_req.reasoning_format = effective_reasoning_format(req);
+    if effective_req.reasoning_format != original_reasoning {
+        append_trace_log_line(&format!(
+            "trace: reasoning_format_override requested={} effective={} model={}",
+            original_reasoning.as_deref().unwrap_or("-"),
+            effective_req.reasoning_format.as_deref().unwrap_or("-"),
+            effective_req.model
+        ));
+    }
+    if let Some(previous) = maybe_cap_auto_reasoning_tokens(&mut effective_req) {
+        append_trace_log_line(&format!(
+            "trace: reasoning_token_cap applied previous={} effective={} model={}",
+            previous, effective_req.max_tokens, effective_req.model
+        ));
+    }
     let mut last_error = String::new();
     for attempt in 0..3u32 {
-        match client.post(chat_url.clone()).json(req).send().await {
+        match client.post(chat_url.clone()).json(&effective_req).send().await {
             Ok(resp) => {
                 let status = resp.status();
                 let text = resp.text().await.context("Failed to read response body")?;
@@ -480,7 +579,7 @@ pub(crate) async fn chat_once(
                 let mut parsed: ChatCompletionResponse =
                     serde_json::from_str(&text).context("Invalid JSON from server")?;
                 isolate_reasoning_fields(&mut parsed);
-                append_reasoning_audit_record(req, &parsed);
+                append_reasoning_audit_record(&effective_req, &parsed);
                 maybe_display_reasoning_trace(&parsed);
                 return Ok(parsed);
             }
@@ -496,10 +595,52 @@ pub(crate) async fn chat_once(
     anyhow::bail!("POST /v1/chat/completions failed after retries: {last_error}")
 }
 
+pub(crate) async fn chat_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+) -> Result<ChatCompletionResponse> {
+    let mut parsed = chat_once_base(client, chat_url, req).await?;
+    
+    // Isolate reasoning fields using centralized thinking extraction
+    isolate_reasoning_fields(&mut parsed);
+    
+    let mut effective_req = req.clone();
+    effective_req.reasoning_format = effective_reasoning_format(req);
+    let _ = maybe_cap_auto_reasoning_tokens(&mut effective_req);
+    if response_needs_text_finalizer(&effective_req, &parsed) {
+        match finalize_text_response_once(client, chat_url, &effective_req, &parsed).await {
+            Ok(final_text) if !final_text.is_empty() => {
+                if let Some(choice) = parsed.choices.get_mut(0) {
+                    choice.message.content = Some(final_text);
+                }
+                append_trace_log_line(&format!(
+                    "trace: text_finalizer_applied model={}",
+                    effective_req.model
+                ));
+            }
+            Ok(_) => {
+                append_trace_log_line(&format!(
+                    "trace: text_finalizer_empty model={}",
+                    effective_req.model
+                ));
+            }
+            Err(error) => {
+                append_trace_log_line(&format!(
+                    "trace: text_finalizer_failed model={} error={:#}",
+                    effective_req.model, error
+                ));
+            }
+        }
+    }
+    Ok(parsed)
+}
+
 pub(crate) fn extract_response_text(resp: &ChatCompletionResponse) -> String {
+    // Only return the content field (final answer), not reasoning_content
     resp.choices
         .get(0)
-        .and_then(|c| c.message.content.clone().or(c.message.reasoning_content.clone()))
+        .and_then(|c| c.message.content.clone())
         .unwrap_or_default()
 }
 
@@ -510,17 +651,84 @@ pub(crate) fn extract_response_reasoning(resp: &ChatCompletionResponse) -> Strin
         .unwrap_or_default()
 }
 
-pub(crate) async fn chat_json_with_repair<T: DeserializeOwned>(
+fn json_outputter_profile() -> Option<Profile> {
+    json_outputter_state()
+        .lock()
+        .ok()
+        .and_then(|slot| (*slot).clone())
+}
+
+fn structured_output_context(req: &ChatCompletionRequest) -> (String, String) {
+    let target_system_prompt = req
+        .messages
+        .iter()
+        .find(|m| m.role == "system")
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
+    let target_user_input = req
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_default();
+    (target_system_prompt, target_user_input)
+}
+
+fn canonical_json_text(text: &str) -> String {
+    extract_first_json_object(text)
+        .unwrap_or(text)
+        .trim()
+        .to_string()
+}
+
+async fn compile_json_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    target_req: &ChatCompletionRequest,
+    raw_draft: &str,
+    parser_error: Option<&str>,
+) -> Result<String> {
+    let Some(cfg) = json_outputter_profile() else {
+        return Ok(raw_draft.trim().to_string());
+    };
+    let (target_system_prompt, target_user_input) = structured_output_context(target_req);
+    let compile_req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "target_system_prompt": target_system_prompt,
+                    "target_user_input": target_user_input,
+                    "raw_model_draft": raw_draft,
+                    "parser_error": parser_error.unwrap_or(""),
+                })
+                .to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    let compiled = chat_once_base(client, chat_url, &compile_req).await?;
+    Ok(extract_response_text(&compiled).trim().to_string())
+}
+
+async fn legacy_repair_json_text(
     client: &reqwest::Client,
     chat_url: &Url,
     req: &ChatCompletionRequest,
-) -> Result<T> {
-    let resp = chat_once(client, chat_url, req).await?;
-    let text = extract_response_text(&resp);
-    if let Ok(parsed) = parse_json_loose::<T>(&text) {
-        return Ok(parsed);
-    }
-
+    invalid_text: &str,
+) -> Result<String> {
     let repair_context = req
         .messages
         .iter()
@@ -543,11 +751,67 @@ pub(crate) async fn chat_json_with_repair<T: DeserializeOwned>(
             content: format!(
                 "Return ONLY one valid JSON object that matches your required schema.\n\nOriginal input:\n{}\n\nYour previous invalid output:\n{}",
                 repair_context.trim(),
-                text.trim()
+                invalid_text.trim()
             ),
         },
     ];
-    let repaired = chat_once(client, chat_url, &repair_req).await?;
-    let repaired_text = extract_response_text(&repaired);
-    parse_json_loose(&repaired_text)
+    let repaired = chat_once_base(client, chat_url, &repair_req).await?;
+    Ok(extract_response_text(&repaired).trim().to_string())
+}
+
+async fn chat_json_text_with_repair(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+) -> Result<String> {
+    let resp = chat_once_base(client, chat_url, req).await?;
+    let draft = extract_response_text(&resp);
+    let first_pass = compile_json_once(client, chat_url, req, &draft, None).await?;
+    if parse_json_loose::<serde_json::Value>(&first_pass).is_ok() {
+        return Ok(canonical_json_text(&first_pass));
+    }
+
+    let parse_error = parse_json_loose::<serde_json::Value>(&first_pass)
+        .err()
+        .map(|e| format!("{e:#}"))
+        .unwrap_or_else(|| "Unknown JSON parse error".to_string());
+
+    if json_outputter_profile().is_some() {
+        let repaired = compile_json_once(client, chat_url, req, &first_pass, Some(&parse_error)).await?;
+        return Ok(canonical_json_text(&repaired));
+    }
+
+    let repaired = legacy_repair_json_text(client, chat_url, req, &first_pass).await?;
+    Ok(canonical_json_text(&repaired))
+}
+
+pub(crate) async fn chat_json_with_repair<T: DeserializeOwned>(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+) -> Result<T> {
+    let text = chat_json_text_with_repair(client, chat_url, req).await?;
+    parse_json_loose(&text)
+}
+
+pub(crate) async fn chat_json_with_repair_text<T: DeserializeOwned>(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+) -> Result<(T, String)> {
+    let text = chat_json_text_with_repair(client, chat_url, req).await?;
+    let parsed = parse_json_loose(&text)?;
+    Ok((parsed, text))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_separated_reasoning_when_content_is_empty() {
+        let (thinking, final_text) = split_thinking_and_final(Some(""), Some("hidden reasoning"));
+        assert_eq!(thinking.as_deref(), Some("hidden reasoning"));
+        assert!(final_text.is_empty());
+    }
 }

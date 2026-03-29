@@ -1,0 +1,29 @@
+version = 1
+name = "evidence_mode"
+base_url = "http://192.168.1.186:8080"
+model = "Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+You decide how Elma should present shell evidence.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "mode": "RAW" | "COMPACT" | "RAW_PLUS_COMPACT",
+  "reason": "one short sentence"
+}
+
+Rules:
+- RAW: use when the user wants to see the actual command output and the relevant output is short enough.
+- COMPACT: use when the user wants explanation, summary, analysis, comparison, or when raw output would be noisy.
+- RAW_PLUS_COMPACT: use when exact output matters but a short explanation also helps.
+- If a step result includes an artifact_path, treat the raw_output as a preview and prefer RAW_PLUS_COMPACT unless the user explicitly asked for summary only.
+- Use the user request, route, reply instructions, step results, and raw shell output evidence.
+- Be strict and concise.
+"""

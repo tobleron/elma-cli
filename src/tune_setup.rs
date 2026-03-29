@@ -16,6 +16,11 @@ pub(crate) async fn prepare_tune_resources(
     }
 
     let elma_cfg = load_agent_config(&model_cfg_dir.join("_elma.config"))?;
+    let json_outputter_cfg = load_agent_config(&model_cfg_dir.join("json_outputter.toml"))?;
+    set_json_outputter_profile(Some(json_outputter_cfg.clone()));
+    if let Ok(cfg) = load_agent_config(&model_cfg_dir.join("final_answer_extractor.toml")) {
+        set_final_answer_extractor_profile(Some(cfg));
+    }
     let router_cfg = load_agent_config(&model_cfg_dir.join("router.toml"))?;
     let mode_router_cfg = load_agent_config(&model_cfg_dir.join("mode_router.toml"))?;
     let speech_act_cfg = load_agent_config(&model_cfg_dir.join("speech_act.toml"))?;
@@ -29,6 +34,11 @@ pub(crate) async fn prepare_tune_resources(
     let formula_cfg = load_agent_config(&model_cfg_dir.join("formula_selector.toml"))?;
     let workflow_planner_cfg = load_agent_config(&model_cfg_dir.join("workflow_planner.toml"))?;
     let command_repair_cfg = load_agent_config(&model_cfg_dir.join("command_repair.toml"))?;
+    let command_preflight_cfg = load_agent_config(&model_cfg_dir.join("command_preflight.toml"))?;
+    let task_semantics_guard_cfg =
+        load_agent_config(&model_cfg_dir.join("task_semantics_guard.toml"))?;
+    let execution_sufficiency_cfg =
+        load_agent_config(&model_cfg_dir.join("execution_sufficiency.toml"))?;
     let scope_builder_cfg = load_agent_config(&model_cfg_dir.join("scope_builder.toml"))?;
     let evidence_compactor_cfg =
         load_agent_config(&model_cfg_dir.join("evidence_compactor.toml"))?;
@@ -36,10 +46,15 @@ pub(crate) async fn prepare_tune_resources(
         load_agent_config(&model_cfg_dir.join("artifact_classifier.toml"))?;
     let evidence_mode_cfg = load_agent_config(&model_cfg_dir.join("evidence_mode.toml"))?;
     let outcome_verifier_cfg = load_agent_config(&model_cfg_dir.join("outcome_verifier.toml"))?;
+    let memory_gate_cfg = load_agent_config(&model_cfg_dir.join("memory_gate.toml"))?;
     let result_presenter_cfg = load_agent_config(&model_cfg_dir.join("result_presenter.toml"))?;
     let claim_checker_cfg = load_agent_config(&model_cfg_dir.join("claim_checker.toml"))?;
     let orchestrator_cfg = load_agent_config(&model_cfg_dir.join("orchestrator.toml"))?;
     let critic_cfg = load_agent_config(&model_cfg_dir.join("critic.toml"))?;
+    let logical_reviewer_cfg = load_agent_config(&model_cfg_dir.join("logical_reviewer.toml"))?;
+    let efficiency_reviewer_cfg =
+        load_agent_config(&model_cfg_dir.join("efficiency_reviewer.toml"))?;
+    let risk_reviewer_cfg = load_agent_config(&model_cfg_dir.join("risk_reviewer.toml"))?;
     let calibration_judge_cfg =
         load_agent_config(&model_cfg_dir.join("calibration_judge.toml"))?;
 
@@ -107,19 +122,27 @@ pub(crate) async fn prepare_tune_resources(
         selector_cfg,
         summarizer_cfg,
         formatter_cfg,
+        json_outputter_cfg,
         complexity_cfg,
         formula_cfg,
         workflow_planner_cfg,
         command_repair_cfg,
+        command_preflight_cfg,
+        task_semantics_guard_cfg,
+        execution_sufficiency_cfg,
         scope_builder_cfg,
         evidence_compactor_cfg,
         artifact_classifier_cfg,
         evidence_mode_cfg,
         outcome_verifier_cfg,
+        memory_gate_cfg,
         result_presenter_cfg,
         claim_checker_cfg,
         orchestrator_cfg,
         critic_cfg,
+        logical_reviewer_cfg,
+        efficiency_reviewer_cfg,
+        risk_reviewer_cfg,
         calibration_judge_cfg,
         cal,
         supports_logprobs,
@@ -219,13 +242,7 @@ async fn write_intention_mapping(
         let raw = resp
             .choices
             .get(0)
-            .and_then(|choice| {
-                choice
-                    .message
-                    .content
-                    .clone()
-                    .or(choice.message.reasoning_content.clone())
-            })
+            .and_then(|choice| choice.message.content.clone())
             .unwrap_or_default();
         let tags = parse_three_tags(&raw);
         lines.push(format!(

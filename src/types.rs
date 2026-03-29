@@ -2,7 +2,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(
     name = "elma-cli",
     version,
@@ -81,6 +81,22 @@ pub(crate) struct RouterCalibration {
     pub(crate) n_probs: u32,
     pub(crate) supports_logprobs: bool,
     pub(crate) routes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct ModelBehaviorProfile {
+    pub(crate) version: u32,
+    pub(crate) model: String,
+    pub(crate) base_url: String,
+    pub(crate) auto_reasoning_separated: bool,
+    pub(crate) auto_final_clean: bool,
+    pub(crate) auto_truncated_before_final: bool,
+    pub(crate) none_final_clean: bool,
+    pub(crate) none_reasoning_leak_suspected: bool,
+    pub(crate) json_clean_with_auto: bool,
+    pub(crate) json_clean_with_none: bool,
+    pub(crate) needs_text_finalizer: bool,
+    pub(crate) preferred_reasoning_format: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -297,6 +297,11 @@ pub(crate) async fn preflight_command_once(
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
     cmd: &str,
+    platform_os: &str,
+    platform_shell: &str,
+    primary_bin: &str,
+    command_exists: bool,
+    command_lookup: &str,
 ) -> Result<CommandPreflightVerdict> {
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
@@ -314,6 +319,11 @@ pub(crate) async fn preflight_command_once(
                     "complexity": complexity,
                     "formula": formula,
                     "cmd": cmd,
+                    "platform_os": platform_os,
+                    "platform_shell": platform_shell,
+                    "primary_bin": primary_bin,
+                    "command_exists": command_exists,
+                    "command_lookup": command_lookup,
                 })
                 .to_string(),
             },

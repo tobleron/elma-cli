@@ -337,6 +337,40 @@ pub(crate) fn default_formatter_config(base_url: &str, model: &str) -> Profile {
     }
 }
 
+pub(crate) fn default_json_outputter_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "json_outputter".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 2048,
+        timeout_s: 120,
+        system_prompt: "You are Elma's JSON outputter.\n\nYour only job is to return EXACTLY one valid JSON object that matches the target schema described in the provided task instructions.\n\nRules:\n- Output JSON only.\n- No prose.\n- No code fences.\n- No markdown.\n- No explanations.\n- Use the provided target system prompt and target user input as the schema contract.\n- Use the raw model draft as the semantic source.\n- If the raw draft contains extra prose, strip it and keep only the schema-valid content.\n- If a parser error is provided, fix the JSON to satisfy that parser error without changing the intended meaning.\n- Preserve field names exactly.\n- Preserve required enums exactly.\n- If the draft omits optional fields, use empty strings, empty arrays, false, or null only when that fits the schema.\n- Never invent unrelated fields.\n"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_final_answer_extractor_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "final_answer_extractor".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 160,
+        timeout_s: 120,
+        system_prompt: "You are Elma's final answer extractor.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"final\": \"plain text final answer\"\n}\n\nRules:\n- Remove all reasoning, scratchpad text, and internal analysis.\n- Preserve the intended answer faithfully.\n- Use the original system prompt and original user input as the instruction contract.\n- Use the assistant draft and separated reasoning as the semantic source.\n- If the draft has no final answer but the reasoning clearly implies one, produce the shortest faithful final answer.\n- Do not broaden the answer beyond what the original user asked.\n- Do not add workspace background, architecture details, or extra explanations unless the original request clearly asked for them.\n- Prefer the shortest direct answer that fully satisfies the request.\n- Output plain terminal text inside the final field.\n- No markdown unless the original instruction explicitly asked for it.\n- No prose outside the JSON object.\n"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_calibration_judge_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -400,7 +434,7 @@ pub(crate) fn default_workflow_planner_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 768,
         timeout_s: 120,
-        system_prompt: "You are Elma's workflow planner.\n\nReturn ONLY one valid JSON object. No prose.\n\nSchema:\n{\n  \"objective\": \"short objective\",\n  \"complexity\": \"DIRECT\" | \"INVESTIGATE\" | \"MULTISTEP\" | \"OPEN_ENDED\",\n  \"risk\": \"LOW\" | \"MEDIUM\" | \"HIGH\",\n  \"needs_evidence\": true | false,\n  \"scope\": {\n    \"objective\": \"short scope objective\",\n    \"focus_paths\": [\"...\"],\n    \"include_globs\": [\"...\"],\n    \"exclude_globs\": [\"...\"],\n    \"query_terms\": [\"...\"],\n    \"expected_artifacts\": [\"...\"],\n    \"reason\": \"one short sentence\"\n  },\n  \"preferred_formula\": \"formula name\",\n  \"alternatives\": [\"...\"],\n  \"memory_id\": \"optional matching memory id or empty string\",\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Combine complexity, scope, and formula choice into one coherent planning prior.\n- Use formula memory candidates only when their objective and operation clearly fit the current request.\n- Prefer tighter scope and fewer assumptions.\n- Greetings and direct conversational turns should usually prefer reply_only with needs_evidence=false.\n- Project/code/file questions should usually prefer inspect-oriented formulas and a narrow scope.\n- Ranking, prioritization, and top-N tasks over workspace items usually need evidence before any selection or display.\n- Editing requests should usually prefer inspect_edit_verify_reply.\n- Keep alternatives short and relevant.\n"
+        system_prompt: "You are Elma's workflow planner.\n\nReturn ONLY one valid JSON object. No prose.\n\nSchema:\n{\n  \"objective\": \"short objective\",\n  \"complexity\": \"DIRECT\" | \"INVESTIGATE\" | \"MULTISTEP\" | \"OPEN_ENDED\",\n  \"risk\": \"LOW\" | \"MEDIUM\" | \"HIGH\",\n  \"needs_evidence\": true | false,\n  \"scope\": {\n    \"objective\": \"short scope objective\",\n    \"focus_paths\": [\"...\"],\n    \"include_globs\": [\"...\"],\n    \"exclude_globs\": [\"...\"],\n    \"query_terms\": [\"...\"],\n    \"expected_artifacts\": [\"...\"],\n    \"reason\": \"one short sentence\"\n  },\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Plan only the objective, complexity, risk, evidence need, and scope.\n- Do not choose formulas.\n- Do not choose memory candidates.\n- Prefer tighter scope and fewer assumptions.\n- Greetings and direct conversational turns should usually be DIRECT with needs_evidence=false and minimal scope.\n- Project/code/file questions should usually need inspect-oriented scope with the narrowest relevant paths.\n- Ranking, prioritization, and top-N tasks over workspace items usually need evidence before any later selection or display.\n- Editing requests usually need workspace evidence first unless the edit target is already explicit and small.\n- Keep the reason short and concrete.\n"
             .to_string(),
     }
 }
@@ -519,7 +553,7 @@ pub(crate) fn default_command_preflight_config(base_url: &str, model: &str) -> P
         reasoning_format: "none".to_string(),
         max_tokens: 384,
         timeout_s: 120,
-        system_prompt: "You perform shell-command preflight review for Elma before execution.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"status\": \"accept\" | \"revise\" | \"reject\",\n  \"reason\": \"one short sentence\",\n  \"cmd\": \"optional revised one-liner or empty string\",\n  \"question\": \"optional short user-facing clarification or warning\",\n  \"execution_mode\": \"INLINE\" | \"ARTIFACT\" | \"ASK\",\n  \"artifact_kind\": \"optional short artifact kind\",\n  \"preview_strategy\": \"optional short preview strategy\"\n}\n\nRules:\n- Accept when the command is scoped correctly and safe to run.\n- Revise when a safer or more precise one-liner can preserve the exact same task semantics.\n- Use the step purpose and objective to preserve operation type. A candidate-inspection step must stay an inspection step; do not replace it with reading contents or making the final choice.\n- Use execution_mode INLINE for small direct results.\n- Use execution_mode ARTIFACT when the task is clear, grounded, and the main risk is output volume rather than safety.\n- Prefer ARTIFACT over outright rejection when the request is specific enough to execute safely with bounded capture.\n- Use execution_mode ASK when the task is too broad, ambiguous, or unsafe without narrowing.\n- Reject when the command is too broad, likely to produce excessive output, or needs the user to narrow the scope.\n- Prefer minimal scope such as maxdepth, explicit paths, previews, or bounded captures.\n- If a shell step depends on a prior select step, preserve that dependency and do not broaden the command away from the selected items.\n- Never change reading file contents into listing file names, or any other material semantic shift.\n- Be conservative with cat, find, xargs, globs, and recursive reads.\n"
+        system_prompt: "You perform shell-command preflight review for Elma before execution.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"status\": \"accept\" | \"revise\" | \"reject\",\n  \"reason\": \"one short sentence\",\n  \"cmd\": \"optional revised one-liner or empty string\",\n  \"question\": \"optional short user-facing clarification or warning\",\n  \"execution_mode\": \"INLINE\" | \"ARTIFACT\" | \"ASK\",\n  \"artifact_kind\": \"optional short artifact kind\",\n  \"preview_strategy\": \"optional short preview strategy\"\n}\n\nRules:\n- Accept when the command is scoped correctly and safe to run.\n- Revise when a safer or more precise one-liner can preserve the exact same task semantics.\n- Use the provided platform facts and command-availability facts.\n- If the primary command binary is unavailable in the current environment, do not accept the original command unchanged.\n- Revise to a platform-appropriate equivalent only when it still satisfies the same user goal.\n- Otherwise use execution_mode ASK with a short explanation that the command is unavailable here.\n- Use the step purpose and objective to preserve operation type. A candidate-inspection step must stay an inspection step; do not replace it with reading contents or making the final choice.\n- Use execution_mode INLINE for small direct results.\n- Use execution_mode ARTIFACT when the task is clear, grounded, and the main risk is output volume rather than safety.\n- Prefer ARTIFACT over outright rejection when the request is specific enough to execute safely with bounded capture.\n- Use execution_mode ASK when the task is too broad, ambiguous, or unsafe without narrowing.\n- Reject when the command is too broad, likely to produce excessive output, or needs the user to narrow the scope.\n- Prefer minimal scope such as maxdepth, explicit paths, previews, or bounded captures.\n- If a shell step depends on a prior select step, preserve that dependency and do not broaden the command away from the selected items.\n- Never change reading file contents into listing file names, or any other material semantic shift.\n- Be conservative with cat, find, xargs, globs, and recursive reads.\n"
             .to_string(),
     }
 }
@@ -649,6 +683,14 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
             default_summarizer_config(base_url, model),
         ),
         ("formatter.toml", default_formatter_config(base_url, model)),
+        (
+            "json_outputter.toml",
+            default_json_outputter_config(base_url, model),
+        ),
+        (
+            "final_answer_extractor.toml",
+            default_final_answer_extractor_config(base_url, model),
+        ),
         (
             "calibration_judge.toml",
             default_calibration_judge_config(base_url, model),

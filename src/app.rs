@@ -8,6 +8,8 @@ pub(crate) struct LoadedProfiles {
     pub(crate) selector_cfg: Profile,
     pub(crate) summarizer_cfg: Profile,
     pub(crate) formatter_cfg: Profile,
+    pub(crate) json_outputter_cfg: Profile,
+    pub(crate) final_answer_extractor_cfg: Profile,
     pub(crate) complexity_cfg: Profile,
     pub(crate) formula_cfg: Profile,
     pub(crate) workflow_planner_cfg: Profile,

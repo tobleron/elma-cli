@@ -25,6 +25,15 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         fetch_first_model_id(&client, &base).await?
     };
     let model_cfg_dir = ensure_model_config_folder(&cfg_root, &base_url, &model_id)?;
+    let behavior = ensure_model_behavior_profile(
+        &client,
+        &chat_url,
+        &base_url,
+        &model_cfg_dir,
+        &model_id,
+    )
+    .await?;
+    set_model_behavior_profile(Some(behavior.clone()));
 
     if handle_special_modes(
         &args,
@@ -43,6 +52,10 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
 
     let mut profiles = load_profiles(&model_cfg_dir)?;
     sync_and_upgrade_profiles(&args, &model_cfg_dir, &base_url, &model_id, &mut profiles)?;
+    set_json_outputter_profile(Some(profiles.json_outputter_cfg.clone()));
+    set_final_answer_extractor_profile(Some(
+        profiles.final_answer_extractor_cfg.clone(),
+    ));
 
     let ctx_max = fetch_ctx_max(&client, &base).await.unwrap_or(None);
     let session = prepare_session(&args)?;
@@ -53,6 +66,19 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
     trace(
         &args,
         &format!("base_url_source={base_url_source} value={base_url}"),
+    );
+    trace(
+        &args,
+        &format!(
+            "model_behavior preferred_reasoning={} auto_separated={} auto_truncated={} finalizer={} none_clean={} json_auto={} json_none={}",
+            behavior.preferred_reasoning_format,
+            behavior.auto_reasoning_separated,
+            behavior.auto_truncated_before_final,
+            behavior.needs_text_finalizer,
+            behavior.none_final_clean,
+            behavior.json_clean_with_auto,
+            behavior.json_clean_with_none
+        ),
     );
 
     let system_content = build_system_content(&profiles.elma_cfg.system_prompt, &ws, &ws_brief);
@@ -160,6 +186,13 @@ async fn handle_special_modes(
     };
     for mid in model_ids {
         let dir = ensure_model_config_folder(cfg_root, base_url, &mid)?;
+        let behavior =
+            ensure_model_behavior_profile(client, chat_url, base_url, &dir, &mid).await?;
+        set_model_behavior_profile(Some(behavior));
+        set_json_outputter_profile(Some(load_agent_config(&dir.join("json_outputter.toml"))?));
+        set_final_answer_extractor_profile(Some(load_agent_config(
+            &dir.join("final_answer_extractor.toml"),
+        )?));
         if args.calibrate {
             let tune_cfg = load_agent_config(&dir.join("intention_tune.toml"))?;
             tune_model(args, client, chat_url, base_url, &dir, &mid, &tune_cfg, true).await?;
@@ -176,7 +209,7 @@ async fn handle_special_modes(
     Ok(true)
 }
 
-fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
+pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
     Ok(LoadedProfiles {
         elma_cfg: load_agent_config(&model_cfg_dir.join("_elma.config"))?,
         planner_master_cfg: load_agent_config(&model_cfg_dir.join("planner_master.toml"))?,
@@ -185,6 +218,10 @@ fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         selector_cfg: load_agent_config(&model_cfg_dir.join("selector.toml"))?,
         summarizer_cfg: load_agent_config(&model_cfg_dir.join("summarizer.toml"))?,
         formatter_cfg: load_agent_config(&model_cfg_dir.join("formatter.toml"))?,
+        json_outputter_cfg: load_agent_config(&model_cfg_dir.join("json_outputter.toml"))?,
+        final_answer_extractor_cfg: load_agent_config(
+            &model_cfg_dir.join("final_answer_extractor.toml"),
+        )?,
         complexity_cfg: load_agent_config(&model_cfg_dir.join("complexity_assessor.toml"))?,
         formula_cfg: load_agent_config(&model_cfg_dir.join("formula_selector.toml"))?,
         workflow_planner_cfg: load_agent_config(&model_cfg_dir.join("workflow_planner.toml"))?,
@@ -229,6 +266,17 @@ fn sync_and_upgrade_profiles(
     profiles.elma_cfg.base_url = base_url.to_string();
     profiles.elma_cfg.model = model_id.to_string();
     save_agent_config(&elma_cfg_path, &profiles.elma_cfg)?;
+    let json_outputter_cfg_path = model_cfg_dir.join("json_outputter.toml");
+    profiles.json_outputter_cfg.base_url = base_url.to_string();
+    profiles.json_outputter_cfg.model = model_id.to_string();
+    save_agent_config(&json_outputter_cfg_path, &profiles.json_outputter_cfg)?;
+    let final_answer_extractor_cfg_path = model_cfg_dir.join("final_answer_extractor.toml");
+    profiles.final_answer_extractor_cfg.base_url = base_url.to_string();
+    profiles.final_answer_extractor_cfg.model = model_id.to_string();
+    save_agent_config(
+        &final_answer_extractor_cfg_path,
+        &profiles.final_answer_extractor_cfg,
+    )?;
 
     let router_cfg_path = model_cfg_dir.join("router.toml");
     if replace_system_prompt_if_missing(
@@ -529,7 +577,7 @@ fn emit_startup_banner(
         eprintln!("  model    {model_id}");
         eprintln!("  config   {}", model_cfg_dir.display());
         eprintln!("  session  {session_name}");
-        eprintln!("  commands /exit  /reset  /snapshot  /rollback <id>\n");
+        eprintln!("  commands /exit  /reset  /snapshot  /rollback <id>  /tune\n");
         return;
     }
 
@@ -539,7 +587,7 @@ fn emit_startup_banner(
     eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
     eprintln!("{} {session_name}", ansi_grey("  session "));
     eprintln!(
-        "{} /exit  /reset  /snapshot  /rollback <id>\n",
+        "{} /exit  /reset  /snapshot  /rollback <id>  /tune\n",
         ansi_grey("  commands")
     );
 }

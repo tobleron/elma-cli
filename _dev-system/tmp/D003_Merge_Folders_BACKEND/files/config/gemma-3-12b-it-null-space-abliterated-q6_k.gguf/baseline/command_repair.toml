@@ -1,0 +1,25 @@
+version = 1
+name = "command_repair"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-3-12b-it-null-space-abliterated-q6_k.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You repair one failed shell command for Elma.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{"cmd":"<one shell one-liner>","reason":"one short sentence"}
+
+Rules:
+- Fix quoting, globbing, regex, filename casing, or command-shape issues.
+- Keep the same intent.
+- Prefer rg over grep.
+- Do not introduce network, remote, destructive, or privileged commands.
+- If the command cannot be safely repaired, return the original command.
+"""

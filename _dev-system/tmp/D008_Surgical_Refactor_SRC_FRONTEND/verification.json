@@ -1,0 +1,874 @@
+{
+  "task": "D008",
+  "category": "Surgical_Refactor_SRC_FRONTEND",
+  "baseline_dir": "_dev-system/tmp/D008_Surgical_Refactor_SRC_FRONTEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/main.rs`",
+      "snapshots": [
+        {
+          "path": "src/main.rs",
+          "functions": [
+            {
+              "name": "repo_root",
+              "signature": "fn repo_root() -> Result<PathBuf> {",
+              "line": 83
+            },
+            {
+              "name": "config_root_path",
+              "signature": "fn config_root_path(config_root: &str) -> Result<PathBuf> {",
+              "line": 88
+            },
+            {
+              "name": "sessions_root_path",
+              "signature": "fn sessions_root_path(sessions_root: &str) -> Result<PathBuf> {",
+              "line": 92
+            },
+            {
+              "name": "discover_saved_base_url",
+              "signature": "fn discover_saved_base_url(config_root: &Path, model_hint: Option<&str>) -> Option<String> {",
+              "line": 96
+            },
+            {
+              "name": "resolve_base_url",
+              "signature": "fn resolve_base_url(config_root: &Path, explicit: Option<&str>, model_hint: Option<&str>) -> (String, &'static str) {",
+              "line": 144
+            },
+            {
+              "name": "load_agent_config",
+              "signature": "fn load_agent_config(path: &PathBuf) -> Result<Profile> {",
+              "line": 154
+            },
+            {
+              "name": "save_agent_config",
+              "signature": "fn save_agent_config(path: &PathBuf, p: &Profile) -> Result<()> {",
+              "line": 161
+            },
+            {
+              "name": "save_router_calibration",
+              "signature": "fn save_router_calibration(path: &PathBuf, c: &RouterCalibration) -> Result<()> {",
+              "line": 170
+            },
+            {
+              "name": "load_router_calibration",
+              "signature": "fn load_router_calibration(path: &PathBuf) -> Result<RouterCalibration> {",
+              "line": 179
+            },
+            {
+              "name": "save_active_manifest",
+              "signature": "fn save_active_manifest(path: &PathBuf, m: &ActiveManifest) -> Result<()> {",
+              "line": 186
+            },
+            {
+              "name": "load_active_manifest",
+              "signature": "fn load_active_manifest(path: &PathBuf) -> Result<ActiveManifest> {",
+              "line": 195
+            },
+            {
+              "name": "save_tune_run_manifest",
+              "signature": "fn save_tune_run_manifest(path: &PathBuf, m: &TuneRunManifest) -> Result<()> {",
+              "line": 202
+            },
+            {
+              "name": "fetch_first_model_id",
+              "signature": "async fn fetch_first_model_id(client: &reqwest::Client, base_url: &Url) -> Result<String> {",
+              "line": 548
+            },
+            {
+              "name": "fetch_all_model_ids",
+              "signature": "async fn fetch_all_model_ids(client: &reqwest::Client, base_url: &Url) -> Result<Vec<String>> {",
+              "line": 576
+            },
+            {
+              "name": "fetch_ctx_max",
+              "signature": "async fn fetch_ctx_max(client: &reqwest::Client, base_url: &Url) -> Result<Option<u64>> {",
+              "line": 605
+            },
+            {
+              "name": "sanitize_model_folder_name",
+              "signature": "fn sanitize_model_folder_name(s: &str) -> String {",
+              "line": 669
+            },
+            {
+              "name": "default_elma_config",
+              "signature": "fn default_elma_config(base_url: &str, model: &str) -> Profile {",
+              "line": 687
+            },
+            {
+              "name": "default_intention_config",
+              "signature": "fn default_intention_config(base_url: &str, model: &str) -> Profile {",
+              "line": 705
+            },
+            {
+              "name": "default_gate_config",
+              "signature": "fn default_gate_config(base_url: &str, model: &str) -> Profile {",
+              "line": 722
+            },
+            {
+              "name": "default_gate_why_config",
+              "signature": "fn default_gate_why_config(base_url: &str, model: &str) -> Profile {",
+              "line": 739
+            },
+            {
+              "name": "default_tooler_config",
+              "signature": "fn default_tooler_config(base_url: &str, model: &str) -> Profile {",
+              "line": 756
+            },
+            {
+              "name": "default_orchestrator_config",
+              "signature": "fn default_orchestrator_config(base_url: &str, model: &str) -> Profile {",
+              "line": 773
+            },
+            {
+              "name": "default_critic_config",
+              "signature": "fn default_critic_config(base_url: &str, model: &str) -> Profile {",
+              "line": 790
+            },
+            {
+              "name": "default_router_config",
+              "signature": "fn default_router_config(base_url: &str, model: &str) -> Profile {",
+              "line": 807
+            },
+            {
+              "name": "default_mode_router_config",
+              "signature": "fn default_mode_router_config(base_url: &str, model: &str) -> Profile {",
+              "line": 823
+            },
+            {
+              "name": "default_speech_act_config",
+              "signature": "fn default_speech_act_config(base_url: &str, model: &str) -> Profile {",
+              "line": 839
+            },
+            {
+              "name": "default_action_type_config",
+              "signature": "fn default_action_type_config(base_url: &str, model: &str) -> Profile {",
+              "line": 855
+            },
+            {
+              "name": "default_planner_master_config",
+              "signature": "fn default_planner_master_config(base_url: &str, model: &str) -> Profile {",
+              "line": 872
+            },
+            {
+              "name": "default_planner_config",
+              "signature": "fn default_planner_config(base_url: &str, model: &str) -> Profile {",
+              "line": 889
+            },
+            {
+              "name": "default_decider_config",
+              "signature": "fn default_decider_config(base_url: &str, model: &str) -> Profile {",
+              "line": 906
+            },
+            {
+              "name": "default_summarizer_config",
+              "signature": "fn default_summarizer_config(base_url: &str, model: &str) -> Profile {",
+              "line": 922
+            },
+            {
+              "name": "default_formatter_config",
+              "signature": "fn default_formatter_config(base_url: &str, model: &str) -> Profile {",
+              "line": 939
+            },
+            {
+              "name": "default_calibration_judge_config",
+              "signature": "fn default_calibration_judge_config(base_url: &str, model: &str) -> Profile {",
+              "line": 956
+            },
+            {
+              "name": "default_complexity_assessor_config",
+              "signature": "fn default_complexity_assessor_config(base_url: &str, model: &str) -> Profile {",
+              "line": 973
+            },
+            {
+              "name": "default_formula_selector_config",
+              "signature": "fn default_formula_selector_config(base_url: &str, model: &str) -> Profile {",
+              "line": 990
+            },
+            {
+              "name": "default_command_repair_config",
+              "signature": "fn default_command_repair_config(base_url: &str, model: &str) -> Profile {",
+              "line": 1007
+            },
+            {
+              "name": "default_intention_tune_config",
+              "signature": "fn default_intention_tune_config(base_url: &str, model: &str) -> Profile {",
+              "line": 1024
+            },
+            {
+              "name": "managed_profile_specs",
+              "signature": "fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'static str, Profile)> {",
+              "line": 1041
+            },
+            {
+              "name": "managed_profile_file_names",
+              "signature": "fn managed_profile_file_names() -> Vec<&'static str> {",
+              "line": 1067
+            },
+            {
+              "name": "new_tune_run_id",
+              "signature": "fn new_tune_run_id() -> Result<String> {",
+              "line": 1074
+            },
+            {
+              "name": "now_unix_s",
+              "signature": "fn now_unix_s() -> Result<u64> {",
+              "line": 1081
+            },
+            {
+              "name": "model_baseline_dir",
+              "signature": "fn model_baseline_dir(model_cfg_dir: &Path) -> PathBuf {",
+              "line": 1088
+            },
+            {
+              "name": "model_fallback_last_active_dir",
+              "signature": "fn model_fallback_last_active_dir(model_cfg_dir: &Path) -> PathBuf {",
+              "line": 1092
+            },
+            {
+              "name": "model_tune_runs_dir",
+              "signature": "fn model_tune_runs_dir(model_cfg_dir: &Path) -> PathBuf {",
+              "line": 1096
+            },
+            {
+              "name": "model_active_manifest_path",
+              "signature": "fn model_active_manifest_path(model_cfg_dir: &Path) -> PathBuf {",
+              "line": 1100
+            },
+            {
+              "name": "write_profile_specs_to_dir",
+              "signature": "fn write_profile_specs_to_dir(dir: &Path, specs: &[(&str, Profile)]) -> Result<()> {",
+              "line": 1104
+            },
+            {
+              "name": "ensure_baseline_profile_set",
+              "signature": "fn ensure_baseline_profile_set(model_cfg_dir: &Path, base_url: &str, model: &str) -> Result<PathBuf> {",
+              "line": 1112
+            },
+            {
+              "name": "copy_profile_set",
+              "signature": "fn copy_profile_set(src_dir: &Path, dst_dir: &Path) -> Result<()> {",
+              "line": 1121
+            },
+            {
+              "name": "snapshot_active_profile_set",
+              "signature": "fn snapshot_active_profile_set(model_cfg_dir: &Path, snapshot_dir: &Path) -> Result<()> {",
+              "line": 1135
+            },
+            {
+              "name": "sync_profile_dir_base_url_and_model",
+              "signature": "fn sync_profile_dir_base_url_and_model(dir: &Path, base_url: &str, model: &str) -> Result<()> {",
+              "line": 1149
+            },
+            {
+              "name": "activate_profile_set",
+              "signature": "fn activate_profile_set(",
+              "line": 1163
+            },
+            {
+              "name": "ensure_model_config_folder",
+              "signature": "fn ensure_model_config_folder(",
+              "line": 1192
+            },
+            {
+              "name": "maybe_upgrade_system_prompt",
+              "signature": "fn maybe_upgrade_system_prompt(profile: &mut Profile, expected_name: &str, patch: &str) -> bool {",
+              "line": 1331
+            },
+            {
+              "name": "replace_system_prompt_if_missing",
+              "signature": "fn replace_system_prompt_if_missing(profile: &mut Profile, expected_name: &str, must_contain: &str, replacement: String) -> bool {",
+              "line": 1345
+            },
+            {
+              "name": "cmd_out",
+              "signature": "fn cmd_out(cmd: &str, cwd: &Path) -> String {",
+              "line": 1356
+            },
+            {
+              "name": "gather_workspace_context",
+              "signature": "fn gather_workspace_context(repo_root: &Path) -> String {",
+              "line": 1373
+            },
+            {
+              "name": "gather_workspace_brief",
+              "signature": "fn gather_workspace_brief(repo_root: &Path) -> String {",
+              "line": 1407
+            },
+            {
+              "name": "extract_first_json_object",
+              "signature": "fn extract_first_json_object(text: &str) -> Option<&str> {",
+              "line": 1442
+            },
+            {
+              "name": "parse_json_loose",
+              "signature": "fn parse_json_loose<T: DeserializeOwned>(text: &str) -> Result<T> {",
+              "line": 1485
+            },
+            {
+              "name": "workflow_code_pairs",
+              "signature": "fn workflow_code_pairs() -> &'static [(&'static str, &'static str)] {",
+              "line": 1495
+            },
+            {
+              "name": "mode_code_pairs",
+              "signature": "fn mode_code_pairs() -> &'static [(&'static str, &'static str)] {",
+              "line": 1499
+            },
+            {
+              "name": "speech_act_code_pairs",
+              "signature": "fn speech_act_code_pairs() -> &'static [(&'static str, &'static str)] {",
+              "line": 1509
+            },
+            {
+              "name": "route_label_from_router_output",
+              "signature": "fn route_label_from_router_output(",
+              "line": 1517
+            },
+            {
+              "name": "logsumexp",
+              "signature": "fn logsumexp(values: &[f64]) -> f64 {",
+              "line": 1536
+            },
+            {
+              "name": "parse_router_distribution",
+              "signature": "fn parse_router_distribution(",
+              "line": 1548
+            },
+            {
+              "name": "route_margin",
+              "signature": "fn route_margin(distribution: &[(String, f64)]) -> f64 {",
+              "line": 1614
+            },
+            {
+              "name": "route_entropy",
+              "signature": "fn route_entropy(distribution: &[(String, f64)]) -> f64 {",
+              "line": 1620
+            },
+            {
+              "name": "format_route_distribution",
+              "signature": "fn format_route_distribution(distribution: &[(String, f64)]) -> String {",
+              "line": 1627
+            },
+            {
+              "name": "probability_of",
+              "signature": "fn probability_of(distribution: &[(String, f64)], label: &str) -> f64 {",
+              "line": 1635
+            },
+            {
+              "name": "infer_digit_router",
+              "signature": "async fn infer_digit_router(",
+              "line": 1643
+            },
+            {
+              "name": "infer_route_prior",
+              "signature": "async fn infer_route_prior(",
+              "line": 1720
+            },
+            {
+              "name": "looks_like_path_token",
+              "signature": "fn looks_like_path_token(s: &str) -> bool {",
+              "line": 1836
+            },
+            {
+              "name": "extract_first_path_from_user_text",
+              "signature": "fn extract_first_path_from_user_text(line: &str) -> Option<String> {",
+              "line": 1856
+            },
+            {
+              "name": "plain_terminal_text",
+              "signature": "fn plain_terminal_text(s: &str) -> String {",
+              "line": 1865
+            },
+            {
+              "name": "shell_quote",
+              "signature": "fn shell_quote(s: &str) -> String {",
+              "line": 1901
+            },
+            {
+              "name": "normalize_shell_cmd",
+              "signature": "fn normalize_shell_cmd(cmd: &str) -> String {",
+              "line": 1916
+            },
+            {
+              "name": "summarize_shell_output",
+              "signature": "fn summarize_shell_output(output: &str) -> String {",
+              "line": 1932
+            },
+            {
+              "name": "looks_like_markdown",
+              "signature": "fn looks_like_markdown(text: &str) -> bool {",
+              "line": 1943
+            },
+            {
+              "name": "user_requested_markdown",
+              "signature": "fn user_requested_markdown(text: &str) -> bool {",
+              "line": 1951
+            },
+            {
+              "name": "program_safety_check",
+              "signature": "fn program_safety_check(cmd: &str) -> bool {",
+              "line": 1956
+            },
+            {
+              "name": "step_kind",
+              "signature": "fn step_kind(s: &Step) -> &'static str {",
+              "line": 1960
+            },
+            {
+              "name": "step_id",
+              "signature": "fn step_id(s: &Step) -> &str {",
+              "line": 1971
+            },
+            {
+              "name": "step_common",
+              "signature": "fn step_common(s: &Step) -> &StepCommon {",
+              "line": 1982
+            },
+            {
+              "name": "step_purpose",
+              "signature": "fn step_purpose(s: &Step) -> String {",
+              "line": 1993
+            },
+            {
+              "name": "step_success_condition",
+              "signature": "fn step_success_condition(s: &Step) -> String {",
+              "line": 2008
+            },
+            {
+              "name": "step_depends_on",
+              "signature": "fn step_depends_on(s: &Step) -> Vec<String> {",
+              "line": 2012
+            },
+            {
+              "name": "new_session_id",
+              "signature": "fn new_session_id() -> Result<String> {",
+              "line": 2025
+            },
+            {
+              "name": "ensure_session_layout",
+              "signature": "fn ensure_session_layout(sessions_root: &PathBuf) -> Result<SessionPaths> {",
+              "line": 2033
+            },
+            {
+              "name": "next_shell_seq",
+              "signature": "fn next_shell_seq(shell_dir: &PathBuf) -> Result<u32> {",
+              "line": 2068
+            },
+            {
+              "name": "write_shell_action",
+              "signature": "fn write_shell_action(shell_dir: &PathBuf, cmd_line: &str) -> Result<PathBuf> {",
+              "line": 2089
+            },
+            {
+              "name": "write_shell_output",
+              "signature": "fn write_shell_output(shell_dir: &PathBuf, seq_path: &PathBuf, output: &str) -> Result<PathBuf> {",
+              "line": 2097
+            },
+            {
+              "name": "is_command_allowed",
+              "signature": "fn is_command_allowed(cmd: &str) -> bool {",
+              "line": 2107
+            },
+            {
+              "name": "command_is_readonly",
+              "signature": "fn command_is_readonly(cmd: &str) -> bool {",
+              "line": 2144
+            },
+            {
+              "name": "program_signature",
+              "signature": "fn program_signature(program: &Program) -> String {",
+              "line": 2180
+            },
+            {
+              "name": "evaluate_program_for_scenario",
+              "signature": "fn evaluate_program_for_scenario(program: &Program, scenario: &CalibrationScenario) -> ProgramEvaluation {",
+              "line": 2196
+            },
+            {
+              "name": "capability_guard_threshold",
+              "signature": "fn capability_guard_threshold(route_decision: &RouteDecision) -> bool {",
+              "line": 2305
+            },
+            {
+              "name": "apply_capability_guard",
+              "signature": "fn apply_capability_guard(program: &mut Program, route_decision: &RouteDecision) -> bool {",
+              "line": 2313
+            },
+            {
+              "name": "is_command_sane",
+              "signature": "fn is_command_sane(cmd: &str) -> bool {",
+              "line": 2344
+            },
+            {
+              "name": "run_shell_one_liner",
+              "signature": "fn run_shell_one_liner(cmd: &str, workdir: &PathBuf) -> Result<(i32, String)> {",
+              "line": 2356
+            },
+            {
+              "name": "next_plan_seq",
+              "signature": "fn next_plan_seq(plans_dir: &PathBuf) -> Result<u32> {",
+              "line": 2377
+            },
+            {
+              "name": "write_plan_file",
+              "signature": "fn write_plan_file(plans_dir: &PathBuf, content: &str) -> Result<PathBuf> {",
+              "line": 2397
+            },
+            {
+              "name": "append_master_link",
+              "signature": "fn append_master_link(plans_dir: &PathBuf, plan_path: &PathBuf, title: &str) -> Result<()> {",
+              "line": 2404
+            },
+            {
+              "name": "next_decision_seq",
+              "signature": "fn next_decision_seq(decisions_dir: &PathBuf) -> Result<u32> {",
+              "line": 2421
+            },
+            {
+              "name": "write_decision",
+              "signature": "fn write_decision(decisions_dir: &PathBuf, word: &str) -> Result<PathBuf> {",
+              "line": 2438
+            },
+            {
+              "name": "next_gate_why_seq",
+              "signature": "fn next_gate_why_seq(tune_dir: &PathBuf) -> Result<u32> {",
+              "line": 2446
+            },
+            {
+              "name": "write_gate_why",
+              "signature": "fn write_gate_why(tune_dir: &PathBuf, text: &str) -> Result<PathBuf> {",
+              "line": 2463
+            },
+            {
+              "name": "execute_program",
+              "signature": "async fn execute_program(",
+              "line": 2471
+            },
+            {
+              "name": "read_expected_line",
+              "signature": "fn read_expected_line(s: &str) -> Option<String> {",
+              "line": 2817
+            },
+            {
+              "name": "parse_three_tags",
+              "signature": "fn parse_three_tags(s: &str) -> [String; 3] {",
+              "line": 2830
+            },
+            {
+              "name": "load_intention_mapping",
+              "signature": "fn load_intention_mapping(model_cfg_dir: &PathBuf) -> Option<Vec<(String, [String; 3])>> {",
+              "line": 2853
+            },
+            {
+              "name": "scenario_helper",
+              "signature": "fn scenario_helper(intent_word: &str, mapping: &[(String, [String; 3])]) -> (Option<String>, f64) {",
+              "line": 2876
+            },
+            {
+              "name": "list_intention_scenario_paths",
+              "signature": "fn list_intention_scenario_paths() -> Result<Vec<PathBuf>> {",
+              "line": 2912
+            },
+            {
+              "name": "load_calibration_manifest",
+              "signature": "fn load_calibration_manifest() -> Result<CalibrationManifest> {",
+              "line": 2928
+            },
+            {
+              "name": "parse_scenario_dialog",
+              "signature": "fn parse_scenario_dialog(s: &str) -> (String, Vec<ChatMessage>) {",
+              "line": 2939
+            },
+            {
+              "name": "calibration_metric",
+              "signature": "fn calibration_metric(correct: usize, total: usize) -> CalibrationMetric {",
+              "line": 2966
+            },
+            {
+              "name": "build_confusions",
+              "signature": "fn build_confusions(pairs: &[(String, String)]) -> Vec<CalibrationConfusion> {",
+              "line": 2978
+            },
+            {
+              "name": "metric_accuracy_or_neutral",
+              "signature": "fn metric_accuracy_or_neutral(correct: usize, total: usize) -> f64 {",
+              "line": 3001
+            },
+            {
+              "name": "is_workflow_calibration_scenario",
+              "signature": "fn is_workflow_calibration_scenario(scenario: &CalibrationScenario) -> bool {",
+              "line": 3009
+            },
+            {
+              "name": "is_response_calibration_scenario",
+              "signature": "fn is_response_calibration_scenario(scenario: &CalibrationScenario) -> bool {",
+              "line": 3013
+            },
+            {
+              "name": "save_stage_score_note",
+              "signature": "fn save_stage_score_note(dir: &Path, stage: &str, note: &str) -> Result<()> {",
+              "line": 3026
+            },
+            {
+              "name": "save_calibration_report",
+              "signature": "fn save_calibration_report(path: &PathBuf, report: &CalibrationReport) -> Result<()> {",
+              "line": 3032
+            },
+            {
+              "name": "load_calibration_report",
+              "signature": "fn load_calibration_report(path: &PathBuf) -> Result<CalibrationReport> {",
+              "line": 3041
+            },
+            {
+              "name": "assess_complexity_once",
+              "signature": "async fn assess_complexity_once(",
+              "line": 3048
+            },
+            {
+              "name": "select_formula_once",
+              "signature": "async fn select_formula_once(",
+              "line": 3097
+            },
+            {
+              "name": "repair_command_once",
+              "signature": "async fn repair_command_once(",
+              "line": 3142
+            },
+            {
+              "name": "score_calibration_report",
+              "signature": "fn score_calibration_report(report: &CalibrationReport) -> f64 {",
+              "line": 3186
+            },
+            {
+              "name": "hard_rejects_calibration_report",
+              "signature": "fn hard_rejects_calibration_report(report: &CalibrationReport) -> bool {",
+              "line": 3201
+            },
+            {
+              "name": "prompt_patch_routing",
+              "signature": "fn prompt_patch_routing() -> &'static str {",
+              "line": 3205
+            },
+            {
+              "name": "prompt_patch_mode_router",
+              "signature": "fn prompt_patch_mode_router() -> &'static str {",
+              "line": 3209
+            },
+            {
+              "name": "prompt_patch_orchestrator_cleanup",
+              "signature": "fn prompt_patch_orchestrator_cleanup() -> &'static str {",
+              "line": 3213
+            },
+            {
+              "name": "prompt_patch_critic_cleanup",
+              "signature": "fn prompt_patch_critic_cleanup() -> &'static str {",
+              "line": 3217
+            },
+            {
+              "name": "prompt_patch_elma_grounding",
+              "signature": "fn prompt_patch_elma_grounding() -> &'static str {",
+              "line": 3221
+            },
+            {
+              "name": "apply_prompt_bundle",
+              "signature": "fn apply_prompt_bundle(dir: &Path, bundle: &str) -> Result<()> {",
+              "line": 3225
+            },
+            {
+              "name": "apply_router_param_variant",
+              "signature": "fn apply_router_param_variant(dir: &Path, variant: &str) -> Result<()> {",
+              "line": 3265
+            },
+            {
+              "name": "apply_orchestrator_param_variant",
+              "signature": "fn apply_orchestrator_param_variant(dir: &Path, variant: &str) -> Result<()> {",
+              "line": 3282
+            },
+            {
+              "name": "apply_response_param_variant",
+              "signature": "fn apply_response_param_variant(dir: &Path, variant: &str) -> Result<()> {",
+              "line": 3298
+            },
+            {
+              "name": "conversation_excerpt",
+              "signature": "fn conversation_excerpt(messages: &[ChatMessage], max_items: usize) -> String {",
+              "line": 3326
+            },
+            {
+              "name": "build_orchestrator_user_content",
+              "signature": "fn build_orchestrator_user_content(",
+              "line": 3338
+            },
+            {
+              "name": "orchestrate_program_once",
+              "signature": "async fn orchestrate_program_once(",
+              "line": 3377
+            },
+            {
+              "name": "run_critic_once",
+              "signature": "async fn run_critic_once(",
+              "line": 3463
+            },
+            {
+              "name": "generate_final_answer_once",
+              "signature": "async fn generate_final_answer_once(",
+              "line": 3563
+            },
+            {
+              "name": "judge_final_answer_once",
+              "signature": "async fn judge_final_answer_once(",
+              "line": 3647
+            },
+            {
+              "name": "evaluate_routing_suite",
+              "signature": "async fn evaluate_routing_suite(",
+              "line": 3700
+            },
+            {
+              "name": "evaluate_workflow_suite",
+              "signature": "async fn evaluate_workflow_suite(",
+              "line": 3799
+            },
+            {
+              "name": "evaluate_response_suite",
+              "signature": "async fn evaluate_response_suite(",
+              "line": 4027
+            },
+            {
+              "name": "evaluate_candidate_dir",
+              "signature": "async fn evaluate_candidate_dir(",
+              "line": 4240
+            },
+            {
+              "name": "make_candidate_dir",
+              "signature": "fn make_candidate_dir(run_root: &Path, name: &str) -> Result<PathBuf> {",
+              "line": 4277
+            },
+            {
+              "name": "select_top_beam",
+              "signature": "fn select_top_beam(candidates: Vec<CandidateScore>, beam_width: usize) -> Vec<CandidateScore> {",
+              "line": 4287
+            },
+            {
+              "name": "select_top_search_beam",
+              "signature": "fn select_top_search_beam(candidates: Vec<SearchCandidate>, beam_width: usize) -> Vec<SearchCandidate> {",
+              "line": 4308
+            },
+            {
+              "name": "optimize_model",
+              "signature": "async fn optimize_model(",
+              "line": 4329
+            },
+            {
+              "name": "tune_model",
+              "signature": "async fn tune_model(",
+              "line": 4572
+            },
+            {
+              "name": "prompt_line",
+              "signature": "fn prompt_line(prompt: &str) -> Result<Option<String>> {",
+              "line": 5274
+            },
+            {
+              "name": "ansi_grey",
+              "signature": "fn ansi_grey(s: &str) -> String {",
+              "line": 5287
+            },
+            {
+              "name": "ansi_orange",
+              "signature": "fn ansi_orange(s: &str) -> String {",
+              "line": 5292
+            },
+            {
+              "name": "ansi_pale_yellow",
+              "signature": "fn ansi_pale_yellow(s: &str) -> String {",
+              "line": 5297
+            },
+            {
+              "name": "ansi_paler_yellow",
+              "signature": "fn ansi_paler_yellow(s: &str) -> String {",
+              "line": 5302
+            },
+            {
+              "name": "trace_log_state",
+              "signature": "fn trace_log_state() -> &'static Mutex<Option<PathBuf>> {",
+              "line": 5309
+            },
+            {
+              "name": "set_trace_log_path",
+              "signature": "fn set_trace_log_path(path: Option<PathBuf>) {",
+              "line": 5313
+            },
+            {
+              "name": "append_trace_log_line",
+              "signature": "fn append_trace_log_line(line: &str) {",
+              "line": 5319
+            },
+            {
+              "name": "trace",
+              "signature": "fn trace(args: &Args, msg: &str) {",
+              "line": 5333
+            },
+            {
+              "name": "calibration_progress",
+              "signature": "fn calibration_progress(args: &Args, msg: &str) {",
+              "line": 5345
+            },
+            {
+              "name": "operator_trace",
+              "signature": "fn operator_trace(args: &Args, msg: &str) {",
+              "line": 5354
+            },
+            {
+              "name": "strip_think_tags",
+              "signature": "fn strip_think_tags(s: &str) -> String {",
+              "line": 5368
+            },
+            {
+              "name": "describe_operator_intent",
+              "signature": "fn describe_operator_intent(route: &RouteDecision, complexity: &ComplexityAssessment, formula: &FormulaSelection) -> String {",
+              "line": 5386
+            },
+            {
+              "name": "squash_blank_lines",
+              "signature": "fn squash_blank_lines(s: &str) -> String {",
+              "line": 5412
+            },
+            {
+              "name": "split_llama_sentinel_reasoning",
+              "signature": "fn split_llama_sentinel_reasoning(content: &str) -> (String, Option<String>) {",
+              "line": 5441
+            },
+            {
+              "name": "split_thinking_and_final",
+              "signature": "fn split_thinking_and_final(",
+              "line": 5485
+            },
+            {
+              "name": "extract_final_line",
+              "signature": "fn extract_final_line(text: &str, prefix: &str) -> Option<String> {",
+              "line": 5562
+            },
+            {
+              "name": "remove_final_lines",
+              "signature": "fn remove_final_lines(text: &str, prefix: &str) -> String {",
+              "line": 5579
+            },
+            {
+              "name": "chat_once",
+              "signature": "async fn chat_once(",
+              "line": 5596
+            },
+            {
+              "name": "main",
+              "signature": "async fn main() -> Result<()> {",
+              "line": 5633
+            }
+          ],
+          "fingerprint": "cfbaa689b3ebc53ad612c8ad47e51496418e5d1ae867f2e5015704d70e253203"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-03-28T13:49:00.007525Z"
+}

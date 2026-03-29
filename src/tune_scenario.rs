@@ -168,11 +168,12 @@ pub(crate) async fn evaluate_runtime_scenario(
     let mut claim_check_reason = None;
     let mut presentation_ok = None;
     let mut presentation_reason = None;
-    let tool_economy = tool_economy_score(
-        program_opt
-            .as_ref()
-            .map(|program| program.steps.len())
-            .unwrap_or_default(),
+    let mut actual_step_count = program_opt
+        .as_ref()
+        .map(|program| program.steps.len())
+        .unwrap_or_default();
+    let mut tool_economy = tool_economy_score(
+        actual_step_count,
         scenario.minimum_step_count,
         scenario.maximum_step_count,
     );
@@ -181,37 +182,84 @@ pub(crate) async fn evaluate_runtime_scenario(
         if program_eval.parsed
             && program_eval.shape_ok
             && program_eval.policy_ok
-            && program_eval.executable_in_tune
+            && (scenario.route.eq_ignore_ascii_case("CHAT") || program_eval.executable_in_tune)
         {
             executed_in_tune = true;
             let session = ensure_session_layout(&resources.tune_sessions_root)?;
-            let (step_results, final_reply) = execute_program(
+            let mut loop_outcome = run_autonomous_loop(
                 args,
                 client,
                 chat_url,
                 &session,
                 &resources.repo,
-                &program,
+                program,
+                &decision,
+                workflow_plan.as_ref(),
+                &complexity,
+                &scope,
+                &formula,
+                &resources.ws,
+                &resources.ws_brief,
+                &conversation_messages,
+                &resources.orchestrator_cfg,
                 &resources.planner_cfg,
                 &resources.planner_master_cfg,
                 &resources.decider_cfg,
                 &resources.selector_cfg,
                 &resources.summarizer_cfg,
-                Some(&resources.command_repair_cfg),
-                None,
-                None,
-                Some(&resources.evidence_compactor_cfg),
-                Some(&resources.artifact_classifier_cfg),
-                &scope,
-                &complexity,
-                &formula,
-                &program.objective,
-                false,
-                true,
+                &resources.command_repair_cfg,
+                &resources.command_preflight_cfg,
+                &resources.task_semantics_guard_cfg,
+                &resources.evidence_compactor_cfg,
+                &resources.artifact_classifier_cfg,
+                &resources.outcome_verifier_cfg,
+                &resources.execution_sufficiency_cfg,
+                &resources.critic_cfg,
+                &resources.logical_reviewer_cfg,
+                &resources.efficiency_reviewer_cfg,
+                &resources.risk_reviewer_cfg,
             )
             .await?;
+            actual_step_count = loop_outcome.program.steps.len();
+            tool_economy = tool_economy_score(
+                actual_step_count,
+                scenario.minimum_step_count,
+                scenario.maximum_step_count,
+            );
+            let step_results = loop_outcome.step_results;
+            let mut final_reply = loop_outcome.final_reply;
+            let reasoning_clean = loop_outcome.reasoning_clean;
+
             let step_exec_ok = step_results.iter().all(|result| result.ok);
             execution_ok = Some(step_exec_ok);
+
+            let merged_program = loop_outcome.program;
+            let sufficiency = match check_execution_sufficiency_once(
+                client,
+                chat_url,
+                &resources.execution_sufficiency_cfg,
+                &user_message,
+                &decision,
+                &merged_program,
+                &step_results,
+            )
+            .await
+            {
+                Ok(verdict) => Some(verdict),
+                Err(error) => {
+                    critic_reason = Some(format!("sufficiency error: {error}"));
+                    None
+                }
+            };
+
+            if let Some(sufficiency_verdict) = sufficiency.as_ref() {
+                critic_reason = Some(sufficiency_verdict.reason.clone());
+                critic_ok = Some(
+                    sufficiency_verdict
+                        .status
+                        .eq_ignore_ascii_case(if step_exec_ok { "ok" } else { "retry" }),
+                );
+            }
 
             let shell_summaries = step_results
                 .iter()
@@ -246,51 +294,25 @@ pub(crate) async fn evaluate_runtime_scenario(
                 });
             }
 
-            match run_critic_once(
-                client,
-                chat_url,
-                &resources.critic_cfg,
-                &user_message,
-                &decision,
-                &program,
-                &step_results,
-                None,
-                0,
-            )
-            .await
-            {
-                Ok(verdict) => {
-                    let ok = verdict
-                        .status
-                        .eq_ignore_ascii_case(if step_exec_ok { "ok" } else { "retry" });
-                    critic_reason = Some(verdict.reason.clone());
-                    critic_ok = Some(ok);
-                }
-                Err(error) => {
-                    critic_reason = Some(format!("critic error: {error}"));
-                    critic_ok = Some(false);
-                }
-            }
-
-            let reply_instructions = final_reply.unwrap_or_else(|| {
+            let reply_instructions = final_reply.take().unwrap_or_else(|| {
                 "Respond to the user in plain terminal text. Use any step outputs as evidence."
                     .to_string()
             });
-            let evidence_mode =
-                decide_evidence_mode_once(
-                    client,
-                    chat_url,
-                    &resources.evidence_mode_cfg,
-                    &user_message,
-                    &decision,
-                    &reply_instructions,
-                    &step_results,
-                )
-                .await
-                .unwrap_or_else(|_| EvidenceModeDecision {
-                    mode: "COMPACT".to_string(),
-                    reason: "fallback".to_string(),
-                });
+            let evidence_mode = decide_evidence_mode_once(
+                client,
+                chat_url,
+                &resources.evidence_mode_cfg,
+                &user_message,
+                &decision,
+                &reply_instructions,
+                &step_results,
+            )
+            .await
+            .unwrap_or_else(|_| EvidenceModeDecision {
+                mode: "COMPACT".to_string(),
+                reason: "fallback".to_string(),
+            });
+
             match generate_final_answer_once(
                 client,
                 chat_url,
@@ -308,7 +330,7 @@ pub(crate) async fn evaluate_runtime_scenario(
             .await
             {
                 Ok((final_text, _)) => {
-                    match claim_check_once(
+                    if let Ok(verdict) = claim_check_once(
                         client,
                         chat_url,
                         &resources.claim_checker_cfg,
@@ -319,17 +341,14 @@ pub(crate) async fn evaluate_runtime_scenario(
                     )
                     .await
                     {
-                        Ok(verdict) => {
-                            let ok = verdict.status.eq_ignore_ascii_case("ok");
-                            claim_check_ok = Some(ok);
-                            claim_check_reason = Some(verdict.reason);
-                        }
-                        Err(error) => {
-                            claim_check_ok = Some(false);
-                            claim_check_reason =
-                                Some(format!("claim checker error: {error}"));
-                        }
+                        claim_check_ok = Some(verdict.status.eq_ignore_ascii_case("ok"));
+                        claim_check_reason = Some(verdict.reason);
+                    } else {
+                        claim_check_ok = Some(false);
+                        claim_check_reason =
+                            Some("claim checker error".to_string());
                     }
+
                     match judge_final_answer_once(
                         client,
                         chat_url,
@@ -391,6 +410,11 @@ pub(crate) async fn evaluate_runtime_scenario(
                     presentation_ok = Some(false);
                     presentation_reason = Some("no final answer was produced".to_string());
                 }
+            }
+
+            if !reasoning_clean {
+                claim_check_reason = claim_check_reason
+                    .or_else(|| Some("unclean_reasoning_fallback".to_string()));
             }
         }
     }
@@ -492,10 +516,7 @@ pub(crate) async fn evaluate_runtime_scenario(
             claim_check_ok,
             presentation_ok,
             tool_economy_score: tool_economy,
-            actual_steps: program_opt
-                .as_ref()
-                .map(|program| program.steps.len())
-                .unwrap_or_default(),
+            actual_steps: actual_step_count,
             expected_min_steps: scenario.minimum_step_count,
             expected_max_steps: scenario.maximum_step_count,
         },

@@ -153,7 +153,7 @@ pub(crate) async fn plan_workflow_once(
     route_decision: &RouteDecision,
     workspace_facts: &str,
     workspace_brief: &str,
-    memories: &[FormulaMemoryRecord],
+    _memories: &[FormulaMemoryRecord],
     messages: &[ChatMessage],
 ) -> Result<WorkflowPlannerOutput> {
     let req = ChatCompletionRequest {
@@ -182,19 +182,6 @@ pub(crate) async fn plan_workflow_once(
                     "route": route_decision.route,
                     "workspace_facts": workspace_facts,
                     "workspace_brief": workspace_brief,
-                    "memory_candidates": memories.iter().map(|m| serde_json::json!({
-                        "id": m.id,
-                        "title": m.title,
-                        "route": m.route,
-                        "complexity": m.complexity,
-                        "formula": m.formula,
-                        "objective": m.objective,
-                        "program_signature": m.program_signature,
-                        "success_count": m.success_count,
-                        "failure_count": m.failure_count,
-                        "last_success_unix_s": m.last_success_unix_s,
-                        "last_failure_unix_s": m.last_failure_unix_s,
-                    })).collect::<Vec<_>>(),
                     "conversation": conversation_excerpt(messages, 12),
                 })
                 .to_string(),
@@ -406,12 +393,7 @@ pub(crate) async fn present_result_once(
     let text = resp
         .choices
         .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
+        .and_then(|c| c.message.content.clone())
         .unwrap_or_default()
         .trim()
         .to_string();

@@ -24,7 +24,7 @@ fn planning_prior_from_workflow_plan(
     line: &str,
     route_decision: &RouteDecision,
     workflow_plan: &WorkflowPlannerOutput,
-) -> (ComplexityAssessment, ScopePlan, FormulaSelection) {
+) -> (ComplexityAssessment, ScopePlan) {
     let complexity = ComplexityAssessment {
         complexity: if workflow_plan.complexity.trim().is_empty() {
             if route_decision.route.eq_ignore_ascii_case("CHAT") {
@@ -37,10 +37,7 @@ fn planning_prior_from_workflow_plan(
         },
         needs_evidence: workflow_plan.needs_evidence,
         needs_tools: !route_decision.route.eq_ignore_ascii_case("CHAT"),
-        needs_decision: workflow_plan
-            .preferred_formula
-            .to_lowercase()
-            .contains("decide"),
+        needs_decision: route_decision.route.eq_ignore_ascii_case("DECIDE"),
         needs_plan: route_decision.route.eq_ignore_ascii_case("PLAN")
             || route_decision.route.eq_ignore_ascii_case("MASTERPLAN"),
         risk: if workflow_plan.risk.trim().is_empty() {
@@ -48,11 +45,10 @@ fn planning_prior_from_workflow_plan(
         } else {
             workflow_plan.risk.trim().to_string()
         },
-        suggested_pattern: if workflow_plan.preferred_formula.trim().is_empty() {
-            fallback_formula_for_route(&route_decision.route, workflow_plan.needs_evidence)
-        } else {
-            workflow_plan.preferred_formula.trim().to_string()
-        },
+        suggested_pattern: fallback_formula_for_route(
+            &route_decision.route,
+            workflow_plan.needs_evidence,
+        ),
     };
 
     let mut scope = workflow_plan.scope.clone();
@@ -64,14 +60,7 @@ fn planning_prior_from_workflow_plan(
         };
     }
 
-    let formula = FormulaSelection {
-        primary: complexity.suggested_pattern.clone(),
-        alternatives: workflow_plan.alternatives.clone(),
-        reason: workflow_plan.reason.clone(),
-        memory_id: workflow_plan.memory_id.clone(),
-    };
-
-    (complexity, scope, formula)
+    (complexity, scope)
 }
 
 pub(crate) async fn derive_planning_prior(
@@ -124,8 +113,26 @@ pub(crate) async fn derive_planning_prior(
     )
     .await
     {
-        let (complexity, scope, formula) =
+        let (complexity, scope) =
             planning_prior_from_workflow_plan(line, route_decision, &workflow_plan);
+        let formula = select_formula_once(
+            client,
+            chat_url,
+            formula_cfg,
+            line,
+            route_decision,
+            &complexity,
+            &scope,
+            memories,
+            messages,
+        )
+        .await
+        .unwrap_or_else(|_| FormulaSelection {
+            primary: complexity.suggested_pattern.clone(),
+            alternatives: Vec::new(),
+            reason: workflow_plan.reason.clone(),
+            memory_id: String::new(),
+        });
         return (Some(workflow_plan), complexity, scope, formula, false);
     }
 
@@ -432,7 +439,10 @@ pub(crate) async fn run_autonomous_loop(
 
         if step_results.iter().any(|result| {
             result.summary.starts_with("preflight_rejected:")
-                || result.summary == "preflight_requires_clarification"
+                || result
+                    .summary
+                    .starts_with("preflight_requires_clarification")
+                || result.summary.starts_with("command_unavailable:")
         }) {
             break;
         }

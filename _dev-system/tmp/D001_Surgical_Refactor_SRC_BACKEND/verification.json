@@ -1,0 +1,133 @@
+{
+  "task": "D001",
+  "category": "Surgical_Refactor_SRC_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D001_Surgical_Refactor_SRC_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/app.rs`",
+      "snapshots": [
+        {
+          "path": "src/app.rs",
+          "functions": [
+            {
+              "name": "run",
+              "signature": "pub(crate) async fn run() -> Result<()> {",
+              "line": 3
+            }
+          ],
+          "fingerprint": "b5004f26a852b0d60ec1237432c1a33c2307ff2458c374d9d99749d045c7feb9"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/evaluation.rs`",
+      "snapshots": [
+        {
+          "path": "src/evaluation.rs",
+          "functions": [
+            {
+              "name": "evaluate_routing_suite",
+              "signature": "pub(crate) async fn evaluate_routing_suite(",
+              "line": 3
+            },
+            {
+              "name": "evaluate_workflow_suite",
+              "signature": "pub(crate) async fn evaluate_workflow_suite(",
+              "line": 111
+            },
+            {
+              "name": "evaluate_response_suite",
+              "signature": "pub(crate) async fn evaluate_response_suite(",
+              "line": 363
+            },
+            {
+              "name": "evaluate_candidate_dir",
+              "signature": "pub(crate) async fn evaluate_candidate_dir(",
+              "line": 603
+            },
+            {
+              "name": "make_candidate_dir",
+              "signature": "pub(crate) fn make_candidate_dir(run_root: &Path, name: &str) -> Result<PathBuf> {",
+              "line": 646
+            },
+            {
+              "name": "select_top_beam",
+              "signature": "pub(crate) fn select_top_beam(candidates: Vec<CandidateScore>, beam_width: usize) -> Vec<CandidateScore> {",
+              "line": 662
+            },
+            {
+              "name": "select_top_search_beam",
+              "signature": "pub(crate) fn select_top_search_beam(",
+              "line": 683
+            }
+          ],
+          "fingerprint": "5172c1fa75d0dbd4e6272c43a1b8bc1b27ce9def341fceab120d42af0c8d0822"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/execution.rs`",
+      "snapshots": [
+        {
+          "path": "src/execution.rs",
+          "functions": [
+            {
+              "name": "execute_program",
+              "signature": "pub(crate) async fn execute_program(",
+              "line": 3
+            }
+          ],
+          "fingerprint": "f3785b2ce3d0fa7d06df1b99edf510ff23aba2063b913dafd6787c1d5ab45482"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/orchestration.rs`",
+      "snapshots": [
+        {
+          "path": "src/orchestration.rs",
+          "functions": [
+            {
+              "name": "orchestrate_program_once",
+              "signature": "pub(crate) async fn orchestrate_program_once(",
+              "line": 3
+            },
+            {
+              "name": "run_critic_once",
+              "signature": "pub(crate) async fn run_critic_once(",
+              "line": 101
+            },
+            {
+              "name": "generate_final_answer_once",
+              "signature": "pub(crate) async fn generate_final_answer_once(",
+              "line": 206
+            },
+            {
+              "name": "judge_final_answer_once",
+              "signature": "pub(crate) async fn judge_final_answer_once(",
+              "line": 357
+            }
+          ],
+          "fingerprint": "83636996e4b023684832fc838ef589df05a0f157c607d9246c2c36632e9d8d92"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/tune.rs`",
+      "snapshots": [
+        {
+          "path": "src/tune.rs",
+          "functions": [
+            {
+              "name": "tune_model",
+              "signature": "pub(crate) async fn tune_model(",
+              "line": 3
+            }
+          ],
+          "fingerprint": "32fba83e368c2abd9774c855ed4cedcdca13cec1f263efd240c58723ca056553"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-03-28T15:43:48.304158Z"
+}

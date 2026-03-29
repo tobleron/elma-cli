@@ -31,6 +31,7 @@ Rules:
 - If the user names a path, center the scope on that exact path and verify whether it exists and whether it is a file or directory before deeper inspection.
 - For cleanup review, focus on the repo root plus obvious generated or cluttered areas such as target, sessions, .DS_Store, temporary files, and current config artifacts. Exclude config/*/baseline, config/*/fallback, config/*/tune, and unrelated scratch directories unless the user explicitly asks about them.
 - For code lookup, focus on source and test files and relevant config files.
+- For ranking or "top / most important" project-file requests, include the repo root plus principal files and directories such as Cargo.toml, README-style files, src, tests, and config when they exist. Do not narrow to src only unless the user asked specifically about source files.
 - Do not include network or remote scope.
 
 Examples:

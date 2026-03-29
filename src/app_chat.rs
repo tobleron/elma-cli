@@ -27,6 +27,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             handle_manual_rollback(runtime, snapshot_id.trim())?;
             continue;
         }
+        if line == "/tune" {
+            handle_runtime_tune(runtime).await?;
+            continue;
+        }
 
         runtime.messages.push(ChatMessage {
             role: "user".to_string(),
@@ -81,14 +85,14 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             trace(
                 &runtime.args,
                 &format!(
-                    "workflow_planner objective={} formula={} memory={} reason={}",
+                    "workflow_planner objective={} complexity={} risk={} reason={}",
                     if plan.objective.trim().is_empty() { "-" } else { plan.objective.trim() },
-                    if plan.preferred_formula.trim().is_empty() {
+                    if plan.complexity.trim().is_empty() {
                         "-"
                     } else {
-                        plan.preferred_formula.trim()
+                        plan.complexity.trim()
                     },
-                    if plan.memory_id.trim().is_empty() { "-" } else { plan.memory_id.trim() },
+                    if plan.risk.trim().is_empty() { "-" } else { plan.risk.trim() },
                     plan.reason.trim()
                 ),
             );
@@ -561,6 +565,42 @@ fn handle_manual_snapshot(runtime: &mut AppRuntime) -> Result<()> {
             snapshot.snapshot_id,
             snapshot.file_count,
             snapshot.manifest_path.display()
+        ),
+    );
+    println!();
+    Ok(())
+}
+
+async fn handle_runtime_tune(runtime: &mut AppRuntime) -> Result<()> {
+    operator_trace(
+        &runtime.args,
+        &format!("tuning {} and activating the best profile set", runtime.model_id),
+    );
+    let mut tune_args = runtime.args.clone();
+    tune_args.tune = true;
+    tune_args.calibrate = false;
+    let winner = optimize_model(
+        &tune_args,
+        &runtime.client,
+        &runtime.chat_url,
+        &runtime.profiles.elma_cfg.base_url,
+        &runtime.model_cfg_dir,
+        &runtime.model_id,
+    )
+    .await?;
+
+    runtime.profiles = app_bootstrap::load_profiles(&runtime.model_cfg_dir)?;
+    set_json_outputter_profile(Some(runtime.profiles.json_outputter_cfg.clone()));
+    set_final_answer_extractor_profile(Some(
+        runtime.profiles.final_answer_extractor_cfg.clone(),
+    ));
+    refresh_runtime_workspace(runtime)?;
+
+    print_elma_message(
+        &runtime.args,
+        &format!(
+            "Tuning complete for {}. Activated score {:.3}. Certified: {}.",
+            runtime.model_id, winner.score, winner.report.summary.certified
         ),
     );
     println!();

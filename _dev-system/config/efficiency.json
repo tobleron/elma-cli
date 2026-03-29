@@ -1,0 +1,154 @@
+{
+  "version": "1.5.0",
+  "scanned_roots": [
+    "src",
+    "config",
+    "scenarios"
+  ],
+  "entry_points": [
+    "src/main.rs"
+  ],
+  "settings": {
+    "min_dead_code_loc": 30,
+    "base_loc_limit": 400,
+    "hard_ceiling_loc": 800,
+    "soft_floor_loc": 400,
+    "min_extracted_module_loc": 220,
+    "max_session_complexity": 500.0,
+    "merge_score_threshold": 1.2,
+    "nesting_weight": 0.6,
+    "density_weight": 1.0,
+    "drag_target": 2.6,
+    "state_weight": 8.0,
+    "max_depth_threshold": 4,
+    "_formula_version": "2.0"
+  },
+  "templates": {
+    "legend": "## 📚 LEGEND & DEFINITIONS\n*   **LOC:** Total non-comment lines. (Lower is easier to read).\n*   **Drag:** Estimated modification-risk multiplier. Higher Drag means edits are more likely to miss state, flow, or boundary details.\n*   **Cognitive Capacity:** Inference energy required (Goal: < 100%).\n*   **Read Tax:** Tokens and time overhead incurred when switching between many small files.\n*   **AI Context Fog:** Regions of code with overlapping logic paths that cause model hallucination.\n\n---\n\n",
+    "surgical_objective": "Senior Refactoring Engineer. Reduce estimated modification risk below the applicable drag target without fragmenting cohesive modules. Extract highlighted 'Hotspots' into sub-modules only when the resulting split stays within the preferred size policy. The file should remain a clear 'Orchestrator' or 'Service' boundary, with only truly dense or isolated logic moved to specialized siblings.",
+    "violation_objective": "Code Safety Officer. Fix critical anti-patterns or missing safety nets. These issues risk stability or build integrity. Zero forbidden patterns should remain in the module.",
+    "structural_objective": "File System Organizer. Flatten deep hierarchies (Max depth 4) to minimize Traversal Tax. Keep feature boundaries coherent while reducing path depth. Features should live in 'Feature Pods' where logic and config are adjacent.",
+    "merge_objective": "Architecture Cleanup Bot. Reduce File Fragmentation (Read Tax) without collapsing intentional facades or composition roots. Combined file must not exceed 800 LOC. Related small modules should be unified into a single context window.",
+    "ambiguity_objective": "Code Taxonomist. Classify unknown files to enable accurate analysis. Add an @efficiency-role: <role> tag to the file header (CRITICAL: must include the colon). Valid roles: {roles}"
+  },
+  "exclusion_rules": {
+    "folders": [
+      "/target/",
+      "/.git/",
+      "/_dev-system/",
+      "/_tasks/",
+      "/_dev-tasks/",
+      "/sessions/",
+      "/docs/"
+    ],
+    "files": [
+      "Cargo.lock",
+      "analyzer_state.json"
+    ],
+    "extensions": [
+      ".exe",
+      ".bin"
+    ]
+  },
+  "map_tree": {
+    "ignored_entries": [
+      "target",
+      "_dev-system",
+      "_tasks",
+      "_dev-tasks",
+      "sessions",
+      ".git"
+    ],
+    "ignored_prefixes": [],
+    "ignore_hidden": true,
+    "detect_extra_entries": true
+  },
+  "map_curation": {
+    "scope": "orchestrators_only",
+    "include_roles": [
+      "orchestrator",
+      "service-orchestrator",
+      "entry-point"
+    ],
+    "include_paths": [
+      "src/main.rs"
+    ]
+  },
+  "profiles": {
+    "rust": {
+      "extensions": [
+        ".rs"
+      ],
+      "drag_target": 2.6,
+      "complexity_dictionary": {
+        "unsafe": 3.0,
+        "unwrap()": 2.0,
+        "panic!": 2.5,
+        "&mut": 0.5,
+        "match": 0.3,
+        "loop": 1.0
+      },
+      "forbidden_patterns": [
+        "unsafe",
+        "unwrap()",
+        "panic!",
+        "todo!"
+      ]
+    },
+    "config": {
+      "extensions": [
+        ".toml",
+        ".yaml",
+        ".json"
+      ],
+      "complexity_dictionary": {
+        "[": 0.1
+      },
+      "forbidden_patterns": []
+    }
+  },
+  "taxonomy": {
+    "domain-logic": {
+      "multiplier": 0.7,
+      "desc": "Pure business logic, entities, and domain services."
+    },
+    "infra-adapter": {
+      "multiplier": 1.1,
+      "desc": "External API clients, database drivers, and third-party bindings."
+    },
+    "data-model": {
+      "multiplier": 1.5,
+      "desc": "Type definitions, schemas, and DTOs (low logic density)."
+    },
+    "orchestrator": {
+      "multiplier": 1.1,
+      "desc": "App entry points and high-level flow control."
+    },
+    "service-orchestrator": {
+      "multiplier": 1.1,
+      "desc": "Complex coordination between multiple domain services."
+    },
+    "util-pure": {
+      "multiplier": 0.4,
+      "desc": "Side-effect free helper functions."
+    },
+    "infra-config": {
+      "multiplier": 1.5,
+      "desc": "Build scripts, project configuration, and environment setups."
+    },
+    "scenario-spec": {
+      "multiplier": 1.2,
+      "desc": "Scenario definitions and testing specifications."
+    },
+    "ignored": {
+      "multiplier": 0.0,
+      "desc": "Exclude this file from all efficiency metrics and tasks."
+    }
+  },
+  "exceptions": [],
+  "protected_patterns": [
+    "@efficiency-role: orchestrator",
+    "@efficiency-role: entry-point",
+    "src/main.rs"
+  ]
+}

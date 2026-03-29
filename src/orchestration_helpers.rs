@@ -26,41 +26,8 @@ pub(crate) async fn request_program_or_repair(
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
     };
-    let orch_resp = chat_once(client, chat_url, &orch_req).await?;
-    let orch_text = extract_response_text(&orch_resp);
-
-    if let Ok(program) = parse_json_loose(&orch_text) {
-        return Ok((program, orch_text));
-    }
-
-    let repair_req = ChatCompletionRequest {
-        model: orchestrator_cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: orchestrator_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "Your previous answer was invalid. Return ONLY a valid Program JSON object for this request.\n\n{}\n\nPrevious invalid output:\n{}",
-                    prompt,
-                    orch_text.trim()
-                ),
-            },
-        ],
-        temperature: orchestrator_cfg.temperature,
-        top_p: orchestrator_cfg.top_p,
-        stream: false,
-        max_tokens: orchestrator_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
-        reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
-    };
-    let repaired = chat_once(client, chat_url, &repair_req).await?;
-    let repaired_text = extract_response_text(&repaired);
-    let program = parse_json_loose(&repaired_text)?;
-    Ok((program, repaired_text))
+    let (program, json_text) = chat_json_with_repair_text(client, chat_url, &orch_req).await?;
+    Ok((program, json_text))
 }
 
 pub(crate) async fn request_recovery_program(

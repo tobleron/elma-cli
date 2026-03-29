@@ -32,6 +32,25 @@ pub(crate) fn load_router_calibration(path: &PathBuf) -> Result<RouterCalibratio
     toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
 }
 
+pub(crate) fn save_model_behavior_profile(
+    path: &PathBuf,
+    profile: &ModelBehaviorProfile,
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let s = toml::to_string_pretty(profile).context("Failed to serialize model behavior toml")?;
+    std::fs::write(path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+pub(crate) fn load_model_behavior_profile(path: &PathBuf) -> Result<ModelBehaviorProfile> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("Failed to read model behavior at {}", path.display()))?;
+    let s = String::from_utf8(bytes).context("model behavior is not valid UTF-8")?;
+    toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
 pub(crate) fn save_active_manifest(path: &PathBuf, m: &ActiveManifest) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;

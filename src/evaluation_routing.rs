@@ -43,7 +43,7 @@ pub(crate) async fn evaluate_routing_suite_impl(
     let total = manifest.scenarios.len();
 
     for scenario in manifest.scenarios {
-        let scenario_path = repo.join("scenarios").join("intention").join(&scenario.file);
+        let scenario_path = calibration_scenario_path(&repo, &scenario);
         let txt = std::fs::read_to_string(&scenario_path)
             .with_context(|| format!("read {}", scenario_path.display()))?;
         let (user_message, recent_messages) = parse_scenario_dialog(&txt);

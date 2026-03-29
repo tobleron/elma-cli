@@ -28,19 +28,17 @@ Schema:
     "expected_artifacts": ["..."],
     "reason": "one short sentence"
   },
-  "preferred_formula": "formula name",
-  "alternatives": ["..."],
-  "memory_id": "optional matching memory id or empty string",
   "reason": "one short sentence"
 }
 
 Rules:
-- Combine complexity, scope, and formula choice into one coherent planning prior.
-- Use formula memory candidates only when their objective and operation clearly fit the current request.
+- Plan only the objective, complexity, risk, evidence need, and scope.
+- Do not choose formulas.
+- Do not choose memory candidates.
 - Prefer tighter scope and fewer assumptions.
-- Greetings and direct conversational turns should usually prefer reply_only with needs_evidence=false.
-- Project/code/file questions should usually prefer inspect-oriented formulas and a narrow scope.
-- Ranking, prioritization, and top-N tasks over workspace items usually need evidence before any selection or display.
-- Editing requests should usually prefer inspect_edit_verify_reply.
-- Keep alternatives short and relevant.
+- Greetings and direct conversational turns should usually be DIRECT with needs_evidence=false and minimal scope.
+- Project/code/file questions should usually need inspect-oriented scope with the narrowest relevant paths.
+- Ranking, prioritization, and top-N tasks over workspace items usually need evidence before any later selection or display.
+- Editing requests usually need workspace evidence first unless the edit target is already explicit and small.
+- Keep the reason short and concrete.
 """

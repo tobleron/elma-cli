@@ -251,3 +251,41 @@ pub(crate) fn write_gate_why(tune_dir: &PathBuf, text: &str) -> Result<PathBuf> 
         .with_context(|| format!("write {}", path.display()))?;
     Ok(path)
 }
+
+pub(crate) fn write_thinking_log(
+    shell_dir: &PathBuf,
+    seq: u32,
+    thinking_content: &str,
+) -> Result<PathBuf> {
+    let path = shell_dir.join(format!("{seq:03}.thinking.log"));
+    std::fs::write(&path, thinking_content)
+        .with_context(|| format!("write thinking log {}", path.display()))?;
+    Ok(path)
+}
+
+pub(crate) fn append_thinking_to_manifest(
+    artifacts_dir: &PathBuf,
+    step_id: &str,
+    thinking_path: &PathBuf,
+    bytes_written: u64,
+) -> Result<PathBuf> {
+    let manifest_path = artifacts_dir.join("thinking_manifest.jsonl");
+    let record = serde_json::json!({
+        "step_id": step_id,
+        "thinking_path": thinking_path.display().to_string(),
+        "bytes": bytes_written,
+        "created_unix_s": SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    });
+    let line = serde_json::to_string(&record).context("serialize thinking record")?;
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&manifest_path)
+        .with_context(|| format!("open thinking manifest {}", manifest_path.display()))?
+        .write_all(format!("{line}\n").as_bytes())
+        .with_context(|| format!("append thinking manifest {}", manifest_path.display()))?;
+    Ok(manifest_path)
+}

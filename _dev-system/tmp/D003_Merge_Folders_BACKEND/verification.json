@@ -1,0 +1,223 @@
+{
+  "task": "D003",
+  "category": "Merge_Folders_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D003_Merge_Folders_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-merge snapshots for `../../scenarios/intention`",
+      "snapshots": [
+        {
+          "path": "scenarios/intention/scenario_007_search_and_grep.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_006_file_create_edit.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_001_greeting.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_009_git_conflict.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_015_multi_intent.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_012_json_jq.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/README.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_019_performance_tuning.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_018_package_install.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_005_research.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_003_planning.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_016_workflow_natural_language.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_002_shell_task.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_017_permissions_sudo.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_008_git_basic.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_014_confirmations.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_020_data_cleanup.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_011_ssh_remote.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_013_logs_summarize.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_004_ambiguous.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "scenarios/intention/scenario_010_network_curl.md",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-merge snapshots for `../../config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline`",
+      "snapshots": [
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/decider.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/planner_master.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/gate_why.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/orchestrator.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/command_repair.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/router.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/formula_selector.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/formatter.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/speech_act.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/calibration_judge.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/mode_router.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/summarizer.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/gate.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/complexity_assessor.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/action_type.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/tooler.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/intention.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/intention_tune.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/critic.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "config/gemma-3-12b-it-null-space-abliterated-q6_k.gguf/baseline/planner.toml",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-03-28T14:12:41.079502Z"
+}

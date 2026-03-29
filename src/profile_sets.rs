@@ -307,6 +307,20 @@ pub(crate) fn ensure_model_config_folder(
             &default_formatter_config(base_url, model_id),
         )?;
     }
+    let json_outputter_path = dir.join("json_outputter.toml");
+    if !json_outputter_path.exists() {
+        save_agent_config(
+            &json_outputter_path,
+            &default_json_outputter_config(base_url, model_id),
+        )?;
+    }
+    let final_answer_extractor_path = dir.join("final_answer_extractor.toml");
+    if !final_answer_extractor_path.exists() {
+        save_agent_config(
+            &final_answer_extractor_path,
+            &default_final_answer_extractor_config(base_url, model_id),
+        )?;
+    }
     let calibration_judge_path = dir.join("calibration_judge.toml");
     if !calibration_judge_path.exists() {
         save_agent_config(

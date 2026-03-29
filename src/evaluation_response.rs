@@ -18,17 +18,30 @@ pub(crate) async fn evaluate_response_suite_impl(
     let mode_router_cfg = load_agent_config(&candidate_dir.join("mode_router.toml"))?;
     let complexity_cfg = load_agent_config(&candidate_dir.join("complexity_assessor.toml"))?;
     let formula_cfg = load_agent_config(&candidate_dir.join("formula_selector.toml"))?;
+    let workflow_planner_cfg = load_agent_config(&candidate_dir.join("workflow_planner.toml"))?;
     let orchestrator_cfg = load_agent_config(&candidate_dir.join("orchestrator.toml"))?;
     let planner_master_cfg = load_agent_config(&candidate_dir.join("planner_master.toml"))?;
     let planner_cfg = load_agent_config(&candidate_dir.join("planner.toml"))?;
     let decider_cfg = load_agent_config(&candidate_dir.join("decider.toml"))?;
+    let selector_cfg = load_agent_config(&candidate_dir.join("selector.toml"))?;
     let summarizer_cfg = load_agent_config(&candidate_dir.join("summarizer.toml"))?;
     let command_repair_cfg = load_agent_config(&candidate_dir.join("command_repair.toml"))?;
+    let command_preflight_cfg = load_agent_config(&candidate_dir.join("command_preflight.toml"))?;
+    let task_semantics_guard_cfg =
+        load_agent_config(&candidate_dir.join("task_semantics_guard.toml"))?;
+    let execution_sufficiency_cfg =
+        load_agent_config(&candidate_dir.join("execution_sufficiency.toml"))?;
+    let outcome_verifier_cfg = load_agent_config(&candidate_dir.join("outcome_verifier.toml"))?;
     let scope_builder_cfg = load_agent_config(&candidate_dir.join("scope_builder.toml"))?;
     let evidence_compactor_cfg =
         load_agent_config(&candidate_dir.join("evidence_compactor.toml"))?;
     let artifact_classifier_cfg =
         load_agent_config(&candidate_dir.join("artifact_classifier.toml"))?;
+    let critic_cfg = load_agent_config(&candidate_dir.join("critic.toml"))?;
+    let logical_reviewer_cfg = load_agent_config(&candidate_dir.join("logical_reviewer.toml"))?;
+    let efficiency_reviewer_cfg =
+        load_agent_config(&candidate_dir.join("efficiency_reviewer.toml"))?;
+    let risk_reviewer_cfg = load_agent_config(&candidate_dir.join("risk_reviewer.toml"))?;
     let cal = load_router_calibration(&candidate_dir.join("router_calibration.toml")).unwrap_or(
         RouterCalibration {
             version: 1,
@@ -96,7 +109,6 @@ pub(crate) async fn evaluate_response_suite_impl(
         }
 
         let memories = load_recent_formula_memories(candidate_dir, 8).unwrap_or_default();
-        let workflow_planner_cfg = load_agent_config(&candidate_dir.join("workflow_planner.toml"))?;
         let (workflow_plan, complexity, scope, formula, _) = derive_planning_prior(
             client,
             chat_url,
@@ -142,32 +154,42 @@ pub(crate) async fn evaluate_response_suite_impl(
         }
 
         let session = ensure_session_layout(&tune_sessions_root)?;
-        let (step_results, final_reply) = execute_program(
+        let mut loop_outcome = run_autonomous_loop(
             args,
             client,
             chat_url,
             &session,
             &repo,
-            &program,
+            program,
+            &decision,
+            workflow_plan.as_ref(),
+            &complexity,
+            &scope,
+            &formula,
+            &ws,
+            &ws_brief,
+            &conversation_messages,
+            &orchestrator_cfg,
             &planner_cfg,
             &planner_master_cfg,
             &decider_cfg,
-            &load_agent_config(&candidate_dir.join("selector.toml"))?,
+            &selector_cfg,
             &summarizer_cfg,
-            Some(&command_repair_cfg),
-            None,
-            None,
-            Some(&evidence_compactor_cfg),
-            Some(&artifact_classifier_cfg),
-            &scope,
-            &complexity,
-            &formula,
-            &program.objective,
-            false,
-            true,
+            &command_repair_cfg,
+            &command_preflight_cfg,
+            &task_semantics_guard_cfg,
+            &evidence_compactor_cfg,
+            &artifact_classifier_cfg,
+            &outcome_verifier_cfg,
+            &execution_sufficiency_cfg,
+            &critic_cfg,
+            &logical_reviewer_cfg,
+            &efficiency_reviewer_cfg,
+            &risk_reviewer_cfg,
         )
         .await?;
-        let reply_instructions = final_reply.unwrap_or_else(|| {
+        let step_results = loop_outcome.step_results;
+        let reply_instructions = loop_outcome.final_reply.take().unwrap_or_else(|| {
             "Respond to the user in plain terminal text. Use any step outputs as evidence."
                 .to_string()
         });

@@ -1,0 +1,31 @@
+version = 1
+name = "artifact_classifier"
+base_url = "http://192.168.1.186:8080"
+model = "Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You classify workspace artifacts for Elma.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "safe": ["..."],
+  "maybe": ["..."],
+  "keep": ["..."],
+  "ignore": ["..."],
+  "reason": "one short sentence"
+}
+
+Rules:
+- 'safe' means safe to delete or clean up now.
+- 'maybe' means regenerable or context-dependent; mention caution.
+- 'keep' means should normally stay.
+- 'ignore' means irrelevant to the current question.
+- Be conservative.
+"""

@@ -241,12 +241,7 @@ pub(crate) async fn infer_digit_router(
     let raw = resp
         .choices
         .get(0)
-        .and_then(|c| {
-            c.message
-                .content
-                .clone()
-                .or(c.message.reasoning_content.clone())
-        })
+        .and_then(|c| c.message.content.clone())
         .unwrap_or_default();
     let fallback_choice = pairs
         .first()
