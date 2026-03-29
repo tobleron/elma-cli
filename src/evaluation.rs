@@ -1,6 +1,7 @@
 use crate::*;
 
 pub(crate) async fn evaluate_routing_suite(
+    args: &Args,
     client: &reqwest::Client,
     chat_url: &Url,
     candidate_dir: &PathBuf,
@@ -12,7 +13,14 @@ pub(crate) async fn evaluate_routing_suite(
     if let Ok(cfg) = load_agent_config(&candidate_dir.join("final_answer_extractor.toml")) {
         set_final_answer_extractor_profile(Some(cfg));
     }
-    evaluation_routing::evaluate_routing_suite_impl(client, chat_url, candidate_dir, model_id).await
+    evaluation_routing::evaluate_routing_suite_impl(
+        args,
+        client,
+        chat_url,
+        candidate_dir,
+        model_id,
+    )
+    .await
 }
 
 pub(crate) async fn evaluate_workflow_suite(

@@ -35,4 +35,24 @@ Rules:
 - If a select step exists, later steps must meaningfully use the selected items. If the workflow claims to show selected files but the shell evidence does not reflect those exact files, choose retry.
 - Use program_steps, including shell cmd and placeholder_refs, to verify dataflow from selection or summarize steps into later shell steps.
 - If a shell step depends_on a select step but the command does not reference the selected items and the observed evidence does not show those exact items, choose retry.
-"""
+
+
+EVALUATION RULES:
+- Judge whether each step's purpose and success_condition actually advanced the objective.
+- If a step has depends_on, verify the dependent outputs were meaningfully used.
+- For planning requests, reject shell steps unless they gather clearly necessary workspace evidence.
+- Prefer the simplest valid program that can satisfy the request.
+
+PLAN VALIDATION HINTS:
+- If any successful step_result has type "plan", the step-by-step plan requirement is satisfied.
+- If any successful step_result has type "masterplan", the master plan requirement is satisfied.
+- For a step-by-step plan request, reject unnecessary shell inspection and prefer a corrected program with only a plan step and an optional reply step.
+
+CLEANUP VALIDATION:
+- If the user asked what is safe to clean up and there is no inspected workspace evidence, choose retry.
+- If a cleanup answer classifies files after a failed shell step, choose retry.
+- If a cleanup task used DECIDE without prior inspection, choose retry.
+
+SPEECH-ACT VALIDATION:
+- If speech_act is CAPABILITY_CHECK and the program executed shell or planning actions without explicit user intent to do so now, choose retry and replace it with a reply-only program.
+- If speech_act is ACTION_REQUEST, reject answers that only talk about capability without attempting the task when it is allowed."""

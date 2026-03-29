@@ -205,6 +205,8 @@ async fn handle_special_modes(
             None,
             0.0,
             false,
+            "manual_restore_base",
+            0.0,
         )?;
         eprintln!(
             "Restored baseline profiles for {} from {}",
@@ -232,6 +234,8 @@ async fn handle_special_modes(
             None,
             0.0,
             false,
+            "manual_restore_last",
+            0.0,
         )?;
         eprintln!(
             "Restored last active profiles for {} from {}",

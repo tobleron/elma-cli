@@ -24,18 +24,32 @@ pub(crate) async fn optimize_model(
             activated: false,
             final_score: 0.0,
             certified: false,
+            activation_reason: String::new(),
+            baseline_score: 0.0,
         },
     )?;
 
+    // === Protected Baseline Anchor (Section A) ===
+    // Evaluate the current active profiles as the protected baseline BEFORE
+    // any candidate variants are applied. This score is used for the safer
+    // activation policy (Section E).
     let baseline_dir = make_candidate_dir(&run_root, "00_baseline")?;
     snapshot_active_profile_set(model_cfg_dir, &baseline_dir)?;
-    let (baseline_score, baseline_reject, baseline_note) =
-        evaluate_routing_suite(client, chat_url, &baseline_dir, model_id).await?;
+    calibration_progress(
+        args,
+        &format!(
+            "tune baseline: routing corpus ({}) for {model_id}",
+            args.tune_mode
+        ),
+    );
+    let (baseline_routing_score, baseline_reject, baseline_note) =
+        evaluate_routing_suite(args, client, chat_url, &baseline_dir, model_id).await?;
     save_stage_score_note(&baseline_dir, "stage1_routing", &baseline_note)?;
+
     let baseline = SearchCandidate {
         name: "00_baseline".to_string(),
-        dir: baseline_dir,
-        score: baseline_score,
+        dir: baseline_dir.clone(),
+        score: baseline_routing_score,
         hard_rejected: baseline_reject,
     };
     let mut beam = vec![baseline.clone()];
@@ -54,9 +68,12 @@ pub(crate) async fn optimize_model(
         let dir = make_candidate_dir(&run_root, &format!("10_prompt_{variant}"))?;
         copy_profile_set(&beam[0].dir, &dir)?;
         apply_prompt_bundle(&dir, variant)?;
+        // Section B: Validate no immutable fields were mutated
+        validate_tuning_mutations(&baseline_dir, &dir)
+            .with_context(|| format!("prompt bundle '{variant}' violated tuning boundaries"))?;
         sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
         let (score, hard_rejected, note) =
-            evaluate_routing_suite(client, chat_url, &dir, model_id).await?;
+            evaluate_routing_suite(args, client, chat_url, &dir, model_id).await?;
         save_stage_score_note(&dir, "stage1_routing", &note)?;
         let candidate = SearchCandidate {
             name: dir
@@ -98,9 +115,12 @@ pub(crate) async fn optimize_model(
                     make_candidate_dir(&run_root, &format!("20_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
                 apply_router_param_variant(&dir, variant)?;
+                // Section B: Validate mutation boundaries
+                validate_tuning_mutations(&parent.dir, &dir)
+                    .with_context(|| format!("router variant '{variant}' violated tuning boundaries"))?;
                 sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
                 let (score, hard_rejected, note) =
-                    evaluate_routing_suite(client, chat_url, &dir, model_id).await?;
+                    evaluate_routing_suite(args, client, chat_url, &dir, model_id).await?;
                 save_stage_score_note(&dir, "stage2_routing", &note)?;
                 let candidate = SearchCandidate {
                     name: dir
@@ -119,7 +139,9 @@ pub(crate) async fn optimize_model(
         }
         beam = select_top_search_beam(stage2_scores, beam_width);
         if beam.is_empty() {
-            beam.push(best_search.clone());
+            anyhow::bail!(
+                "All routing candidates were hard-rejected during stage 2 for {model_id}."
+            );
         }
         if let Some(top) = beam.first() {
             if top.score - best_stage_score < 0.02 {
@@ -144,6 +166,9 @@ pub(crate) async fn optimize_model(
                     make_candidate_dir(&run_root, &format!("30_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
                 apply_orchestrator_param_variant(&dir, variant)?;
+                // Section B: Validate mutation boundaries
+                validate_tuning_mutations(&parent.dir, &dir)
+                    .with_context(|| format!("orch variant '{variant}' violated tuning boundaries"))?;
                 sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
                 let (score, hard_rejected, note) =
                     evaluate_workflow_suite(args, client, chat_url, &dir, model_id).await?;
@@ -165,7 +190,9 @@ pub(crate) async fn optimize_model(
         }
         beam = select_top_search_beam(stage3_scores, beam_width);
         if beam.is_empty() {
-            beam.push(best_search.clone());
+            anyhow::bail!(
+                "All workflow candidates were hard-rejected during stage 3 for {model_id}."
+            );
         }
         if let Some(top) = beam.first() {
             if top.score - best_stage_score < 0.02 {
@@ -190,6 +217,9 @@ pub(crate) async fn optimize_model(
                     make_candidate_dir(&run_root, &format!("40_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
                 apply_response_param_variant(&dir, variant)?;
+                // Section B: Validate mutation boundaries
+                validate_tuning_mutations(&parent.dir, &dir)
+                    .with_context(|| format!("response variant '{variant}' violated tuning boundaries"))?;
                 sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
                 let (score, hard_rejected, note) =
                     evaluate_response_suite(args, client, chat_url, &dir, model_id).await?;
@@ -233,17 +263,75 @@ pub(crate) async fn optimize_model(
     )
     .await?;
 
+    // === Protected Baseline Full Evaluation (Section A) ===
+    // Evaluate the baseline with the same full calibration so we have a
+    // comparable score for the safer activation policy.
+    calibration_progress(
+        args,
+        &format!("tune baseline validation: scoring protected baseline for {model_id}"),
+    );
+    let baseline_full = evaluate_candidate_dir(
+        args,
+        client,
+        chat_url,
+        base_url,
+        &baseline_dir,
+        model_id,
+        false,
+    )
+    .await?;
+    let baseline_full_score = baseline_full.score;
+
+    // Save baseline artifacts for traceability
     let winner_dir = run_root.join("winner");
     snapshot_active_profile_set(&search_winner.dir, &winner_dir)?;
+    let baseline_winner_dir = run_root.join("baseline_evaluated");
+    snapshot_active_profile_set(&baseline_dir, &baseline_winner_dir)?;
+
+    // === Safer Activation Policy (Section E) ===
+    // A candidate is only activated when it meaningfully outperforms the
+    // protected baseline. If improvement is marginal, the baseline is preferred.
+    let (should_activate, reason) = activation_reason(
+        best_overall.score,
+        baseline_full_score,
+        best_overall.report.summary.certified,
+    );
+
+    let (activation_src, activation_dir, final_score, final_certified) = if should_activate {
+        calibration_progress(
+            args,
+            &format!("tune activating winner ({}) — {}", search_winner.name, reason),
+        );
+        (
+            "tune",
+            &search_winner.dir,
+            best_overall.score,
+            best_overall.report.summary.certified,
+        )
+    } else {
+        calibration_progress(
+            args,
+            &format!("tune preferring baseline — {}", reason),
+        );
+        (
+            "tune_baseline_preferred",
+            &baseline_dir,
+            baseline_full_score,
+            baseline_full.report.summary.certified,
+        )
+    };
+
     activate_profile_set(
         model_cfg_dir,
-        &search_winner.dir,
+        activation_dir,
         base_url,
         model_id,
-        "tune",
+        activation_src,
         Some(run_id.clone()),
-        best_overall.score,
-        best_overall.report.summary.certified,
+        final_score,
+        final_certified,
+        &reason,
+        baseline_full_score,
     )?;
     save_tune_run_manifest(
         &run_root.join("run_manifest.toml"),
@@ -253,10 +341,20 @@ pub(crate) async fn optimize_model(
             model: model_id.to_string(),
             mode: "tune".to_string(),
             started_unix_s: now_unix_s()?,
-            activated: true,
-            final_score: best_overall.score,
-            certified: best_overall.report.summary.certified,
+            activated: should_activate,
+            final_score,
+            certified: final_certified,
+            activation_reason: reason,
+            baseline_score: baseline_full_score,
         },
     )?;
-    Ok(best_overall)
+
+    // Return the winner for upstream reporting (even if baseline was preferred,
+    // return the candidate that was actually activated).
+    if should_activate {
+        Ok(best_overall)
+    } else {
+        Ok(baseline_full)
+    }
 }
+

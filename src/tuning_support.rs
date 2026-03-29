@@ -1,5 +1,96 @@
 use crate::*;
 
+/// Explicit allowlist of profile fields that tuning variants may change.
+/// Any mutation outside this list is a tuning boundary violation.
+#[allow(dead_code)]
+const TUNABLE_FIELDS: &[&str] = &[
+    "temperature",
+    "top_p",
+    "repeat_penalty",
+    "max_tokens",
+];
+
+/// Fields that tuning must NEVER change.
+#[allow(dead_code)]
+const IMMUTABLE_FIELDS: &[&str] = &[
+    "system_prompt",
+    "reasoning_format",
+    "name",
+    "version",
+];
+
+/// Validate that a tuning variant only changed allowed fields between
+/// an original profile and a mutated profile. Returns an error with
+/// the field name if an immutable field was mutated.
+pub(crate) fn validate_tuning_mutation(original: &Profile, mutated: &Profile) -> Result<()> {
+    if original.system_prompt != mutated.system_prompt {
+        anyhow::bail!("tuning boundary violation: system_prompt was mutated by a tuning variant");
+    }
+    if original.reasoning_format != mutated.reasoning_format {
+        anyhow::bail!("tuning boundary violation: reasoning_format was mutated by a tuning variant");
+    }
+    if original.name != mutated.name {
+        anyhow::bail!("tuning boundary violation: name was mutated by a tuning variant");
+    }
+    Ok(())
+}
+
+/// Validate an entire profile directory after a tuning variant was applied.
+/// Compares each managed profile file against the originals from src_dir.
+pub(crate) fn validate_tuning_mutations(src_dir: &Path, dst_dir: &Path) -> Result<()> {
+    for filename in managed_profile_file_names() {
+        let src_path = src_dir.join(filename);
+        let dst_path = dst_dir.join(filename);
+        if !src_path.exists() || !dst_path.exists() {
+            continue;
+        }
+        let original = load_agent_config(&src_path)?;
+        let mutated = load_agent_config(&dst_path)?;
+        validate_tuning_mutation(&original, &mutated)
+            .with_context(|| format!("in profile file {filename}"))?;
+    }
+    Ok(())
+}
+
+/// The minimum improvement margin required over the runtime-default baseline
+/// for a tuned candidate to be activated. Below this threshold, the baseline
+/// is preferred for stability.
+pub(crate) const ACTIVATION_MARGIN: f64 = 0.02;
+
+/// Determine the activation reason when comparing a candidate against a baseline.
+pub(crate) fn activation_reason(
+    candidate_score: f64,
+    baseline_score: f64,
+    candidate_certified: bool,
+) -> (bool, String) {
+    let margin = candidate_score - baseline_score;
+    if margin < ACTIVATION_MARGIN {
+        (
+            false,
+            format!(
+                "baseline_preferred: candidate {:.4} vs baseline {:.4} (margin {:.4} < threshold {:.4})",
+                candidate_score, baseline_score, margin, ACTIVATION_MARGIN
+            ),
+        )
+    } else if candidate_certified {
+        (
+            true,
+            format!(
+                "higher_score_and_certified: candidate {:.4} vs baseline {:.4} (margin {:.4})",
+                candidate_score, baseline_score, margin
+            ),
+        )
+    } else {
+        (
+            true,
+            format!(
+                "higher_score: candidate {:.4} vs baseline {:.4} (margin {:.4})",
+                candidate_score, baseline_score, margin
+            ),
+        )
+    }
+}
+
 pub(crate) fn score_calibration_report(report: &CalibrationReport) -> f64 {
     let s = &report.summary;
     (0.10 * s.speech_act.accuracy)
@@ -105,10 +196,13 @@ pub(crate) fn apply_router_param_variant(dir: &Path, variant: &str) -> Result<()
     };
     for name in ["router.toml", "mode_router.toml", "speech_act.toml"] {
         let path = dir.join(name);
-        let mut profile = load_agent_config(&path)?;
+        let original = load_agent_config(&path)?;
+        let mut profile = original.clone();
         profile.temperature = settings.0;
         profile.top_p = settings.1;
         profile.max_tokens = settings.2;
+        validate_tuning_mutation(&original, &profile)
+            .with_context(|| format!("router variant '{variant}' in {name}"))?;
         save_agent_config(&path, &profile)?;
     }
     Ok(())
@@ -128,7 +222,8 @@ pub(crate) fn apply_orchestrator_param_variant(dir: &Path, variant: &str) -> Res
         "selector.toml",
     ] {
         let path = dir.join(name);
-        let mut profile = load_agent_config(&path)?;
+        let original = load_agent_config(&path)?;
+        let mut profile = original.clone();
         profile.temperature = planner_temp;
         profile.top_p = planner_top_p;
         profile.max_tokens = planner_tokens;
@@ -137,6 +232,8 @@ pub(crate) fn apply_orchestrator_param_variant(dir: &Path, variant: &str) -> Res
             profile.top_p = orch_top_p;
             profile.max_tokens = orch_max_tokens;
         }
+        validate_tuning_mutation(&original, &profile)
+            .with_context(|| format!("orchestrator variant '{variant}' in {name}"))?;
         save_agent_config(&path, &profile)?;
     }
     for name in [
@@ -152,10 +249,13 @@ pub(crate) fn apply_orchestrator_param_variant(dir: &Path, variant: &str) -> Res
         "json_outputter.toml",
     ] {
         let path = dir.join(name);
-        let mut profile = load_agent_config(&path)?;
+        let original = load_agent_config(&path)?;
+        let mut profile = original.clone();
         profile.temperature = verifier_temp;
         profile.top_p = verifier_top_p;
         profile.max_tokens = verifier_tokens;
+        validate_tuning_mutation(&original, &profile)
+            .with_context(|| format!("orchestrator variant '{variant}' in {name}"))?;
         save_agent_config(&path, &profile)?;
     }
     Ok(())
@@ -168,38 +268,53 @@ pub(crate) fn apply_response_param_variant(dir: &Path, variant: &str) -> Result<
         "response_creative" => (0.7, 1.0, 0.3, 0.8, 0.3, 1.0, 4096),
         other => anyhow::bail!("Unknown response variant: {other}"),
     };
-    let mut elma = load_agent_config(&dir.join("_elma.config"))?;
+    let elma_original = load_agent_config(&dir.join("_elma.config"))?;
+    let mut elma = elma_original.clone();
     elma.temperature = elma_temp;
     elma.top_p = elma_top_p;
     elma.max_tokens = max_tokens;
+    validate_tuning_mutation(&elma_original, &elma)
+        .with_context(|| format!("response variant '{variant}' in _elma.config"))?;
     save_agent_config(&dir.join("_elma.config"), &elma)?;
 
-    let mut summarizer = load_agent_config(&dir.join("summarizer.toml"))?;
+    let sum_original = load_agent_config(&dir.join("summarizer.toml"))?;
+    let mut summarizer = sum_original.clone();
     summarizer.temperature = sum_temp;
+    validate_tuning_mutation(&sum_original, &summarizer)
+        .with_context(|| format!("response variant '{variant}' in summarizer.toml"))?;
     save_agent_config(&dir.join("summarizer.toml"), &summarizer)?;
 
     for name in ["planner.toml", "planner_master.toml"] {
         let path = dir.join(name);
-        let mut planner = load_agent_config(&path)?;
+        let original = load_agent_config(&path)?;
+        let mut planner = original.clone();
         planner.temperature = plan_temp;
         planner.top_p = 0.95;
         planner.max_tokens = max_tokens;
+        validate_tuning_mutation(&original, &planner)
+            .with_context(|| format!("response variant '{variant}' in {name}"))?;
         save_agent_config(&path, &planner)?;
     }
 
     for name in ["result_presenter.toml", "formatter.toml"] {
         let path = dir.join(name);
-        let mut profile = load_agent_config(&path)?;
+        let original = load_agent_config(&path)?;
+        let mut profile = original.clone();
         profile.temperature = presenter_temp;
         profile.top_p = presenter_top_p;
         profile.max_tokens = max_tokens;
+        validate_tuning_mutation(&original, &profile)
+            .with_context(|| format!("response variant '{variant}' in {name}"))?;
         save_agent_config(&path, &profile)?;
     }
 
-    let mut claim_checker = load_agent_config(&dir.join("claim_checker.toml"))?;
+    let cc_original = load_agent_config(&dir.join("claim_checker.toml"))?;
+    let mut claim_checker = cc_original.clone();
     claim_checker.temperature = 0.0;
     claim_checker.top_p = 1.0;
     claim_checker.max_tokens = 1024;
+    validate_tuning_mutation(&cc_original, &claim_checker)
+        .with_context(|| format!("response variant '{variant}' in claim_checker.toml"))?;
     save_agent_config(&dir.join("claim_checker.toml"), &claim_checker)?;
     Ok(())
 }

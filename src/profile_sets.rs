@@ -107,6 +107,8 @@ pub(crate) fn activate_profile_set(
     active_run_id: Option<String>,
     final_score: f64,
     certified: bool,
+    activation_reason: &str,
+    baseline_score: f64,
 ) -> Result<()> {
     let fallback_dir = model_fallback_last_active_dir(model_cfg_dir);
     snapshot_active_profile_set(model_cfg_dir, &fallback_dir)?;
@@ -122,6 +124,8 @@ pub(crate) fn activate_profile_set(
         certified,
         restore_last_dir: fallback_dir.display().to_string(),
         restore_base_dir: model_baseline_dir(model_cfg_dir).display().to_string(),
+        activation_reason: activation_reason.to_string(),
+        baseline_score,
     };
     save_active_manifest(&model_active_manifest_path(model_cfg_dir), &manifest)?;
     Ok(())

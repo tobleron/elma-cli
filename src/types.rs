@@ -262,6 +262,10 @@ pub(crate) struct ActiveManifest {
     pub(crate) certified: bool,
     pub(crate) restore_last_dir: String,
     pub(crate) restore_base_dir: String,
+    #[serde(default)]
+    pub(crate) activation_reason: String,
+    #[serde(default)]
+    pub(crate) baseline_score: f64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -274,6 +278,10 @@ pub(crate) struct TuneRunManifest {
     pub(crate) activated: bool,
     pub(crate) final_score: f64,
     pub(crate) certified: bool,
+    #[serde(default)]
+    pub(crate) activation_reason: String,
+    #[serde(default)]
+    pub(crate) baseline_score: f64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -294,6 +302,8 @@ pub(crate) struct CalibrationScenario {
     pub(crate) route: String,
     #[serde(default)]
     pub(crate) notes: String,
+    #[serde(default = "default_runtime_safe")]
+    pub(crate) runtime_safe: bool,
     #[serde(default)]
     pub(crate) expected_formula: Option<String>,
     #[serde(default)]
@@ -310,6 +320,10 @@ pub(crate) struct CalibrationScenario {
     pub(crate) minimum_step_count: Option<usize>,
     #[serde(default)]
     pub(crate) maximum_step_count: Option<usize>,
+}
+
+fn default_runtime_safe() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

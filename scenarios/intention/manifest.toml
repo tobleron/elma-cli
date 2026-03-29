@@ -44,6 +44,7 @@ workflow = "WORKFLOW"
 mode = "INSPECT"
 route = "SHELL"
 notes = "The final turn asks to show file contents, which is read-only inspection."
+runtime_safe = false
 
 [[scenarios]]
 file = "scenario_007_search_and_grep.md"
@@ -60,6 +61,7 @@ workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
 notes = "Branching and committing are direct shell actions."
+runtime_safe = false
 
 [[scenarios]]
 file = "scenario_009_git_conflict.md"
@@ -68,6 +70,7 @@ workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
 notes = "Conflict resolution is an execution-oriented task in the workspace."
+runtime_safe = false
 
 [[scenarios]]
 file = "scenario_010_network_curl.md"
@@ -76,6 +79,7 @@ workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
 notes = "curl and file saving are direct terminal actions."
+runtime_safe = false
 
 [[scenarios]]
 file = "scenario_011_ssh_remote.md"
@@ -84,6 +88,7 @@ workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
 notes = "The user wants remote shell commands executed."
+runtime_safe = false
 
 [[scenarios]]
 file = "scenario_012_json_jq.md"
@@ -92,6 +97,7 @@ workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
 notes = "jq extraction and writing output are shell tasks."
+runtime_safe = false
 
 [[scenarios]]
 file = "scenario_013_logs_summarize.md"
@@ -107,6 +113,7 @@ workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
 notes = "The final turn resumes a previously confirmed action."
+runtime_safe = false
 
 [[scenarios]]
 file = "scenario_015_multi_intent.md"
@@ -115,6 +122,7 @@ workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
 notes = "The action request dominates because the user wants an explanation and then a config change."
+runtime_safe = false
 
 [[scenarios]]
 file = "scenario_016_workflow_natural_language.md"
@@ -152,3 +160,4 @@ workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
 notes = "The final turn authorizes the deletion action."
+runtime_safe = false

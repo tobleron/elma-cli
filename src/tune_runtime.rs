@@ -8,7 +8,7 @@ pub(crate) async fn run_runtime_calibration(
     resources: &TuneResources,
     emit_progress: bool,
 ) -> Result<RuntimeAggregation> {
-    let manifest = load_calibration_manifest()?;
+    let manifest = load_tuning_manifest(&args.tune_mode, true)?;
     if manifest.version != 1 {
         anyhow::bail!(
             "Unsupported calibration manifest version {}",

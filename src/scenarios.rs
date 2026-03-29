@@ -143,6 +143,42 @@ pub(crate) fn load_calibration_manifest() -> Result<CalibrationManifest> {
     })
 }
 
+fn load_manifest_at(path: &Path, default_suite: &str) -> Result<CalibrationManifest> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("Failed to read calibration manifest at {}", path.display()))?;
+    let s = String::from_utf8(bytes).context("calibration manifest is not valid UTF-8")?;
+    let mut manifest: CalibrationManifest =
+        toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))?;
+    for scenario in &mut manifest.scenarios {
+        if scenario.suite.trim().is_empty() {
+            scenario.suite = default_suite.to_string();
+        }
+    }
+    Ok(manifest)
+}
+
+pub(crate) fn load_tuning_manifest(tune_mode: &str, runtime_safe_only: bool) -> Result<CalibrationManifest> {
+    if tune_mode == "quick" {
+        let root = repo_root()?.join("scenarios").join("tune");
+        let path = root.join("quick_manifest.toml");
+        let manifest = load_manifest_at(&path, "tune")?;
+        if manifest.scenarios.len() != 5 {
+            anyhow::bail!(
+                "Quick tuning corpus must contain exactly 5 scenarios, found {} in {}",
+                manifest.scenarios.len(),
+                path.display()
+            );
+        }
+        return Ok(manifest);
+    }
+
+    let mut manifest = load_calibration_manifest()?;
+    if runtime_safe_only {
+        manifest.scenarios.retain(|scenario| scenario.runtime_safe);
+    }
+    Ok(manifest)
+}
+
 pub(crate) fn calibration_scenario_path(root: &Path, scenario: &CalibrationScenario) -> PathBuf {
     let suite = if scenario.suite.trim().is_empty() {
         "intention"

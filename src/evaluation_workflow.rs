@@ -47,20 +47,17 @@ pub(crate) async fn evaluate_workflow_suite_impl(
             routes: vec![],
         },
     );
-    let manifest = load_calibration_manifest()?;
+    let manifest = load_tuning_manifest(&args.tune_mode, true)?;
     let repo = repo_root()?;
     let ws = gather_workspace_context(&repo);
     let ws_brief = gather_workspace_brief(&repo);
     let tune_sessions_root = sessions_root_path(&args.sessions_root)?.join("_tune_search");
 
-    let mut scenarios: Vec<CalibrationScenario> = manifest
+    let scenarios: Vec<CalibrationScenario> = manifest
         .scenarios
         .into_iter()
         .filter(is_workflow_calibration_scenario)
         .collect();
-    
-    // Filter by tune mode (quick = 5 scenarios, full = all)
-    scenarios = filter_scenarios_by_mode(scenarios, &args.tune_mode);
 
     let mut route_correct = 0usize;
     let mut parse_correct = 0usize;

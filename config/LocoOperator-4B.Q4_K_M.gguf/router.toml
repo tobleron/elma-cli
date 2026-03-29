@@ -30,4 +30,8 @@ Rules:
 - No punctuation.
 - No explanation.
 - Choose the digit that best represents whether Elma should enter workflow mode.
-"""
+
+
+Important distinctions:
+- Greetings or general knowledge questions are usually 1.
+- Questions about the current project, files, code, or tasks that need planning or decisions are usually 2."""

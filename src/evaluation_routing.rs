@@ -1,6 +1,7 @@
 use crate::*;
 
 pub(crate) async fn evaluate_routing_suite_impl(
+    args: &Args,
     client: &reqwest::Client,
     chat_url: &Url,
     candidate_dir: &PathBuf,
@@ -30,7 +31,7 @@ pub(crate) async fn evaluate_routing_suite_impl(
             ],
         },
     );
-    let manifest = load_calibration_manifest()?;
+    let manifest = load_tuning_manifest(&args.tune_mode, false)?;
     let repo = repo_root()?;
     let ws = gather_workspace_context(&repo);
     let ws_brief = gather_workspace_brief(&repo);
