@@ -35,6 +35,23 @@ fn handle_show_goals(runtime: &AppRuntime) -> Result<()> {
     Ok(())
 }
 
+/// Discover and show available tools (Task 015: Autonomous Tool Discovery)
+fn handle_discover_tools(runtime: &AppRuntime) -> Result<()> {
+    println!("\nDiscovering workspace tools...");
+    
+    match tool_discovery::discover_workspace_tools(&runtime.repo) {
+        Ok(registry) => {
+            println!("{}", registry.format_for_display());
+            println!("(tools cached for this session)");
+        }
+        Err(error) => {
+            eprintln!("Tool discovery failed: {}", error);
+        }
+    }
+    
+    Ok(())
+}
+
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     loop {
         let prompt = user_prompt_label(&runtime.args);
@@ -72,6 +89,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         if line == "/reset-goals" {
             runtime.goal_state.clear();
             eprintln!("(goals reset)");
+            continue;
+        }
+        if line == "/tools" {
+            handle_discover_tools(runtime)?;
             continue;
         }
 

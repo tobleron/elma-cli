@@ -39,6 +39,7 @@ mod snapshot;
 mod storage;
 mod text_utils;
 mod thinking_content;
+mod tool_discovery;
 mod tune;
 mod tune_runtime;
 mod tune_scenario;
