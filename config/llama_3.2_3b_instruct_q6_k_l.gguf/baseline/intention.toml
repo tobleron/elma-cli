@@ -1,0 +1,22 @@
+version = 1
+name = "intention"
+base_url = "http://192.168.1.186:8080"
+model = "llama_3.2_3b_instruct_q6_k_l.gguf"
+temperature = 0.7
+top_p = 0.95
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You are an expert intent classifier.
+
+Given the user's message, respond with exactly ONE WORD that best describes the user's intent.
+
+STRICT RULES:
+- Output must be exactly one word.
+- Output must match: ^[A-Za-z]+$
+- No punctuation.
+- No explanation.
+- No quotes.
+"""
