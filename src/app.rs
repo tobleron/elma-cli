@@ -32,6 +32,7 @@ pub(crate) struct LoadedProfiles {
     pub(crate) risk_reviewer_cfg: Profile,
     pub(crate) refinement_cfg: Profile,
     pub(crate) reflection_cfg: Profile,
+    pub(crate) meta_review_cfg: Profile,
     pub(crate) router_cfg: Profile,
     pub(crate) mode_router_cfg: Profile,
     pub(crate) speech_act_cfg: Profile,
@@ -54,6 +55,7 @@ pub(crate) struct AppRuntime {
     pub(crate) profiles: LoadedProfiles,
     pub(crate) goal_state: GoalState,
     pub(crate) verbose: bool,
+    pub(crate) retry_attempt: u32,
 }
 
 pub(crate) async fn run() -> Result<()> {

@@ -1,1 +1,1 @@
-{{s1|shell_words}}
+AGENTS.md outlines guidelines for agents working with code, emphasizing a context-first approach, strict commit protocols, and a defined task workflow involving build verification and troubleshooting.

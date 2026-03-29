@@ -235,7 +235,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             }
         }
 
-        let mut loop_outcome = run_autonomous_loop(
+        let mut loop_outcome = orchestrate_with_retries(
             &runtime.args,
             &runtime.client,
             &runtime.chat_url,
@@ -250,24 +250,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.ws,
             &runtime.ws_brief,
             &runtime.messages,
-            &runtime.profiles.orchestrator_cfg,
-            &runtime.profiles.planner_cfg,
-            &runtime.profiles.planner_master_cfg,
-            &runtime.profiles.decider_cfg,
-            &runtime.profiles.selector_cfg,
-            &runtime.profiles.summarizer_cfg,
-            &runtime.profiles.command_repair_cfg,
-            &runtime.profiles.command_preflight_cfg,
-            &runtime.profiles.task_semantics_guard_cfg,
-            &runtime.profiles.evidence_compactor_cfg,
-            &runtime.profiles.artifact_classifier_cfg,
-            &runtime.profiles.outcome_verifier_cfg,
-            &runtime.profiles.execution_sufficiency_cfg,
-            &runtime.profiles.critic_cfg,
-            &runtime.profiles.logical_reviewer_cfg,
-            &runtime.profiles.efficiency_reviewer_cfg,
-            &runtime.profiles.risk_reviewer_cfg,
-            &runtime.profiles.refinement_cfg,
+            &runtime.profiles,
+            runtime.args.max_retries,
+            runtime.args.retry_temp_step,
+            runtime.args.max_retry_temp,
         )
         .await?;
         let mut program = loop_outcome.program;

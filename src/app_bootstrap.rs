@@ -9,6 +9,13 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
     let cfg_root = config_root_path(&args.config_root)?;
     let (base_url, base_url_source) =
         resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref());
+    save_global_config(
+        &global_config_path(&cfg_root),
+        &GlobalConfig {
+            version: 1,
+            base_url: base_url.clone(),
+        },
+    )?;
 
     let base = Url::parse(&base_url).context("Invalid --base-url")?;
     let chat_url = base
@@ -48,6 +55,33 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
     .await?
     {
         return Ok(None);
+    }
+
+    if should_auto_tune_on_startup(&args, &model_cfg_dir) {
+        emit_auto_tune_banner(&args, &model_id, &model_cfg_dir);
+        let mut auto_tune_args = args.clone();
+        auto_tune_args.tune = true;
+        match optimize_model(
+            &auto_tune_args,
+            &client,
+            &chat_url,
+            &base_url,
+            &model_cfg_dir,
+            &model_id,
+        )
+        .await {
+            Ok(winner) => {
+                eprintln!(
+                    "  tuned    score {:.3}  certified {}",
+                    winner.score, winner.report.summary.certified
+                );
+            }
+            Err(error) => {
+                eprintln!("  tuned    failed");
+                eprintln!("  reason   {error:#}");
+                eprintln!("  action   continuing with baseline profiles");
+            }
+        }
     }
 
     let mut profiles = load_profiles(&model_cfg_dir)?;
@@ -111,6 +145,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         profiles,
         goal_state,
         verbose: true,  // Verbose mode on by default
+        retry_attempt: 0,  // Start at first attempt
     }))
 }
 
@@ -125,6 +160,27 @@ fn validate_mode_flags(args: &Args) -> Result<()> {
         anyhow::bail!("Choose only one of --tune, --calibrate, --restore-base, or --restore-last");
     }
     Ok(())
+}
+
+fn should_auto_tune_on_startup(args: &Args, model_cfg_dir: &Path) -> bool {
+    if args.tune || args.calibrate || args.restore_base || args.restore_last {
+        return false;
+    }
+    !model_active_manifest_path(model_cfg_dir).exists()
+}
+
+fn emit_auto_tune_banner(args: &Args, model_id: &str, model_cfg_dir: &Path) {
+    if args.no_color {
+        eprintln!("First-time model setup");
+        eprintln!("  model    {}", model_id);
+        eprintln!("  config   {}", model_cfg_dir.display());
+        eprintln!("  action   tuning before chat startup");
+    } else {
+        eprintln!("{}", ansi_orange("First-time model setup"));
+        eprintln!("{} {}", ansi_grey("  model   "), model_id);
+        eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
+        eprintln!("{} {}", ansi_grey("  action  "), "tuning before chat startup");
+    }
 }
 
 async fn handle_special_modes(
@@ -259,6 +315,7 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         risk_reviewer_cfg: load_agent_config(&model_cfg_dir.join("risk_reviewer.toml"))?,
         refinement_cfg: load_agent_config(&model_cfg_dir.join("refinement.toml"))?,
         reflection_cfg: load_agent_config(&model_cfg_dir.join("reflection.toml"))?,
+        meta_review_cfg: load_agent_config(&model_cfg_dir.join("meta_review.toml"))?,
         router_cfg: load_agent_config(&model_cfg_dir.join("router.toml"))?,
         mode_router_cfg: load_agent_config(&model_cfg_dir.join("mode_router.toml"))?,
         speech_act_cfg: load_agent_config(&model_cfg_dir.join("speech_act.toml"))?,

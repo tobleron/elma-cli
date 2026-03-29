@@ -827,7 +827,47 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
             "reflection.toml",
             default_reflection_config(base_url, model),
         ),
+        (
+            "meta_review.toml",
+            default_meta_review_config(base_url, model),
+        ),
     ]
+}
+
+/// Get retry prompt variant based on attempt number.
+/// Each variant activates different reasoning modes in the model.
+pub(crate) fn get_retry_prompt_variant(attempt: u32) -> &'static str {
+    match attempt {
+        0 => STANDARD_RETRY_PROMPT,
+        1 => STEP_BY_STEP_RETRY_PROMPT,
+        2 => CHALLENGE_ASSUMPTIONS_RETRY_PROMPT,
+        _ => RADICAL_SIMPLIFICATION_RETRY_PROMPT,
+    }
+}
+
+const STANDARD_RETRY_PROMPT: &str = "Be precise and methodical. Follow best practices. Your previous attempt failed - analyze what went wrong and fix it.";
+
+const STEP_BY_STEP_RETRY_PROMPT: &str = "Think step-by-step. Show your reasoning before each action. Break this into smaller, verifiable steps. Your previous attempt failed - ensure each step is grounded in observable evidence.";
+
+const CHALLENGE_ASSUMPTIONS_RETRY_PROMPT: &str = "What assumptions might be wrong? Consider unconventional approaches. Challenge hidden constraints. Your previous attempts failed - question what you're taking for granted.";
+
+const RADICAL_SIMPLIFICATION_RETRY_PROMPT: &str = "What's the simplest possible solution? Remove unnecessary complexity. Your previous attempts failed - they may be over-engineered. Find the minimal viable approach.";
+
+pub(crate) fn default_meta_review_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "meta_review".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.8,  // Creative synthesis
+        top_p: 0.95,
+        repeat_penalty: 1.0,
+        reasoning_format: "auto".to_string(),
+        max_tokens: 4096,
+        timeout_s: 180,
+        system_prompt: "You are reviewing multiple failed attempts at a task.\n\nYour job is to SYNTHESIZE a new plan that:\n1. Uses the best elements from each failed attempt\n2. Avoids all identified failure modes\n3. Is fundamentally different from all previous attempts\n\nThis is the final attempt - make it count.\n\nReturn ONLY one valid JSON object representing a Program. No prose. No code fences."
+            .to_string(),
+    }
 }
 
 pub(crate) fn managed_profile_file_names() -> Vec<&'static str> {

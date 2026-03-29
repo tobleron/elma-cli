@@ -12,7 +12,21 @@ pub(crate) fn sessions_root_path(sessions_root: &str) -> Result<PathBuf> {
     Ok(repo_root()?.join(sessions_root))
 }
 
+pub(crate) fn global_config_path(config_root: &Path) -> PathBuf {
+    config_root.join("global.toml")
+}
+
 pub(crate) fn discover_saved_base_url(config_root: &Path, model_hint: Option<&str>) -> Option<String> {
+    let global_path = global_config_path(config_root);
+    if global_path.exists() {
+        if let Ok(cfg) = load_global_config(&global_path) {
+            let url = cfg.base_url.trim();
+            if !url.is_empty() {
+                return Some(url.to_string());
+            }
+        }
+    }
+
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     if let Some(model_id) = model_hint {

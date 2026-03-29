@@ -128,6 +128,20 @@ pub(crate) struct Args {
     #[arg(long, default_value_t = true, env = "ELMA_SHOW_PROCESS")]
     pub(crate) show_process: bool,
 
+    /// Temperature increment for each retry attempt (default: 0.2).
+    /// Higher temperatures encourage more creative/alternative solutions.
+    #[arg(long, default_value_t = 0.2)]
+    pub(crate) retry_temp_step: f64,
+
+    /// Maximum temperature for retry attempts (default: 1.2).
+    /// Prevents temperatures from becoming too high.
+    #[arg(long, default_value_t = 1.2)]
+    pub(crate) max_retry_temp: f64,
+
+    /// Maximum number of retry attempts before meta-review (default: 4).
+    #[arg(long, default_value_t = 4)]
+    pub(crate) max_retries: u32,
+
     /// Run tuning for all models exposed by the endpoint, then exit.
     #[arg(long, default_value_t = false)]
     pub(crate) tune: bool,
@@ -183,6 +197,12 @@ pub(crate) struct RouterCalibration {
     pub(crate) n_probs: u32,
     pub(crate) supports_logprobs: bool,
     pub(crate) routes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct GlobalConfig {
+    pub(crate) version: u32,
+    pub(crate) base_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
