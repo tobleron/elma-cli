@@ -115,7 +115,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &formula,
         )
         .await;
-        if apply_capability_guard(&mut program, &route_decision) {
+        // Hard constraints disabled by default for autonomous reasoning
+        let guards_enabled = !runtime.args.disable_guards;
+        if apply_capability_guard(&mut program, &route_decision, guards_enabled) {
             trace(&runtime.args, "guard=capability_reply_only");
         }
 

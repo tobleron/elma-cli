@@ -143,7 +143,8 @@ pub(crate) async fn evaluate_response_suite_impl(
             Ok(value) => value,
             Err(_) => continue,
         };
-        let _ = apply_capability_guard(&mut program, &decision);
+        // Evaluation uses guards for baseline measurement
+        let _ = apply_capability_guard(&mut program, &decision, true);
         let program_eval = evaluate_program_for_scenario(&program, scenario);
         if !(program_eval.parsed
             && program_eval.shape_ok

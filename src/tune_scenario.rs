@@ -114,7 +114,8 @@ pub(crate) async fn evaluate_runtime_scenario(
     .await
     {
         Ok((mut program, _)) => {
-            if apply_capability_guard(&mut program, &decision) {
+            // Tuning uses guards for baseline measurement
+            if apply_capability_guard(&mut program, &decision, true) {
                 trace(
                     args,
                     &format!("tune_guard=capability_reply_only file={}", scenario.file),
@@ -148,7 +149,8 @@ pub(crate) async fn evaluate_runtime_scenario(
         )
         .await
         {
-            let _ = apply_capability_guard(&mut second_program, &decision);
+            // Tuning uses guards for baseline measurement
+            let _ = apply_capability_guard(&mut second_program, &decision, true);
             consistency_ok = program_signature(program) == program_signature(&second_program);
         }
     }

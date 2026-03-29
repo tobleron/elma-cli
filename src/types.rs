@@ -56,6 +56,11 @@ pub(crate) struct Args {
     /// Show raw machine trace lines in the terminal.
     #[arg(long, default_value_t = false)]
     pub(crate) debug_trace: bool,
+
+    /// Disable hard constraints (capability guards, formula locks) for autonomous reasoning.
+    /// Guards remain in code but are bypassed when this flag is set.
+    #[arg(long, default_value_t = false, env = "ELMA_DISABLE_GUARDS")]
+    pub(crate) disable_guards: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

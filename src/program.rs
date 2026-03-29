@@ -293,7 +293,16 @@ pub(crate) fn capability_guard_threshold(route_decision: &RouteDecision) -> bool
         && probability_of(&route_decision.speech_act.distribution, "CAPABILITY_CHECK") >= 0.65
 }
 
-pub(crate) fn apply_capability_guard(program: &mut Program, route_decision: &RouteDecision) -> bool {
+pub(crate) fn apply_capability_guard(
+    program: &mut Program,
+    route_decision: &RouteDecision,
+    guards_enabled: bool,
+) -> bool {
+    // Hard constraints are disabled - bypass guard but keep code for reference
+    if !guards_enabled {
+        return false;
+    }
+    
     if !capability_guard_threshold(route_decision) {
         return false;
     }

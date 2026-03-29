@@ -133,7 +133,8 @@ pub(crate) async fn evaluate_workflow_suite_impl(
             Err(_) => continue,
         };
 
-        let _ = apply_capability_guard(&mut program, &decision);
+        // Evaluation uses guards for baseline measurement
+        let _ = apply_capability_guard(&mut program, &decision, true);
         let program_eval = evaluate_program_for_scenario(&program, scenario);
         if program_eval.parsed {
             parse_correct += 1;
@@ -161,7 +162,8 @@ pub(crate) async fn evaluate_workflow_suite_impl(
         )
         .await
         {
-            let _ = apply_capability_guard(&mut second_program, &decision);
+            // Evaluation uses guards for baseline measurement
+            let _ = apply_capability_guard(&mut second_program, &decision, true);
             if program_signature(&program) == program_signature(&second_program) {
                 consistency_correct += 1;
             }
