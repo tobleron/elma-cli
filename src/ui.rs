@@ -193,30 +193,30 @@ pub(crate) fn maybe_display_reasoning_trace(resp: &ChatCompletionResponse) {
     }
 }
 
-pub(crate) fn trace(args: &Args, msg: &str) {
+pub(crate) fn trace_verbose(verbose: bool, msg: &str) {
     let line = format!("trace: {msg}");
     append_trace_log_line(&line);
-    // Show traces when debug_trace OR show_process is enabled
-    if args.debug_trace || args.show_process {
-        if args.no_color {
-            eprintln!("{line}");
-        } else {
-            eprintln!("{}", ansi_paler_yellow(&line));
-        }
+    // Show traces when verbose is enabled
+    if verbose {
+        eprintln!("{}", ansi_paler_yellow(&line));
     }
 }
 
-/// Show a concise process milestone (shown by default with show_process)
-pub(crate) fn show_process_step(args: &Args, category: &str, msg: &str) {
+pub(crate) fn trace(args: &Args, msg: &str) {
+    trace_verbose(args.show_process, msg);
+}
+
+/// Show a concise process milestone (shown when verbose is enabled)
+pub(crate) fn show_process_step_verbose(verbose: bool, category: &str, msg: &str) {
     let line = format!("[{}] {}", category, msg);
     append_trace_log_line(&line);
-    if args.show_process {
-        if args.no_color {
-            eprintln!("{line}");
-        } else {
-            eprintln!("{}", ansi_dim_gray(&line));
-        }
+    if verbose {
+        eprintln!("{}", ansi_dim_gray(&line));
     }
+}
+
+pub(crate) fn show_process_step(args: &Args, category: &str, msg: &str) {
+    show_process_step_verbose(args.show_process, category, msg);
 }
 
 pub(crate) fn calibration_progress(args: &Args, msg: &str) {

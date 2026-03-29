@@ -53,6 +53,7 @@ pub(crate) struct AppRuntime {
     pub(crate) messages: Vec<ChatMessage>,
     pub(crate) profiles: LoadedProfiles,
     pub(crate) goal_state: GoalState,
+    pub(crate) verbose: bool,
 }
 
 pub(crate) async fn run() -> Result<()> {

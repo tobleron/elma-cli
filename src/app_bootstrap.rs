@@ -110,6 +110,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         messages,
         profiles,
         goal_state,
+        verbose: true,  // Verbose mode on by default
     }))
 }
 

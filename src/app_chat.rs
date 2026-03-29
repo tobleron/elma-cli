@@ -95,6 +95,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             handle_discover_tools(runtime)?;
             continue;
         }
+        if line == "/verbose" {
+            runtime.verbose = !runtime.verbose;
+            eprintln!("(verbose {})", if runtime.verbose { "on" } else { "off" });
+            continue;
+        }
 
         runtime.messages.push(ChatMessage {
             role: "user".to_string(),
@@ -115,16 +120,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         )
         .await?;
         // Show classification results
-        show_process_step(
-            &runtime.args,
-            "CLASSIFY",
-            &format!(
-                "speech={} route={} (entropy={:.2})",
-                route_decision.speech_act.choice,
-                route_decision.route,
-                route_decision.entropy
-            ),
-        );
+        show_process_step_verbose(runtime.verbose, "CLASSIFY", &format!(
+            "speech={} route={} (entropy={:.2})",
+            route_decision.speech_act.choice,
+            route_decision.route,
+            route_decision.entropy
+        ));
         trace_route_decision(&runtime.args, &route_decision);
 
         let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
@@ -192,15 +193,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         )
         .await;
         // Show planning result
-        show_process_step(
-            &runtime.args,
-            "PLAN",
-            &format!("{} → {} steps", complexity.complexity, program.steps.len()),
-        );
+        show_process_step_verbose(runtime.verbose, "PLAN", &format!("{} → {} steps", complexity.complexity, program.steps.len()));
         // Hard constraints disabled by default for autonomous reasoning
         let guards_enabled = !runtime.args.disable_guards;
         if apply_capability_guard(&mut program, &route_decision, guards_enabled) {
-            trace(&runtime.args, "guard=capability_reply_only");
+            trace_verbose(runtime.verbose, "guard=capability_reply_only");
         }
 
         // Pre-execution reflection (Task 012)
@@ -224,24 +221,17 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                     ),
                 );
                 // Show reflection result
-                show_process_step(
-                    &runtime.args,
-                    "REFLECT",
-                    &format!(
-                        "confidence={:.0}%{}",
-                        reflection.confidence_score * 100.0,
-                        if !reflection.is_confident { " ⚠️" } else { "" }
-                    ),
-                );
+                show_process_step_verbose(runtime.verbose, "REFLECT", &format!(
+                    "confidence={:.0}%{}",
+                    reflection.confidence_score * 100.0,
+                    if !reflection.is_confident { " ⚠️" } else { "" }
+                ));
                 if !reflection.is_confident || reflection.confidence_score < 0.6 {
-                    trace(
-                        &runtime.args,
-                        &format!("reflection_warnings={:?}", reflection.concerns),
-                    );
+                    trace_verbose(runtime.verbose, &format!("reflection_warnings={:?}", reflection.concerns));
                 }
             }
             Err(error) => {
-                trace(&runtime.args, &format!("reflection_failed error={}", error));
+                trace_verbose(runtime.verbose, &format!("reflection_failed error={}", error));
             }
         }
 
@@ -555,6 +545,7 @@ async fn build_program(
             );
             if !route_decision.route.eq_ignore_ascii_case("CHAT") {
                 operator_trace(&runtime.args, "repairing the workflow plan");
+                trace_verbose(runtime.verbose, "workflow_recovery=ok source=orchestrator_parse_error");
                 if let Ok(program) = recover_program_once(
                     &runtime.client,
                     &runtime.chat_url,
@@ -574,13 +565,10 @@ async fn build_program(
                 )
                 .await
                 {
-                    trace(&runtime.args, "workflow_recovery=ok source=orchestrator_parse_error");
+                    trace_verbose(runtime.verbose, "workflow_recovery=ok source=orchestrator_parse_error");
                     return program;
                 }
-                trace(
-                    &runtime.args,
-                    "workflow_recovery=failed source=orchestrator_parse_error",
-                );
+                trace_verbose(runtime.verbose, "workflow_recovery=failed source=orchestrator_parse_error");
             }
             Program {
                 objective: "fallback_clarification".to_string(),
