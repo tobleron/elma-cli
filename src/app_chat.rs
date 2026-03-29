@@ -114,6 +114,17 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.messages,
         )
         .await?;
+        // Show classification results
+        show_process_step(
+            &runtime.args,
+            "CLASSIFY",
+            &format!(
+                "speech={} route={} (entropy={:.2})",
+                route_decision.speech_act.choice,
+                route_decision.route,
+                route_decision.entropy
+            ),
+        );
         trace_route_decision(&runtime.args, &route_decision);
 
         let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
@@ -164,9 +175,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         trace_complexity(&runtime.args, &complexity);
         trace_scope(&runtime.args, &scope);
         trace_formula(&runtime.args, &formula);
+        let intent = describe_operator_intent(&route_decision, &complexity, &formula);
         operator_trace(
             &runtime.args,
-            &describe_operator_intent(&route_decision, &complexity, &formula),
+            &intent,
         );
 
         let mut program = build_program(
@@ -179,6 +191,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &formula,
         )
         .await;
+        // Show planning result
+        show_process_step(
+            &runtime.args,
+            "PLAN",
+            &format!("{} → {} steps", complexity.complexity, program.steps.len()),
+        );
         // Hard constraints disabled by default for autonomous reasoning
         let guards_enabled = !runtime.args.disable_guards;
         if apply_capability_guard(&mut program, &route_decision, guards_enabled) {
@@ -203,6 +221,16 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                         reflection.confidence_score,
                         reflection.concerns.len(),
                         reflection.missing_points.len()
+                    ),
+                );
+                // Show reflection result
+                show_process_step(
+                    &runtime.args,
+                    "REFLECT",
+                    &format!(
+                        "confidence={:.0}%{}",
+                        reflection.confidence_score * 100.0,
+                        if !reflection.is_confident { " ⚠️" } else { "" }
                     ),
                 );
                 if !reflection.is_confident || reflection.confidence_score < 0.6 {

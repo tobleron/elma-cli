@@ -26,6 +26,11 @@ pub(crate) fn ansi_grey(s: &str) -> String {
     format!("\x1b[90m{s}\x1b[0m")
 }
 
+pub(crate) fn ansi_dim_gray(s: &str) -> String {
+    // Dim grey for process steps
+    format!("\x1b[2;90m{s}\x1b[0m")
+}
+
 pub(crate) fn ansi_orange(s: &str) -> String {
     // Truecolor #de218e.
     format!("\x1b[38;2;222;33;142m{s}\x1b[0m")
@@ -191,11 +196,25 @@ pub(crate) fn maybe_display_reasoning_trace(resp: &ChatCompletionResponse) {
 pub(crate) fn trace(args: &Args, msg: &str) {
     let line = format!("trace: {msg}");
     append_trace_log_line(&line);
-    if args.debug_trace {
+    // Show traces when debug_trace OR show_process is enabled
+    if args.debug_trace || args.show_process {
         if args.no_color {
             eprintln!("{line}");
         } else {
             eprintln!("{}", ansi_paler_yellow(&line));
+        }
+    }
+}
+
+/// Show a concise process milestone (shown by default with show_process)
+pub(crate) fn show_process_step(args: &Args, category: &str, msg: &str) {
+    let line = format!("[{}] {}", category, msg);
+    append_trace_log_line(&line);
+    if args.show_process {
+        if args.no_color {
+            eprintln!("{line}");
+        } else {
+            eprintln!("{}", ansi_dim_gray(&line));
         }
     }
 }

@@ -121,6 +121,11 @@ pub(crate) struct Args {
     #[arg(long, default_value_t = false)]
     pub(crate) no_color: bool,
 
+    /// Show all internal processing steps (classifications, reflections, etc.) in concise format.
+    /// This shows the complete reasoning process, not just model thinking content.
+    #[arg(long, default_value_t = false, env = "ELMA_SHOW_PROCESS")]
+    pub(crate) show_process: bool,
+
     /// Run tuning for all models exposed by the endpoint, then exit.
     #[arg(long, default_value_t = false)]
     pub(crate) tune: bool,

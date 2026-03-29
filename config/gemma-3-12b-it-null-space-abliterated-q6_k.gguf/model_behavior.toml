@@ -1,0 +1,12 @@
+version = 3
+model = "gemma-3-12b-it-null-space-abliterated-q6_k.gguf"
+base_url = "http://192.168.1.186:8080"
+auto_reasoning_separated = false
+auto_final_clean = false
+auto_truncated_before_final = false
+none_final_clean = true
+none_reasoning_leak_suspected = false
+json_clean_with_auto = false
+json_clean_with_none = false
+needs_text_finalizer = false
+preferred_reasoning_format = "none"
