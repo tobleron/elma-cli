@@ -59,7 +59,9 @@ pub(crate) struct Args {
 
     /// Disable hard constraints (capability guards, formula locks) for autonomous reasoning.
     /// Guards remain in code but are bypassed when this flag is set.
-    #[arg(long, default_value_t = false, env = "ELMA_DISABLE_GUARDS")]
+    /// Default: ENABLED (guards disabled) for autonomous reasoning.
+    /// Use --disable-guards=false to enable guards (restricted mode).
+    #[arg(long, default_value_t = true, env = "ELMA_DISABLE_GUARDS")]
     pub(crate) disable_guards: bool,
 }
 
