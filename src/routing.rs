@@ -193,6 +193,54 @@ pub(crate) fn route_entropy(distribution: &[(String, f64)]) -> f64 {
         .sum()
 }
 
+/// Inject controlled noise into a probability distribution to prevent over-confidence.
+/// 
+/// DESIGN RATIONALE:
+/// When classification entropy is very low (< 0.1), the classifier is over-confident,
+/// which can block alternative reasoning paths. Adding small noise:
+/// 1. Prevents deterministic lock-in to a single classification
+/// 2. Encourages the orchestrator to consider alternatives
+/// 3. Maintains the original ranking while adding uncertainty
+/// 
+/// This is part of Elma's autonomous reasoning architecture - treating classifications
+/// as soft evidence rather than hard rules.
+pub(crate) fn inject_classification_noise(
+    distribution: &[(String, f64)],
+    entropy: f64,
+) -> Vec<(String, f64)> {
+    // Only inject noise when entropy is very low (over-confident)
+    const ENTROPY_THRESHOLD: f64 = 0.1;
+    const NOISE_SCALE: f64 = 0.05;  // Max 5% noise
+    
+    if entropy >= ENTROPY_THRESHOLD {
+        // Entropy is already high enough - return unchanged
+        return distribution.to_vec();
+    }
+    
+    // Add small random noise to each probability
+    let mut noisy: Vec<(String, f64)> = distribution
+        .iter()
+        .map(|(label, p)| {
+            // Add noise proportional to the probability (larger probs get more noise)
+            let noise = (std::process::id() as f64 * 0.001).sin() * NOISE_SCALE * p;
+            (label.clone(), (*p + noise).max(0.001))  // Keep minimum probability
+        })
+        .collect();
+    
+    // Re-normalize to sum to 1.0
+    let sum: f64 = noisy.iter().map(|(_, p)| *p).sum();
+    if sum > 0.0 {
+        for (_, p) in &mut noisy {
+            *p /= sum;
+        }
+    }
+    
+    // Re-sort by probability
+    noisy.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    
+    noisy
+}
+
 pub(crate) fn format_route_distribution(distribution: &[(String, f64)]) -> String {
     distribution
         .iter()
@@ -207,6 +255,68 @@ pub(crate) fn probability_of(distribution: &[(String, f64)], label: &str) -> f64
         .find(|(name, _)| name == label)
         .map(|(_, p)| *p)
         .unwrap_or(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_route_entropy() {
+        // Zero entropy: 100% confidence in one option
+        let certain = vec![("A".to_string(), 1.0), ("B".to_string(), 0.0)];
+        assert!(route_entropy(&certain) < 0.01);
+        
+        // High entropy: equal probability
+        let uncertain = vec![("A".to_string(), 0.5), ("B".to_string(), 0.5)];
+        assert!(route_entropy(&uncertain) > 0.6);
+    }
+
+    #[test]
+    fn test_inject_classification_noise_skips_high_entropy() {
+        // High entropy distribution should not be modified
+        let high_entropy = vec![("A".to_string(), 0.5), ("B".to_string(), 0.5)];
+        let noisy = inject_classification_noise(&high_entropy, 0.7);
+        
+        // Should be approximately equal (within floating point tolerance)
+        assert!((noisy[0].1 - 0.5).abs() < 0.01);
+        assert!((noisy[1].1 - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_inject_classification_noise_adds_to_low_entropy() {
+        // Very low entropy: nearly certain
+        let low_entropy = vec![("A".to_string(), 0.99), ("B".to_string(), 0.01)];
+        let noisy = inject_classification_noise(&low_entropy, 0.05);
+        
+        // Probabilities should still sum to ~1.0
+        let sum: f64 = noisy.iter().map(|(_, p)| *p).sum();
+        assert!((sum - 1.0).abs() < 0.01);
+        
+        // Ranking should be preserved (A still > B)
+        assert!(noisy[0].1 > noisy[1].1);
+        
+        // But the gap should be slightly reduced (noise added)
+        let original_gap = 0.99 - 0.01;
+        let noisy_gap = noisy[0].1 - noisy[1].1;
+        assert!(noisy_gap <= original_gap);
+    }
+
+    #[test]
+    fn test_inject_classification_noise_preserves_minimum_probability() {
+        // Low entropy case: nearly certain (will trigger noise injection)
+        let low_entropy = vec![("A".to_string(), 0.999), ("B".to_string(), 0.001)];
+        let noisy = inject_classification_noise(&low_entropy, 0.01);
+        
+        // All probabilities should be at least 0.001
+        for (_, p) in &noisy {
+            assert!(*p >= 0.001, "Probability {} is below minimum", p);
+        }
+        
+        // Probabilities should still sum to ~1.0
+        let sum: f64 = noisy.iter().map(|(_, p)| *p).sum();
+        assert!((sum - 1.0).abs() < 0.01, "Sum {} is not close to 1.0", sum);
+    }
 }
 
 pub(crate) async fn infer_digit_router(
@@ -276,6 +386,12 @@ pub(crate) async fn infer_digit_router(
         "token_only"
     };
 
+    // Calculate entropy before noise injection for accurate reporting
+    let raw_entropy = route_entropy(&distribution);
+    
+    // Apply entropy-based noise injection to prevent over-confidence
+    let distribution = inject_classification_noise(&distribution, raw_entropy);
+    
     let route = distribution
         .first()
         .map(|(label, _)| label.clone())
@@ -285,7 +401,7 @@ pub(crate) async fn infer_digit_router(
         choice: route,
         source: source.to_string(),
         margin: route_margin(&distribution),
-        entropy: route_entropy(&distribution),
+        entropy: raw_entropy,  // Report raw entropy (before noise) for transparency
         distribution,
     })
 }

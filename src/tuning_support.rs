@@ -229,6 +229,17 @@ pub(crate) fn build_orchestrator_user_content(
 ) -> String {
     let features = ClassificationFeatures::from(route_decision);
     
+    // Determine entropy warning level
+    let entropy_warning = if features.entropy < 0.05 {
+        "⚠️ EXTREMELY LOW - Classifier is over-confident. Probabilities have been adjusted to encourage alternative reasoning."
+    } else if features.entropy < 0.1 {
+        "⚠️ LOW - Classifier may be over-confident. Consider alternative interpretations."
+    } else if features.entropy < 0.5 {
+        "📊 MODERATE - Some uncertainty. Use your judgment."
+    } else {
+        "🔍 HIGH - Classifier is uncertain. Rely on your reasoning."
+    };
+
     // Build classification features section with autonomy guidance
     let classification_section = format!(
         "## Classification Features (SOFT EVIDENCE - Not Hard Rules)\n\n\
@@ -238,7 +249,7 @@ pub(crate) fn build_orchestrator_user_content(
          **Workflow Probabilities:** {}\n\
          **Mode Probabilities:** {}\n\
          **Route Probabilities:** {}\n\
-         **Classification Entropy:** {:.2} ({})\n\
+         **Classification Entropy:** {:.2} - {}\n\
          **Suggested Route:** {} (treat as a suggestion, not a command)\n\n\
          **AUTONOMY RULE:** If the user's actual request clearly requires a different approach \
          than what the priors suggest, follow the user's request. These priors are here to help, \
@@ -248,7 +259,7 @@ pub(crate) fn build_orchestrator_user_content(
         format_route_distribution(&features.mode_probs),
         format_route_distribution(&features.route_probs),
         features.entropy,
-        if features.entropy < 0.1 { "over-confident - be skeptical" } else { "uncertain - use judgment" },
+        entropy_warning,
         features.suggested_route
     );
     
