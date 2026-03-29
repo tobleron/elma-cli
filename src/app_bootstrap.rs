@@ -170,16 +170,17 @@ fn should_auto_tune_on_startup(args: &Args, model_cfg_dir: &Path) -> bool {
 }
 
 fn emit_auto_tune_banner(args: &Args, model_id: &str, model_cfg_dir: &Path) {
+    let tune_mode = if args.tune_mode == "quick" { "quick (5 scenarios)" } else { "full" };
     if args.no_color {
         eprintln!("First-time model setup");
         eprintln!("  model    {}", model_id);
         eprintln!("  config   {}", model_cfg_dir.display());
-        eprintln!("  action   tuning before chat startup");
+        eprintln!("  action   {} tuning before chat startup", tune_mode);
     } else {
         eprintln!("{}", ansi_orange("First-time model setup"));
         eprintln!("{} {}", ansi_grey("  model   "), model_id);
         eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
-        eprintln!("{} {}", ansi_grey("  action  "), "tuning before chat startup");
+        eprintln!("{} {} {}", ansi_grey("  action  "), tune_mode, "tuning before chat startup");
     }
 }
 

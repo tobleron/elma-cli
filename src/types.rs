@@ -167,6 +167,11 @@ pub(crate) struct Args {
     #[arg(long, default_value_t = 0.4)]
     pub(crate) temp_gates: f64,
 
+    /// Tuning mode: quick (5 critical scenarios) or full (all scenarios).
+    /// Quick mode is recommended for startup tuning.
+    #[arg(long, default_value = "quick", value_parser = ["quick", "full"])]
+    pub(crate) tune_mode: String,
+
     /// Run tuning for all models exposed by the endpoint, then exit.
     #[arg(long, default_value_t = false)]
     pub(crate) tune: bool,

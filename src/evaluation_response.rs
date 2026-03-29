@@ -67,11 +67,14 @@ pub(crate) async fn evaluate_response_suite_impl(
         system_content.push_str(ws_brief.trim());
     }
     let tune_sessions_root = sessions_root_path(&args.sessions_root)?.join("_tune_search");
-    let scenarios: Vec<CalibrationScenario> = manifest
+    let mut scenarios: Vec<CalibrationScenario> = manifest
         .scenarios
         .into_iter()
         .filter(is_response_calibration_scenario)
         .collect();
+    
+    // Filter by tune mode (quick = 5 scenarios, full = all)
+    scenarios = filter_scenarios_by_mode(scenarios, &args.tune_mode);
 
     let mut response_correct = 0usize;
     let mut response_total = 0usize;

@@ -57,6 +57,33 @@ pub(crate) fn is_response_calibration_scenario(scenario: &CalibrationScenario) -
     ) || matches!(scenario.route.as_str(), "PLAN" | "MASTERPLAN" | "DECIDE")
 }
 
+/// Filter scenarios based on tuning mode.
+/// Quick mode: Only 5 critical scenarios for fast startup tuning.
+/// Full mode: All scenarios for comprehensive calibration.
+pub(crate) fn filter_scenarios_by_mode(
+    scenarios: Vec<CalibrationScenario>,
+    tune_mode: &str,
+) -> Vec<CalibrationScenario> {
+    if tune_mode == "quick" {
+        // Quick mode: Only critical scenarios for core classification
+        // These scenarios test: speech_act, workflow, mode, route, program_parse
+        scenarios
+            .into_iter()
+            .filter(|s| {
+                // Prioritize scenarios that test core classification
+                matches!(
+                    s.speech_act.as_str(),
+                    "INFO_REQUEST" | "ACTION_REQUEST"
+                ) && s.route.eq_ignore_ascii_case("WORKFLOW")
+            })
+            .take(5)  // Limit to 5 scenarios for quick tuning
+            .collect()
+    } else {
+        // Full mode: All scenarios
+        scenarios
+    }
+}
+
 pub(crate) fn summarize_evidence_compact(compact: &EvidenceCompact) -> String {
     let mut lines = Vec::new();
     if !compact.summary.trim().is_empty() {
