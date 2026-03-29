@@ -41,7 +41,7 @@ pub(crate) fn default_gate_config(base_url: &str, model: &str) -> Profile {
         name: "gate".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.4,  // Tier 4: Gates - relatively deterministic
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -58,7 +58,7 @@ pub(crate) fn default_gate_why_config(base_url: &str, model: &str) -> Profile {
         name: "gate_why".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.4,  // Tier 4: Gates - relatively deterministic
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -109,7 +109,7 @@ pub(crate) fn default_critic_config(base_url: &str, model: &str) -> Profile {
         name: "critic".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.7,  // Tier 1: Critics - flexible validation
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -160,7 +160,7 @@ pub(crate) fn default_logical_reviewer_config(base_url: &str, model: &str) -> Pr
         name: "logical_reviewer".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.6,  // Tier 2: Reviewers - careful but flexible
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -177,7 +177,7 @@ pub(crate) fn default_efficiency_reviewer_config(base_url: &str, model: &str) ->
         name: "efficiency_reviewer".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.6,  // Tier 2: Reviewers - careful but flexible
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -194,7 +194,7 @@ pub(crate) fn default_risk_reviewer_config(base_url: &str, model: &str) -> Profi
         name: "risk_reviewer".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.6,  // Tier 2: Reviewers - careful but flexible
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -211,7 +211,7 @@ pub(crate) fn default_router_config(base_url: &str, model: &str) -> Profile {
         name: "router".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.5,  // Tier 3: Routers - balance consistency/flexibility
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -227,7 +227,7 @@ pub(crate) fn default_mode_router_config(base_url: &str, model: &str) -> Profile
         name: "mode_router".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.5,  // Tier 3: Routers - balance consistency/flexibility
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -243,7 +243,7 @@ pub(crate) fn default_speech_act_config(base_url: &str, model: &str) -> Profile 
         name: "speech_act".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.5,  // Tier 3: Routers - balance consistency/flexibility
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -259,7 +259,7 @@ pub(crate) fn default_action_type_config(base_url: &str, model: &str) -> Profile
         name: "action_type".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.5,  // Tier 3: Routers - balance consistency/flexibility
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -411,7 +411,7 @@ pub(crate) fn default_calibration_judge_config(base_url: &str, model: &str) -> P
         name: "calibration_judge".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.7,  // Tier 1: Judges - nuanced evaluation
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -513,7 +513,7 @@ pub(crate) fn default_task_semantics_guard_config(base_url: &str, model: &str) -
         name: "task_semantics_guard".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.4,  // Tier 4: Gates - relatively deterministic
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -547,7 +547,7 @@ pub(crate) fn default_outcome_verifier_config(base_url: &str, model: &str) -> Pr
         name: "outcome_verifier".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.7,  // Tier 1: Judges - nuanced evaluation
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -564,7 +564,7 @@ pub(crate) fn default_memory_gate_config(base_url: &str, model: &str) -> Profile
         name: "memory_gate".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.4,  // Tier 4: Gates - relatively deterministic
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
@@ -666,7 +666,7 @@ pub(crate) fn default_claim_checker_config(base_url: &str, model: &str) -> Profi
         name: "claim_checker".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.0,
+        temperature: 0.7,  // Tier 1: Judges - nuanced evaluation
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),

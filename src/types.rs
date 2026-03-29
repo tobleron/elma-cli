@@ -142,6 +142,31 @@ pub(crate) struct Args {
     #[arg(long, default_value_t = 4)]
     pub(crate) max_retries: u32,
 
+    // === Judgment Temperature Defaults (fallback values) ===
+    // These are default temperatures for judgment units.
+    // Actual temperatures are loaded from config/*.toml files.
+    // These flags allow overriding the defaults without editing config files.
+    
+    /// Default temperature for critics (default: 0.7).
+    #[arg(long, default_value_t = 0.7)]
+    pub(crate) temp_critic: f64,
+
+    /// Default temperature for judges (default: 0.7).
+    #[arg(long, default_value_t = 0.7)]
+    pub(crate) temp_judges: f64,
+
+    /// Default temperature for reviewers (default: 0.6).
+    #[arg(long, default_value_t = 0.6)]
+    pub(crate) temp_reviewers: f64,
+
+    /// Default temperature for routers (default: 0.5).
+    #[arg(long, default_value_t = 0.5)]
+    pub(crate) temp_routers: f64,
+
+    /// Default temperature for gates (default: 0.4).
+    #[arg(long, default_value_t = 0.4)]
+    pub(crate) temp_gates: f64,
+
     /// Run tuning for all models exposed by the endpoint, then exit.
     #[arg(long, default_value_t = false)]
     pub(crate) tune: bool,
