@@ -55,6 +55,7 @@ pub(crate) async fn prepare_tune_resources(
     let efficiency_reviewer_cfg =
         load_agent_config(&model_cfg_dir.join("efficiency_reviewer.toml"))?;
     let risk_reviewer_cfg = load_agent_config(&model_cfg_dir.join("risk_reviewer.toml"))?;
+    let refinement_cfg = load_agent_config(&model_cfg_dir.join("refinement.toml"))?;
     let calibration_judge_cfg =
         load_agent_config(&model_cfg_dir.join("calibration_judge.toml"))?;
 
@@ -143,6 +144,7 @@ pub(crate) async fn prepare_tune_resources(
         logical_reviewer_cfg,
         efficiency_reviewer_cfg,
         risk_reviewer_cfg,
+        refinement_cfg,
         calibration_judge_cfg,
         cal,
         supports_logprobs,

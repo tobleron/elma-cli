@@ -120,6 +120,23 @@ pub(crate) fn default_critic_config(base_url: &str, model: &str) -> Profile {
     }
 }
 
+pub(crate) fn default_refinement_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "refinement".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.3,
+        top_p: 0.95,
+        repeat_penalty: 1.0,
+        reasoning_format: "auto".to_string(),
+        max_tokens: 4096,
+        timeout_s: 180,
+        system_prompt: "You are Elma's program refiner.\n\nYour task is to revise programs based on execution feedback.\n\nReturn ONLY one valid JSON object representing a Program. No prose. No code fences.\n\nProgram Schema:\n{\n  \"objective\": \"string\",\n  \"steps\": [\n    {\"id\":\"s1\",\"type\":\"shell\",\"cmd\":\"<one-liner>\",\"purpose\":\"...\",\"success_condition\":\"...\",\"depends_on\":[]},\n    {\"id\":\"r1\",\"type\":\"reply\",\"instructions\":\"...\",\"purpose\":\"answer\",\"depends_on\":[],\"success_condition\":\"...\"}\n  ]\n}\n\nRefinement Rules:\n- Analyze what went wrong or is incomplete from the step results.\n- Add missing steps (inspection, verification, follow-up).\n- Remove redundant or failed steps that cannot be recovered.\n- Modify existing steps to fix issues (e.g., repair commands, adjust instructions).\n- Ensure the objective is still appropriate; refine it if needed based on evidence.\n- Maintain step dependencies (depends_on) correctly.\n- Every step must have purpose and success_condition.\n- Keep programs minimal - remove steps that don't advance the objective.\n- If the objective cannot be achieved, explain why in a reply step and suggest alternatives.\n"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_logical_reviewer_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -785,6 +802,10 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
             default_orchestrator_config(base_url, model),
         ),
         ("critic.toml", default_critic_config(base_url, model)),
+        (
+            "refinement.toml",
+            default_refinement_config(base_url, model),
+        ),
     ]
 }
 

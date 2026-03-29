@@ -32,6 +32,7 @@ pub(crate) struct TuneResources {
     pub(crate) logical_reviewer_cfg: Profile,
     pub(crate) efficiency_reviewer_cfg: Profile,
     pub(crate) risk_reviewer_cfg: Profile,
+    pub(crate) refinement_cfg: Profile,
     pub(crate) calibration_judge_cfg: Profile,
     pub(crate) cal: RouterCalibration,
     pub(crate) supports_logprobs: bool,

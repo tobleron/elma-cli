@@ -377,13 +377,13 @@ pub(crate) struct ProbabilityDecision {
     pub(crate) entropy: f64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Program {
     pub(crate) objective: String,
     pub(crate) steps: Vec<Step>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct StepCommon {
     #[serde(default)]
     pub(crate) purpose: String,
@@ -393,7 +393,7 @@ pub(crate) struct StepCommon {
     pub(crate) success_condition: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct EditSpec {
     #[serde(default)]
     pub(crate) path: String,
@@ -407,7 +407,7 @@ pub(crate) struct EditSpec {
     pub(crate) replace: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub(crate) enum Step {
     #[serde(rename = "shell")]
@@ -473,6 +473,47 @@ pub(crate) enum Step {
     },
 }
 
+impl Step {
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Step::Shell { id, .. } => id,
+            Step::Select { id, .. } => id,
+            Step::Plan { id, .. } => id,
+            Step::MasterPlan { id, .. } => id,
+            Step::Decide { id, .. } => id,
+            Step::Summarize { id, .. } => id,
+            Step::Edit { id, .. } => id,
+            Step::Reply { id, .. } => id,
+        }
+    }
+    
+    pub(crate) fn kind(&self) -> &str {
+        match self {
+            Step::Shell { .. } => "shell",
+            Step::Select { .. } => "select",
+            Step::Plan { .. } => "plan",
+            Step::MasterPlan { .. } => "masterplan",
+            Step::Decide { .. } => "decide",
+            Step::Summarize { .. } => "summarize",
+            Step::Edit { .. } => "edit",
+            Step::Reply { .. } => "reply",
+        }
+    }
+    
+    pub(crate) fn purpose(&self) -> &str {
+        match self {
+            Step::Shell { common, .. } => &common.purpose,
+            Step::Select { common, .. } => &common.purpose,
+            Step::Plan { common, .. } => &common.purpose,
+            Step::MasterPlan { common, .. } => &common.purpose,
+            Step::Decide { common, .. } => &common.purpose,
+            Step::Summarize { common, .. } => &common.purpose,
+            Step::Edit { common, .. } => &common.purpose,
+            Step::Reply { common, .. } => &common.purpose,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CriticVerdict {
     pub(crate) status: String,
@@ -509,7 +550,7 @@ pub(crate) struct AutonomousLoopOutcome {
     pub(crate) reasoning_clean: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct StepResult {
     pub(crate) id: String,
     pub(crate) kind: String,

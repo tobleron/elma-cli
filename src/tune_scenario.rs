@@ -220,6 +220,7 @@ pub(crate) async fn evaluate_runtime_scenario(
                 &resources.logical_reviewer_cfg,
                 &resources.efficiency_reviewer_cfg,
                 &resources.risk_reviewer_cfg,
+                &resources.refinement_cfg,
             )
             .await?;
             actual_step_count = loop_outcome.program.steps.len();

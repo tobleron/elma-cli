@@ -351,6 +351,7 @@ pub(crate) async fn run_autonomous_loop(
     logical_reviewer_cfg: &Profile,
     efficiency_reviewer_cfg: &Profile,
     risk_reviewer_cfg: &Profile,
+    refinement_cfg: &Profile,
 ) -> Result<AutonomousLoopOutcome> {
     let user_message = messages
         .iter()
@@ -743,6 +744,78 @@ pub(crate) async fn run_autonomous_loop(
             plan.current_program = next_program.clone();
             plan.program_history.push(next_program);
             continue;
+        }
+
+        // Check if refinement is needed (autonomous reasoning improvement)
+        let merged_program = merged_program_from_history(&plan);
+        let achievement = check_objective_achievement(&merged_program.objective, &step_results);
+        
+        if !achievement.is_achieved && step_results.len() > 0 {
+            trace(
+                args,
+                &format!(
+                    "refinement_needed iteration=1 confidence={:.1} gaps={}",
+                    achievement.confidence,
+                    achievement.gaps.len()
+                ),
+            );
+            
+            let refinement_ctx = RefinementContext {
+                original_objective: merged_program.objective.clone(),
+                step_results: step_results.clone(),
+                current_program: merged_program.clone(),
+                iteration: 0,
+                refinement_reason: format!(
+                    "Objective not achieved (confidence: {:.1}%). Gaps: {}",
+                    achievement.confidence * 100.0,
+                    achievement.gaps.join("; ")
+                ),
+            };
+            
+            match refine_program(client, chat_url, refinement_cfg, &refinement_ctx, &achievement).await {
+                Ok(refined_program) => {
+                    trace(args, "refinement_success applying refined program");
+                    // Execute refined program
+                    let (refined_results, refined_reply) = execute_program(
+                        args,
+                        client,
+                        chat_url,
+                        session,
+                        workdir,
+                        &refined_program,
+                        planner_cfg,
+                        planner_master_cfg,
+                        decider_cfg,
+                        selector_cfg,
+                        summarizer_cfg,
+                        Some(command_repair_cfg),
+                        Some(command_preflight_cfg),
+                        Some(task_semantics_guard_cfg),
+                        Some(evidence_compactor_cfg),
+                        Some(artifact_classifier_cfg),
+                        scope,
+                        complexity,
+                        formula,
+                        &merged_program.objective,
+                        false,
+                        false,
+                    ).await?;
+                    
+                    // Merge results
+                    step_results.extend(refined_results);
+                    if refined_reply.is_some() {
+                        final_reply = refined_reply;
+                    }
+                    
+                    // Update plan with refined program
+                    plan.current_program = refined_program;
+                    plan.program_history.push(plan.current_program.clone());
+                }
+                Err(error) => {
+                    trace(args, &format!("refinement_failed error={}", error));
+                    // Continue with original program if refinement fails
+                }
+            }
         }
 
         return Ok(AutonomousLoopOutcome {

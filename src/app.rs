@@ -30,6 +30,7 @@ pub(crate) struct LoadedProfiles {
     pub(crate) logical_reviewer_cfg: Profile,
     pub(crate) efficiency_reviewer_cfg: Profile,
     pub(crate) risk_reviewer_cfg: Profile,
+    pub(crate) refinement_cfg: Profile,
     pub(crate) router_cfg: Profile,
     pub(crate) mode_router_cfg: Profile,
     pub(crate) speech_act_cfg: Profile,

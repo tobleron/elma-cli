@@ -248,6 +248,7 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
             &model_cfg_dir.join("efficiency_reviewer.toml"),
         )?,
         risk_reviewer_cfg: load_agent_config(&model_cfg_dir.join("risk_reviewer.toml"))?,
+        refinement_cfg: load_agent_config(&model_cfg_dir.join("refinement.toml"))?,
         router_cfg: load_agent_config(&model_cfg_dir.join("router.toml"))?,
         mode_router_cfg: load_agent_config(&model_cfg_dir.join("mode_router.toml"))?,
         speech_act_cfg: load_agent_config(&model_cfg_dir.join("speech_act.toml"))?,

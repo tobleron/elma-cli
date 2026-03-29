@@ -42,6 +42,7 @@ pub(crate) async fn evaluate_response_suite_impl(
     let efficiency_reviewer_cfg =
         load_agent_config(&candidate_dir.join("efficiency_reviewer.toml"))?;
     let risk_reviewer_cfg = load_agent_config(&candidate_dir.join("risk_reviewer.toml"))?;
+    let refinement_cfg = load_agent_config(&candidate_dir.join("refinement.toml"))?;
     let cal = load_router_calibration(&candidate_dir.join("router_calibration.toml")).unwrap_or(
         RouterCalibration {
             version: 1,
@@ -187,6 +188,7 @@ pub(crate) async fn evaluate_response_suite_impl(
             &logical_reviewer_cfg,
             &efficiency_reviewer_cfg,
             &risk_reviewer_cfg,
+            &refinement_cfg,
         )
         .await?;
         let step_results = loop_outcome.step_results;
