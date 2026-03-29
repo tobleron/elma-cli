@@ -368,6 +368,47 @@ pub(crate) struct RouteDecision {
     pub(crate) mode: ProbabilityDecision,
 }
 
+/// Classification features for autonomous reasoning
+/// 
+/// DESIGN RATIONALE:
+/// These features are provided as SOFT EVIDENCE, not hard constraints.
+/// This change is intentional to test Elma's autonomous reasoning capabilities
+/// and reduce deterministic practices. The orchestrator should:
+/// 1. Consider these probabilities as signals, not rules
+/// 2. Override priors when task requirements demand it
+/// 3. Reason about the actual user request, not just follow classifications
+/// 
+/// Previous behavior (classifications as hard decisions) made Elma behave
+/// like a rule engine. This change enables genuine autonomous reasoning.
+#[derive(Debug, Clone)]
+pub(crate) struct ClassificationFeatures {
+    /// Speech act probabilities (CAPABILITY_CHECK, INFO_REQUEST, ACTION_REQUEST)
+    pub(crate) speech_act_probs: Vec<(String, f64)>,
+    /// Workflow probabilities (CHAT, WORKFLOW)
+    pub(crate) workflow_probs: Vec<(String, f64)>,
+    /// Mode probabilities (INSPECT, EXECUTE, PLAN, MASTERPLAN, DECIDE)
+    pub(crate) mode_probs: Vec<(String, f64)>,
+    /// Route probabilities (CHAT, SHELL, PLAN, MASTERPLAN, DECIDE)
+    pub(crate) route_probs: Vec<(String, f64)>,
+    /// Classification entropy (low = over-confident, high = uncertain)
+    pub(crate) entropy: f64,
+    /// Chosen route (for backwards compatibility, but treat as suggestion)
+    pub(crate) suggested_route: String,
+}
+
+impl From<&RouteDecision> for ClassificationFeatures {
+    fn from(decision: &RouteDecision) -> Self {
+        Self {
+            speech_act_probs: decision.speech_act.distribution.clone(),
+            workflow_probs: decision.workflow.distribution.clone(),
+            mode_probs: decision.mode.distribution.clone(),
+            route_probs: decision.distribution.clone(),
+            entropy: decision.entropy,
+            suggested_route: decision.route.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ProbabilityDecision {
     pub(crate) choice: String,

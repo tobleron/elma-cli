@@ -227,28 +227,41 @@ pub(crate) fn build_orchestrator_user_content(
     ws_brief: &str,
     messages: &[ChatMessage],
 ) -> String {
+    let features = ClassificationFeatures::from(route_decision);
+    
+    // Build classification features section with autonomy guidance
+    let classification_section = format!(
+        "## Classification Features (SOFT EVIDENCE - Not Hard Rules)\n\n\
+         These probabilities are signals from a classifier, NOT deterministic rules.\n\
+         You should reason about the actual user request and override these priors when appropriate.\n\n\
+         **Speech Act Probabilities:** {}\n\
+         **Workflow Probabilities:** {}\n\
+         **Mode Probabilities:** {}\n\
+         **Route Probabilities:** {}\n\
+         **Classification Entropy:** {:.2} ({})\n\
+         **Suggested Route:** {} (treat as a suggestion, not a command)\n\n\
+         **AUTONOMY RULE:** If the user's actual request clearly requires a different approach \
+         than what the priors suggest, follow the user's request. These priors are here to help, \
+         not to constrain your reasoning.\n\n",
+        format_route_distribution(&features.speech_act_probs),
+        format_route_distribution(&features.workflow_probs),
+        format_route_distribution(&features.mode_probs),
+        format_route_distribution(&features.route_probs),
+        features.entropy,
+        if features.entropy < 0.1 { "over-confident - be skeptical" } else { "uncertain - use judgment" },
+        features.suggested_route
+    );
+    
     format!(
-        "User message:\n{line}\n\nSpeech-act prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nMode prior:\n- chosen: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nCombined route prior:\n- chosen route: {}\n- source: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkflow planner prior:\n{}\n\nComplexity prior:\n{}\n\nScope prior:\n{}\n\nFormula prior:\n{}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
-        route_decision.speech_act.choice,
-        route_decision.speech_act.source,
-        format_route_distribution(&route_decision.speech_act.distribution),
-        route_decision.speech_act.margin,
-        route_decision.speech_act.entropy,
-        route_decision.workflow.choice,
-        route_decision.workflow.source,
-        format_route_distribution(&route_decision.workflow.distribution),
-        route_decision.workflow.margin,
-        route_decision.workflow.entropy,
-        route_decision.mode.choice,
-        route_decision.mode.source,
-        format_route_distribution(&route_decision.mode.distribution),
-        route_decision.mode.margin,
-        route_decision.mode.entropy,
-        route_decision.route,
-        route_decision.source,
-        format_route_distribution(&route_decision.distribution),
-        route_decision.margin,
-        route_decision.entropy,
+        "User message:\n{line}\n\n{}\
+         Workflow planner prior:\n{}\n\n\
+         Complexity prior:\n{}\n\n\
+         Scope prior:\n{}\n\n\
+         Formula prior:\n{}\n\n\
+         Workspace facts:\n{}\n\n\
+         Workspace brief:\n{}\n\n\
+         Conversation so far (most recent last):\n{}",
+        classification_section,
         workflow_plan
             .map(|plan| serde_json::to_string_pretty(plan).unwrap_or_else(|_| "{}".to_string()))
             .unwrap_or_else(|| "null".to_string()),
