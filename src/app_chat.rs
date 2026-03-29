@@ -182,6 +182,25 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &intent,
         );
 
+        // Task 023: Check if hierarchical decomposition is needed
+        let hierarchy_goal = try_hierarchical_decomposition(
+            &runtime.client,
+            &runtime.chat_url,
+            &runtime.profiles,
+            line,
+            &complexity,
+            &runtime.ws,
+            &runtime.ws_brief,
+            &runtime.messages,
+        )
+        .await
+        .unwrap_or(None);
+        
+        if hierarchy_goal.is_some() {
+            // Decomposition was triggered - TODO: Execute hierarchy instead of direct program
+            trace_verbose(runtime.verbose, "hierarchy_decomposition=triggered");
+        }
+
         let mut program = build_program(
             runtime,
             line,
