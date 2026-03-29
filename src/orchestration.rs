@@ -1365,3 +1365,51 @@ async fn synthesize_meta_review(
         .unwrap_or(&response_text);
     parse_json_loose(json_str)
 }
+
+// ============================================================================
+// Task 023: Hierarchical Decomposition Trigger
+// ============================================================================
+
+/// Check if hierarchical decomposition is needed and trigger it
+///
+/// Returns:
+/// - Some(Goal) if decomposition was triggered (OPEN_ENDED or HIGH risk)
+/// - None if direct execution should proceed
+pub async fn try_hierarchical_decomposition(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    profiles: &LoadedProfiles,
+    user_message: &str,
+    complexity: &ComplexityAssessment,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<Option<Goal>> {
+    // Check if decomposition is needed
+    let required_depth = get_required_depth(&complexity.complexity, &complexity.risk);
+    
+    if required_depth < 3 {
+        // No decomposition needed - use direct execution
+        return Ok(None);
+    }
+    
+    // Decomposition required - generate masterplan (Goal level)
+    let goal = generate_masterplan(
+        client,
+        chat_url,
+        &profiles.orchestrator_cfg,
+        user_message,
+        complexity,
+        ws,
+        ws_brief,
+        messages,
+    ).await?;
+    
+    // Log decomposition trigger
+    eprintln!("[DECOMPOSITION] Triggered for complexity={} risk={} depth={}", 
+              complexity.complexity, complexity.risk, required_depth);
+    eprintln!("[DECOMPOSITION] Goal: {}", goal.description);
+    eprintln!("[DECOMPOSITION] Phases: {:?}", goal.phases);
+    
+    Ok(Some(goal))
+}

@@ -14,6 +14,7 @@ pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 mod app;
 mod app_bootstrap;
 mod app_chat;
+mod decomposition;  // Task 023: Hierarchical decomposition
 mod defaults;
 mod evaluation;
 mod evaluation_response;
@@ -58,6 +59,7 @@ pub(crate) use intel::*;
 pub(crate) use metrics::*;
 pub(crate) use models_api::*;
 pub(crate) use optimization::*;
+pub(crate) use decomposition::*;  // Task 023
 pub(crate) use orchestration::*;
 pub(crate) use paths::*;
 pub(crate) use profile_sets::*;
