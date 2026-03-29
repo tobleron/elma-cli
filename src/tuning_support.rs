@@ -141,49 +141,40 @@ pub(crate) fn prompt_patch_elma_grounding() -> &'static str {
 
 pub(crate) fn apply_prompt_bundle(dir: &Path, bundle: &str) -> Result<()> {
     match bundle {
-        "routing_bundle" => {
-            let mut router = load_agent_config(&dir.join("router.toml"))?;
-            let mut mode_router = load_agent_config(&dir.join("mode_router.toml"))?;
-            let mut speech_act = load_agent_config(&dir.join("speech_act.toml"))?;
-            let _ = maybe_upgrade_system_prompt(&mut router, "router", prompt_patch_routing());
-            let _ = maybe_upgrade_system_prompt(
-                &mut mode_router,
-                "mode_router",
-                prompt_patch_mode_router(),
-            );
-            let _ = maybe_upgrade_system_prompt(&mut speech_act, "speech_act", "ADDITIONAL EXAMPLES:\n- \"Can you help me decide which files to clean up?\" is usually ACTION_REQUEST because the user is asking Elma to help now.\n- \"Which files in this project are safe to clean up?\" is usually INFO_REQUEST, but it still may require workflow inspection.");
-            save_agent_config(&dir.join("router.toml"), &router)?;
-            save_agent_config(&dir.join("mode_router.toml"), &mode_router)?;
-            save_agent_config(&dir.join("speech_act.toml"), &speech_act)?;
-        }
-        "workflow_bundle" => {
-            let mut orch = load_agent_config(&dir.join("orchestrator.toml"))?;
-            let mut critic = load_agent_config(&dir.join("critic.toml"))?;
-            let _ = maybe_upgrade_system_prompt(
-                &mut orch,
-                "orchestrator",
-                prompt_patch_orchestrator_cleanup(),
-            );
-            let _ =
-                maybe_upgrade_system_prompt(&mut critic, "critic", prompt_patch_critic_cleanup());
-            save_agent_config(&dir.join("orchestrator.toml"), &orch)?;
-            save_agent_config(&dir.join("critic.toml"), &critic)?;
-        }
-        "response_bundle" => {
-            let mut elma = load_agent_config(&dir.join("_elma.config"))?;
-            let mut critic = load_agent_config(&dir.join("critic.toml"))?;
-            let _ = maybe_upgrade_system_prompt(&mut elma, "_elma", prompt_patch_elma_grounding());
-            let _ = maybe_upgrade_system_prompt(&mut critic, "critic", "RESPONSE VALIDATION:\n- If the final answer ignores a failed shell step, choose retry.\n- If the answer gives generic advice where evidence was expected, choose retry unless the uncertainty is explicit.");
-            save_agent_config(&dir.join("_elma.config"), &elma)?;
-            save_agent_config(&dir.join("critic.toml"), &critic)?;
-        }
-        "comprehensive_bundle" => {
-            apply_prompt_bundle(dir, "routing_bundle")?;
-            apply_prompt_bundle(dir, "workflow_bundle")?;
-            apply_prompt_bundle(dir, "response_bundle")?;
-        }
         "none" => {}
-        other => anyhow::bail!("Unknown prompt bundle: {other}"),
+        other => anyhow::bail!(
+            "Prompt-bundle tuning is disabled by reliability policy; unsupported bundle: {other}"
+        ),
+    }
+    Ok(())
+}
+
+pub(crate) fn apply_runtime_generation_defaults(
+    dir: &Path,
+    defaults: &RuntimeGenerationDefaults,
+) -> Result<()> {
+    for filename in managed_profile_file_names() {
+        let path = dir.join(filename);
+        if !path.exists() {
+            continue;
+        }
+        let original = load_agent_config(&path)?;
+        let mut profile = original.clone();
+        if let Some(v) = defaults.temperature {
+            profile.temperature = v;
+        }
+        if let Some(v) = defaults.top_p {
+            profile.top_p = v;
+        }
+        if let Some(v) = defaults.repeat_penalty {
+            profile.repeat_penalty = v;
+        }
+        if let Some(v) = defaults.max_tokens {
+            profile.max_tokens = profile.max_tokens.min(v);
+        }
+        validate_tuning_mutation(&original, &profile)
+            .with_context(|| format!("runtime-default mapping in {filename}"))?;
+        save_agent_config(&path, &profile)?;
     }
     Ok(())
 }

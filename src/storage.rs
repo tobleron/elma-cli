@@ -91,3 +91,12 @@ pub(crate) fn save_tune_run_manifest(path: &PathBuf, m: &TuneRunManifest) -> Res
     std::fs::write(path, s).with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
+
+pub(crate) fn save_json_pretty<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let s = serde_json::to_string_pretty(value).context("Failed to serialize json")?;
+    std::fs::write(path, s).with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}

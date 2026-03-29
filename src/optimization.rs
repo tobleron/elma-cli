@@ -29,75 +29,71 @@ pub(crate) async fn optimize_model(
         },
     )?;
 
-    // === Protected Baseline Anchor (Section A) ===
-    // Evaluate the current active profiles as the protected baseline BEFORE
-    // any candidate variants are applied. This score is used for the safer
-    // activation policy (Section E).
-    let baseline_dir = make_candidate_dir(&run_root, "00_baseline")?;
-    snapshot_active_profile_set(model_cfg_dir, &baseline_dir)?;
+    let active_baseline_dir = make_candidate_dir(&run_root, "00_active_baseline")?;
+    snapshot_active_profile_set(model_cfg_dir, &active_baseline_dir)?;
+
+    let shipped_src_dir = ensure_baseline_profile_set(model_cfg_dir, base_url, model_id)?;
+    let shipped_baseline_dir = make_candidate_dir(&run_root, "00_shipped_baseline")?;
+    copy_profile_set(&shipped_src_dir, &shipped_baseline_dir)?;
+    sync_profile_dir_base_url_and_model(&shipped_baseline_dir, base_url, model_id)?;
+
+    let runtime_defaults = fetch_runtime_generation_defaults(client, &Url::parse(base_url)?).await?;
+    let runtime_baseline_dir = if let Some(defaults) = runtime_defaults.as_ref() {
+        let dir = make_candidate_dir(&run_root, "00_runtime_default_baseline")?;
+        copy_profile_set(&shipped_src_dir, &dir)?;
+        apply_runtime_generation_defaults(&dir, defaults)?;
+        sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
+        Some(dir)
+    } else {
+        None
+    };
+
     calibration_progress(
         args,
         &format!(
-            "tune baseline: routing corpus ({}) for {model_id}",
+            "tune stage 1/4: protected baselines on {} corpus for {model_id}",
             args.tune_mode
         ),
     );
-    let (baseline_routing_score, baseline_reject, baseline_note) =
-        evaluate_routing_suite(args, client, chat_url, &baseline_dir, model_id).await?;
-    save_stage_score_note(&baseline_dir, "stage1_routing", &baseline_note)?;
-
-    let baseline = SearchCandidate {
-        name: "00_baseline".to_string(),
-        dir: baseline_dir.clone(),
-        score: baseline_routing_score,
-        hard_rejected: baseline_reject,
-    };
-    let mut beam = vec![baseline.clone()];
-    let mut best_search = baseline;
-    let mut best_stage_score = best_search.score;
-    let mut stagnant_rounds = 0usize;
-    let beam_width = 3usize;
-
-    let stage1_variants = ["none"];
-    let mut stage1_scores = Vec::new();
-    calibration_progress(
-        args,
-        &format!("tune stage 1/4: frozen prompt baseline for {model_id}"),
-    );
-    for variant in stage1_variants {
-        let dir = make_candidate_dir(&run_root, &format!("10_prompt_{variant}"))?;
-        copy_profile_set(&beam[0].dir, &dir)?;
-        apply_prompt_bundle(&dir, variant)?;
-        // Section B: Validate no immutable fields were mutated
-        validate_tuning_mutations(&baseline_dir, &dir)
-            .with_context(|| format!("prompt bundle '{variant}' violated tuning boundaries"))?;
-        sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
+    let mut protected_search = Vec::new();
+    for (name, dir) in [
+        ("00_active_baseline", active_baseline_dir.clone()),
+        ("00_shipped_baseline", shipped_baseline_dir.clone()),
+    ] {
         let (score, hard_rejected, note) =
             evaluate_routing_suite(args, client, chat_url, &dir, model_id).await?;
         save_stage_score_note(&dir, "stage1_routing", &note)?;
-        let candidate = SearchCandidate {
-            name: dir
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| variant.to_string()),
+        protected_search.push(SearchCandidate {
+            name: name.to_string(),
             dir,
             score,
             hard_rejected,
-        };
-        if candidate.score > best_search.score {
-            best_search = candidate.clone();
-        }
-        stage1_scores.push(candidate);
+        });
     }
-    beam = select_top_search_beam(stage1_scores, beam_width);
+    if let Some(dir) = runtime_baseline_dir.as_ref() {
+        let (score, hard_rejected, note) =
+            evaluate_routing_suite(args, client, chat_url, dir, model_id).await?;
+        save_stage_score_note(dir, "stage1_routing", &note)?;
+        protected_search.push(SearchCandidate {
+            name: "00_runtime_default_baseline".to_string(),
+            dir: dir.clone(),
+            score,
+            hard_rejected,
+        });
+    }
+
+    let beam_width = 3usize;
+    let mut beam = select_top_search_beam(protected_search, beam_width);
     if beam.is_empty() {
-        beam.push(best_search.clone());
+        anyhow::bail!("All protected baselines were hard-rejected during stage 1 for {model_id}.");
     }
+    let mut best_search = beam[0].clone();
+    let mut best_stage_score = best_search.score;
+    let mut stagnant_rounds = 0usize;
     if let Some(top) = beam.first() {
         if top.score - best_stage_score < 0.02 {
             stagnant_rounds += 1;
         } else {
-            stagnant_rounds = 0;
             best_stage_score = top.score;
         }
     }
@@ -115,9 +111,9 @@ pub(crate) async fn optimize_model(
                     make_candidate_dir(&run_root, &format!("20_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
                 apply_router_param_variant(&dir, variant)?;
-                // Section B: Validate mutation boundaries
-                validate_tuning_mutations(&parent.dir, &dir)
-                    .with_context(|| format!("router variant '{variant}' violated tuning boundaries"))?;
+                validate_tuning_mutations(&parent.dir, &dir).with_context(|| {
+                    format!("router variant '{variant}' violated tuning boundaries")
+                })?;
                 sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
                 let (score, hard_rejected, note) =
                     evaluate_routing_suite(args, client, chat_url, &dir, model_id).await?;
@@ -166,9 +162,9 @@ pub(crate) async fn optimize_model(
                     make_candidate_dir(&run_root, &format!("30_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
                 apply_orchestrator_param_variant(&dir, variant)?;
-                // Section B: Validate mutation boundaries
-                validate_tuning_mutations(&parent.dir, &dir)
-                    .with_context(|| format!("orch variant '{variant}' violated tuning boundaries"))?;
+                validate_tuning_mutations(&parent.dir, &dir).with_context(|| {
+                    format!("orch variant '{variant}' violated tuning boundaries")
+                })?;
                 sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
                 let (score, hard_rejected, note) =
                     evaluate_workflow_suite(args, client, chat_url, &dir, model_id).await?;
@@ -217,9 +213,9 @@ pub(crate) async fn optimize_model(
                     make_candidate_dir(&run_root, &format!("40_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
                 apply_response_param_variant(&dir, variant)?;
-                // Section B: Validate mutation boundaries
-                validate_tuning_mutations(&parent.dir, &dir)
-                    .with_context(|| format!("response variant '{variant}' violated tuning boundaries"))?;
+                validate_tuning_mutations(&parent.dir, &dir).with_context(|| {
+                    format!("response variant '{variant}' violated tuning boundaries")
+                })?;
                 sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
                 let (score, hard_rejected, note) =
                     evaluate_response_suite(args, client, chat_url, &dir, model_id).await?;
@@ -243,6 +239,7 @@ pub(crate) async fn optimize_model(
         if let Some(top) = final_pool.first() {
             if top.score > best_search.score {
                 best_search = top.clone();
+                beam = final_pool;
             }
         }
     }
@@ -263,63 +260,182 @@ pub(crate) async fn optimize_model(
     )
     .await?;
 
-    // === Protected Baseline Full Evaluation (Section A) ===
-    // Evaluate the baseline with the same full calibration so we have a
-    // comparable score for the safer activation policy.
     calibration_progress(
         args,
-        &format!("tune baseline validation: scoring protected baseline for {model_id}"),
+        &format!("tune protected baseline validation for {model_id}"),
     );
-    let baseline_full = evaluate_candidate_dir(
+    let active_baseline_full = evaluate_candidate_dir(
         args,
         client,
         chat_url,
         base_url,
-        &baseline_dir,
+        &active_baseline_dir,
         model_id,
         false,
     )
     .await?;
-    let baseline_full_score = baseline_full.score;
-
-    // Save baseline artifacts for traceability
-    let winner_dir = run_root.join("winner");
-    snapshot_active_profile_set(&search_winner.dir, &winner_dir)?;
-    let baseline_winner_dir = run_root.join("baseline_evaluated");
-    snapshot_active_profile_set(&baseline_dir, &baseline_winner_dir)?;
-
-    // === Safer Activation Policy (Section E) ===
-    // A candidate is only activated when it meaningfully outperforms the
-    // protected baseline. If improvement is marginal, the baseline is preferred.
-    let (should_activate, reason) = activation_reason(
-        best_overall.score,
-        baseline_full_score,
-        best_overall.report.summary.certified,
-    );
-
-    let (activation_src, activation_dir, final_score, final_certified) = if should_activate {
-        calibration_progress(
-            args,
-            &format!("tune activating winner ({}) — {}", search_winner.name, reason),
-        );
-        (
-            "tune",
-            &search_winner.dir,
-            best_overall.score,
-            best_overall.report.summary.certified,
+    let shipped_baseline_full = evaluate_candidate_dir(
+        args,
+        client,
+        chat_url,
+        base_url,
+        &shipped_baseline_dir,
+        model_id,
+        false,
+    )
+    .await?;
+    let runtime_baseline_full = if let Some(dir) = runtime_baseline_dir.as_ref() {
+        Some(
+            evaluate_candidate_dir(args, client, chat_url, base_url, dir, model_id, false).await?,
         )
     } else {
-        calibration_progress(
-            args,
-            &format!("tune preferring baseline — {}", reason),
-        );
-        (
-            "tune_baseline_preferred",
-            &baseline_dir,
-            baseline_full_score,
-            baseline_full.report.summary.certified,
-        )
+        None
     };
+
+    let winner_dir = run_root.join("winner");
+    snapshot_active_profile_set(&search_winner.dir, &winner_dir)?;
+    snapshot_active_profile_set(&active_baseline_dir, &run_root.join("active_baseline_evaluated"))?;
+    snapshot_active_profile_set(
+        &shipped_baseline_dir,
+        &run_root.join("shipped_baseline_evaluated"),
+    )?;
+    if let Some(dir) = runtime_baseline_dir.as_ref() {
+        snapshot_active_profile_set(dir, &run_root.join("runtime_default_baseline_evaluated"))?;
+    }
+
+    calibration_progress(
+        args,
+        &format!("tune stability check: {}", search_winner.name),
+    );
+    let winner_stability =
+        evaluate_candidate_stability(args, client, chat_url, base_url, &search_winner.dir, model_id)
+            .await?;
+    let active_stability = evaluate_candidate_stability(
+        args,
+        client,
+        chat_url,
+        base_url,
+        &active_baseline_dir,
+        model_id,
+    )
+    .await?;
+    let shipped_stability = evaluate_candidate_stability(
+        args,
+        client,
+        chat_url,
+        base_url,
+        &shipped_baseline_dir,
+        model_id,
+    )
+    .await?;
+    let runtime_stability = if let Some(dir) = runtime_baseline_dir.as_ref() {
+        Some(
+            evaluate_candidate_stability(args, client, chat_url, base_url, dir, model_id).await?,
+        )
+    } else {
+        None
+    };
+
+    let winner_adjusted = best_overall.score - winner_stability.penalty;
+    let mut baseline_reports = vec![
+        make_baseline_report(
+            "active_live",
+            "active_live",
+            &active_baseline_full,
+            active_stability,
+        ),
+        make_baseline_report(
+            "shipped_baseline",
+            "shipped_baseline",
+            &shipped_baseline_full,
+            shipped_stability,
+        ),
+    ];
+    if let (Some(full), Some(stability)) = (runtime_baseline_full.as_ref(), runtime_stability) {
+        baseline_reports.push(make_baseline_report(
+            "runtime_default",
+            "runtime_default",
+            full,
+            stability,
+        ));
+    }
+    let preferred_baseline = choose_preferred_baseline(&baseline_reports)?;
+    let baseline_score = preferred_baseline.adjusted_score;
+    let (should_activate, raw_reason) = activation_reason(
+        winner_adjusted,
+        baseline_score,
+        best_overall.report.summary.certified,
+    );
+    let reason = format!(
+        "{} | selected={:.4} raw={:.4} stability_penalty={:.4} | baseline={} adjusted={:.4}",
+        raw_reason,
+        winner_adjusted,
+        best_overall.score,
+        winner_stability.penalty,
+        preferred_baseline.name,
+        preferred_baseline.adjusted_score
+    );
+
+    let (activation_src, activation_dir, final_score, final_certified, selected_name) =
+        if should_activate {
+            calibration_progress(
+                args,
+                &format!("tune activating winner ({}) — {}", search_winner.name, reason),
+            );
+            (
+                "tune",
+                &search_winner.dir,
+                best_overall.score,
+                best_overall.report.summary.certified,
+                search_winner.name.clone(),
+            )
+        } else {
+            calibration_progress(
+                args,
+                &format!("tune preferring baseline — {}", reason),
+            );
+            let selected_dir = match preferred_baseline.source.as_str() {
+                "runtime_default" => runtime_baseline_dir
+                    .as_ref()
+                    .context("runtime default baseline dir missing")?,
+                "shipped_baseline" => &shipped_baseline_dir,
+                _ => &active_baseline_dir,
+            };
+            let selected_certified = match preferred_baseline.source.as_str() {
+                "runtime_default" => runtime_baseline_full
+                    .as_ref()
+                    .map(|c| c.report.summary.certified)
+                    .unwrap_or(false),
+                "shipped_baseline" => shipped_baseline_full.report.summary.certified,
+                _ => active_baseline_full.report.summary.certified,
+            };
+            (
+                "tune_baseline_preferred",
+                selected_dir,
+                preferred_baseline.raw_score,
+                selected_certified,
+                preferred_baseline.name.clone(),
+            )
+        };
+
+    let decision = TuneDecisionReport {
+        version: 1,
+        model: model_id.to_string(),
+        selected_name: selected_name.clone(),
+        selected_source: activation_src.to_string(),
+        selected_raw_score: final_score,
+        selected_adjusted_score: if should_activate {
+            winner_adjusted
+        } else {
+            preferred_baseline.adjusted_score
+        },
+        protected_baseline_name: preferred_baseline.name.clone(),
+        protected_baseline_adjusted_score: preferred_baseline.adjusted_score,
+        activation_reason: reason.clone(),
+        baselines: baseline_reports.clone(),
+    };
+    save_json_pretty(&run_root.join("baseline_report.json"), &baseline_reports)?;
+    save_json_pretty(&run_root.join("activation_summary.json"), &decision)?;
 
     activate_profile_set(
         model_cfg_dir,
@@ -331,7 +447,7 @@ pub(crate) async fn optimize_model(
         final_score,
         final_certified,
         &reason,
-        baseline_full_score,
+        baseline_score,
     )?;
     save_tune_run_manifest(
         &run_root.join("run_manifest.toml"),
@@ -345,16 +461,109 @@ pub(crate) async fn optimize_model(
             final_score,
             certified: final_certified,
             activation_reason: reason,
-            baseline_score: baseline_full_score,
+            baseline_score,
         },
     )?;
 
-    // Return the winner for upstream reporting (even if baseline was preferred,
-    // return the candidate that was actually activated).
     if should_activate {
         Ok(best_overall)
     } else {
-        Ok(baseline_full)
+        match preferred_baseline.source.as_str() {
+            "runtime_default" => runtime_baseline_full
+                .context("runtime default baseline score missing"),
+            "shipped_baseline" => Ok(shipped_baseline_full),
+            _ => Ok(active_baseline_full),
+        }
     }
 }
 
+fn make_baseline_report(
+    name: &str,
+    source: &str,
+    candidate: &CandidateScore,
+    stability: StabilitySummary,
+) -> BaselineAnchorReport {
+    let adjusted_score = candidate.score - stability.penalty;
+    BaselineAnchorReport {
+        name: name.to_string(),
+        source: source.to_string(),
+        raw_score: candidate.score,
+        adjusted_score,
+        certified: candidate.report.summary.certified,
+        hard_rejected: candidate.hard_rejected,
+        stability,
+    }
+}
+
+fn choose_preferred_baseline(baselines: &[BaselineAnchorReport]) -> Result<BaselineAnchorReport> {
+    let runtime = baselines.iter().find(|b| b.source == "runtime_default").cloned();
+    let best = baselines
+        .iter()
+        .cloned()
+        .max_by(|a, b| {
+            a.adjusted_score
+                .partial_cmp(&b.adjusted_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .context("no baseline reports available")?;
+    if let Some(runtime) = runtime {
+        if (best.adjusted_score - runtime.adjusted_score) < ACTIVATION_MARGIN {
+            return Ok(runtime);
+        }
+    }
+    Ok(best)
+}
+
+async fn evaluate_candidate_stability(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    base_url: &str,
+    candidate_dir: &PathBuf,
+    model_id: &str,
+) -> Result<StabilitySummary> {
+    let mut quick_args = args.clone();
+    quick_args.tune_mode = "quick".to_string();
+    let runs = 3usize;
+    let mut scores = Vec::with_capacity(runs);
+    for _ in 0..runs {
+        let result = evaluate_candidate_dir(
+            &quick_args,
+            client,
+            chat_url,
+            base_url,
+            candidate_dir,
+            model_id,
+            false,
+        )
+        .await?;
+        scores.push(result.score);
+    }
+    let mean_score = scores.iter().sum::<f64>() / runs as f64;
+    let min_score = scores
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, |acc, v| acc.min(v));
+    let max_score = scores
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, |acc, v| acc.max(v));
+    let variance = scores
+        .iter()
+        .map(|v| {
+            let d = *v - mean_score;
+            d * d
+        })
+        .sum::<f64>()
+        / runs as f64;
+    let stddev = variance.sqrt();
+    let penalty = stddev.min(0.05);
+    Ok(StabilitySummary {
+        runs,
+        mean_score,
+        min_score,
+        max_score,
+        stddev,
+        penalty,
+    })
+}

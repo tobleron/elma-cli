@@ -251,6 +251,20 @@ pub(crate) struct ModelBehaviorProfile {
     pub(crate) preferred_reasoning_format: String,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct RuntimeGenerationDefaults {
+    #[serde(default)]
+    pub(crate) temperature: Option<f64>,
+    #[serde(default)]
+    pub(crate) top_p: Option<f64>,
+    #[serde(default)]
+    pub(crate) repeat_penalty: Option<f64>,
+    #[serde(default)]
+    pub(crate) max_tokens: Option<u32>,
+    #[serde(default)]
+    pub(crate) source: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct ActiveManifest {
     pub(crate) version: u32,
@@ -282,6 +296,41 @@ pub(crate) struct TuneRunManifest {
     pub(crate) activation_reason: String,
     #[serde(default)]
     pub(crate) baseline_score: f64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct StabilitySummary {
+    pub(crate) runs: usize,
+    pub(crate) mean_score: f64,
+    pub(crate) min_score: f64,
+    pub(crate) max_score: f64,
+    pub(crate) stddev: f64,
+    pub(crate) penalty: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct BaselineAnchorReport {
+    pub(crate) name: String,
+    pub(crate) source: String,
+    pub(crate) raw_score: f64,
+    pub(crate) adjusted_score: f64,
+    pub(crate) certified: bool,
+    pub(crate) hard_rejected: bool,
+    pub(crate) stability: StabilitySummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct TuneDecisionReport {
+    pub(crate) version: u32,
+    pub(crate) model: String,
+    pub(crate) selected_name: String,
+    pub(crate) selected_source: String,
+    pub(crate) selected_raw_score: f64,
+    pub(crate) selected_adjusted_score: f64,
+    pub(crate) protected_baseline_name: String,
+    pub(crate) protected_baseline_adjusted_score: f64,
+    pub(crate) activation_reason: String,
+    pub(crate) baselines: Vec<BaselineAnchorReport>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

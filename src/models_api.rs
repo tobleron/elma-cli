@@ -136,6 +136,58 @@ pub(crate) async fn fetch_ctx_max(client: &reqwest::Client, base_url: &Url) -> R
         .and_then(|x| x.as_u64()))
 }
 
+pub(crate) async fn fetch_runtime_generation_defaults(
+    client: &reqwest::Client,
+    base_url: &Url,
+) -> Result<Option<RuntimeGenerationDefaults>> {
+    let Ok(url) = base_url.join("/props") else {
+        return Ok(None);
+    };
+    let resp = match client.get(url).send().await {
+        Ok(resp) => resp,
+        Err(_) => return Ok(None),
+    };
+    if !resp.status().is_success() {
+        return Ok(None);
+    }
+    let text = match resp.text().await {
+        Ok(text) => text,
+        Err(_) => return Ok(None),
+    };
+    let value: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let Some(defaults) = value.get("default_generation_settings") else {
+        return Ok(None);
+    };
+
+    let temperature = defaults.get("temperature").and_then(|v| v.as_f64());
+    let top_p = defaults.get("top_p").and_then(|v| v.as_f64());
+    let repeat_penalty = defaults
+        .get("repeat_penalty")
+        .and_then(|v| v.as_f64())
+        .or_else(|| defaults.get("repeat_penalty").and_then(|v| v.as_u64()).map(|v| v as f64));
+    let max_tokens = defaults
+        .get("n_predict")
+        .and_then(|v| v.as_u64())
+        .or_else(|| defaults.get("max_tokens").and_then(|v| v.as_u64()))
+        .map(|v| v.min(u32::MAX as u64) as u32);
+
+    if temperature.is_none() && top_p.is_none() && repeat_penalty.is_none() && max_tokens.is_none()
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(RuntimeGenerationDefaults {
+        temperature,
+        top_p,
+        repeat_penalty,
+        max_tokens,
+        source: "/props.default_generation_settings".to_string(),
+    }))
+}
+
 async fn probe_chat_completion_raw(
     client: &reqwest::Client,
     chat_url: &Url,
