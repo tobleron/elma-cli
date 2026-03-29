@@ -424,6 +424,10 @@ pub(crate) async fn run_autonomous_loop(
         )
         .await;
 
+        let results_are_good = !batch_results.is_empty() && batch_results.iter().all(|r| {
+            r.ok && r.outcome_status.as_deref().map(|s| s.eq_ignore_ascii_case("ok")).unwrap_or(true)
+        });
+
         plan.executed_steps += batch_results
             .iter()
             .filter(|result| !result.kind.eq_ignore_ascii_case("reply"))
@@ -465,16 +469,20 @@ pub(crate) async fn run_autonomous_loop(
             Err(error) => {
                 reasoning_clean = false;
                 trace(args, &format!("sufficiency_parse_error={error}"));
-                if strict_post_judgment {
+
+                if strict_post_judgment && !results_are_good {
                     ExecutionSufficiencyVerdict {
                         status: "retry".to_string(),
                         reason: "sufficiency_parse_error".to_string(),
                         program: None,
                     }
                 } else {
+                    if strict_post_judgment {
+                        trace(args, "sufficiency_parse_error: assuming ok due to successful outcome verification");
+                    }
                     ExecutionSufficiencyVerdict {
                         status: "ok".to_string(),
-                        reason: "sufficiency_parse_error".to_string(),
+                        reason: "sufficiency_parse_error_assumed_ok".to_string(),
                         program: None,
                     }
                 }
@@ -616,16 +624,20 @@ pub(crate) async fn run_autonomous_loop(
             Err(error) => {
                 reasoning_clean = false;
                 trace(args, &format!("critic_parse_error={error}"));
-                if strict_post_judgment {
+
+                if strict_post_judgment && !results_are_good {
                     CriticVerdict {
                         status: "retry".to_string(),
                         reason: "critic_parse_error".to_string(),
                         program: None,
                     }
                 } else {
+                    if strict_post_judgment {
+                        trace(args, "critic_parse_error: assuming ok due to successful outcome verification");
+                    }
                     CriticVerdict {
                         status: "ok".to_string(),
-                        reason: "critic_parse_error".to_string(),
+                        reason: "critic_parse_error_assumed_ok".to_string(),
                         program: None,
                     }
                 }
