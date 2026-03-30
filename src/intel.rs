@@ -249,11 +249,38 @@ pub(crate) async fn decide_evidence_mode_once(
     let has_command_request = user_message.to_lowercase()
         .split_whitespace()
         .any(|w| ["run", "execute", "show", "display", "print"].contains(&w));
-    
+
     // Check if any step actually executed a command
     let has_command_execution = step_results.iter()
         .any(|s| s.command.is_some() && !s.command.as_ref().unwrap().is_empty());
-    
+
+    // Check if step results have artifact_path (indicates output was captured to file)
+    let has_artifact = step_results.iter()
+        .any(|s| s.artifact_path.is_some() && !s.artifact_path.as_ref().unwrap().is_empty());
+
+    // Deterministic override for command execution requests
+    // This ensures RAW output is shown when user explicitly asks to run/see commands
+    if has_command_request || has_command_execution {
+        // Estimate output size from step results
+        let output_is_short = step_results.iter()
+            .filter_map(|s| s.raw_output.as_ref())
+            .all(|out| out.lines().count() < 100);
+
+        // Force RAW or RAW_PLUS_COMPACT for command execution
+        let mode = if has_artifact {
+            "RAW_PLUS_COMPACT".to_string()  // Has file artifact, show both
+        } else if output_is_short {
+            "RAW".to_string()  // Short output, show raw
+        } else {
+            "RAW_PLUS_COMPACT".to_string()  // Long output, show raw + compact summary
+        };
+
+        return Ok(EvidenceModeDecision {
+            mode,
+            reason: "Command execution detected - showing raw output".to_string(),
+        });
+    }
+
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
