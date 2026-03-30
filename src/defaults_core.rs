@@ -123,6 +123,23 @@ pub(crate) fn default_critic_config(base_url: &str, model: &str) -> Profile {
     }
 }
 
+pub(crate) fn default_program_repair_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "program_repair".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.5,
+        top_p: 0.95,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 2048,
+        timeout_s: 120,
+        system_prompt: "Repair a flawed program based on evaluation feedback. Output a complete Program JSON object."
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_refinement_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -174,6 +191,23 @@ pub(crate) fn default_logical_reviewer_config(base_url: &str, model: &str) -> Pr
     }
 }
 
+pub(crate) fn default_logical_program_repair_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "logical_program_repair".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.5,
+        top_p: 0.95,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 2048,
+        timeout_s: 120,
+        system_prompt: "Repair a program with logical flaws. Output a complete Program JSON object."
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_efficiency_reviewer_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -187,6 +221,23 @@ pub(crate) fn default_efficiency_reviewer_config(base_url: &str, model: &str) ->
         max_tokens: 512,
         timeout_s: 120,
         system_prompt: "Evaluate if the program uses minimal steps without redundancy. Return JSON: {\"status\":\"ok\"|\"retry\",\"reason\":\"...\"}"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_efficiency_program_repair_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "efficiency_program_repair".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.5,
+        top_p: 0.95,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 2048,
+        timeout_s: 120,
+        system_prompt: "Repair a program to improve efficiency. Output a complete Program JSON object."
             .to_string(),
     }
 }

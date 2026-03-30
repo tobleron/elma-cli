@@ -72,6 +72,23 @@ pub(crate) fn default_execution_sufficiency_config(base_url: &str, model: &str) 
     }
 }
 
+pub(crate) fn default_execution_program_repair_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "execution_program_repair".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 2048,
+        timeout_s: 120,
+        system_prompt: "Repair a program that failed to satisfy the user's request. Output a complete Program JSON object."
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_outcome_verifier_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -123,6 +140,40 @@ pub(crate) fn default_command_preflight_config(base_url: &str, model: &str) -> P
     }
 }
 
+pub(crate) fn default_command_reviser_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "command_reviser".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 256,
+        timeout_s: 120,
+        system_prompt: "Revise an unsafe or imprecise shell command. Return JSON: {\"revised_cmd\":\"...\",\"reason\":\"...\"}"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_execution_mode_setter_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "execution_mode_setter".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: "Set the execution mode for a shell command. Return JSON: {\"execution_mode\":\"INLINE\"|\"ARTIFACT\"|\"ASK\",\"artifact_kind\":\"...\",\"preview_strategy\":\"...\"}"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_scope_builder_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -136,6 +187,23 @@ pub(crate) fn default_scope_builder_config(base_url: &str, model: &str) -> Profi
         max_tokens: 384,
         timeout_s: 120,
         system_prompt: "Define the evidence scope for the task. Return JSON: {\"focus_paths\":[],\"include_globs\":[],\"exclude_globs\":[],\"query_terms\":[]}"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_scope_objective_builder_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "scope_objective_builder".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: "Define the scope objective for the task. Return JSON: {\"objective\":\"...\"}"
             .to_string(),
     }
 }
@@ -208,6 +276,23 @@ pub(crate) fn default_claim_checker_config(base_url: &str, model: &str) -> Profi
     }
 }
 
+pub(crate) fn default_claim_revision_advisor_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "claim_revision_advisor".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.7,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 512,
+        timeout_s: 120,
+        system_prompt: "Provide revision guidance for unsupported claims. Return JSON: {\"missing_points\":[],\"rewrite_instructions\":\"...\"}"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_intention_tune_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -243,26 +328,40 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
         ("final_answer_extractor.toml", default_final_answer_extractor_config(base_url, model)),
         ("calibration_judge.toml", default_calibration_judge_config(base_url, model)),
         ("complexity_assessor.toml", default_complexity_assessor_config(base_url, model)),
+        ("evidence_need_assessor.toml", default_evidence_need_assessor_config(base_url, model)),
+        ("action_need_assessor.toml", default_action_need_assessor_config(base_url, model)),
+        ("pattern_suggester.toml", default_pattern_suggester_config(base_url, model)),
         ("formula_selector.toml", default_formula_selector_config(base_url, model)),
+        ("formula_memory_matcher.toml", default_formula_memory_matcher_config(base_url, model)),
         ("workflow_planner.toml", default_workflow_planner_config(base_url, model)),
+        ("workflow_complexity_planner.toml", default_workflow_complexity_planner_config(base_url, model)),
+        ("workflow_reason_planner.toml", default_workflow_reason_planner_config(base_url, model)),
         ("evidence_mode.toml", default_evidence_mode_config(base_url, model)),
         ("command_repair.toml", default_command_repair_config(base_url, model)),
+        ("command_reviser.toml", default_command_reviser_config(base_url, model)),
+        ("execution_mode_setter.toml", default_execution_mode_setter_config(base_url, model)),
         ("task_semantics_guard.toml", default_task_semantics_guard_config(base_url, model)),
         ("execution_sufficiency.toml", default_execution_sufficiency_config(base_url, model)),
+        ("execution_program_repair.toml", default_execution_program_repair_config(base_url, model)),
         ("outcome_verifier.toml", default_outcome_verifier_config(base_url, model)),
         ("memory_gate.toml", default_memory_gate_config(base_url, model)),
         ("command_preflight.toml", default_command_preflight_config(base_url, model)),
         ("scope_builder.toml", default_scope_builder_config(base_url, model)),
+        ("scope_objective_builder.toml", default_scope_objective_builder_config(base_url, model)),
         ("evidence_compactor.toml", default_evidence_compactor_config(base_url, model)),
         ("artifact_classifier.toml", default_artifact_classifier_config(base_url, model)),
         ("result_presenter.toml", default_result_presenter_config(base_url, model)),
         ("claim_checker.toml", default_claim_checker_config(base_url, model)),
+        ("claim_revision_advisor.toml", default_claim_revision_advisor_config(base_url, model)),
         ("critic.toml", default_critic_config(base_url, model)),
+        ("program_repair.toml", default_program_repair_config(base_url, model)),
         ("orchestrator.toml", default_orchestrator_config(base_url, model)),
         ("refinement.toml", default_refinement_config(base_url, model)),
         ("reflection.toml", default_reflection_config(base_url, model)),
         ("logical_reviewer.toml", default_logical_reviewer_config(base_url, model)),
+        ("logical_program_repair.toml", default_logical_program_repair_config(base_url, model)),
         ("efficiency_reviewer.toml", default_efficiency_reviewer_config(base_url, model)),
+        ("efficiency_program_repair.toml", default_efficiency_program_repair_config(base_url, model)),
         ("risk_reviewer.toml", default_risk_reviewer_config(base_url, model)),
         ("meta_review.toml", default_meta_review_config(base_url, model)),
         ("router.toml", default_router_config(base_url, model)),

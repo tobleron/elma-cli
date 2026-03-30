@@ -238,6 +238,57 @@ pub(crate) fn default_complexity_assessor_config(base_url: &str, model: &str) ->
     }
 }
 
+pub(crate) fn default_evidence_need_assessor_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "evidence_need_assessor".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: "Assess if the task needs workspace evidence. Return JSON: {\"needs_evidence\":bool,\"needs_tools\":bool}"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_action_need_assessor_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "action_need_assessor".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: "Assess if the task needs decision or planning. Return JSON: {\"needs_decision\":bool,\"needs_plan\":bool}"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_pattern_suggester_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "pattern_suggester".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: "Suggest the reasoning pattern for this task. Return JSON: {\"suggested_pattern\":\"reply_only\"|\"inspect_reply\"|\"inspect_summarize_reply\"|\"inspect_decide_reply\"|\"inspect_edit_verify_reply\"|\"execute_reply\"|\"plan_reply\"|\"masterplan_reply\"}"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_formula_selector_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -255,6 +306,23 @@ pub(crate) fn default_formula_selector_config(base_url: &str, model: &str) -> Pr
     }
 }
 
+pub(crate) fn default_formula_memory_matcher_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "formula_memory_matcher".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: "Match the task to a formula memory by signature. Return JSON: {\"memory_id\":\"...\"|\"\"}"
+            .to_string(),
+    }
+}
+
 pub(crate) fn default_workflow_planner_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
@@ -267,7 +335,41 @@ pub(crate) fn default_workflow_planner_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 768,
         timeout_s: 120,
-        system_prompt: "Plan the workflow scope and evidence needs. Return JSON: {\"objective\":\"...\",\"needs_evidence\":bool,\"scope\":{\"focus_paths\":[],\"include_globs\":[],\"exclude_globs\":[],\"query_terms\":[]}}"
+        system_prompt: "Plan the workflow scope and evidence needs. Return JSON: {\"objective\":\"...\",\"scope\":{\"focus_paths\":[],\"include_globs\":[],\"exclude_globs\":[],\"query_terms\":[],\"expected_artifacts\":[]}}"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_workflow_complexity_planner_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "workflow_complexity_planner".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: "Plan workflow complexity and risk. Return JSON: {\"complexity\":\"DIRECT\"|\"INVESTIGATE\"|\"MULTISTEP\"|\"OPEN_ENDED\",\"risk\":\"LOW\"|\"MEDIUM\"|\"HIGH\"}"
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_workflow_reason_planner_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "workflow_reason_planner".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: "Explain the workflow planning decision. Return JSON: {\"reason\":\"one short sentence\"}"
             .to_string(),
     }
 }
