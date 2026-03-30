@@ -147,8 +147,9 @@ pub(crate) fn inject_classification_noise(
     distribution: &[(String, f64)],
     entropy: f64,
 ) -> Vec<(String, f64)> {
-    const ENTROPY_THRESHOLD: f64 = 0.1;
-    const NOISE_SCALE: f64 = 0.05;
+    // Inject noise when entropy is low (over-confident) to prevent deterministic lock-in
+    const ENTROPY_THRESHOLD: f64 = 0.3;  // Increased from 0.1 to catch more over-confidence
+    const NOISE_SCALE: f64 = 0.08;  // Increased from 0.05 for more meaningful perturbation
 
     if entropy >= ENTROPY_THRESHOLD {
         return distribution.to_vec();
@@ -157,7 +158,45 @@ pub(crate) fn inject_classification_noise(
     let mut noisy: Vec<(String, f64)> = distribution
         .iter()
         .map(|(label, p)| {
+            // Add noise proportional to probability (larger probs get more noise)
             let noise = (std::process::id() as f64 * 0.001).sin() * NOISE_SCALE * p;
+            (label.clone(), *p + noise)
+        })
+        .collect();
+
+    // Re-normalize to sum to 1.0
+    let sum: f64 = noisy.iter().map(|(_, p)| *p).sum();
+    if sum > 0.0 {
+        for (_, p) in &mut noisy {
+            *p /= sum;
+            *p = (*p).max(0.001);  // Ensure minimum probability
+        }
+        // Re-normalize after applying minimum
+        let sum2: f64 = noisy.iter().map(|(_, p)| *p).sum();
+        if sum2 > 0.0 {
+            for (_, p) in &mut noisy {
+                *p /= sum2;
+            }
+        }
+    }
+
+    noisy.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    noisy
+}
+
+/// Inject stronger noise for router outputs specifically (when entropy < 0.2)
+pub(crate) fn inject_router_noise(distribution: &[(String, f64)], entropy: f64) -> Vec<(String, f64)> {
+    const ROUTER_ENTROPY_THRESHOLD: f64 = 0.2;
+    const ROUTER_NOISE_SCALE: f64 = 0.12;
+
+    if entropy >= ROUTER_ENTROPY_THRESHOLD {
+        return distribution.to_vec();
+    }
+
+    let mut noisy: Vec<(String, f64)> = distribution
+        .iter()
+        .map(|(label, p)| {
+            let noise = (std::process::id() as f64 * 0.002).sin() * ROUTER_NOISE_SCALE * p;
             (label.clone(), *p + noise)
         })
         .collect();
@@ -166,7 +205,7 @@ pub(crate) fn inject_classification_noise(
     if sum > 0.0 {
         for (_, p) in &mut noisy {
             *p /= sum;
-            *p = (*p).max(0.001);
+            *p = (*p).max(0.005);
         }
         let sum2: f64 = noisy.iter().map(|(_, p)| *p).sum();
         if sum2 > 0.0 {

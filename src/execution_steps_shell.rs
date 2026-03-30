@@ -120,6 +120,30 @@ pub(crate) async fn handle_shell_step(
         return Ok(());
     }
 
+    // Display status message before execution
+    if let Ok(status) = generate_status_message_once(
+        client,
+        chat_url,
+        &Profile {
+            version: 1,
+            name: "status_message_generator".to_string(),
+            base_url: "".to_string(),
+            model: "".to_string(),
+            temperature: 0.3,
+            top_p: 0.95,
+            repeat_penalty: 1.0,
+            reasoning_format: "none".to_string(),
+            max_tokens: 64,
+            timeout_s: 30,
+            system_prompt: "Generate an ultra-concise status message explaining what Elma is doing now. Return JSON: {\"status\":\"one line, max 10 words\"}".to_string(),
+        },
+        "executing",
+        &kind,
+        &purpose,
+    ).await {
+        show_status_message(args, &status);
+    }
+
     let (cmd, execution_mode, artifact_kind, _ask_hint, should_halt, _halt_summary) = preflight_shell_command(
         args,
         client,

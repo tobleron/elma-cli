@@ -67,8 +67,9 @@ pub(crate) async fn infer_digit_router(
 
     let source = if used_logprobs { "logprobs" } else { "token_only" };
 
+    // Apply stronger noise injection for router outputs to prevent over-confidence
     let raw_entropy = route_entropy(&distribution);
-    let distribution = inject_classification_noise(&distribution, raw_entropy);
+    let distribution = inject_router_noise(&distribution, raw_entropy);
 
     let route = distribution
         .first()
@@ -179,6 +180,24 @@ pub(crate) async fn infer_route_prior(
             *p *= 1.0 - capability_p;
         }
     }
+    
+    // Speech-act override: If ACTION_REQUEST is high confidence (>0.6), ensure WORKFLOW route gets consideration
+    let action_request_p = probability_of(&speech_act.distribution, "ACTION_REQUEST");
+    if action_request_p > 0.6 {
+        // Boost non-CHAT routes when user clearly wants action
+        let chat_p = probability_of(&distribution, "CHAT");
+        let workflow_boost = (action_request_p - 0.5) * 0.4;  // Up to 40% boost
+        let non_chat_total: f64 = distribution.iter().filter(|(l, _)| l != "CHAT").map(|(_, p)| *p).sum();
+        
+        for (label, p) in &mut distribution {
+            if label != "CHAT" && non_chat_total > 0.0 {
+                *p += workflow_boost * (*p / non_chat_total);
+            } else if label == "CHAT" {
+                *p *= 1.0 - workflow_boost;
+            }
+        }
+    }
+    
     distribution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let route = distribution
         .first()

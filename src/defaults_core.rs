@@ -163,7 +163,7 @@ pub(crate) fn default_reflection_config(base_url: &str, model: &str) -> Profile 
         name: "reflection".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.5,
+        temperature: 0.7,  // Increased from 0.5 for more balanced assessment
         top_p: 0.95,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
