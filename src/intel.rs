@@ -252,11 +252,11 @@ pub(crate) async fn decide_evidence_mode_once(
 
     // Check if any step actually executed a command
     let has_command_execution = step_results.iter()
-        .any(|s| s.command.is_some() && !s.command.as_ref().unwrap().is_empty());
+        .any(|s| s.command.as_ref().is_some_and(|c| !c.is_empty()));
 
     // Check if step results have artifact_path (indicates output was captured to file)
     let has_artifact = step_results.iter()
-        .any(|s| s.artifact_path.is_some() && !s.artifact_path.as_ref().unwrap().is_empty());
+        .any(|s| s.artifact_path.as_ref().is_some_and(|p| !p.is_empty()));
 
     // Deterministic override for command execution requests
     // This ensures RAW output is shown when user explicitly asks to run/see commands

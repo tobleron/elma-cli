@@ -9,22 +9,22 @@
 ---
 
 ## 🛠️ SURGICAL REFACTOR TASKS (8)
-- [ ] **../../src/defaults.rs**
-  - *Reason:* [Nesting: 0.60, Density: 0.00, Coupling: 0.00] | Drag: 1.60 | LOC: 878/503  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.
-- [ ] **../../src/optimization.rs**
-  - *Reason:* [Nesting: 3.00, Density: 0.05, Coupling: 0.00] | Drag: 4.24 | LOC: 569/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.
-- [ ] **../../src/routing.rs**
-  - *Reason:* [Nesting: 2.40, Density: 0.04, Coupling: 0.00] | Drag: 3.61 | LOC: 651/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.
-- [ ] **../../src/session.rs**
-  - *Reason:* [Nesting: 3.00, Density: 0.04, Coupling: 0.00] | Drag: 4.10 | LOC: 619/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.
-- [ ] **../../src/ui.rs**
-  - *Reason:* [Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.25 | LOC: 948/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.
-- [ ] **../../src/types.rs**
-  - *Reason:* [Nesting: 1.20, Density: 0.01, Coupling: 0.00] | Drag: 2.23 | LOC: 1363/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.
-- [ ] **../../src/orchestration.rs**
-  - *Reason:* [Nesting: 3.00, Density: 0.03, Coupling: 0.00] | Drag: 4.17 | LOC: 1426/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.
-- [ ] **../../src/program.rs**
-  - *Reason:* [Nesting: 2.40, Density: 0.09, Coupling: 0.00] | Drag: 3.65 | LOC: 676/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.
+- [ ] **../../src/app_bootstrap.rs**
+  - *Reason:* [Nesting: 1.80, Density: 0.07, Coupling: 0.00] | Drag: 2.95 | LOC: 674/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.
+- [ ] **../../src/orchestration_loop.rs**
+  - *Reason:* [Nesting: 3.00, Density: 0.04, Coupling: 0.00] | Drag: 4.25 | LOC: 683/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.
+- [ ] **../../src/tool_discovery.rs**
+  - *Reason:* [Nesting: 3.00, Density: 0.05, Coupling: 0.01] | Drag: 4.19 | LOC: 404/400  ⚠️ Trigger: Drag above target (2.60) with file already at 404 LOC.
+- [ ] **../../src/execution_steps.rs**
+  - *Reason:* [Nesting: 5.40, Density: 0.05, Coupling: 0.00] | Drag: 6.63 | LOC: 1360/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.
+- [ ] **../../src/tune_scenario.rs**
+  - *Reason:* [Nesting: 3.60, Density: 0.04, Coupling: 0.00] | Drag: 5.25 | LOC: 531/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.
+- [ ] **../../src/optimization_tune.rs**
+  - *Reason:* [Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.26 | LOC: 484/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.
+- [ ] **../../src/app_chat.rs**
+  - *Reason:* [Nesting: 3.00, Density: 0.05, Coupling: 0.00] | Drag: 4.12 | LOC: 957/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.
+- [ ] **../../src/types_core.rs**
+  - *Reason:* [Nesting: 1.20, Density: 0.01, Coupling: 0.00] | Drag: 2.26 | LOC: 620/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.
 
 ---
 
