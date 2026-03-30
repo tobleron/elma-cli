@@ -1,3 +1,7 @@
+//! @efficiency-role: scenario-spec
+//!
+//! Workflow evaluation suite for calibration.
+
 use crate::*;
 
 pub(crate) async fn evaluate_workflow_suite_impl(

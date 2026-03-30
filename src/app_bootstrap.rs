@@ -1,3 +1,7 @@
+//! @efficiency-role: orchestrator
+//!
+//! App bootstrap and initialization flow.
+
 use crate::app::{AppRuntime, LoadedProfiles};
 use crate::*;
 

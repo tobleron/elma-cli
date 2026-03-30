@@ -1,38 +1,1365 @@
 {
+  "rust": [
+    {
+      "Surgical": {
+        "file": "../../src/defaults.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 0.60, Density: 0.00, Coupling: 0.00] | Drag: 1.60 | LOC: 878/503  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 39.10113895216401,
+        "recommended_splits": 2,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/defaults.rs`",
+          "snapshots": [
+            {
+              "path": "src/defaults.rs",
+              "functions": [
+                {
+                  "name": "default_elma_config",
+                  "signature": "pub(crate) fn default_elma_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 3
+                },
+                {
+                  "name": "default_intention_config",
+                  "signature": "pub(crate) fn default_intention_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 21
+                },
+                {
+                  "name": "default_gate_config",
+                  "signature": "pub(crate) fn default_gate_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 38
+                },
+                {
+                  "name": "default_gate_why_config",
+                  "signature": "pub(crate) fn default_gate_why_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 55
+                },
+                {
+                  "name": "default_tooler_config",
+                  "signature": "pub(crate) fn default_tooler_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 72
+                },
+                {
+                  "name": "default_orchestrator_config",
+                  "signature": "pub(crate) fn default_orchestrator_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 89
+                },
+                {
+                  "name": "default_critic_config",
+                  "signature": "pub(crate) fn default_critic_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 106
+                },
+                {
+                  "name": "default_refinement_config",
+                  "signature": "pub(crate) fn default_refinement_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 123
+                },
+                {
+                  "name": "default_reflection_config",
+                  "signature": "pub(crate) fn default_reflection_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 140
+                },
+                {
+                  "name": "default_logical_reviewer_config",
+                  "signature": "pub(crate) fn default_logical_reviewer_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 157
+                },
+                {
+                  "name": "default_efficiency_reviewer_config",
+                  "signature": "pub(crate) fn default_efficiency_reviewer_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 174
+                },
+                {
+                  "name": "default_risk_reviewer_config",
+                  "signature": "pub(crate) fn default_risk_reviewer_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 191
+                },
+                {
+                  "name": "default_router_config",
+                  "signature": "pub(crate) fn default_router_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 208
+                },
+                {
+                  "name": "default_mode_router_config",
+                  "signature": "pub(crate) fn default_mode_router_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 224
+                },
+                {
+                  "name": "default_speech_act_config",
+                  "signature": "pub(crate) fn default_speech_act_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 240
+                },
+                {
+                  "name": "default_action_type_config",
+                  "signature": "pub(crate) fn default_action_type_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 256
+                },
+                {
+                  "name": "default_planner_master_config",
+                  "signature": "pub(crate) fn default_planner_master_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 273
+                },
+                {
+                  "name": "default_planner_config",
+                  "signature": "pub(crate) fn default_planner_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 290
+                },
+                {
+                  "name": "default_decider_config",
+                  "signature": "pub(crate) fn default_decider_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 307
+                },
+                {
+                  "name": "default_selector_config",
+                  "signature": "pub(crate) fn default_selector_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 323
+                },
+                {
+                  "name": "default_summarizer_config",
+                  "signature": "pub(crate) fn default_summarizer_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 340
+                },
+                {
+                  "name": "default_formatter_config",
+                  "signature": "pub(crate) fn default_formatter_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 357
+                },
+                {
+                  "name": "default_json_outputter_config",
+                  "signature": "pub(crate) fn default_json_outputter_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 374
+                },
+                {
+                  "name": "default_final_answer_extractor_config",
+                  "signature": "pub(crate) fn default_final_answer_extractor_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 391
+                },
+                {
+                  "name": "default_calibration_judge_config",
+                  "signature": "pub(crate) fn default_calibration_judge_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 408
+                },
+                {
+                  "name": "default_complexity_assessor_config",
+                  "signature": "pub(crate) fn default_complexity_assessor_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 425
+                },
+                {
+                  "name": "default_formula_selector_config",
+                  "signature": "pub(crate) fn default_formula_selector_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 442
+                },
+                {
+                  "name": "default_workflow_planner_config",
+                  "signature": "pub(crate) fn default_workflow_planner_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 459
+                },
+                {
+                  "name": "default_evidence_mode_config",
+                  "signature": "pub(crate) fn default_evidence_mode_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 476
+                },
+                {
+                  "name": "default_command_repair_config",
+                  "signature": "pub(crate) fn default_command_repair_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 493
+                },
+                {
+                  "name": "default_task_semantics_guard_config",
+                  "signature": "pub(crate) fn default_task_semantics_guard_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 510
+                },
+                {
+                  "name": "default_execution_sufficiency_config",
+                  "signature": "pub(crate) fn default_execution_sufficiency_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 527
+                },
+                {
+                  "name": "default_outcome_verifier_config",
+                  "signature": "pub(crate) fn default_outcome_verifier_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 544
+                },
+                {
+                  "name": "default_memory_gate_config",
+                  "signature": "pub(crate) fn default_memory_gate_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 561
+                },
+                {
+                  "name": "default_command_preflight_config",
+                  "signature": "pub(crate) fn default_command_preflight_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 578
+                },
+                {
+                  "name": "default_scope_builder_config",
+                  "signature": "pub(crate) fn default_scope_builder_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 595
+                },
+                {
+                  "name": "default_evidence_compactor_config",
+                  "signature": "pub(crate) fn default_evidence_compactor_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 612
+                },
+                {
+                  "name": "default_artifact_classifier_config",
+                  "signature": "pub(crate) fn default_artifact_classifier_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 629
+                },
+                {
+                  "name": "default_result_presenter_config",
+                  "signature": "pub(crate) fn default_result_presenter_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 646
+                },
+                {
+                  "name": "default_claim_checker_config",
+                  "signature": "pub(crate) fn default_claim_checker_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 663
+                },
+                {
+                  "name": "default_intention_tune_config",
+                  "signature": "pub(crate) fn default_intention_tune_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 680
+                },
+                {
+                  "name": "managed_profile_specs",
+                  "signature": "pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'static str, Profile)> {",
+                  "line": 697
+                },
+                {
+                  "name": "get_retry_prompt_variant",
+                  "signature": "pub(crate) fn get_retry_prompt_variant(attempt: u32) -> &'static str {",
+                  "line": 839
+                },
+                {
+                  "name": "default_meta_review_config",
+                  "signature": "pub(crate) fn default_meta_review_config(base_url: &str, model: &str) -> Profile {",
+                  "line": 856
+                },
+                {
+                  "name": "managed_profile_file_names",
+                  "signature": "pub(crate) fn managed_profile_file_names() -> Vec<&'static str> {",
+                  "line": 873
+                }
+              ],
+              "fingerprint": "54b190e48e04bb41234bd34eda22ff9830ce949ba259fc987595885d4e2517f5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Violation": {
+        "file": "../../src/reflection.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/optimization.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.05, Coupling: 0.00] | Drag: 4.24 | LOC: 569/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 21.137258347978907,
+        "recommended_splits": 2,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/optimization.rs`",
+          "snapshots": [
+            {
+              "path": "src/optimization.rs",
+              "functions": [
+                {
+                  "name": "optimize_model",
+                  "signature": "pub(crate) async fn optimize_model(",
+                  "line": 3
+                },
+                {
+                  "name": "make_baseline_report",
+                  "signature": "fn make_baseline_report(",
+                  "line": 480
+                },
+                {
+                  "name": "choose_preferred_baseline",
+                  "signature": "fn choose_preferred_baseline(baselines: &[BaselineAnchorReport]) -> Result<BaselineAnchorReport> {",
+                  "line": 498
+                },
+                {
+                  "name": "evaluate_candidate_stability",
+                  "signature": "async fn evaluate_candidate_stability(",
+                  "line": 517
+                }
+              ],
+              "fingerprint": "88e51982ab7fc3b264af07370e48c9ad51ddd4a2c952119a0bd198616408e979"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/routing.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 2.40, Density: 0.04, Coupling: 0.00] | Drag: 3.61 | LOC: 651/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 28.71351766513057,
+        "recommended_splits": 2,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/routing.rs`",
+          "snapshots": [
+            {
+              "path": "src/routing.rs",
+              "functions": [
+                {
+                  "name": "strip_markdown_wrappers",
+                  "signature": "pub(crate) fn strip_markdown_wrappers(text: &str) -> &str {",
+                  "line": 6
+                },
+                {
+                  "name": "extract_first_json_object",
+                  "signature": "pub(crate) fn extract_first_json_object(text: &str) -> Option<&str> {",
+                  "line": 25
+                },
+                {
+                  "name": "parse_json_loose",
+                  "signature": "pub(crate) fn parse_json_loose<T: DeserializeOwned>(text: &str) -> Result<T> {",
+                  "line": 71
+                },
+                {
+                  "name": "workflow_code_pairs",
+                  "signature": "pub(crate) fn workflow_code_pairs() -> &'static [(&'static str, &'static str)] {",
+                  "line": 82
+                },
+                {
+                  "name": "mode_code_pairs",
+                  "signature": "pub(crate) fn mode_code_pairs() -> &'static [(&'static str, &'static str)] {",
+                  "line": 86
+                },
+                {
+                  "name": "speech_act_code_pairs",
+                  "signature": "pub(crate) fn speech_act_code_pairs() -> &'static [(&'static str, &'static str)] {",
+                  "line": 96
+                },
+                {
+                  "name": "route_label_from_router_output",
+                  "signature": "pub(crate) fn route_label_from_router_output(",
+                  "line": 104
+                },
+                {
+                  "name": "logsumexp",
+                  "signature": "pub(crate) fn logsumexp(values: &[f64]) -> f64 {",
+                  "line": 123
+                },
+                {
+                  "name": "parse_router_distribution",
+                  "signature": "pub(crate) fn parse_router_distribution(",
+                  "line": 132
+                },
+                {
+                  "name": "route_margin",
+                  "signature": "pub(crate) fn route_margin(distribution: &[(String, f64)]) -> f64 {",
+                  "line": 208
+                },
+                {
+                  "name": "route_entropy",
+                  "signature": "pub(crate) fn route_entropy(distribution: &[(String, f64)]) -> f64 {",
+                  "line": 214
+                },
+                {
+                  "name": "inject_classification_noise",
+                  "signature": "pub(crate) fn inject_classification_noise(",
+                  "line": 232
+                },
+                {
+                  "name": "format_route_distribution",
+                  "signature": "pub(crate) fn format_route_distribution(distribution: &[(String, f64)]) -> String {",
+                  "line": 278
+                },
+                {
+                  "name": "probability_of",
+                  "signature": "pub(crate) fn probability_of(distribution: &[(String, f64)], label: &str) -> f64 {",
+                  "line": 286
+                },
+                {
+                  "name": "test_route_entropy",
+                  "signature": "fn test_route_entropy() {",
+                  "line": 299
+                },
+                {
+                  "name": "test_inject_classification_noise_skips_high_entropy",
+                  "signature": "fn test_inject_classification_noise_skips_high_entropy() {",
+                  "line": 310
+                },
+                {
+                  "name": "test_inject_classification_noise_adds_to_low_entropy",
+                  "signature": "fn test_inject_classification_noise_adds_to_low_entropy() {",
+                  "line": 321
+                },
+                {
+                  "name": "test_inject_classification_noise_preserves_minimum_probability",
+                  "signature": "fn test_inject_classification_noise_preserves_minimum_probability() {",
+                  "line": 337
+                },
+                {
+                  "name": "strip_markdown_wrappers_removes_code_fences",
+                  "signature": "fn strip_markdown_wrappers_removes_code_fences() {",
+                  "line": 358
+                },
+                {
+                  "name": "strip_markdown_wrappers_handles_no_fences",
+                  "signature": "fn strip_markdown_wrappers_handles_no_fences() {",
+                  "line": 371
+                },
+                {
+                  "name": "strip_markdown_wrappers_handles_prose_before_fence",
+                  "signature": "fn strip_markdown_wrappers_handles_prose_before_fence() {",
+                  "line": 378
+                },
+                {
+                  "name": "extract_json_from_markdown_wrapped",
+                  "signature": "fn extract_json_from_markdown_wrapped() {",
+                  "line": 392
+                },
+                {
+                  "name": "extract_json_from_pure_json",
+                  "signature": "fn extract_json_from_pure_json() {",
+                  "line": 415
+                },
+                {
+                  "name": "extract_json_with_prose_after",
+                  "signature": "fn extract_json_with_prose_after() {",
+                  "line": 423
+                },
+                {
+                  "name": "infer_digit_router",
+                  "signature": "pub(crate) async fn infer_digit_router(",
+                  "line": 450
+                },
+                {
+                  "name": "infer_route_prior",
+                  "signature": "pub(crate) async fn infer_route_prior(",
+                  "line": 537
+                }
+              ],
+              "fingerprint": "faee5918bb3179fb7732a4b3d81c61a8b2c8e0d5babe4dd012f5b731e480fbde"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Violation": {
+        "file": "../../src/intel.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/session.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.04, Coupling: 0.00] | Drag: 4.10 | LOC: 619/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 26.000161550888528,
+        "recommended_splits": 2,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/session.rs`",
+          "snapshots": [
+            {
+              "path": "src/session.rs",
+              "functions": [
+                {
+                  "name": "new_session_id",
+                  "signature": "pub(crate) fn new_session_id() -> Result<String> {",
+                  "line": 14
+                },
+                {
+                  "name": "ensure_session_layout",
+                  "signature": "pub(crate) fn ensure_session_layout(sessions_root: &PathBuf) -> Result<SessionPaths> {",
+                  "line": 21
+                },
+                {
+                  "name": "next_shell_seq",
+                  "signature": "pub(crate) fn next_shell_seq(shell_dir: &PathBuf) -> Result<u32> {",
+                  "line": 66
+                },
+                {
+                  "name": "write_shell_action",
+                  "signature": "pub(crate) fn write_shell_action(shell_dir: &PathBuf, cmd_line: &str) -> Result<PathBuf> {",
+                  "line": 86
+                },
+                {
+                  "name": "write_shell_output",
+                  "signature": "pub(crate) fn write_shell_output(shell_dir: &PathBuf, seq_path: &PathBuf, output: &str) -> Result<PathBuf> {",
+                  "line": 94
+                },
+                {
+                  "name": "next_artifact_seq",
+                  "signature": "pub(crate) fn next_artifact_seq(artifacts_dir: &PathBuf) -> Result<u32> {",
+                  "line": 104
+                },
+                {
+                  "name": "reserve_artifact_path",
+                  "signature": "pub(crate) fn reserve_artifact_path(",
+                  "line": 124
+                },
+                {
+                  "name": "append_artifact_manifest_record",
+                  "signature": "pub(crate) fn append_artifact_manifest_record(",
+                  "line": 146
+                },
+                {
+                  "name": "next_plan_seq",
+                  "signature": "pub(crate) fn next_plan_seq(plans_dir: &PathBuf) -> Result<u32> {",
+                  "line": 162
+                },
+                {
+                  "name": "write_plan_file",
+                  "signature": "pub(crate) fn write_plan_file(plans_dir: &PathBuf, content: &str) -> Result<PathBuf> {",
+                  "line": 181
+                },
+                {
+                  "name": "append_master_link",
+                  "signature": "pub(crate) fn append_master_link(plans_dir: &PathBuf, plan_path: &PathBuf, title: &str) -> Result<()> {",
+                  "line": 188
+                },
+                {
+                  "name": "next_decision_seq",
+                  "signature": "pub(crate) fn next_decision_seq(decisions_dir: &PathBuf) -> Result<u32> {",
+                  "line": 205
+                },
+                {
+                  "name": "write_decision",
+                  "signature": "pub(crate) fn write_decision(decisions_dir: &PathBuf, word: &str) -> Result<PathBuf> {",
+                  "line": 221
+                },
+                {
+                  "name": "next_gate_why_seq",
+                  "signature": "pub(crate) fn next_gate_why_seq(tune_dir: &PathBuf) -> Result<u32> {",
+                  "line": 229
+                },
+                {
+                  "name": "write_gate_why",
+                  "signature": "pub(crate) fn write_gate_why(tune_dir: &PathBuf, text: &str) -> Result<PathBuf> {",
+                  "line": 247
+                },
+                {
+                  "name": "write_thinking_log",
+                  "signature": "pub(crate) fn write_thinking_log(",
+                  "line": 255
+                },
+                {
+                  "name": "append_thinking_to_manifest",
+                  "signature": "pub(crate) fn append_thinking_to_manifest(",
+                  "line": 266
+                },
+                {
+                  "name": "save_goal_state",
+                  "signature": "pub(crate) fn save_goal_state(",
+                  "line": 294
+                },
+                {
+                  "name": "load_goal_state",
+                  "signature": "pub(crate) fn load_goal_state(",
+                  "line": 307
+                },
+                {
+                  "name": "save_json",
+                  "signature": "fn save_json<T: Serialize + ?Sized>(path: &PathBuf, data: &T) -> Result<()> {",
+                  "line": 323
+                },
+                {
+                  "name": "load_json",
+                  "signature": "fn load_json<T: DeserializeOwned>(path: &PathBuf) -> Option<T> {",
+                  "line": 332
+                },
+                {
+                  "name": "ensure_hierarchy_dir",
+                  "signature": "pub(crate) fn ensure_hierarchy_dir(session_root: &PathBuf) -> Result<PathBuf> {",
+                  "line": 341
+                },
+                {
+                  "name": "save_hierarchy",
+                  "signature": "pub(crate) fn save_hierarchy(",
+                  "line": 355
+                },
+                {
+                  "name": "save_hierarchy_progress",
+                  "signature": "pub(crate) fn save_hierarchy_progress(",
+                  "line": 388
+                },
+                {
+                  "name": "load_hierarchy_progress",
+                  "signature": "pub(crate) fn load_hierarchy_progress(",
+                  "line": 397
+                },
+                {
+                  "name": "load_hierarchy_goal",
+                  "signature": "pub(crate) fn load_hierarchy_goal(",
+                  "line": 405
+                },
+                {
+                  "name": "load_hierarchy_subgoals",
+                  "signature": "pub(crate) fn load_hierarchy_subgoals(",
+                  "line": 413
+                },
+                {
+                  "name": "load_hierarchy_tasks",
+                  "signature": "pub(crate) fn load_hierarchy_tasks(",
+                  "line": 421
+                },
+                {
+                  "name": "load_hierarchy_methods",
+                  "signature": "pub(crate) fn load_hierarchy_methods(",
+                  "line": 429
+                },
+                {
+                  "name": "has_hierarchy",
+                  "signature": "pub(crate) fn has_hierarchy(session_root: &PathBuf) -> bool {",
+                  "line": 437
+                },
+                {
+                  "name": "load_full_hierarchy",
+                  "signature": "pub(crate) fn load_full_hierarchy(",
+                  "line": 442
+                },
+                {
+                  "name": "timeout",
+                  "signature": "pub(crate) fn timeout(component: &str, message: &str, last_action: Option<String>) -> Self {",
+                  "line": 480
+                },
+                {
+                  "name": "api_error",
+                  "signature": "pub(crate) fn api_error(component: &str, message: &str, last_action: Option<String>) -> Self {",
+                  "line": 494
+                },
+                {
+                  "name": "parse_error",
+                  "signature": "pub(crate) fn parse_error(component: &str, message: &str, last_action: Option<String>) -> Self {",
+                  "line": 508
+                },
+                {
+                  "name": "panic",
+                  "signature": "pub(crate) fn panic(component: &str, message: &str, last_action: Option<String>) -> Self {",
+                  "line": 522
+                },
+                {
+                  "name": "write_session_error",
+                  "signature": "pub(crate) fn write_session_error(",
+                  "line": 538
+                },
+                {
+                  "name": "write_session_status",
+                  "signature": "pub(crate) fn write_session_status(",
+                  "line": 551
+                },
+                {
+                  "name": "install_panic_hook",
+                  "signature": "pub(crate) fn install_panic_hook(session_root: Option<PathBuf>) {",
+                  "line": 577
+                }
+              ],
+              "fingerprint": "5e9ce59cfc1b92ae3e6f0bbd708e7c89ea76a447a778d5cb5c4c286380ee3d1e"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/ui.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.25 | LOC: 948/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 59.04894514767932,
+        "recommended_splits": 2,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/ui.rs`",
+          "snapshots": [
+            {
+              "path": "src/ui.rs",
+              "functions": [
+                {
+                  "name": "prompt_line",
+                  "signature": "pub(crate) fn prompt_line(prompt: &str) -> Result<Option<String>> {",
+                  "line": 3
+                },
+                {
+                  "name": "user_prompt_label",
+                  "signature": "pub(crate) fn user_prompt_label(args: &Args) -> String {",
+                  "line": 16
+                },
+                {
+                  "name": "ansi_grey",
+                  "signature": "pub(crate) fn ansi_grey(s: &str) -> String {",
+                  "line": 24
+                },
+                {
+                  "name": "ansi_dim_gray",
+                  "signature": "pub(crate) fn ansi_dim_gray(s: &str) -> String {",
+                  "line": 29
+                },
+                {
+                  "name": "ansi_orange",
+                  "signature": "pub(crate) fn ansi_orange(s: &str) -> String {",
+                  "line": 34
+                },
+                {
+                  "name": "ansi_pale_yellow",
+                  "signature": "pub(crate) fn ansi_pale_yellow(s: &str) -> String {",
+                  "line": 39
+                },
+                {
+                  "name": "ansi_paler_yellow",
+                  "signature": "pub(crate) fn ansi_paler_yellow(s: &str) -> String {",
+                  "line": 44
+                },
+                {
+                  "name": "ansi_soft_gold",
+                  "signature": "pub(crate) fn ansi_soft_gold(s: &str) -> String {",
+                  "line": 49
+                },
+                {
+                  "name": "ansi_soft_green",
+                  "signature": "pub(crate) fn ansi_soft_green(s: &str) -> String {",
+                  "line": 54
+                },
+                {
+                  "name": "trace_log_state",
+                  "signature": "pub(crate) fn trace_log_state() -> &'static Mutex<Option<PathBuf>> {",
+                  "line": 65
+                },
+                {
+                  "name": "reasoning_display_state",
+                  "signature": "pub(crate) fn reasoning_display_state() -> &'static Mutex<(bool, bool)> {",
+                  "line": 69
+                },
+                {
+                  "name": "json_outputter_state",
+                  "signature": "pub(crate) fn json_outputter_state() -> &'static Mutex<Option<Profile>> {",
+                  "line": 73
+                },
+                {
+                  "name": "final_answer_extractor_state",
+                  "signature": "pub(crate) fn final_answer_extractor_state() -> &'static Mutex<Option<Profile>> {",
+                  "line": 77
+                },
+                {
+                  "name": "model_behavior_state",
+                  "signature": "pub(crate) fn model_behavior_state() -> &'static Mutex<Option<ModelBehaviorProfile>> {",
+                  "line": 81
+                },
+                {
+                  "name": "set_trace_log_path",
+                  "signature": "pub(crate) fn set_trace_log_path(path: Option<PathBuf>) {",
+                  "line": 85
+                },
+                {
+                  "name": "set_reasoning_display",
+                  "signature": "pub(crate) fn set_reasoning_display(show_terminal: bool, no_color: bool) {",
+                  "line": 91
+                },
+                {
+                  "name": "set_json_outputter_profile",
+                  "signature": "pub(crate) fn set_json_outputter_profile(profile: Option<Profile>) {",
+                  "line": 97
+                },
+                {
+                  "name": "set_final_answer_extractor_profile",
+                  "signature": "pub(crate) fn set_final_answer_extractor_profile(profile: Option<Profile>) {",
+                  "line": 103
+                },
+                {
+                  "name": "set_model_behavior_profile",
+                  "signature": "pub(crate) fn set_model_behavior_profile(profile: Option<ModelBehaviorProfile>) {",
+                  "line": 109
+                },
+                {
+                  "name": "append_trace_log_line",
+                  "signature": "pub(crate) fn append_trace_log_line(line: &str) {",
+                  "line": 115
+                },
+                {
+                  "name": "append_reasoning_audit_record",
+                  "signature": "pub(crate) fn append_reasoning_audit_record(",
+                  "line": 129
+                },
+                {
+                  "name": "maybe_display_reasoning_trace",
+                  "signature": "pub(crate) fn maybe_display_reasoning_trace(resp: &ChatCompletionResponse) {",
+                  "line": 173
+                },
+                {
+                  "name": "trace",
+                  "signature": "pub(crate) fn trace(args: &Args, msg: &str) {",
+                  "line": 196
+                },
+                {
+                  "name": "trace_verbose",
+                  "signature": "pub(crate) fn trace_verbose(verbose: bool, msg: &str) {",
+                  "line": 202
+                },
+                {
+                  "name": "show_process_step_verbose",
+                  "signature": "pub(crate) fn show_process_step_verbose(verbose: bool, category: &str, msg: &str) {",
+                  "line": 209
+                },
+                {
+                  "name": "show_process_step",
+                  "signature": "pub(crate) fn show_process_step(args: &Args, category: &str, msg: &str) {",
+                  "line": 217
+                },
+                {
+                  "name": "show_intel_summary",
+                  "signature": "pub(crate) fn show_intel_summary(verbose: bool, summary: &str) {",
+                  "line": 223
+                },
+                {
+                  "name": "calibration_progress",
+                  "signature": "pub(crate) fn calibration_progress(args: &Args, msg: &str) {",
+                  "line": 231
+                },
+                {
+                  "name": "operator_trace",
+                  "signature": "pub(crate) fn operator_trace(args: &Args, msg: &str) {",
+                  "line": 240
+                },
+                {
+                  "name": "shell_command_trace",
+                  "signature": "pub(crate) fn shell_command_trace(args: &Args, cmd: &str) {",
+                  "line": 252
+                },
+                {
+                  "name": "print_elma_message",
+                  "signature": "pub(crate) fn print_elma_message(args: &Args, text: &str) {",
+                  "line": 265
+                },
+                {
+                  "name": "strip_think_tags",
+                  "signature": "pub(crate) fn strip_think_tags(s: &str) -> String {",
+                  "line": 278
+                },
+                {
+                  "name": "describe_operator_intent",
+                  "signature": "pub(crate) fn describe_operator_intent(",
+                  "line": 283
+                },
+                {
+                  "name": "squash_blank_lines",
+                  "signature": "pub(crate) fn squash_blank_lines(s: &str) -> String {",
+                  "line": 324
+                },
+                {
+                  "name": "split_llama_sentinel_reasoning",
+                  "signature": "pub(crate) fn split_llama_sentinel_reasoning(content: &str) -> (String, Option<String>) {",
+                  "line": 353
+                },
+                {
+                  "name": "split_thinking_and_final",
+                  "signature": "pub(crate) fn split_thinking_and_final(",
+                  "line": 365
+                },
+                {
+                  "name": "extract_final_line",
+                  "signature": "pub(crate) fn extract_final_line(text: &str, prefix: &str) -> Option<String> {",
+                  "line": 374
+                },
+                {
+                  "name": "remove_final_lines",
+                  "signature": "pub(crate) fn remove_final_lines(text: &str, prefix: &str) -> String {",
+                  "line": 391
+                },
+                {
+                  "name": "effective_reasoning_format",
+                  "signature": "fn effective_reasoning_format(req: &ChatCompletionRequest) -> Option<String> {",
+                  "line": 408
+                },
+                {
+                  "name": "current_model_behavior_profile",
+                  "signature": "fn current_model_behavior_profile() -> Option<ModelBehaviorProfile> {",
+                  "line": 434
+                },
+                {
+                  "name": "final_answer_extractor_profile",
+                  "signature": "fn final_answer_extractor_profile() -> Option<Profile> {",
+                  "line": 441
+                },
+                {
+                  "name": "request_expects_json",
+                  "signature": "fn request_expects_json(req: &ChatCompletionRequest) -> bool {",
+                  "line": 448
+                },
+                {
+                  "name": "maybe_cap_auto_reasoning_tokens",
+                  "signature": "fn maybe_cap_auto_reasoning_tokens(req: &mut ChatCompletionRequest) -> Option<u32> {",
+                  "line": 460
+                },
+                {
+                  "name": "response_needs_text_finalizer",
+                  "signature": "fn response_needs_text_finalizer(",
+                  "line": 490
+                },
+                {
+                  "name": "finalize_text_response_once",
+                  "signature": "async fn finalize_text_response_once(",
+                  "line": 514
+                },
+                {
+                  "name": "chat_once_base",
+                  "signature": "async fn chat_once_base(",
+                  "line": 570
+                },
+                {
+                  "name": "chat_once",
+                  "signature": "pub(crate) async fn chat_once(",
+                  "line": 655
+                },
+                {
+                  "name": "chat_once_with_timeout",
+                  "signature": "pub(crate) async fn chat_once_with_timeout(",
+                  "line": 699
+                },
+                {
+                  "name": "extract_response_text",
+                  "signature": "pub(crate) fn extract_response_text(resp: &ChatCompletionResponse) -> String {",
+                  "line": 741
+                },
+                {
+                  "name": "extract_response_reasoning",
+                  "signature": "pub(crate) fn extract_response_reasoning(resp: &ChatCompletionResponse) -> String {",
+                  "line": 749
+                },
+                {
+                  "name": "json_outputter_profile",
+                  "signature": "fn json_outputter_profile() -> Option<Profile> {",
+                  "line": 756
+                },
+                {
+                  "name": "structured_output_context",
+                  "signature": "fn structured_output_context(req: &ChatCompletionRequest) -> (String, String) {",
+                  "line": 763
+                },
+                {
+                  "name": "canonical_json_text",
+                  "signature": "fn canonical_json_text(text: &str) -> String {",
+                  "line": 780
+                },
+                {
+                  "name": "compile_json_once",
+                  "signature": "async fn compile_json_once(",
+                  "line": 787
+                },
+                {
+                  "name": "legacy_repair_json_text",
+                  "signature": "async fn legacy_repair_json_text(",
+                  "line": 829
+                },
+                {
+                  "name": "chat_json_text_with_repair",
+                  "signature": "async fn chat_json_text_with_repair(",
+                  "line": 866
+                },
+                {
+                  "name": "chat_json_with_repair",
+                  "signature": "pub(crate) async fn chat_json_with_repair<T: DeserializeOwned>(",
+                  "line": 893
+                },
+                {
+                  "name": "chat_json_with_repair_timeout",
+                  "signature": "pub(crate) async fn chat_json_with_repair_timeout<T: DeserializeOwned>(",
+                  "line": 905
+                },
+                {
+                  "name": "chat_json_with_repair_text",
+                  "signature": "pub(crate) async fn chat_json_with_repair_text<T: DeserializeOwned>(",
+                  "line": 915
+                },
+                {
+                  "name": "chat_json_with_repair_text_timeout",
+                  "signature": "pub(crate) async fn chat_json_with_repair_text_timeout<T: DeserializeOwned>(",
+                  "line": 927
+                },
+                {
+                  "name": "keeps_separated_reasoning_when_content_is_empty",
+                  "signature": "fn keeps_separated_reasoning_when_content_is_empty() {",
+                  "line": 943
+                }
+              ],
+              "fingerprint": "85f94b17d349308b95dda094222bc129da983e98fbd1d5a92676b6ba3e14f259"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/types.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 1.20, Density: 0.01, Coupling: 0.00] | Drag: 2.23 | LOC: 1363/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 98.52861335289802,
+        "recommended_splits": 3,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/types.rs`",
+          "snapshots": [
+            {
+              "path": "src/types.rs",
+              "functions": [
+                {
+                  "name": "new",
+                  "signature": "pub fn new(objective: String) -> Self {",
+                  "line": 39
+                },
+                {
+                  "name": "complete_subgoal",
+                  "signature": "pub fn complete_subgoal(&mut self, subgoal: String) {",
+                  "line": 55
+                },
+                {
+                  "name": "add_pending_subgoal",
+                  "signature": "pub fn add_pending_subgoal(&mut self, subgoal: String) {",
+                  "line": 67
+                },
+                {
+                  "name": "clear",
+                  "signature": "pub fn clear(&mut self) {",
+                  "line": 80
+                },
+                {
+                  "name": "has_active_goal",
+                  "signature": "pub fn has_active_goal(&self) -> bool {",
+                  "line": 88
+                },
+                {
+                  "name": "default_runtime_safe",
+                  "signature": "fn default_runtime_safe() -> bool {",
+                  "line": 374
+                },
+                {
+                  "name": "from",
+                  "signature": "fn from(decision: &RouteDecision) -> Self {",
+                  "line": 610
+                },
+                {
+                  "name": "id",
+                  "signature": "pub(crate) fn id(&self) -> &str {",
+                  "line": 741
+                },
+                {
+                  "name": "kind",
+                  "signature": "pub(crate) fn kind(&self) -> &str {",
+                  "line": 754
+                },
+                {
+                  "name": "purpose",
+                  "signature": "pub(crate) fn purpose(&self) -> &str {",
+                  "line": 767
+                },
+                {
+                  "name": "id",
+                  "signature": "pub fn id(&self) -> &str {",
+                  "line": 1346
+                },
+                {
+                  "name": "depth",
+                  "signature": "pub fn depth(&self) -> u8 {",
+                  "line": 1355
+                }
+              ],
+              "fingerprint": "2e5e2b55ff7ae87e9135fcaee72c11c25e88c5286687132b1cd422866a4794ab"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Violation": {
+        "file": "../../src/snapshot.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/orchestration.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.03, Coupling: 0.00] | Drag: 4.17 | LOC: 1426/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 106.77251051893407,
+        "recommended_splits": 4,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/orchestration.rs`",
+          "snapshots": [
+            {
+              "path": "src/orchestration.rs",
+              "functions": [
+                {
+                  "name": "fallback_formula_for_route",
+                  "signature": "fn fallback_formula_for_route(route: &str, needs_evidence: bool) -> String {",
+                  "line": 4
+                },
+                {
+                  "name": "planning_prior_from_workflow_plan",
+                  "signature": "fn planning_prior_from_workflow_plan(",
+                  "line": 24
+                },
+                {
+                  "name": "derive_planning_prior",
+                  "signature": "pub(crate) async fn derive_planning_prior(",
+                  "line": 67
+                },
+                {
+                  "name": "merged_program_from_history",
+                  "signature": "fn merged_program_from_history(plan: &AgentPlan) -> Program {",
+                  "line": 181
+                },
+                {
+                  "name": "next_program_is_stale",
+                  "signature": "fn next_program_is_stale(plan: &AgentPlan, next_program: &Program) -> bool {",
+                  "line": 192
+                },
+                {
+                  "name": "program_has_shell_or_edit",
+                  "signature": "fn program_has_shell_or_edit(program: &Program) -> bool {",
+                  "line": 196
+                },
+                {
+                  "name": "step_results_have_shell_or_edit",
+                  "signature": "fn step_results_have_shell_or_edit(step_results: &[StepResult]) -> bool {",
+                  "line": 200
+                },
+                {
+                  "name": "run_staged_reviewers_once",
+                  "signature": "async fn run_staged_reviewers_once(",
+                  "line": 207
+                },
+                {
+                  "name": "run_autonomous_loop",
+                  "signature": "pub(crate) async fn run_autonomous_loop(",
+                  "line": 323
+                },
+                {
+                  "name": "orchestrate_program_once",
+                  "signature": "pub(crate) async fn orchestrate_program_once(",
+                  "line": 850
+                },
+                {
+                  "name": "recover_program_once",
+                  "signature": "pub(crate) async fn recover_program_once(",
+                  "line": 879
+                },
+                {
+                  "name": "run_critic_once",
+                  "signature": "pub(crate) async fn run_critic_once(",
+                  "line": 914
+                },
+                {
+                  "name": "generate_final_answer_once",
+                  "signature": "pub(crate) async fn generate_final_answer_once(",
+                  "line": 939
+                },
+                {
+                  "name": "judge_final_answer_once",
+                  "signature": "pub(crate) async fn judge_final_answer_once(",
+                  "line": 1026
+                },
+                {
+                  "name": "orchestrate_with_retries",
+                  "signature": "pub(crate) async fn orchestrate_with_retries(",
+                  "line": 1050
+                },
+                {
+                  "name": "build_program_with_retry",
+                  "signature": "async fn build_program_with_retry(",
+                  "line": 1233
+                },
+                {
+                  "name": "synthesize_meta_review",
+                  "signature": "async fn synthesize_meta_review(",
+                  "line": 1302
+                },
+                {
+                  "name": "try_hierarchical_decomposition",
+                  "signature": "pub async fn try_hierarchical_decomposition(",
+                  "line": 1378
+                }
+              ],
+              "fingerprint": "0061fee0becb0ff36fd68b2b81c45ac3efb78bfe31131b9ab66ebed905404a85"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/program.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 2.40, Density: 0.09, Coupling: 0.00] | Drag: 3.65 | LOC: 676/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 31.252958579881657,
+        "recommended_splits": 2,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/program.rs`",
+          "snapshots": [
+            {
+              "path": "src/program.rs",
+              "functions": [
+                {
+                  "name": "program_safety_check",
+                  "signature": "pub(crate) fn program_safety_check(cmd: &str) -> bool {",
+                  "line": 3
+                },
+                {
+                  "name": "step_kind",
+                  "signature": "pub(crate) fn step_kind(s: &Step) -> &'static str {",
+                  "line": 7
+                },
+                {
+                  "name": "step_id",
+                  "signature": "pub(crate) fn step_id(s: &Step) -> &str {",
+                  "line": 20
+                },
+                {
+                  "name": "step_common",
+                  "signature": "pub(crate) fn step_common(s: &Step) -> &StepCommon {",
+                  "line": 33
+                },
+                {
+                  "name": "step_purpose",
+                  "signature": "pub(crate) fn step_purpose(s: &Step) -> String {",
+                  "line": 46
+                },
+                {
+                  "name": "step_success_condition",
+                  "signature": "pub(crate) fn step_success_condition(s: &Step) -> String {",
+                  "line": 63
+                },
+                {
+                  "name": "step_depends_on",
+                  "signature": "pub(crate) fn step_depends_on(s: &Step) -> Vec<String> {",
+                  "line": 67
+                },
+                {
+                  "name": "is_command_allowed",
+                  "signature": "pub(crate) fn is_command_allowed(cmd: &str) -> bool {",
+                  "line": 71
+                },
+                {
+                  "name": "command_is_readonly",
+                  "signature": "pub(crate) fn command_is_readonly(cmd: &str) -> bool {",
+                  "line": 98
+                },
+                {
+                  "name": "program_signature",
+                  "signature": "pub(crate) fn program_signature(program: &Program) -> String {",
+                  "line": 137
+                },
+                {
+                  "name": "evaluate_program_for_scenario",
+                  "signature": "pub(crate) fn evaluate_program_for_scenario(",
+                  "line": 161
+                },
+                {
+                  "name": "capability_guard_threshold",
+                  "signature": "pub(crate) fn capability_guard_threshold(route_decision: &RouteDecision) -> bool {",
+                  "line": 288
+                },
+                {
+                  "name": "apply_capability_guard",
+                  "signature": "pub(crate) fn apply_capability_guard(",
+                  "line": 296
+                },
+                {
+                  "name": "is_command_sane",
+                  "signature": "pub(crate) fn is_command_sane(cmd: &str) -> bool {",
+                  "line": 341
+                },
+                {
+                  "name": "should_classify_artifacts",
+                  "signature": "pub(crate) fn should_classify_artifacts(",
+                  "line": 353
+                },
+                {
+                  "name": "edit_operation_is_supported",
+                  "signature": "pub(crate) fn edit_operation_is_supported(op: &str) -> bool {",
+                  "line": 363
+                },
+                {
+                  "name": "resolve_workspace_edit_path",
+                  "signature": "pub(crate) fn resolve_workspace_edit_path(workdir: &Path, raw_path: &str) -> Result<PathBuf> {",
+                  "line": 367
+                },
+                {
+                  "name": "preview_text",
+                  "signature": "pub(crate) fn preview_text(text: &str, max_lines: usize) -> String {",
+                  "line": 387
+                },
+                {
+                  "name": "resolve_command_placeholders",
+                  "signature": "pub(crate) fn resolve_command_placeholders(",
+                  "line": 396
+                },
+                {
+                  "name": "command_placeholder_refs",
+                  "signature": "pub(crate) fn command_placeholder_refs(cmd: &str) -> Vec<String> {",
+                  "line": 438
+                },
+                {
+                  "name": "program_step_json",
+                  "signature": "pub(crate) fn program_step_json(step: &Step) -> serde_json::Value {",
+                  "line": 459
+                },
+                {
+                  "name": "step_result_json",
+                  "signature": "pub(crate) fn step_result_json(result: &StepResult) -> serde_json::Value {",
+                  "line": 539
+                },
+                {
+                  "name": "run_shell_one_liner",
+                  "signature": "pub(crate) fn run_shell_one_liner(",
+                  "line": 561
+                },
+                {
+                  "name": "hash_short",
+                  "signature": "fn hash_short(text: &str) -> u64 {",
+                  "line": 669
+                }
+              ],
+              "fingerprint": "24b7337c52b88d1a7a7d84b38b22b3b104d7259b6cf7d46a69ed6a490c805d90"
+            }
+          ]
+        }
+      }
+    }
+  ],
   "system": [
     {
       "Ambiguity": {
-        "file": "../../src/execution_steps.rs",
+        "file": "../../src/tool_discovery.rs",
         "strategy": ""
       }
     },
     {
       "Ambiguity": {
-        "file": "../../src/evaluation_workflow.rs",
+        "file": "../../src/verification.rs",
         "strategy": ""
       }
     },
     {
       "Ambiguity": {
-        "file": "../../src/app_chat.rs",
+        "file": "../../src/reflection.rs",
         "strategy": ""
       }
     },
     {
       "Ambiguity": {
-        "file": "../../src/tune_summary.rs",
-        "strategy": ""
-      }
-    },
-    {
-      "Ambiguity": {
-        "file": "../../src/app_bootstrap.rs",
-        "strategy": ""
-      }
-    },
-    {
-      "Ambiguity": {
-        "file": "../../src/evaluation_routing.rs",
+        "file": "../../src/decomposition.rs",
         "strategy": ""
       }
     },
@@ -44,7 +1371,31 @@
     },
     {
       "Ambiguity": {
-        "file": "../../src/tune_setup.rs",
+        "file": "../../src/execution_steps.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
+        "file": "../../src/evaluation_routing.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
+        "file": "../../src/tune_summary.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
+        "file": "../../src/snapshot.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
+        "file": "../../src/refinement.rs",
         "strategy": ""
       }
     },
@@ -56,7 +1407,37 @@
     },
     {
       "Ambiguity": {
+        "file": "../../src/app_bootstrap.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
+        "file": "../../src/thinking_content.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
         "file": "../../src/tune_runtime.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
+        "file": "../../src/evaluation_workflow.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
+        "file": "../../src/tune_setup.rs",
+        "strategy": ""
+      }
+    },
+    {
+      "Ambiguity": {
+        "file": "../../src/app_chat.rs",
         "strategy": ""
       }
     }

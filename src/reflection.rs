@@ -1,3 +1,5 @@
+//! @efficiency-role: domain-logic
+//!
 //! Pre-Execution Reflection Module
 //!
 //! This module provides pre-execution reflection capabilities,

@@ -1,3 +1,7 @@
+//! @efficiency-role: scenario-spec
+//!
+//! Runtime calibration suite execution.
+
 use crate::tune::{RuntimeAggregation, TuneResources};
 use crate::*;
 

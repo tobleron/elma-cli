@@ -1,3 +1,5 @@
+//! @efficiency-role: domain-logic
+//!
 //! Hierarchical Task Decomposition Module (Task 023)
 //!
 //! This module provides complexity-triggered hierarchical decomposition:

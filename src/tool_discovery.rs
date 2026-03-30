@@ -1,3 +1,5 @@
+//! @efficiency-role: service-orchestrator
+//!
 //! Autonomous Tool Discovery Module (Task 015)
 //!
 //! DESIGN RATIONALE:

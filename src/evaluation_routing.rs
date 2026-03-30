@@ -1,3 +1,7 @@
+//! @efficiency-role: scenario-spec
+//!
+//! Routing evaluation suite for calibration.
+
 use crate::*;
 
 pub(crate) async fn evaluate_routing_suite_impl(

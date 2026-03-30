@@ -1,3 +1,7 @@
+//! @efficiency-role: scenario-spec
+//!
+//! Response evaluation suite for calibration.
+
 use crate::*;
 
 pub(crate) async fn evaluate_response_suite_impl(

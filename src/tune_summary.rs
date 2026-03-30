@@ -1,3 +1,7 @@
+//! @efficiency-role: scenario-spec
+//!
+//! Calibration summary report generation.
+
 use crate::tune::{RuntimeAggregation, TuneResources};
 use crate::*;
 

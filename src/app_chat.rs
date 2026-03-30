@@ -1,3 +1,7 @@
+//! @efficiency-role: orchestrator
+//!
+//! App chat command handlers and user interaction.
+
 use crate::app::AppRuntime;
 use crate::*;
 

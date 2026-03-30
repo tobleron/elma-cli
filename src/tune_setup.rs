@@ -1,3 +1,7 @@
+//! @efficiency-role: scenario-spec
+//!
+//! Tuning resources preparation and setup.
+
 use crate::tune::TuneResources;
 use crate::*;
 

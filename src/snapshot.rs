@@ -1,3 +1,7 @@
+//! @efficiency-role: service-orchestrator
+//!
+//! Workspace snapshot creation and management.
+
 use crate::*;
 use std::collections::HashSet;
 

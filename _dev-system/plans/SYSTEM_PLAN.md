@@ -8,17 +8,24 @@
 
 ---
 
-## ⚠️ PRECURSOR: AMBIGUITY RESOLUTION (10)
-- [ ] `../../src/execution_steps.rs`
-- [ ] `../../src/evaluation_workflow.rs`
-- [ ] `../../src/app_chat.rs`
-- [ ] `../../src/tune_summary.rs`
-- [ ] `../../src/app_bootstrap.rs`
-- [ ] `../../src/evaluation_routing.rs`
+## ⚠️ PRECURSOR: AMBIGUITY RESOLUTION (17)
+- [ ] `../../src/tool_discovery.rs`
+- [ ] `../../src/verification.rs`
+- [ ] `../../src/reflection.rs`
+- [ ] `../../src/decomposition.rs`
 - [ ] `../../src/tune_scenario.rs`
-- [ ] `../../src/tune_setup.rs`
+- [ ] `../../src/execution_steps.rs`
+- [ ] `../../src/evaluation_routing.rs`
+- [ ] `../../src/tune_summary.rs`
+- [ ] `../../src/snapshot.rs`
+- [ ] `../../src/refinement.rs`
 - [ ] `../../src/evaluation_response.rs`
+- [ ] `../../src/app_bootstrap.rs`
+- [ ] `../../src/thinking_content.rs`
 - [ ] `../../src/tune_runtime.rs`
+- [ ] `../../src/evaluation_workflow.rs`
+- [ ] `../../src/tune_setup.rs`
+- [ ] `../../src/app_chat.rs`
 
 ---
 

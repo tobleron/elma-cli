@@ -1,3 +1,5 @@
+//! @efficiency-role: domain-logic
+//!
 //! Program Refinement Module
 //!
 //! Provides iterative program refinement based on execution feedback.

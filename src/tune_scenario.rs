@@ -1,3 +1,7 @@
+//! @efficiency-role: scenario-spec
+//!
+//! Scenario runtime evaluation.
+
 use crate::tune::{ScenarioRuntimeOutcome, TuneResources};
 use crate::*;
 

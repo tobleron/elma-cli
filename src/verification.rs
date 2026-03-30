@@ -1,3 +1,7 @@
+//! @efficiency-role: domain-logic
+//!
+//! Claim check and repair semantics verification.
+
 use crate::*;
 
 pub(crate) async fn claim_check_once(

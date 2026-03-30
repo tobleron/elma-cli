@@ -1,3 +1,5 @@
+//! @efficiency-role: util-pure
+//!
 //! Thinking Content Extraction and Processing
 //!
 //! This module provides professional-grade thinking/reasoning content extraction

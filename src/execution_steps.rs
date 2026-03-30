@@ -1,3 +1,7 @@
+//! @efficiency-role: domain-logic
+//!
+//! Execution step handling and command compatibility.
+
 use crate::execution::ExecutionState;
 use crate::*;
 
