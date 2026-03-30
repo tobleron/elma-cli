@@ -26,6 +26,8 @@ mod intel;
 mod metrics;
 mod models_api;
 mod optimization;
+mod optimization_eval;
+mod optimization_tune;
 mod orchestration;
 mod orchestration_core;
 mod orchestration_helpers;
