@@ -32,6 +32,8 @@ mod execution_steps;
 mod execution_steps_compat;
 mod execution_steps_edit;
 mod execution_steps_shell;
+mod execution_steps_shell_exec;
+mod execution_steps_shell_preflight;
 mod intel;
 mod metrics;
 mod models_api;

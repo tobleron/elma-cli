@@ -1,4 +1,4 @@
-# Task D002_17d66a: Surgical Refactor SRC BACKEND
+# Task D002_45f7a2: Surgical Refactor SRC BACKEND
 
 ## Objective
 Senior Refactoring Engineer. Reduce estimated modification risk below the applicable drag target without fragmenting cohesive modules. Extract highlighted 'Hotspots' into sub-modules only when the resulting split stays within the preferred size policy. The file should remain a clear 'Orchestrator' or 'Service' boundary, with only truly dense or isolated logic moved to specialized siblings.
@@ -10,7 +10,7 @@ Senior Refactoring Engineer. Reduce estimated modification risk below the applic
 - [ ] **../../src/app_bootstrap.rs** (Metric: [Nesting: 1.80, Density: 0.07, Coupling: 0.00] | Drag: 2.95 | LOC: 674/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC)
 - [ ] **../../src/execution_steps_shell.rs** (Metric: [Nesting: 5.40, Density: 0.07, Coupling: 0.00] | Drag: 6.76 | LOC: 644/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC)
 - [ ] **../../src/optimization_tune.rs** (Metric: [Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.26 | LOC: 484/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → Refactor in-place (keep near ~400 LOC and above 220 LOC floor)
-- [ ] **../../src/orchestration_loop.rs** (Metric: [Nesting: 3.00, Density: 0.04, Coupling: 0.00] | Drag: 4.25 | LOC: 683/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC)
+- [ ] **../../src/orchestration_loop.rs** (Metric: [Nesting: 3.00, Density: 0.05, Coupling: 0.01] | Drag: 4.27 | LOC: 533/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → Refactor in-place (keep near ~400 LOC and above 220 LOC floor)
 - [ ] **../../src/tool_discovery.rs** (Metric: [Nesting: 3.00, Density: 0.05, Coupling: 0.01] | Drag: 4.19 | LOC: 404/400  ⚠️ Trigger: Drag above target (2.60) with file already at 404 LOC.) → Refactor in-place (keep near ~400 LOC and above 220 LOC floor)
 - [ ] **../../src/tune_scenario.rs** (Metric: [Nesting: 3.60, Density: 0.04, Coupling: 0.00] | Drag: 5.25 | LOC: 531/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → Refactor in-place (keep near ~400 LOC and above 220 LOC floor)
 ### 🔧 Action: De-bloat
@@ -18,8 +18,8 @@ Senior Refactoring Engineer. Reduce estimated modification risk below the applic
 - [ ] **../../src/types_core.rs** (Metric: [Nesting: 1.20, Density: 0.01, Coupling: 0.00] | Drag: 2.26 | LOC: 620/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC) [Size-only candidate; drag already within target.]
 
 ## 🔎 Programmatic Verification
-- Baseline artifacts: `_dev-system/tmp/D002_17d66a_Surgical_Refactor_SRC_BACKEND/verification.json` (files at `_dev-system/tmp/D002_17d66a_Surgical_Refactor_SRC_BACKEND/files/`).
-- Run `cargo run --manifest-path _dev-system/analyzer/Cargo.toml --bin spec_diff -- --baseline _dev-system/tmp/D002_17d66a_Surgical_Refactor_SRC_BACKEND/verification.json --targets <refactored files>` once the refactor is ready to ensure the function surface matches the captured snapshots.
+- Baseline artifacts: `_dev-system/tmp/D002_45f7a2_Surgical_Refactor_SRC_BACKEND/verification.json` (files at `_dev-system/tmp/D002_45f7a2_Surgical_Refactor_SRC_BACKEND/files/`).
+- Run `cargo run --manifest-path _dev-system/analyzer/Cargo.toml --bin spec_diff -- --baseline _dev-system/tmp/D002_45f7a2_Surgical_Refactor_SRC_BACKEND/verification.json --targets <refactored files>` once the refactor is ready to ensure the function surface matches the captured snapshots.
 
 ### Pre-split snapshot for `src/app_bootstrap.rs`
 - `src/app_bootstrap.rs` (12 functions, fingerprint 7e3a2229f431ae8979e1438399f55e59c6276fa06bd077656a0a93d00b555c5e)
@@ -48,14 +48,9 @@ Senior Refactoring Engineer. Reduce estimated modification risk below the applic
         - optimize_model × 1 (lines: 9)
     - Detailed entries are preserved in baseline JSON (`verification.json`) for machine-level diffs.
 ### Pre-split snapshot for `src/orchestration_loop.rs`
-- `src/orchestration_loop.rs` (6 functions, fingerprint 414b0b152d05de4e8933600602e97f852b1eeb6dea644cc1312da42d2c16815c)
+- `src/orchestration_loop.rs` (1 functions, fingerprint c0fcae2b51d6d9496a866a29b0491130538cd746c7819d0fcc5c7b7b02bbab30)
     - Grouped summary:
-        - merged_program_from_history × 1 (lines: 14)
-        - next_program_is_stale × 1 (lines: 25)
-        - program_has_shell_or_edit × 1 (lines: 29)
-        - run_autonomous_loop × 1 (lines: 159)
-        - run_staged_reviewers_once × 1 (lines: 43)
-        - step_results_have_shell_or_edit × 1 (lines: 33)
+        - run_autonomous_loop × 1 (lines: 14)
     - Detailed entries are preserved in baseline JSON (`verification.json`) for machine-level diffs.
 ### Pre-split snapshot for `src/tool_discovery.rs`
 - `src/tool_discovery.rs` (14 functions, fingerprint 53bda970fb3c0da544315e9ef27b3debedafe199da854ed78774f50884fcdc86)
