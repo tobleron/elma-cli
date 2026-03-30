@@ -81,7 +81,7 @@ pub(crate) fn default_planner_master_config(base_url: &str, model: &str) -> Prof
         reasoning_format: "auto".to_string(),
         max_tokens: 4096,
         timeout_s: 120,
-        system_prompt: "You create and maintain a master execution plan.\n\nOutput Markdown only.\nUse checkboxes like:\n- [ ] step\nKeep it concise and actionable.\nDo not include any analysis."
+        system_prompt: "Create a master plan in Markdown with checkbox steps."
             .to_string(),
     }
 }
@@ -98,7 +98,7 @@ pub(crate) fn default_planner_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "auto".to_string(),
         max_tokens: 4096,
         timeout_s: 120,
-        system_prompt: "You create a detailed plan for the user's request.\n\nOutput Markdown only.\nUse a title, then a checklist of numbered actions, each as a checkbox.\nExample:\n# Plan\n- [ ] 1. Do X\n- [ ] 2. Do Y\nDo not include analysis."
+        system_prompt: "Create a detailed step-by-step plan in Markdown with numbered checkbox actions."
             .to_string(),
     }
 }
@@ -233,7 +233,7 @@ pub(crate) fn default_complexity_assessor_config(base_url: &str, model: &str) ->
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "You assess task complexity for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"complexity\": \"DIRECT\" | \"INVESTIGATE\" | \"MULTISTEP\" | \"OPEN_ENDED\",\n  \"needs_evidence\": true | false,\n  \"needs_tools\": true | false,\n  \"needs_decision\": true | false,\n  \"needs_plan\": true | false,\n  \"risk\": \"LOW\" | \"MEDIUM\" | \"HIGH\",\n  \"suggested_pattern\": \"reply\" | \"inspect_reply\" | \"inspect_summarize_reply\" | \"inspect_decide_reply\" | \"inspect_edit_verify_reply\" | \"execute_reply\" | \"plan_reply\" | \"masterplan_reply\"\n}\n\nRules:\n- Cleanup, safety review, comparison, and 'what is safe to remove' tasks are usually MULTISTEP with suggested_pattern inspect_decide_reply.\n- Ranking, prioritization, selection, and \"top N / most important / best\" requests about workspace items are usually MULTISTEP with needs_evidence=true, needs_decision=true, and suggested_pattern inspect_decide_reply.\n- If the user wants the chosen items shown afterward, the task still usually needs inspection plus decision before any final display step.\n- Editing, file creation, patching, rewriting, or update requests are usually MULTISTEP with suggested_pattern inspect_edit_verify_reply.\n- Questions about the current project, code, files, or configuration usually need evidence.\n- Greetings, identity questions, capability checks, and ordinary conversational turns are usually DIRECT with needs_evidence=false and suggested_pattern=reply.\n- Do not require workspace evidence for simple turns like \"hi\", \"who are you?\", or general knowledge unless the user explicitly asks about the current workspace or project.\n- Be strict.\n"
+        system_prompt: "Assess task complexity. Return JSON: {\"complexity\":\"DIRECT\"|\"INVESTIGATE\"|\"MULTISTEP\"|\"OPEN_ENDED\",\"risk\":\"LOW\"|\"MEDIUM\"|\"HIGH\"}"
             .to_string(),
     }
 }
@@ -250,7 +250,7 @@ pub(crate) fn default_formula_selector_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "You select reasoning formulas for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"primary\": \"one formula name\",\n  \"alternatives\": [\"...\", \"...\"],\n  \"reason\": \"one short sentence\",\n  \"memory_id\": \"optional formula memory id or empty string\"\n}\n\nPreferred built-in formulas:\n- capability_reply\n- reply_only\n- inspect_reply\n- inspect_summarize_reply\n- inspect_decide_reply\n- inspect_edit_verify_reply\n- execute_reply\n- plan_reply\n- masterplan_reply\n- cleanup_safety_review\n- code_search_and_quote\n- config_compare\n\nRules:\n- Use the provided scope and memory candidates.\n- Prefer memory candidates with stronger success_count, lower failure_count, and a closer objective/program signature match.\n- Return memory_id only when the example objective and operation closely match the current request.\n- Do not reuse generic execute_reply memories for ranking, prioritization, top-N, or selection tasks unless the memory itself clearly includes that kind of choosing logic.\n- Greetings, identity questions, and simple conversational turns should usually prefer reply_only.\n- Capability-only questions should usually prefer capability_reply.\n- Cleanup safety questions should usually prefer cleanup_safety_review or inspect_decide_reply.\n- Ranking, prioritization, and selection requests about workspace items should usually prefer inspect_decide_reply or inspect_summarize_reply rather than generic execute_reply.\n- Editing, patching, creating, rewriting, or updating local files should usually prefer inspect_edit_verify_reply.\n- Code/file understanding should usually prefer code_search_and_quote, inspect_reply, or inspect_summarize_reply.\n- Requests to analyze the current project should usually prefer inspect_summarize_reply.\n- Requests to show, list, print, display, or count real workspace output should usually prefer execute_reply or inspect_reply rather than a meta-summary.\n- Direct terminal execution requests should usually prefer execute_reply.\n- Keep alternatives short and relevant.\n"
+        system_prompt: "Select the best reasoning formula for this task. Return JSON: {\"primary\":\"formula_name\",\"alternatives\":[],\"reason\":\"...\"}"
             .to_string(),
     }
 }
@@ -267,7 +267,7 @@ pub(crate) fn default_workflow_planner_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 768,
         timeout_s: 120,
-        system_prompt: "You are Elma's workflow planner.\n\nReturn ONLY one valid JSON object. No prose.\n\nSchema:\n{\n  \"objective\": \"short objective\",\n  \"complexity\": \"DIRECT\" | \"INVESTIGATE\" | \"MULTISTEP\" | \"OPEN_ENDED\",\n  \"risk\": \"LOW\" | \"MEDIUM\" | \"HIGH\",\n  \"needs_evidence\": true | false,\n  \"scope\": {\n    \"objective\": \"short scope objective\",\n    \"focus_paths\": [\"...\"],\n    \"include_globs\": [\"...\"],\n    \"exclude_globs\": [\"...\"],\n    \"query_terms\": [\"...\"],\n    \"expected_artifacts\": [\"...\"],\n    \"reason\": \"one short sentence\"\n  },\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Plan only the objective, complexity, risk, evidence need, and scope.\n- Do not choose formulas.\n- Do not choose memory candidates.\n- Prefer tighter scope and fewer assumptions.\n- Greetings and direct conversational turns should usually be DIRECT with needs_evidence=false and minimal scope.\n- Project/code/file questions should usually need inspect-oriented scope with the narrowest relevant paths.\n- Ranking, prioritization, and top-N tasks over workspace items usually need evidence before any later selection or display.\n- Editing requests usually need workspace evidence first unless the edit target is already explicit and small.\n- Keep the reason short and concrete.\n"
+        system_prompt: "Plan the workflow scope and evidence needs. Return JSON: {\"objective\":\"...\",\"needs_evidence\":bool,\"scope\":{\"focus_paths\":[],\"include_globs\":[],\"exclude_globs\":[],\"query_terms\":[]}}"
             .to_string(),
     }
 }

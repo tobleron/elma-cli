@@ -1,296 +1,6 @@
 {
   "rust": [
     {
-      "Violation": {
-        "file": "../../src/reflection.rs",
-        "pattern": "unwrap()",
-        "strategy": ""
-      }
-    },
-    {
-      "Surgical": {
-        "file": "../../src/tune_scenario.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 3.60, Density: 0.04, Coupling: 0.00] | Drag: 5.25 | LOC: 531/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 18.345951035781543,
-        "recommended_splits": 1,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/tune_scenario.rs`",
-          "snapshots": [
-            {
-              "path": "src/tune_scenario.rs",
-              "functions": [
-                {
-                  "name": "evaluate_runtime_scenario",
-                  "signature": "pub(crate) async fn evaluate_runtime_scenario(",
-                  "line": 8
-                }
-              ],
-              "fingerprint": "fb88e36d8f22e9296c1f3fd6249d337f4febf48e7c32420b792d618093ff2ec0"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "Violation": {
-        "file": "../../src/ui_chat.rs",
-        "pattern": "unwrap()",
-        "strategy": ""
-      }
-    },
-    {
-      "Surgical": {
-        "file": "../../src/orchestration_loop.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 3.00, Density: 0.05, Coupling: 0.01] | Drag: 4.27 | LOC: 533/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 17.57016885553471,
-        "recommended_splits": 1,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/orchestration_loop.rs`",
-          "snapshots": [
-            {
-              "path": "src/orchestration_loop.rs",
-              "functions": [
-                {
-                  "name": "run_autonomous_loop",
-                  "signature": "pub(crate) async fn run_autonomous_loop(",
-                  "line": 14
-                }
-              ],
-              "fingerprint": "c0fcae2b51d6d9496a866a29b0491130538cd746c7819d0fcc5c7b7b02bbab30"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "Violation": {
-        "file": "../../src/snapshot.rs",
-        "pattern": "unwrap()",
-        "strategy": ""
-      }
-    },
-    {
-      "Surgical": {
-        "file": "../../src/types_core.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 1.20, Density: 0.01, Coupling: 0.00] | Drag: 2.26 | LOC: 620/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 24.25967741935484,
-        "recommended_splits": 2,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/types_core.rs`",
-          "snapshots": [
-            {
-              "path": "src/types_core.rs",
-              "functions": [
-                {
-                  "name": "new",
-                  "signature": "pub fn new(objective: String) -> Self {",
-                  "line": 27
-                },
-                {
-                  "name": "complete_subgoal",
-                  "signature": "pub fn complete_subgoal(&mut self, subgoal: String) {",
-                  "line": 42
-                },
-                {
-                  "name": "add_pending_subgoal",
-                  "signature": "pub fn add_pending_subgoal(&mut self, subgoal: String) {",
-                  "line": 53
-                },
-                {
-                  "name": "clear",
-                  "signature": "pub fn clear(&mut self) {",
-                  "line": 65
-                },
-                {
-                  "name": "has_active_goal",
-                  "signature": "pub fn has_active_goal(&self) -> bool {",
-                  "line": 72
-                },
-                {
-                  "name": "default_runtime_safe",
-                  "signature": "fn default_runtime_safe() -> bool {",
-                  "line": 295
-                },
-                {
-                  "name": "from",
-                  "signature": "fn from(decision: &RouteDecision) -> Self {",
-                  "line": 513
-                },
-                {
-                  "name": "id",
-                  "signature": "pub(crate) fn id(&self) -> &str {",
-                  "line": 592
-                },
-                {
-                  "name": "kind",
-                  "signature": "pub(crate) fn kind(&self) -> &str {",
-                  "line": 600
-                },
-                {
-                  "name": "purpose",
-                  "signature": "pub(crate) fn purpose(&self) -> &str {",
-                  "line": 613
-                }
-              ],
-              "fingerprint": "626268e283e695c05e9c1db97d07f763f3af7adc0b50b9021d4f8be8a93fd116"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "Violation": {
-        "file": "../../src/routing_parse.rs",
-        "pattern": "unwrap()",
-        "strategy": ""
-      }
-    },
-    {
-      "Surgical": {
-        "file": "../../src/optimization_tune.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.26 | LOC: 484/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 12.658264462809917,
-        "recommended_splits": 1,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/optimization_tune.rs`",
-          "snapshots": [
-            {
-              "path": "src/optimization_tune.rs",
-              "functions": [
-                {
-                  "name": "optimize_model",
-                  "signature": "pub(crate) async fn optimize_model(",
-                  "line": 9
-                }
-              ],
-              "fingerprint": "002c501ec2d68f43f017ef1f5ce5aa27e3d18cc2874f32f347ddb09436c7c1c4"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "Surgical": {
-        "file": "../../src/execution_steps_shell.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 5.40, Density: 0.07, Coupling: 0.00] | Drag: 6.76 | LOC: 644/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 31.15869565217391,
-        "recommended_splits": 2,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/execution_steps_shell.rs`",
-          "snapshots": [
-            {
-              "path": "src/execution_steps_shell.rs",
-              "functions": [
-                {
-                  "name": "handle_shell_step",
-                  "signature": "pub(crate) async fn handle_shell_step(",
-                  "line": 9
-                }
-              ],
-              "fingerprint": "7a17ae1e22b0027280b95da251f69b2ae61ea35a445756c46cfff4fe0bcddbd0"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "Surgical": {
-        "file": "../../src/app_bootstrap.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 1.80, Density: 0.07, Coupling: 0.00] | Drag: 2.95 | LOC: 674/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 30.348367952522253,
-        "recommended_splits": 2,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/app_bootstrap.rs`",
-          "snapshots": [
-            {
-              "path": "src/app_bootstrap.rs",
-              "functions": [
-                {
-                  "name": "bootstrap_app",
-                  "signature": "pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {",
-                  "line": 8
-                },
-                {
-                  "name": "validate_mode_flags",
-                  "signature": "fn validate_mode_flags(args: &Args) -> Result<()> {",
-                  "line": 156
-                },
-                {
-                  "name": "should_auto_tune_on_startup",
-                  "signature": "fn should_auto_tune_on_startup(args: &Args, model_cfg_dir: &Path) -> bool {",
-                  "line": 169
-                },
-                {
-                  "name": "emit_auto_tune_banner",
-                  "signature": "fn emit_auto_tune_banner(args: &Args, model_id: &str, model_cfg_dir: &Path) {",
-                  "line": 176
-                },
-                {
-                  "name": "handle_special_modes",
-                  "signature": "async fn handle_special_modes(",
-                  "line": 191
-                },
-                {
-                  "name": "load_profiles",
-                  "signature": "pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {",
-                  "line": 286
-                },
-                {
-                  "name": "sync_and_upgrade_profiles",
-                  "signature": "fn sync_and_upgrade_profiles(",
-                  "line": 335
-                },
-                {
-                  "name": "apply_prompt_upgrades",
-                  "signature": "fn apply_prompt_upgrades(",
-                  "line": 425
-                },
-                {
-                  "name": "prepare_session",
-                  "signature": "fn prepare_session(args: &Args) -> Result<SessionPaths> {",
-                  "line": 590
-                },
-                {
-                  "name": "persist_workspace_intel",
-                  "signature": "fn persist_workspace_intel(",
-                  "line": 601
-                },
-                {
-                  "name": "build_system_content",
-                  "signature": "fn build_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {",
-                  "line": 622
-                },
-                {
-                  "name": "emit_startup_banner",
-                  "signature": "fn emit_startup_banner(",
-                  "line": 635
-                }
-              ],
-              "fingerprint": "7e3a2229f431ae8979e1438399f55e59c6276fa06bd077656a0a93d00b555c5e"
-            }
-          ]
-        }
-      }
-    },
-    {
       "Surgical": {
         "file": "../../src/tool_discovery.rs",
         "action": "De-bloat",
@@ -380,6 +90,202 @@
             }
           ]
         }
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/execution_steps_shell_exec.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.28 | LOC: 413/400  ⚠️ Trigger: Drag above target (2.60) with file already at 413 LOC.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 5.576029055690072,
+        "recommended_splits": 1,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/execution_steps_shell_exec.rs`",
+          "snapshots": [
+            {
+              "path": "src/execution_steps_shell_exec.rs",
+              "functions": [
+                {
+                  "name": "execute_and_process_shell",
+                  "signature": "pub(crate) async fn execute_and_process_shell(",
+                  "line": 10
+                },
+                {
+                  "name": "handle_command_unavailable",
+                  "signature": "fn handle_command_unavailable(",
+                  "line": 191
+                },
+                {
+                  "name": "try_command_repair",
+                  "signature": "async fn try_command_repair(",
+                  "line": 256
+                },
+                {
+                  "name": "handle_artifact_recording",
+                  "signature": "fn handle_artifact_recording(",
+                  "line": 381
+                }
+              ],
+              "fingerprint": "d0dca4babaa0f7b137fe44de0f579a61db38753d0b8110727bf720951fdc1df4"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Violation": {
+        "file": "../../src/ui_chat.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/optimization_tune.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.26 | LOC: 484/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 12.658264462809917,
+        "recommended_splits": 1,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/optimization_tune.rs`",
+          "snapshots": [
+            {
+              "path": "src/optimization_tune.rs",
+              "functions": [
+                {
+                  "name": "optimize_model",
+                  "signature": "pub(crate) async fn optimize_model(",
+                  "line": 9
+                }
+              ],
+              "fingerprint": "002c501ec2d68f43f017ef1f5ce5aa27e3d18cc2874f32f347ddb09436c7c1c4"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/types_core.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 1.20, Density: 0.01, Coupling: 0.00] | Drag: 2.26 | LOC: 620/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 24.25967741935484,
+        "recommended_splits": 2,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/types_core.rs`",
+          "snapshots": [
+            {
+              "path": "src/types_core.rs",
+              "functions": [
+                {
+                  "name": "new",
+                  "signature": "pub fn new(objective: String) -> Self {",
+                  "line": 27
+                },
+                {
+                  "name": "complete_subgoal",
+                  "signature": "pub fn complete_subgoal(&mut self, subgoal: String) {",
+                  "line": 42
+                },
+                {
+                  "name": "add_pending_subgoal",
+                  "signature": "pub fn add_pending_subgoal(&mut self, subgoal: String) {",
+                  "line": 53
+                },
+                {
+                  "name": "clear",
+                  "signature": "pub fn clear(&mut self) {",
+                  "line": 65
+                },
+                {
+                  "name": "has_active_goal",
+                  "signature": "pub fn has_active_goal(&self) -> bool {",
+                  "line": 72
+                },
+                {
+                  "name": "default_runtime_safe",
+                  "signature": "fn default_runtime_safe() -> bool {",
+                  "line": 295
+                },
+                {
+                  "name": "from",
+                  "signature": "fn from(decision: &RouteDecision) -> Self {",
+                  "line": 513
+                },
+                {
+                  "name": "id",
+                  "signature": "pub(crate) fn id(&self) -> &str {",
+                  "line": 592
+                },
+                {
+                  "name": "kind",
+                  "signature": "pub(crate) fn kind(&self) -> &str {",
+                  "line": 600
+                },
+                {
+                  "name": "purpose",
+                  "signature": "pub(crate) fn purpose(&self) -> &str {",
+                  "line": 613
+                }
+              ],
+              "fingerprint": "626268e283e695c05e9c1db97d07f763f3af7adc0b50b9021d4f8be8a93fd116"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Violation": {
+        "file": "../../src/reflection.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
+      }
+    },
+    {
+      "Violation": {
+        "file": "../../src/snapshot.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/orchestration_loop.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.05, Coupling: 0.01] | Drag: 4.27 | LOC: 533/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 17.57016885553471,
+        "recommended_splits": 1,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/orchestration_loop.rs`",
+          "snapshots": [
+            {
+              "path": "src/orchestration_loop.rs",
+              "functions": [
+                {
+                  "name": "run_autonomous_loop",
+                  "signature": "pub(crate) async fn run_autonomous_loop(",
+                  "line": 14
+                }
+              ],
+              "fingerprint": "c0fcae2b51d6d9496a866a29b0491130538cd746c7819d0fcc5c7b7b02bbab30"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Violation": {
+        "file": "../../src/routing_parse.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
       }
     }
   ],

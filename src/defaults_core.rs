@@ -16,7 +16,7 @@ pub(crate) fn default_elma_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "auto".to_string(),
         max_tokens: 4096,
         timeout_s: 120,
-        system_prompt: "You are Elma.\n\nYou are a helpful, faithful assistant.\nUse the provided WORKSPACE CONTEXT facts.\n\nOutput formatting:\n- Do not use Markdown unless the user explicitly asks for Markdown.\n- Prefer plain text suitable for a terminal.\n\nKeep responses concise."
+        system_prompt: "You are Elma."
             .to_string(),
     }
 }
@@ -101,7 +101,7 @@ pub(crate) fn default_orchestrator_config(base_url: &str, model: &str) -> Profil
         reasoning_format: "none".to_string(),
         max_tokens: 2048,
         timeout_s: 120,
-        system_prompt: "You are an expert workflow orchestrator.\n\nGiven the user's request and workspace context, output a JSON Program object with steps to achieve the objective.\n\nEach step must have:\n- id: unique identifier\n- type: shell, select, plan, masterplan, decide, summarize, edit, or reply\n- purpose: why this step exists\n- depends_on: list of step ids this depends on\n- success_condition: how to know the step succeeded\n\nEnsure the program is safe, efficient, and achieves the user's objective."
+        system_prompt: "Create a JSON Program object with steps to achieve the user's objective."
             .to_string(),
     }
 }
@@ -118,7 +118,7 @@ pub(crate) fn default_critic_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "You are an expert critic.\n\nEvaluate the workflow program and step results.\n\nReturn JSON:\n{\"status\":\"ok\"|\"retry\",\"reason\":\"...\",\"program\":<optional new Program>}\n\nUse \"retry\" if there are significant issues that prevent achieving the objective."
+        system_prompt: "Evaluate if the workflow program and step results achieve the objective. Return JSON: {\"status\":\"ok\"|\"retry\",\"reason\":\"...\"}"
             .to_string(),
     }
 }
@@ -135,7 +135,7 @@ pub(crate) fn default_refinement_config(base_url: &str, model: &str) -> Profile 
         reasoning_format: "none".to_string(),
         max_tokens: 2048,
         timeout_s: 120,
-        system_prompt: "You are an expert program refiner.\n\nGiven the original objective, step results, and identified gaps, output a refined Program that addresses the gaps.\n\nFocus on:\n- Completing missing work\n- Fixing failed steps\n- Improving efficiency\n\nOutput a complete Program JSON object."
+        system_prompt: "Fill gaps in the program to complete the objective. Output a complete Program JSON object."
             .to_string(),
     }
 }
@@ -152,7 +152,7 @@ pub(crate) fn default_reflection_config(base_url: &str, model: &str) -> Profile 
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "You are an expert pre-execution reviewer.\n\nReflect on the proposed program before execution.\n\nConsider:\n- Is the program confident to succeed?\n- What could go wrong?\n- What's missing?\n- Do the priors constrain inappropriately?\n\nOutput JSON:\n{\"is_confident\":bool,\"concerns\":[],\"missing_points\":[],\"suggested_changes\":[],\"confidence_score\":0.0-1.0}"
+        system_prompt: "Identify pre-execution risks in the proposed program. Return JSON: {\"is_confident\":bool,\"concerns\":[],\"missing_points\":[]}"
             .to_string(),
     }
 }
@@ -169,7 +169,7 @@ pub(crate) fn default_logical_reviewer_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "You are a logical correctness reviewer.\n\nEvaluate if the program logic is sound and achieves the objective.\n\nReturn JSON:\n{\"status\":\"ok\"|\"retry\",\"reason\":\"...\",\"program\":<optional new Program>}"
+        system_prompt: "Evaluate if the program logic is sound. Return JSON: {\"status\":\"ok\"|\"retry\",\"reason\":\"...\"}"
             .to_string(),
     }
 }
@@ -186,7 +186,7 @@ pub(crate) fn default_efficiency_reviewer_config(base_url: &str, model: &str) ->
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "You are an efficiency reviewer.\n\nEvaluate if the program is efficient (minimal steps, no redundancy).\n\nReturn JSON:\n{\"status\":\"ok\"|\"retry\",\"reason\":\"...\",\"program\":<optional improved Program>}"
+        system_prompt: "Evaluate if the program uses minimal steps without redundancy. Return JSON: {\"status\":\"ok\"|\"retry\",\"reason\":\"...\"}"
             .to_string(),
     }
 }
@@ -203,7 +203,7 @@ pub(crate) fn default_risk_reviewer_config(base_url: &str, model: &str) -> Profi
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "You are a risk reviewer.\n\nEvaluate if the program poses any risks (destructive commands, unsafe operations).\n\nReturn JSON:\n{\"status\":\"ok\"|\"caution\",\"reason\":\"...\"}"
+        system_prompt: "Evaluate if the program contains risky commands. Return JSON: {\"status\":\"ok\"|\"caution\",\"reason\":\"...\"}"
             .to_string(),
     }
 }
@@ -220,7 +220,7 @@ pub(crate) fn default_meta_review_config(base_url: &str, model: &str) -> Profile
         reasoning_format: "none".to_string(),
         max_tokens: 2048,
         timeout_s: 120,
-        system_prompt: "You are a meta-reviewer.\n\nGiven multiple failed attempts at solving a task, synthesize learnings and create a new approach.\n\nAnalyze:\n- What patterns caused failures?\n- What strategies worked?\n- What alternative approach should be tried?\n\nOutput a new Program JSON object."
+        system_prompt: "Synthesize a new approach from multiple failed attempts. Output a new Program JSON object."
             .to_string(),
     }
 }

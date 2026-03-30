@@ -1,0 +1,213 @@
+{
+  "task": "D002_c7d6cc",
+  "category": "Surgical_Refactor_SRC_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D002_c7d6cc_Surgical_Refactor_SRC_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/execution_steps_shell_exec.rs`",
+      "snapshots": [
+        {
+          "path": "src/execution_steps_shell_exec.rs",
+          "functions": [
+            {
+              "name": "execute_and_process_shell",
+              "signature": "pub(crate) async fn execute_and_process_shell(",
+              "line": 10
+            },
+            {
+              "name": "handle_command_unavailable",
+              "signature": "fn handle_command_unavailable(",
+              "line": 191
+            },
+            {
+              "name": "try_command_repair",
+              "signature": "async fn try_command_repair(",
+              "line": 256
+            },
+            {
+              "name": "handle_artifact_recording",
+              "signature": "fn handle_artifact_recording(",
+              "line": 381
+            }
+          ],
+          "fingerprint": "d0dca4babaa0f7b137fe44de0f579a61db38753d0b8110727bf720951fdc1df4"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/optimization_tune.rs`",
+      "snapshots": [
+        {
+          "path": "src/optimization_tune.rs",
+          "functions": [
+            {
+              "name": "optimize_model",
+              "signature": "pub(crate) async fn optimize_model(",
+              "line": 9
+            }
+          ],
+          "fingerprint": "002c501ec2d68f43f017ef1f5ce5aa27e3d18cc2874f32f347ddb09436c7c1c4"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/orchestration_loop.rs`",
+      "snapshots": [
+        {
+          "path": "src/orchestration_loop.rs",
+          "functions": [
+            {
+              "name": "run_autonomous_loop",
+              "signature": "pub(crate) async fn run_autonomous_loop(",
+              "line": 14
+            }
+          ],
+          "fingerprint": "c0fcae2b51d6d9496a866a29b0491130538cd746c7819d0fcc5c7b7b02bbab30"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/tool_discovery.rs`",
+      "snapshots": [
+        {
+          "path": "src/tool_discovery.rs",
+          "functions": [
+            {
+              "name": "new",
+              "signature": "pub fn new() -> Self {",
+              "line": 65
+            },
+            {
+              "name": "needs_discovery",
+              "signature": "pub fn needs_discovery(&self) -> bool {",
+              "line": 74
+            },
+            {
+              "name": "add_tool",
+              "signature": "pub fn add_tool(&mut self, tool: ToolCapability) {",
+              "line": 79
+            },
+            {
+              "name": "get_tool",
+              "signature": "pub fn get_tool(&self, name: &str) -> Option<&ToolCapability> {",
+              "line": 90
+            },
+            {
+              "name": "format_for_display",
+              "signature": "pub fn format_for_display(&self) -> String {",
+              "line": 95
+            },
+            {
+              "name": "discover_workspace_tools",
+              "signature": "pub fn discover_workspace_tools(workspace_root: &Path) -> Result<ToolRegistry> {",
+              "line": 164
+            },
+            {
+              "name": "discover_scripts",
+              "signature": "fn discover_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {",
+              "line": 185
+            },
+            {
+              "name": "discover_makefile_targets",
+              "signature": "fn discover_makefile_targets(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {",
+              "line": 242
+            },
+            {
+              "name": "discover_npm_scripts",
+              "signature": "fn discover_npm_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {",
+              "line": 278
+            },
+            {
+              "name": "verify_project_tools",
+              "signature": "fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {",
+              "line": 303
+            },
+            {
+              "name": "command_exists",
+              "signature": "pub fn command_exists(cmd: &str) -> bool {",
+              "line": 359
+            },
+            {
+              "name": "test_registry_needs_discovery",
+              "signature": "fn test_registry_needs_discovery() {",
+              "line": 372
+            },
+            {
+              "name": "test_add_tool",
+              "signature": "fn test_add_tool() {",
+              "line": 382
+            },
+            {
+              "name": "test_command_exists",
+              "signature": "fn test_command_exists() {",
+              "line": 397
+            }
+          ],
+          "fingerprint": "53bda970fb3c0da544315e9ef27b3debedafe199da854ed78774f50884fcdc86"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/types_core.rs`",
+      "snapshots": [
+        {
+          "path": "src/types_core.rs",
+          "functions": [
+            {
+              "name": "new",
+              "signature": "pub fn new(objective: String) -> Self {",
+              "line": 27
+            },
+            {
+              "name": "complete_subgoal",
+              "signature": "pub fn complete_subgoal(&mut self, subgoal: String) {",
+              "line": 42
+            },
+            {
+              "name": "add_pending_subgoal",
+              "signature": "pub fn add_pending_subgoal(&mut self, subgoal: String) {",
+              "line": 53
+            },
+            {
+              "name": "clear",
+              "signature": "pub fn clear(&mut self) {",
+              "line": 65
+            },
+            {
+              "name": "has_active_goal",
+              "signature": "pub fn has_active_goal(&self) -> bool {",
+              "line": 72
+            },
+            {
+              "name": "default_runtime_safe",
+              "signature": "fn default_runtime_safe() -> bool {",
+              "line": 295
+            },
+            {
+              "name": "from",
+              "signature": "fn from(decision: &RouteDecision) -> Self {",
+              "line": 513
+            },
+            {
+              "name": "id",
+              "signature": "pub(crate) fn id(&self) -> &str {",
+              "line": 592
+            },
+            {
+              "name": "kind",
+              "signature": "pub(crate) fn kind(&self) -> &str {",
+              "line": 600
+            },
+            {
+              "name": "purpose",
+              "signature": "pub(crate) fn purpose(&self) -> &str {",
+              "line": 613
+            }
+          ],
+          "fingerprint": "626268e283e695c05e9c1db97d07f763f3af7adc0b50b9021d4f8be8a93fd116"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-03-30T18:14:11.562713Z"
+}
