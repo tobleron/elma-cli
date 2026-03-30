@@ -1,5 +1,38 @@
 use crate::*;
 
+pub(crate) async fn generate_status_message_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    current_action: &str,
+    step_type: &str,
+    step_purpose: &str,
+) -> Result<String> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage { role: "system".to_string(), content: cfg.system_prompt.clone() },
+            ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::json!({
+                    "current_action": current_action,
+                    "step_type": step_type,
+                    "step_purpose": step_purpose,
+                }).to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    let result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
+    Ok(result.get("status").and_then(|v| v.as_str()).unwrap_or(current_action).to_string())
+}
+
 pub(crate) async fn assess_complexity_once(
     client: &reqwest::Client,
     chat_url: &Url,

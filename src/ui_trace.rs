@@ -4,6 +4,19 @@
 
 use crate::*;
 
+/// Display an ultra-concise status message about what Elma is doing
+pub(crate) fn show_status_message(args: &Args, status: &str) {
+    let line = format!("→ {}", status);
+    append_trace_log_line(&line);
+    if args.show_process {
+        if args.no_color {
+            eprintln!("{}", line);
+        } else {
+            eprintln!("{}", ansi_dim_gray(&line));
+        }
+    }
+}
+
 pub(crate) fn append_trace_log_line(line: &str) {
     let path = trace_log_state()
         .lock()

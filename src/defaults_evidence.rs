@@ -310,6 +310,23 @@ pub(crate) fn default_intention_tune_config(base_url: &str, model: &str) -> Prof
     }
 }
 
+pub(crate) fn default_status_message_generator_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "status_message_generator".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.3,
+        top_p: 0.95,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 64,
+        timeout_s: 120,
+        system_prompt: "Generate an ultra-concise status message explaining what Elma is doing now. Return JSON: {\"status\":\"one line, max 10 words\"}"
+            .to_string(),
+    }
+}
+
 pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'static str, Profile)> {
     vec![
         ("_elma.config", default_elma_config(base_url, model)),
@@ -368,6 +385,7 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
         ("mode_router.toml", default_mode_router_config(base_url, model)),
         ("speech_act.toml", default_speech_act_config(base_url, model)),
         ("intention_tune.toml", default_intention_tune_config(base_url, model)),
+        ("status_message_generator.toml", default_status_message_generator_config(base_url, model)),
     ]
 }
 
