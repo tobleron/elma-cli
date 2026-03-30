@@ -14,6 +14,10 @@ pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 mod app;
 mod app_bootstrap;
 mod app_chat;
+mod app_chat_core;
+mod app_chat_handlers;
+mod app_chat_helpers;
+mod app_chat_trace;
 mod decomposition;  // Task 023: Hierarchical decomposition
 mod defaults;
 mod defaults_core;
