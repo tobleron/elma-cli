@@ -189,3 +189,118 @@ fn isolate_reasoning_fields(resp: &mut ChatCompletionResponse) {
         }
     }
 }
+
+fn maybe_cap_auto_reasoning_tokens(req: &mut ChatCompletionRequest) -> Option<u32> {
+    let profile = current_model_behavior_profile()?;
+    if !profile.needs_text_finalizer {
+        return None;
+    }
+    if request_expects_json(req) {
+        return None;
+    }
+    if !req.reasoning_format.as_deref().unwrap_or("none").eq_ignore_ascii_case("auto") {
+        return None;
+    }
+    if req.max_tokens <= 256 {
+        return None;
+    }
+    let previous = req.max_tokens;
+    req.max_tokens = 256;
+    Some(previous)
+}
+
+fn response_needs_text_finalizer(req: &ChatCompletionRequest, resp: &ChatCompletionResponse) -> bool {
+    let profile = match current_model_behavior_profile() {
+        Some(p) => p,
+        None => return false,
+    };
+    if !profile.needs_text_finalizer || request_expects_json(req) {
+        return false;
+    }
+    let Some(choice) = resp.choices.get(0) else {
+        return false;
+    };
+    let content = choice.message.content.as_deref().unwrap_or("").trim();
+    let reasoning = choice.message.reasoning_content.as_deref().unwrap_or("").trim();
+    content.is_empty() && !reasoning.is_empty()
+}
+
+#[derive(Debug, Deserialize)]
+struct FinalAnswerEnvelope {
+    #[serde(rename = "final")]
+    final_text: String,
+}
+
+async fn finalize_text_response_once(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    original_req: &ChatCompletionRequest,
+    resp: &ChatCompletionResponse,
+) -> Result<String> {
+    let Some(cfg) = final_answer_extractor_profile() else {
+        anyhow::bail!("No final-answer extractor profile loaded");
+    };
+    let original_system_prompt = original_req.messages.iter().find(|m| m.role == "system").map(|m| m.content.clone()).unwrap_or_default();
+    let original_user_input = original_req.messages.iter().rev().find(|m| m.role == "user").map(|m| m.content.clone()).unwrap_or_default();
+    let choice = resp.choices.get(0).context("No choices available")?;
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage { role: "system".to_string(), content: cfg.system_prompt.clone() },
+            ChatMessage { role: "user".to_string(), content: serde_json::json!({
+                "original_system_prompt": original_system_prompt,
+                "original_user_input": original_user_input,
+                "assistant_draft": choice.message.content.clone().unwrap_or_default(),
+                "assistant_reasoning": choice.message.reasoning_content.clone().unwrap_or_default(),
+            }).to_string() },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+    };
+    let envelope: FinalAnswerEnvelope = chat_json_with_repair(client, chat_url, &req).await?;
+    Ok(envelope.final_text.trim().to_string())
+}
+
+fn canonical_json_text(text: &str) -> String {
+    text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+async fn compile_json_once(client: &reqwest::Client, chat_url: &Url, req: &ChatCompletionRequest) -> Result<String> {
+    let resp = chat_once(client, chat_url, req).await?;
+    Ok(extract_response_text(&resp))
+}
+
+async fn legacy_repair_json_text(client: &reqwest::Client, chat_url: &Url, req: &ChatCompletionRequest) -> Result<String> {
+    let resp = chat_once(client, chat_url, req).await?;
+    let text = extract_response_text(&resp);
+    if let Some(json) = crate::routing::extract_first_json_object(&text) {
+        Ok(json.to_string())
+    } else {
+        Ok(text)
+    }
+}
+
+fn structured_output_context(req: &ChatCompletionRequest) -> (String, String) {
+    let system = req.messages.iter().find(|m| m.role == "system").map(|m| m.content.clone()).unwrap_or_default();
+    let user = req.messages.iter().rev().find(|m| m.role == "user").map(|m| m.content.clone()).unwrap_or_default();
+    (system, user)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_separated_reasoning_when_content_is_empty() {
+        // Test that reasoning content is extracted correctly from reasoning_content field
+        let (thinking, final_answer) = split_thinking_and_final(None, Some("This is reasoning"));
+        assert!(thinking.is_some());
+        assert_eq!(thinking.unwrap(), "This is reasoning");
+        assert_eq!(final_answer, "");
+    }
+}
