@@ -1379,6 +1379,7 @@ pub async fn try_hierarchical_decomposition(
     client: &reqwest::Client,
     chat_url: &Url,
     profiles: &LoadedProfiles,
+    session_root: &PathBuf,
     user_message: &str,
     complexity: &ComplexityAssessment,
     ws: &str,
@@ -1387,12 +1388,12 @@ pub async fn try_hierarchical_decomposition(
 ) -> Result<Option<Goal>> {
     // Check if decomposition is needed
     let required_depth = get_required_depth(&complexity.complexity, &complexity.risk);
-    
+
     if required_depth < 3 {
         // No decomposition needed - use direct execution
         return Ok(None);
     }
-    
+
     // Decomposition required - generate masterplan (Goal level)
     let goal = generate_masterplan(
         client,
@@ -1404,12 +1405,22 @@ pub async fn try_hierarchical_decomposition(
         ws_brief,
         messages,
     ).await?;
-    
+
+    // Persist hierarchy to session (Task 023)
+    let hierarchy_dir = save_hierarchy(
+        session_root,
+        &goal,
+        &[],  // Subgoals will be added later
+        &[],  // Tasks will be added later
+        &[],  // Methods will be added later
+    )?;
+
     // Log decomposition trigger
-    eprintln!("[DECOMPOSITION] Triggered for complexity={} risk={} depth={}", 
+    eprintln!("[DECOMPOSITION] Triggered for complexity={} risk={} depth={}",
               complexity.complexity, complexity.risk, required_depth);
     eprintln!("[DECOMPOSITION] Goal: {}", goal.description);
     eprintln!("[DECOMPOSITION] Phases: {:?}", goal.phases);
-    
+    eprintln!("[DECOMPOSITION] Saved to: {}", hierarchy_dir.display());
+
     Ok(Some(goal))
 }

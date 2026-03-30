@@ -103,7 +103,13 @@ Rules:
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
 
-    let goal: Goal = chat_json_with_repair(client, chat_url, &req).await?;
+    let mut goal: Goal = chat_json_with_repair(client, chat_url, &req).await?;
+    
+    // Ensure goal has proper ID if model didn't provide one
+    if goal.id.trim().is_empty() {
+        goal.id = "goal_1".to_string();
+    }
+    
     Ok(goal)
 }
 

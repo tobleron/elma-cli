@@ -187,6 +187,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.client,
             &runtime.chat_url,
             &runtime.profiles,
+            &runtime.session.root,  // Pass session root for persistence
             line,
             &complexity,
             &runtime.ws,
