@@ -140,6 +140,11 @@ pub(crate) async fn chat_json_with_repair_text_timeout<T: DeserializeOwned>(
     Ok((parsed, text))
 }
 
+pub(crate) async fn chat_json_text_with_repair(client: &reqwest::Client, chat_url: &Url, req: &ChatCompletionRequest) -> Result<String> {
+    let resp = chat_once(client, chat_url, req).await?;
+    Ok(extract_response_text(&resp))
+}
+
 fn effective_reasoning_format(req: &ChatCompletionRequest) -> Option<String> {
     let requested = req.reasoning_format.as_deref()?.trim();
     if requested.is_empty() {
