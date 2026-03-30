@@ -1,0 +1,199 @@
+//! @efficiency-role: orchestrator
+//!
+//! App Bootstrap - Core Bootstrap Function
+
+use crate::app::{AppRuntime, LoadedProfiles};
+use crate::app_bootstrap_modes::*;
+use crate::app_bootstrap_profiles::*;
+use crate::*;
+
+pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
+    let args = Args::parse();
+    set_reasoning_display(args.show_thinking && args.debug_trace, args.no_color);
+    validate_mode_flags(&args)?;
+
+    let cfg_root = config_root_path(&args.config_root)?;
+    let (base_url, base_url_source) =
+        resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref());
+    save_global_config(
+        &global_config_path(&cfg_root),
+        &GlobalConfig {
+            version: 1,
+            base_url: base_url.clone(),
+        },
+    )?;
+
+    let base = Url::parse(&base_url).context("Invalid --base-url")?;
+    let chat_url = base
+        .join("/v1/chat/completions")
+        .context("Failed to build /v1/chat/completions URL")?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .context("Failed to build HTTP client")?;
+
+    let model_id = if let Some(model) = args.model.as_ref().filter(|s| !s.trim().is_empty()) {
+        model.trim().to_string()
+    } else {
+        fetch_first_model_id(&client, &base).await?
+    };
+    let model_cfg_dir = ensure_model_config_folder(&cfg_root, &base_url, &model_id)?;
+    let behavior = ensure_model_behavior_profile(
+        &client,
+        &chat_url,
+        &base_url,
+        &model_cfg_dir,
+        &model_id,
+    )
+    .await?;
+    set_model_behavior_profile(Some(behavior.clone()));
+
+    if handle_special_modes(
+        &args,
+        &client,
+        &base,
+        &chat_url,
+        &base_url,
+        &model_id,
+        &model_cfg_dir,
+        &cfg_root,
+    )
+    .await?
+    {
+        return Ok(None);
+    }
+
+    if should_auto_tune_on_startup(&args, &model_cfg_dir) {
+        emit_auto_tune_banner(&args, &model_id, &model_cfg_dir);
+        let mut auto_tune_args = args.clone();
+        auto_tune_args.tune = true;
+        match optimize_model(
+            &auto_tune_args,
+            &client,
+            &chat_url,
+            &base_url,
+            &model_cfg_dir,
+            &model_id,
+        )
+        .await {
+            Ok(winner) => {
+                eprintln!(
+                    "  tuned    score {:.3}  certified {}",
+                    winner.score, winner.report.summary.certified
+                );
+            }
+            Err(error) => {
+                eprintln!("  tuned    failed");
+                eprintln!("  reason   {error:#}");
+                eprintln!("  action   continuing with baseline profiles");
+            }
+        }
+    }
+
+    let mut profiles = load_profiles(&model_cfg_dir)?;
+    sync_and_upgrade_profiles(&args, &model_cfg_dir, &base_url, &model_id, &mut profiles)?;
+    set_json_outputter_profile(Some(profiles.json_outputter_cfg.clone()));
+    set_final_answer_extractor_profile(Some(
+        profiles.final_answer_extractor_cfg.clone(),
+    ));
+
+    let ctx_max = fetch_ctx_max(&client, &base).await.unwrap_or(None);
+    let session = prepare_session(&args)?;
+    let repo = repo_root()?;
+    let ws = gather_workspace_context(&repo);
+    let ws_brief = gather_workspace_brief(&repo);
+    persist_workspace_intel(&args, &session, &ws, &ws_brief)?;
+    trace(
+        &args,
+        &format!("base_url_source={base_url_source} value={base_url}"),
+    );
+    trace(
+        &args,
+        &format!(
+            "model_behavior preferred_reasoning={} auto_separated={} auto_truncated={} finalizer={} none_clean={} json_auto={} json_none={}",
+            behavior.preferred_reasoning_format,
+            behavior.auto_reasoning_separated,
+            behavior.auto_truncated_before_final,
+            behavior.needs_text_finalizer,
+            behavior.none_final_clean,
+            behavior.json_clean_with_auto,
+            behavior.json_clean_with_none
+        ),
+    );
+
+    let system_content = build_system_content(&profiles.elma_cfg.system_prompt, &ws, &ws_brief);
+    let messages = vec![ChatMessage {
+        role: "system".to_string(),
+        content: system_content.clone(),
+    }];
+
+    let goal_state = load_goal_state(&session.root).unwrap_or_default();
+    if goal_state.has_active_goal() {
+        trace(&args, &format!("loaded_goal_state objective={:?}", goal_state.active_objective));
+    }
+
+    emit_startup_banner(&args, &chat_url, &model_id, &model_cfg_dir, &session);
+
+    Ok(Some(AppRuntime {
+        args,
+        client,
+        chat_url,
+        model_id,
+        model_cfg_dir,
+        ctx_max,
+        session,
+        repo,
+        ws,
+        ws_brief,
+        system_content,
+        messages,
+        profiles,
+        goal_state,
+        verbose: true,
+        retry_attempt: 0,
+    }))
+}
+
+fn prepare_session(args: &Args) -> Result<SessionPaths> {
+    let sessions_root = sessions_root_path(&args.sessions_root)?;
+    let session = ensure_session_layout(&sessions_root)?;
+    set_trace_log_path(Some(session.root.join("trace_debug.log")));
+
+    install_panic_hook(Some(session.root.clone()));
+
+    Ok(session)
+}
+
+fn persist_workspace_intel(
+    args: &Args,
+    session: &SessionPaths,
+    ws: &str,
+    ws_brief: &str,
+) -> Result<()> {
+    if !ws.is_empty() {
+        let path = session.root.join("workspace.txt");
+        std::fs::write(&path, ws.trim().to_string() + "\n")
+            .with_context(|| format!("write {}", path.display()))?;
+        trace(args, &format!("workspace_context_saved={}", path.display()));
+    }
+    if !ws_brief.is_empty() {
+        let path = session.root.join("workspace_brief.txt");
+        std::fs::write(&path, ws_brief.trim().to_string() + "\n")
+            .with_context(|| format!("write {}", path.display()))?;
+        trace(args, &format!("workspace_brief_saved={}", path.display()));
+    }
+    Ok(())
+}
+
+fn build_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {
+    let mut system_content = base_prompt.to_string();
+    if !ws.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE CONTEXT (facts):\n");
+        system_content.push_str(ws.trim());
+    }
+    if !ws_brief.trim().is_empty() {
+        system_content.push_str("\n\nWORKSPACE BRIEF:\n");
+        system_content.push_str(ws_brief.trim());
+    }
+    system_content
+}

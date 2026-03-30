@@ -13,6 +13,9 @@ pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 mod app;
 mod app_bootstrap;
+mod app_bootstrap_core;
+mod app_bootstrap_modes;
+mod app_bootstrap_profiles;
 mod app_chat;
 mod app_chat_core;
 mod app_chat_handlers;
