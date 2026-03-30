@@ -72,6 +72,10 @@ mod types_api;
 mod types_core;
 mod types_hierarchy;
 mod ui;
+mod ui_chat;
+mod ui_colors;
+mod ui_state;
+mod ui_trace;
 mod verification;
 mod workspace;
 
