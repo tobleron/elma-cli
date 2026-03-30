@@ -1,0 +1,177 @@
+//! @efficiency-role: service-orchestrator
+//!
+//! Execution Steps - Edit Step Handling
+
+use crate::*;
+
+pub(crate) fn handle_edit_step(
+    args: &Args,
+    session: &SessionPaths,
+    workdir: &PathBuf,
+    sid: String,
+    kind: String,
+    purpose: String,
+    depends_on: Vec<String>,
+    success_condition: String,
+    spec: EditSpec,
+    state: &mut ExecutionState,
+) -> Result<()> {
+    let operation = spec.operation.trim();
+    if !edit_operation_is_supported(operation) {
+        state.step_results.push(StepResult {
+            id: sid,
+            kind,
+            purpose,
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: format!("unsupported edit operation: {}", spec.operation.trim()),
+            command: None,
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return Ok(());
+    }
+
+    let snapshot_id = if let Some(existing) = state.auto_snapshot_id.clone() {
+        Some(existing)
+    } else {
+        let reason = if purpose.trim().is_empty() {
+            format!("automatic pre-edit snapshot for {}", spec.path.trim())
+        } else {
+            format!("automatic pre-edit snapshot before {}", purpose.trim())
+        };
+        match create_workspace_snapshot(session, workdir, &reason, true) {
+            Ok(snapshot) => {
+                trace(
+                    args,
+                    &format!(
+                        "snapshot_saved id={} path={} files={} automatic={}",
+                        snapshot.snapshot_id,
+                        snapshot.snapshot_dir.display(),
+                        snapshot.file_count,
+                        snapshot.automatic
+                    ),
+                );
+                state.auto_snapshot_id = Some(snapshot.snapshot_id.clone());
+                Some(snapshot.snapshot_id)
+            }
+            Err(error) => {
+                state.halt = true;
+                state.step_results.push(StepResult {
+                    id: sid,
+                    kind,
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: false,
+                    summary: format!("snapshot_failed: {error}"),
+                    command: None,
+                    raw_output: None,
+                    exit_code: None,
+                    output_bytes: None,
+                    truncated: false,
+                    timed_out: false,
+                    artifact_path: None,
+                    artifact_kind: None,
+                    outcome_status: None,
+                    outcome_reason: None,
+                });
+                return Ok(());
+            }
+        }
+    };
+
+    let path = resolve_workspace_edit_path(workdir, &spec.path)?;
+    let parent = path
+        .parent()
+        .context("edit target has no parent directory")?;
+    std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+
+    let action_summary = match operation {
+        "write_file" => {
+            std::fs::write(&path, spec.content.as_bytes())
+                .with_context(|| format!("write {}", path.display()))?;
+            format!("wrote {}", path.display())
+        }
+        "append_text" => {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .with_context(|| format!("open {}", path.display()))?;
+            file.write_all(spec.content.as_bytes())
+                .with_context(|| format!("append {}", path.display()))?;
+            format!("appended {}", path.display())
+        }
+        "replace_text" => {
+            let original =
+                std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+            if spec.find.is_empty() {
+                anyhow::bail!("replace_text requires non-empty find");
+            }
+            let replaced = original.replace(&spec.find, &spec.replace);
+            if replaced == original {
+                anyhow::bail!("replace_text found no matches in {}", path.display());
+            }
+            std::fs::write(&path, replaced.as_bytes())
+                .with_context(|| format!("write {}", path.display()))?;
+            format!("updated {}", path.display())
+        }
+        _ => unreachable!(),
+    };
+    let summary = if let Some(snapshot_id) = snapshot_id.as_deref() {
+        format!("{action_summary} (snapshot {snapshot_id})")
+    } else {
+        action_summary
+    };
+
+    trace(
+        args,
+        &format!(
+            "edit_saved path={} operation={}",
+            path.display(),
+            operation
+        ),
+    );
+    state.artifacts.insert(
+        sid.clone(),
+        format!(
+            "{}\noperation: {}\npath: {}{}",
+            summary,
+            operation,
+            path.display(),
+            snapshot_id
+                .as_deref()
+                .map(|id| format!("\nsnapshot: {id}"))
+                .unwrap_or_default()
+        ),
+    );
+    state.step_results.push(StepResult {
+        id: sid,
+        kind,
+        purpose,
+        depends_on,
+        success_condition,
+        ok: true,
+        summary,
+        command: None,
+        raw_output: None,
+        exit_code: None,
+        output_bytes: None,
+        truncated: false,
+        timed_out: false,
+        artifact_path: None,
+        artifact_kind: None,
+        outcome_status: None,
+        outcome_reason: None,
+    });
+    Ok(())
+}
