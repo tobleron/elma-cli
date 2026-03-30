@@ -195,3 +195,47 @@ pub(crate) fn probability_of(distribution: &[(String, f64)], label: &str) -> f64
         .map(|(_, p)| *p)
         .unwrap_or(0.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_route_entropy() {
+        let certain = vec![("A".to_string(), 1.0), ("B".to_string(), 0.0)];
+        assert!(route_entropy(&certain) < 0.01);
+
+        let uncertain = vec![("A".to_string(), 0.5), ("B".to_string(), 0.5)];
+        assert!(route_entropy(&uncertain) > 0.6);
+    }
+
+    #[test]
+    fn test_inject_classification_noise_skips_high_entropy() {
+        let high_entropy = vec![("A".to_string(), 0.5), ("B".to_string(), 0.5)];
+        let noisy = inject_classification_noise(&high_entropy, 0.7);
+        assert!((noisy[0].1 - 0.5).abs() < 0.01);
+        assert!((noisy[1].1 - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_inject_classification_noise_adds_to_low_entropy() {
+        let low_entropy = vec![("A".to_string(), 0.99), ("B".to_string(), 0.01)];
+        let noisy = inject_classification_noise(&low_entropy, 0.05);
+        let sum: f64 = noisy.iter().map(|(_, p)| *p).sum();
+        assert!((sum - 1.0).abs() < 0.01);
+        assert!(noisy[0].1 > noisy[1].1);
+    }
+
+    #[test]
+    fn test_inject_classification_noise_preserves_minimum_probability() {
+        let low_entropy = vec![("A".to_string(), 0.999), ("B".to_string(), 0.001)];
+        for _ in 0..5 {
+            let noisy = inject_classification_noise(&low_entropy, 0.01);
+            for (_, p) in &noisy {
+                assert!(*p >= 0.0009);
+            }
+            let sum: f64 = noisy.iter().map(|(_, p)| *p).sum();
+            assert!((sum - 1.0).abs() < 0.01);
+        }
+    }
+}

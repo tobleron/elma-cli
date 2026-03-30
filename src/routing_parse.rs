@@ -75,3 +75,97 @@ pub(crate) fn parse_json_loose<T: DeserializeOwned>(text: &str) -> Result<T> {
     }
     anyhow::bail!("No JSON object found")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_markdown_wrappers_removes_code_fences() {
+        let input = r#"Here is a valid JSON object:
+
+```json
+{"objective": "test", "steps": []}
+```"#;
+        let result = strip_markdown_wrappers(input);
+        assert!(result.starts_with('{'));
+        assert!(result.ends_with('}'));
+        assert!(!result.contains("```"));
+    }
+
+    #[test]
+    fn strip_markdown_wrappers_handles_no_fences() {
+        let input = r#"{"objective": "test", "steps": []}"#;
+        let result = strip_markdown_wrappers(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn strip_markdown_wrappers_handles_prose_before_fence() {
+        let input = r#"Here is the JSON you requested:
+
+```
+{"key": "value"}
+```
+
+Hope this helps!"#;
+        let result = strip_markdown_wrappers(input);
+        assert!(result.starts_with('{'));
+        assert!(result.ends_with('}'));
+    }
+
+    #[test]
+    fn extract_json_from_markdown_wrapped() {
+        let input = r#"Here is a valid JSON object that matches the target schema:
+
+```json
+{
+  "objective": "understand current project",
+  "steps": [
+    {"id": "s1", "type": "shell", "cmd": "cat Cargo.toml"}
+  ]
+}
+```"#;
+        let json = extract_first_json_object(input);
+        assert!(json.is_some());
+        let json_str = json.unwrap();
+        assert!(json_str.starts_with('{'));
+        assert!(json_str.ends_with('}'));
+        let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        assert!(parsed.get("objective").is_some());
+        assert!(parsed.get("steps").is_some());
+    }
+
+    #[test]
+    fn extract_json_from_pure_json() {
+        let input = r#"{"objective": "test", "steps": []}"#;
+        let json = extract_first_json_object(input);
+        assert!(json.is_some());
+        assert_eq!(json.unwrap(), input);
+    }
+
+    #[test]
+    fn extract_json_with_prose_after() {
+        let input = r#"Here is a valid JSON object that matches the target schema:
+
+```
+{
+  "objective": "understand current project",
+  "steps": [
+    {"id": "s1", "type": "shell", "cmd": "cat Cargo.toml"}
+  ]
+}
+```
+
+This JSON object has the following properties:
+- "objective": This is the main objective.
+- "steps": This is an array of steps."#;
+        let json = extract_first_json_object(input);
+        assert!(json.is_some());
+        let json_str = json.unwrap();
+        assert!(json_str.starts_with('{'));
+        assert!(json_str.ends_with('}'));
+        let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        assert!(parsed.get("objective").is_some());
+    }
+}
