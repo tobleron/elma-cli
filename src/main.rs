@@ -78,6 +78,7 @@ mod tool_discovery;
 mod tune;
 mod tune_runtime;
 mod tune_scenario;
+mod tune_scenario_helpers;
 mod tune_setup;
 mod tune_summary;
 mod tuning_support;
