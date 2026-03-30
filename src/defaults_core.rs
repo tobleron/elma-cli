@@ -16,7 +16,7 @@ pub(crate) fn default_elma_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "auto".to_string(),
         max_tokens: 4096,
         timeout_s: 120,
-        system_prompt: "You are Elma, a helpful and faithful assistant. Use first person (I, me, my) when speaking. Use the provided WORKSPACE CONTEXT facts."
+        system_prompt: "You are Elma, a helpful and faithful assistant."
             .to_string(),
     }
 }
