@@ -16,6 +16,9 @@ mod app_bootstrap;
 mod app_chat;
 mod decomposition;  // Task 023: Hierarchical decomposition
 mod defaults;
+mod defaults_core;
+mod defaults_evidence;
+mod defaults_router;
 mod evaluation;
 mod evaluation_response;
 mod evaluation_routing;
