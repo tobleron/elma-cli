@@ -571,6 +571,7 @@ async fn chat_once_base(
     client: &reqwest::Client,
     chat_url: &Url,
     req: &ChatCompletionRequest,
+    timeout_s: Option<u64>,
 ) -> Result<ChatCompletionResponse> {
     let mut effective_req = req.clone();
     let original_reasoning = req.reasoning_format.clone();
@@ -589,9 +590,20 @@ async fn chat_once_base(
             previous, effective_req.max_tokens, effective_req.model
         ));
     }
+
+    // Use provided timeout or default to 120s
+    let timeout_secs = timeout_s.unwrap_or(120);
     let mut last_error = String::new();
+    let mut is_timeout = false;
+
     for attempt in 0..3u32 {
-        match client.post(chat_url.clone()).json(&effective_req).send().await {
+        // Apply timeout to this specific request
+        let request_builder = client
+            .post(chat_url.clone())
+            .json(&effective_req)
+            .timeout(Duration::from_secs(timeout_secs));
+
+        match request_builder.send().await {
             Ok(resp) => {
                 let status = resp.status();
                 let text = resp.text().await.context("Failed to read response body")?;
@@ -612,7 +624,14 @@ async fn chat_once_base(
                 return Ok(parsed);
             }
             Err(e) => {
-                last_error = format!("{e:#}");
+                // Check if this is a timeout error
+                if e.is_timeout() || e.to_string().contains("timeout") {
+                    is_timeout = true;
+                    last_error = format!("Model API timeout after {}s (attempt {}/{})", timeout_secs, attempt + 1, 3);
+                } else {
+                    last_error = format!("{e:#}");
+                }
+
                 if attempt < 2 {
                     tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
                     continue;
@@ -620,6 +639,16 @@ async fn chat_once_base(
             }
         }
     }
+
+    // Log timeout specifically for better diagnostics
+    if is_timeout {
+        append_trace_log_line(&format!(
+            "[ERROR] timeout: Model API call timed out after {}s (model={})",
+            timeout_secs, effective_req.model
+        ));
+        anyhow::bail!("Model API timeout after {}s: {}", timeout_secs, last_error);
+    }
+
     anyhow::bail!("POST /v1/chat/completions failed after retries: {last_error}")
 }
 
@@ -628,11 +657,56 @@ pub(crate) async fn chat_once(
     chat_url: &Url,
     req: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse> {
-    let mut parsed = chat_once_base(client, chat_url, req).await?;
+    // Default timeout - callers should use chat_once_with_timeout for custom timeouts
+    let mut parsed = chat_once_base(client, chat_url, req, None).await?;
     
     // Isolate reasoning fields using centralized thinking extraction
     isolate_reasoning_fields(&mut parsed);
+
+    let mut effective_req = req.clone();
+    effective_req.reasoning_format = effective_reasoning_format(req);
+    let _ = maybe_cap_auto_reasoning_tokens(&mut effective_req);
+    if response_needs_text_finalizer(&effective_req, &parsed) {
+        match finalize_text_response_once(client, chat_url, &effective_req, &parsed).await {
+            Ok(final_text) if !final_text.is_empty() => {
+                if let Some(choice) = parsed.choices.get_mut(0) {
+                    choice.message.content = Some(final_text);
+                }
+                append_trace_log_line(&format!(
+                    "trace: text_finalizer_applied model={}",
+                    effective_req.model
+                ));
+            }
+            Ok(_) => {
+                append_trace_log_line(&format!(
+                    "trace: text_finalizer_empty model={}",
+                    effective_req.model
+                ));
+            }
+            Err(error) => {
+                append_trace_log_line(&format!(
+                    "trace: text_finalizer_failed model={} error={:#}",
+                    effective_req.model, error
+                ));
+            }
+        }
+    }
+    Ok(parsed)
+}
+
+/// Chat with explicit timeout configuration.
+/// Use this when you need to respect Profile-specific timeout settings.
+pub(crate) async fn chat_once_with_timeout(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+    timeout_s: u64,
+) -> Result<ChatCompletionResponse> {
+    let mut parsed = chat_once_base(client, chat_url, req, Some(timeout_s)).await?;
     
+    // Isolate reasoning fields using centralized thinking extraction
+    isolate_reasoning_fields(&mut parsed);
+
     let mut effective_req = req.clone();
     effective_req.reasoning_format = effective_reasoning_format(req);
     let _ = maybe_cap_auto_reasoning_tokens(&mut effective_req);
@@ -716,6 +790,7 @@ async fn compile_json_once(
     target_req: &ChatCompletionRequest,
     raw_draft: &str,
     parser_error: Option<&str>,
+    timeout_s: Option<u64>,
 ) -> Result<String> {
     let Some(cfg) = json_outputter_profile() else {
         return Ok(raw_draft.trim().to_string());
@@ -747,7 +822,7 @@ async fn compile_json_once(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
     };
-    let compiled = chat_once_base(client, chat_url, &compile_req).await?;
+    let compiled = chat_once_base(client, chat_url, &compile_req, timeout_s).await?;
     Ok(extract_response_text(&compiled).trim().to_string())
 }
 
@@ -756,6 +831,7 @@ async fn legacy_repair_json_text(
     chat_url: &Url,
     req: &ChatCompletionRequest,
     invalid_text: &str,
+    timeout_s: Option<u64>,
 ) -> Result<String> {
     let repair_context = req
         .messages
@@ -783,7 +859,7 @@ async fn legacy_repair_json_text(
             ),
         },
     ];
-    let repaired = chat_once_base(client, chat_url, &repair_req).await?;
+    let repaired = chat_once_base(client, chat_url, &repair_req, timeout_s).await?;
     Ok(extract_response_text(&repaired).trim().to_string())
 }
 
@@ -791,10 +867,11 @@ async fn chat_json_text_with_repair(
     client: &reqwest::Client,
     chat_url: &Url,
     req: &ChatCompletionRequest,
+    timeout_s: Option<u64>,
 ) -> Result<String> {
-    let resp = chat_once_base(client, chat_url, req).await?;
+    let resp = chat_once_base(client, chat_url, req, timeout_s).await?;
     let draft = extract_response_text(&resp);
-    let first_pass = compile_json_once(client, chat_url, req, &draft, None).await?;
+    let first_pass = compile_json_once(client, chat_url, req, &draft, None, timeout_s).await?;
     if parse_json_loose::<serde_json::Value>(&first_pass).is_ok() {
         return Ok(canonical_json_text(&first_pass));
     }
@@ -805,11 +882,11 @@ async fn chat_json_text_with_repair(
         .unwrap_or_else(|| "Unknown JSON parse error".to_string());
 
     if json_outputter_profile().is_some() {
-        let repaired = compile_json_once(client, chat_url, req, &first_pass, Some(&parse_error)).await?;
+        let repaired = compile_json_once(client, chat_url, req, &first_pass, Some(&parse_error), timeout_s).await?;
         return Ok(canonical_json_text(&repaired));
     }
 
-    let repaired = legacy_repair_json_text(client, chat_url, req, &first_pass).await?;
+    let repaired = legacy_repair_json_text(client, chat_url, req, &first_pass, timeout_s).await?;
     Ok(canonical_json_text(&repaired))
 }
 
@@ -818,7 +895,20 @@ pub(crate) async fn chat_json_with_repair<T: DeserializeOwned>(
     chat_url: &Url,
     req: &ChatCompletionRequest,
 ) -> Result<T> {
-    let text = chat_json_text_with_repair(client, chat_url, req).await?;
+    // Default timeout - use chat_json_with_repair_timeout for custom timeouts
+    let text = chat_json_text_with_repair(client, chat_url, req, None).await?;
+    parse_json_loose(&text)
+}
+
+/// Chat JSON with repair and explicit timeout.
+/// Use this when you need to respect Profile-specific timeout settings.
+pub(crate) async fn chat_json_with_repair_timeout<T: DeserializeOwned>(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+    timeout_s: u64,
+) -> Result<T> {
+    let text = chat_json_text_with_repair(client, chat_url, req, Some(timeout_s)).await?;
     parse_json_loose(&text)
 }
 
@@ -827,7 +917,20 @@ pub(crate) async fn chat_json_with_repair_text<T: DeserializeOwned>(
     chat_url: &Url,
     req: &ChatCompletionRequest,
 ) -> Result<(T, String)> {
-    let text = chat_json_text_with_repair(client, chat_url, req).await?;
+    // Default timeout - use chat_json_with_repair_text_timeout for custom timeouts
+    let text = chat_json_text_with_repair(client, chat_url, req, None).await?;
+    let parsed = parse_json_loose(&text)?;
+    Ok((parsed, text))
+}
+
+/// Chat JSON with repair, text output, and explicit timeout.
+pub(crate) async fn chat_json_with_repair_text_timeout<T: DeserializeOwned>(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+    timeout_s: u64,
+) -> Result<(T, String)> {
+    let text = chat_json_text_with_repair(client, chat_url, req, Some(timeout_s)).await?;
     let parsed = parse_json_loose(&text)?;
     Ok((parsed, text))
 }

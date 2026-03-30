@@ -587,6 +587,10 @@ fn prepare_session(args: &Args) -> Result<SessionPaths> {
     let sessions_root = sessions_root_path(&args.sessions_root)?;
     let session = ensure_session_layout(&sessions_root)?;
     set_trace_log_path(Some(session.root.join("trace_debug.log")));
+    
+    // Install panic hook for crash reporting (Task 018)
+    install_panic_hook(Some(session.root.clone()));
+    
     Ok(session)
 }
 
