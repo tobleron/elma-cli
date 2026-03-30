@@ -1,140 +1,5 @@
 {
-  "system": [],
   "rust": [
-    {
-      "Surgical": {
-        "file": "../../src/app_bootstrap.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 1.80, Density: 0.07, Coupling: 0.00] | Drag: 2.95 | LOC: 674/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 30.348367952522253,
-        "recommended_splits": 2,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/app_bootstrap.rs`",
-          "snapshots": [
-            {
-              "path": "src/app_bootstrap.rs",
-              "functions": [
-                {
-                  "name": "bootstrap_app",
-                  "signature": "pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {",
-                  "line": 8
-                },
-                {
-                  "name": "validate_mode_flags",
-                  "signature": "fn validate_mode_flags(args: &Args) -> Result<()> {",
-                  "line": 156
-                },
-                {
-                  "name": "should_auto_tune_on_startup",
-                  "signature": "fn should_auto_tune_on_startup(args: &Args, model_cfg_dir: &Path) -> bool {",
-                  "line": 169
-                },
-                {
-                  "name": "emit_auto_tune_banner",
-                  "signature": "fn emit_auto_tune_banner(args: &Args, model_id: &str, model_cfg_dir: &Path) {",
-                  "line": 176
-                },
-                {
-                  "name": "handle_special_modes",
-                  "signature": "async fn handle_special_modes(",
-                  "line": 191
-                },
-                {
-                  "name": "load_profiles",
-                  "signature": "pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {",
-                  "line": 286
-                },
-                {
-                  "name": "sync_and_upgrade_profiles",
-                  "signature": "fn sync_and_upgrade_profiles(",
-                  "line": 335
-                },
-                {
-                  "name": "apply_prompt_upgrades",
-                  "signature": "fn apply_prompt_upgrades(",
-                  "line": 425
-                },
-                {
-                  "name": "prepare_session",
-                  "signature": "fn prepare_session(args: &Args) -> Result<SessionPaths> {",
-                  "line": 590
-                },
-                {
-                  "name": "persist_workspace_intel",
-                  "signature": "fn persist_workspace_intel(",
-                  "line": 601
-                },
-                {
-                  "name": "build_system_content",
-                  "signature": "fn build_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {",
-                  "line": 622
-                },
-                {
-                  "name": "emit_startup_banner",
-                  "signature": "fn emit_startup_banner(",
-                  "line": 635
-                }
-              ],
-              "fingerprint": "7e3a2229f431ae8979e1438399f55e59c6276fa06bd077656a0a93d00b555c5e"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "Surgical": {
-        "file": "../../src/orchestration_loop.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 3.00, Density: 0.04, Coupling: 0.00] | Drag: 4.25 | LOC: 683/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 32.55183016105417,
-        "recommended_splits": 2,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/orchestration_loop.rs`",
-          "snapshots": [
-            {
-              "path": "src/orchestration_loop.rs",
-              "functions": [
-                {
-                  "name": "merged_program_from_history",
-                  "signature": "pub(super) fn merged_program_from_history(plan: &AgentPlan) -> Program {",
-                  "line": 14
-                },
-                {
-                  "name": "next_program_is_stale",
-                  "signature": "pub(super) fn next_program_is_stale(plan: &AgentPlan, next_program: &Program) -> bool {",
-                  "line": 25
-                },
-                {
-                  "name": "program_has_shell_or_edit",
-                  "signature": "pub(super) fn program_has_shell_or_edit(program: &Program) -> bool {",
-                  "line": 29
-                },
-                {
-                  "name": "step_results_have_shell_or_edit",
-                  "signature": "pub(super) fn step_results_have_shell_or_edit(step_results: &[StepResult]) -> bool {",
-                  "line": 33
-                },
-                {
-                  "name": "run_staged_reviewers_once",
-                  "signature": "async fn run_staged_reviewers_once(",
-                  "line": 43
-                },
-                {
-                  "name": "run_autonomous_loop",
-                  "signature": "pub(crate) async fn run_autonomous_loop(",
-                  "line": 159
-                }
-              ],
-              "fingerprint": "414b0b152d05de4e8933600602e97f852b1eeb6dea644cc1312da42d2c16815c"
-            }
-          ]
-        }
-      }
-    },
     {
       "Surgical": {
         "file": "../../src/tool_discovery.rs",
@@ -229,66 +94,53 @@
     },
     {
       "Surgical": {
-        "file": "../../src/execution_steps.rs",
+        "file": "../../src/execution_steps_shell.rs",
         "action": "De-bloat",
-        "reason": "[Nesting: 5.40, Density: 0.05, Coupling: 0.00] | Drag: 6.63 | LOC: 1360/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "reason": "[Nesting: 5.40, Density: 0.07, Coupling: 0.00] | Drag: 6.76 | LOC: 644/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
         "strategy": "",
         "platform": "backend",
-        "complexity": 102.62647058823529,
-        "recommended_splits": 3,
+        "complexity": 31.15869565217391,
+        "recommended_splits": 2,
         "verification": {
-          "headline": "Pre-split snapshot for `src/execution_steps.rs`",
+          "headline": "Pre-split snapshot for `src/execution_steps_shell.rs`",
           "snapshots": [
             {
-              "path": "src/execution_steps.rs",
+              "path": "src/execution_steps_shell.rs",
               "functions": [
                 {
-                  "name": "primary_shell_command",
-                  "signature": "fn primary_shell_command(cmd: &str) -> String {",
-                  "line": 17
-                },
-                {
-                  "name": "probe_command_compatibility",
-                  "signature": "fn probe_command_compatibility(cmd: &str, workdir: &Path) -> CommandCompatibilityFacts {",
-                  "line": 44
-                },
-                {
-                  "name": "shell_output_indicates_command_not_found",
-                  "signature": "fn shell_output_indicates_command_not_found(output: &str) -> bool {",
-                  "line": 86
-                },
-                {
-                  "name": "command_is_unavailable",
-                  "signature": "fn command_is_unavailable(facts: &CommandCompatibilityFacts, output: &str) -> bool {",
-                  "line": 92
-                },
-                {
-                  "name": "unavailable_summary",
-                  "signature": "fn unavailable_summary(facts: &CommandCompatibilityFacts, output: &str) -> String {",
-                  "line": 97
-                },
-                {
-                  "name": "unavailable_reply_instructions",
-                  "signature": "fn unavailable_reply_instructions(facts: &CommandCompatibilityFacts) -> String {",
-                  "line": 116
-                },
-                {
-                  "name": "handle_program_step",
-                  "signature": "pub(crate) async fn handle_program_step(",
-                  "line": 134
-                },
-                {
-                  "name": "handle_edit_step",
-                  "signature": "fn handle_edit_step(",
-                  "line": 551
-                },
-                {
                   "name": "handle_shell_step",
-                  "signature": "async fn handle_shell_step(",
-                  "line": 724
+                  "signature": "pub(crate) async fn handle_shell_step(",
+                  "line": 9
                 }
               ],
-              "fingerprint": "1f6ed214f56641e58228823560f173329895f474c8293ce1df5da1183b556249"
+              "fingerprint": "7a17ae1e22b0027280b95da251f69b2ae61ea35a445756c46cfff4fe0bcddbd0"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "Surgical": {
+        "file": "../../src/optimization_tune.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.26 | LOC: 484/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 12.658264462809917,
+        "recommended_splits": 1,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/optimization_tune.rs`",
+          "snapshots": [
+            {
+              "path": "src/optimization_tune.rs",
+              "functions": [
+                {
+                  "name": "optimize_model",
+                  "signature": "pub(crate) async fn optimize_model(",
+                  "line": 9
+                }
+              ],
+              "fingerprint": "002c501ec2d68f43f017ef1f5ce5aa27e3d18cc2874f32f347ddb09436c7c1c4"
             }
           ]
         }
@@ -322,144 +174,158 @@
       }
     },
     {
+      "Surgical": {
+        "file": "../../src/orchestration_loop.rs",
+        "action": "De-bloat",
+        "reason": "[Nesting: 3.00, Density: 0.04, Coupling: 0.00] | Drag: 4.25 | LOC: 683/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "strategy": "",
+        "platform": "backend",
+        "complexity": 32.55183016105417,
+        "recommended_splits": 2,
+        "verification": {
+          "headline": "Pre-split snapshot for `src/orchestration_loop.rs`",
+          "snapshots": [
+            {
+              "path": "src/orchestration_loop.rs",
+              "functions": [
+                {
+                  "name": "merged_program_from_history",
+                  "signature": "pub(super) fn merged_program_from_history(plan: &AgentPlan) -> Program {",
+                  "line": 14
+                },
+                {
+                  "name": "next_program_is_stale",
+                  "signature": "pub(super) fn next_program_is_stale(plan: &AgentPlan, next_program: &Program) -> bool {",
+                  "line": 25
+                },
+                {
+                  "name": "program_has_shell_or_edit",
+                  "signature": "pub(super) fn program_has_shell_or_edit(program: &Program) -> bool {",
+                  "line": 29
+                },
+                {
+                  "name": "step_results_have_shell_or_edit",
+                  "signature": "pub(super) fn step_results_have_shell_or_edit(step_results: &[StepResult]) -> bool {",
+                  "line": 33
+                },
+                {
+                  "name": "run_staged_reviewers_once",
+                  "signature": "async fn run_staged_reviewers_once(",
+                  "line": 43
+                },
+                {
+                  "name": "run_autonomous_loop",
+                  "signature": "pub(crate) async fn run_autonomous_loop(",
+                  "line": 159
+                }
+              ],
+              "fingerprint": "414b0b152d05de4e8933600602e97f852b1eeb6dea644cc1312da42d2c16815c"
+            }
+          ]
+        }
+      }
+    },
+    {
       "Violation": {
-        "file": "../../src/intel.rs",
+        "file": "../../src/reflection.rs",
         "pattern": "unwrap()",
         "strategy": ""
       }
     },
     {
       "Surgical": {
-        "file": "../../src/optimization_tune.rs",
+        "file": "../../src/app_bootstrap.rs",
         "action": "De-bloat",
-        "reason": "[Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.26 | LOC: 484/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.",
+        "reason": "[Nesting: 1.80, Density: 0.07, Coupling: 0.00] | Drag: 2.95 | LOC: 674/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
         "strategy": "",
         "platform": "backend",
-        "complexity": 12.658264462809917,
-        "recommended_splits": 1,
+        "complexity": 30.348367952522253,
+        "recommended_splits": 2,
         "verification": {
-          "headline": "Pre-split snapshot for `src/optimization_tune.rs`",
+          "headline": "Pre-split snapshot for `src/app_bootstrap.rs`",
           "snapshots": [
             {
-              "path": "src/optimization_tune.rs",
+              "path": "src/app_bootstrap.rs",
               "functions": [
                 {
-                  "name": "optimize_model",
-                  "signature": "pub(crate) async fn optimize_model(",
-                  "line": 9
+                  "name": "bootstrap_app",
+                  "signature": "pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {",
+                  "line": 8
+                },
+                {
+                  "name": "validate_mode_flags",
+                  "signature": "fn validate_mode_flags(args: &Args) -> Result<()> {",
+                  "line": 156
+                },
+                {
+                  "name": "should_auto_tune_on_startup",
+                  "signature": "fn should_auto_tune_on_startup(args: &Args, model_cfg_dir: &Path) -> bool {",
+                  "line": 169
+                },
+                {
+                  "name": "emit_auto_tune_banner",
+                  "signature": "fn emit_auto_tune_banner(args: &Args, model_id: &str, model_cfg_dir: &Path) {",
+                  "line": 176
+                },
+                {
+                  "name": "handle_special_modes",
+                  "signature": "async fn handle_special_modes(",
+                  "line": 191
+                },
+                {
+                  "name": "load_profiles",
+                  "signature": "pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {",
+                  "line": 286
+                },
+                {
+                  "name": "sync_and_upgrade_profiles",
+                  "signature": "fn sync_and_upgrade_profiles(",
+                  "line": 335
+                },
+                {
+                  "name": "apply_prompt_upgrades",
+                  "signature": "fn apply_prompt_upgrades(",
+                  "line": 425
+                },
+                {
+                  "name": "prepare_session",
+                  "signature": "fn prepare_session(args: &Args) -> Result<SessionPaths> {",
+                  "line": 590
+                },
+                {
+                  "name": "persist_workspace_intel",
+                  "signature": "fn persist_workspace_intel(",
+                  "line": 601
+                },
+                {
+                  "name": "build_system_content",
+                  "signature": "fn build_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {",
+                  "line": 622
+                },
+                {
+                  "name": "emit_startup_banner",
+                  "signature": "fn emit_startup_banner(",
+                  "line": 635
                 }
               ],
-              "fingerprint": "002c501ec2d68f43f017ef1f5ce5aa27e3d18cc2874f32f347ddb09436c7c1c4"
+              "fingerprint": "7e3a2229f431ae8979e1438399f55e59c6276fa06bd077656a0a93d00b555c5e"
             }
           ]
         }
       }
     },
     {
-      "Surgical": {
-        "file": "../../src/app_chat.rs",
-        "action": "De-bloat",
-        "reason": "[Nesting: 3.00, Density: 0.05, Coupling: 0.00] | Drag: 4.12 | LOC: 957/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
-        "strategy": "",
-        "platform": "backend",
-        "complexity": 59.81703239289446,
-        "recommended_splits": 2,
-        "verification": {
-          "headline": "Pre-split snapshot for `src/app_chat.rs`",
-          "snapshots": [
-            {
-              "path": "src/app_chat.rs",
-              "functions": [
-                {
-                  "name": "handle_show_goals",
-                  "signature": "fn handle_show_goals(runtime: &AppRuntime) -> Result<()> {",
-                  "line": 9
-                },
-                {
-                  "name": "handle_discover_tools",
-                  "signature": "fn handle_discover_tools(runtime: &AppRuntime) -> Result<()> {",
-                  "line": 43
-                },
-                {
-                  "name": "run_chat_loop",
-                  "signature": "pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {",
-                  "line": 59
-                },
-                {
-                  "name": "trace_route_decision",
-                  "signature": "fn trace_route_decision(args: &Args, route_decision: &RouteDecision) {",
-                  "line": 335
-                },
-                {
-                  "name": "trace_complexity",
-                  "signature": "fn trace_complexity(args: &Args, complexity: &ComplexityAssessment) {",
-                  "line": 429
-                },
-                {
-                  "name": "trace_scope",
-                  "signature": "fn trace_scope(args: &Args, scope: &ScopePlan) {",
-                  "line": 453
-                },
-                {
-                  "name": "trace_formula",
-                  "signature": "fn trace_formula(args: &Args, formula: &FormulaSelection) {",
-                  "line": 501
-                },
-                {
-                  "name": "build_program",
-                  "signature": "async fn build_program(",
-                  "line": 525
-                },
-                {
-                  "name": "resolve_final_text",
-                  "signature": "async fn resolve_final_text(",
-                  "line": 602
-                },
-                {
-                  "name": "print_final_output",
-                  "signature": "fn print_final_output(",
-                  "line": 630
-                },
-                {
-                  "name": "handle_manual_snapshot",
-                  "signature": "fn handle_manual_snapshot(runtime: &mut AppRuntime) -> Result<()> {",
-                  "line": 664
-                },
-                {
-                  "name": "handle_runtime_tune",
-                  "signature": "async fn handle_runtime_tune(runtime: &mut AppRuntime) -> Result<()> {",
-                  "line": 705
-                },
-                {
-                  "name": "handle_manual_rollback",
-                  "signature": "fn handle_manual_rollback(runtime: &mut AppRuntime, snapshot_id: &str) -> Result<()> {",
-                  "line": 741
-                },
-                {
-                  "name": "refresh_runtime_workspace",
-                  "signature": "fn refresh_runtime_workspace(runtime: &mut AppRuntime) -> Result<()> {",
-                  "line": 789
-                },
-                {
-                  "name": "rebuild_system_content",
-                  "signature": "fn rebuild_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {",
-                  "line": 811
-                },
-                {
-                  "name": "persist_runtime_workspace_intel",
-                  "signature": "fn persist_runtime_workspace_intel(",
-                  "line": 824
-                },
-                {
-                  "name": "maybe_save_formula_memory",
-                  "signature": "async fn maybe_save_formula_memory(",
-                  "line": 845
-                }
-              ],
-              "fingerprint": "843f79e8967926c19b7898b8ab7e770a28258068b720f5f5588992ee803a8521"
-            }
-          ]
-        }
+      "Violation": {
+        "file": "../../src/ui_chat.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
+      }
+    },
+    {
+      "Violation": {
+        "file": "../../src/routing_parse.rs",
+        "pattern": "unwrap()",
+        "strategy": ""
       }
     },
     {
@@ -540,27 +406,7 @@
           ]
         }
       }
-    },
-    {
-      "Violation": {
-        "file": "../../src/ui_chat.rs",
-        "pattern": "unwrap()",
-        "strategy": ""
-      }
-    },
-    {
-      "Violation": {
-        "file": "../../src/reflection.rs",
-        "pattern": "unwrap()",
-        "strategy": ""
-      }
-    },
-    {
-      "Violation": {
-        "file": "../../src/routing_parse.rs",
-        "pattern": "unwrap()",
-        "strategy": ""
-      }
     }
-  ]
+  ],
+  "system": []
 }

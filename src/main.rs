@@ -42,6 +42,8 @@ mod orchestration;
 mod orchestration_core;
 mod orchestration_helpers;
 mod orchestration_loop;
+mod orchestration_loop_helpers;
+mod orchestration_loop_reviewers;
 mod orchestration_planning;
 mod orchestration_retry;
 mod paths;

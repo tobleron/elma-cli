@@ -1,14 +1,159 @@
 //! @efficiency-role: service-orchestrator
 //!
-//! Orchestration Loop Module (De-bloated)
+//! Autonomous Loop Execution Module
 //!
-//! Re-exports from specialized sub-modules:
-//! - orchestration_loop_helpers: Helper functions
-//! - orchestration_loop_reviewers: Reviewer coordination
+//! Handles the main execution loop for program orchestration,
+//! including step execution, reviewer coordination, and refinement.
 
-use crate::orchestration_loop_helpers::*;
-use crate::orchestration_loop_reviewers::*;
 use crate::*;
+
+/// Helper functions for loop execution
+mod loop_helpers {
+    use crate::*;
+
+    pub(super) fn merged_program_from_history(plan: &AgentPlan) -> Program {
+        let mut steps = Vec::new();
+        for program in &plan.program_history {
+            steps.extend(program.steps.clone());
+        }
+        Program {
+            objective: plan.objective.clone(),
+            steps,
+        }
+    }
+
+    pub(super) fn next_program_is_stale(plan: &AgentPlan, next_program: &Program) -> bool {
+        program_signature(&plan.current_program) == program_signature(next_program)
+    }
+
+    pub(super) fn program_has_shell_or_edit(program: &Program) -> bool {
+        program.steps.iter().any(|step| matches!(step, Step::Shell { .. } | Step::Edit { .. }))
+    }
+
+    pub(super) fn step_results_have_shell_or_edit(step_results: &[StepResult]) -> bool {
+        step_results
+            .iter()
+            .any(|result| matches!(result.kind.as_str(), "shell" | "edit"))
+    }
+}
+
+use loop_helpers::*;
+
+#[allow(clippy::too_many_arguments)]
+async fn run_staged_reviewers_once(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    logical_reviewer_cfg: &Profile,
+    efficiency_reviewer_cfg: &Profile,
+    risk_reviewer_cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    program: &Program,
+    step_results: &[StepResult],
+    sufficiency: Option<&ExecutionSufficiencyVerdict>,
+    attempt: u32,
+) -> (Option<CriticVerdict>, Option<CriticVerdict>, Option<RiskReviewVerdict>, bool) {
+    let mut reasoning_clean = true;
+
+    let logical = match run_critic_once(
+        client,
+        chat_url,
+        logical_reviewer_cfg,
+        line,
+        route_decision,
+        program,
+        step_results,
+        sufficiency,
+        attempt,
+    )
+    .await
+    {
+        Ok(verdict) => {
+            trace(
+                args,
+                &format!(
+                    "logical_review={} reason={}",
+                    verdict.status.trim(),
+                    verdict.reason.trim()
+                ),
+            );
+            Some(verdict)
+        }
+        Err(error) => {
+            reasoning_clean = false;
+            trace(args, &format!("logical_review_parse_error={error}"));
+            None
+        }
+    };
+
+    let efficiency = match run_critic_once(
+        client,
+        chat_url,
+        efficiency_reviewer_cfg,
+        line,
+        route_decision,
+        program,
+        step_results,
+        sufficiency,
+        attempt,
+    )
+    .await
+    {
+        Ok(verdict) => {
+            trace(
+                args,
+                &format!(
+                    "efficiency_review={} reason={}",
+                    verdict.status.trim(),
+                    verdict.reason.trim()
+                ),
+            );
+            Some(verdict)
+        }
+        Err(error) => {
+            reasoning_clean = false;
+            trace(args, &format!("efficiency_review_parse_error={error}"));
+            None
+        }
+    };
+
+    let risk = if program_has_shell_or_edit(program) || step_results_have_shell_or_edit(step_results) {
+        match orchestration_helpers::request_risk_review(
+            client,
+            chat_url,
+            risk_reviewer_cfg,
+            line,
+            route_decision,
+            program,
+            step_results,
+            attempt,
+        )
+        .await
+        {
+            Ok(verdict) => {
+                trace(
+                    args,
+                    &format!(
+                        "risk_review={} reason={}",
+                        verdict.status.trim(),
+                        verdict.reason.trim()
+                    ),
+                );
+                Some(verdict)
+            }
+            Err(error) => {
+                reasoning_clean = false;
+                trace(args, &format!("risk_review_parse_error={error}"));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    (logical, efficiency, risk, reasoning_clean)
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_autonomous_loop(
@@ -449,6 +594,7 @@ pub(crate) async fn run_autonomous_loop(
             continue;
         }
 
+        // Check if refinement is needed (autonomous reasoning improvement)
         let merged_program = merged_program_from_history(&plan);
         let achievement = check_objective_achievement(&merged_program.objective, &step_results);
 
@@ -477,6 +623,7 @@ pub(crate) async fn run_autonomous_loop(
             match refine_program(client, chat_url, refinement_cfg, &refinement_ctx, &achievement).await {
                 Ok(refined_program) => {
                     trace(args, "refinement_success applying refined program");
+                    // Execute refined program
                     let (refined_results, refined_reply) = execute_program(
                         args,
                         client,
@@ -502,16 +649,19 @@ pub(crate) async fn run_autonomous_loop(
                         false,
                     ).await?;
 
+                    // Merge results
                     step_results.extend(refined_results);
                     if refined_reply.is_some() {
                         final_reply = refined_reply;
                     }
 
+                    // Update plan with refined program
                     plan.current_program = refined_program;
                     plan.program_history.push(plan.current_program.clone());
                 }
                 Err(error) => {
                     trace(args, &format!("refinement_failed error={}", error));
+                    // Continue with original program if refinement fails
                 }
             }
         }

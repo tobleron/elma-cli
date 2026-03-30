@@ -1,0 +1,310 @@
+{
+  "task": "D002_17d66a",
+  "category": "Surgical_Refactor_SRC_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D002_17d66a_Surgical_Refactor_SRC_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/app_bootstrap.rs`",
+      "snapshots": [
+        {
+          "path": "src/app_bootstrap.rs",
+          "functions": [
+            {
+              "name": "bootstrap_app",
+              "signature": "pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {",
+              "line": 8
+            },
+            {
+              "name": "validate_mode_flags",
+              "signature": "fn validate_mode_flags(args: &Args) -> Result<()> {",
+              "line": 156
+            },
+            {
+              "name": "should_auto_tune_on_startup",
+              "signature": "fn should_auto_tune_on_startup(args: &Args, model_cfg_dir: &Path) -> bool {",
+              "line": 169
+            },
+            {
+              "name": "emit_auto_tune_banner",
+              "signature": "fn emit_auto_tune_banner(args: &Args, model_id: &str, model_cfg_dir: &Path) {",
+              "line": 176
+            },
+            {
+              "name": "handle_special_modes",
+              "signature": "async fn handle_special_modes(",
+              "line": 191
+            },
+            {
+              "name": "load_profiles",
+              "signature": "pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {",
+              "line": 286
+            },
+            {
+              "name": "sync_and_upgrade_profiles",
+              "signature": "fn sync_and_upgrade_profiles(",
+              "line": 335
+            },
+            {
+              "name": "apply_prompt_upgrades",
+              "signature": "fn apply_prompt_upgrades(",
+              "line": 425
+            },
+            {
+              "name": "prepare_session",
+              "signature": "fn prepare_session(args: &Args) -> Result<SessionPaths> {",
+              "line": 590
+            },
+            {
+              "name": "persist_workspace_intel",
+              "signature": "fn persist_workspace_intel(",
+              "line": 601
+            },
+            {
+              "name": "build_system_content",
+              "signature": "fn build_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {",
+              "line": 622
+            },
+            {
+              "name": "emit_startup_banner",
+              "signature": "fn emit_startup_banner(",
+              "line": 635
+            }
+          ],
+          "fingerprint": "7e3a2229f431ae8979e1438399f55e59c6276fa06bd077656a0a93d00b555c5e"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/execution_steps_shell.rs`",
+      "snapshots": [
+        {
+          "path": "src/execution_steps_shell.rs",
+          "functions": [
+            {
+              "name": "handle_shell_step",
+              "signature": "pub(crate) async fn handle_shell_step(",
+              "line": 9
+            }
+          ],
+          "fingerprint": "7a17ae1e22b0027280b95da251f69b2ae61ea35a445756c46cfff4fe0bcddbd0"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/optimization_tune.rs`",
+      "snapshots": [
+        {
+          "path": "src/optimization_tune.rs",
+          "functions": [
+            {
+              "name": "optimize_model",
+              "signature": "pub(crate) async fn optimize_model(",
+              "line": 9
+            }
+          ],
+          "fingerprint": "002c501ec2d68f43f017ef1f5ce5aa27e3d18cc2874f32f347ddb09436c7c1c4"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/orchestration_loop.rs`",
+      "snapshots": [
+        {
+          "path": "src/orchestration_loop.rs",
+          "functions": [
+            {
+              "name": "merged_program_from_history",
+              "signature": "pub(super) fn merged_program_from_history(plan: &AgentPlan) -> Program {",
+              "line": 14
+            },
+            {
+              "name": "next_program_is_stale",
+              "signature": "pub(super) fn next_program_is_stale(plan: &AgentPlan, next_program: &Program) -> bool {",
+              "line": 25
+            },
+            {
+              "name": "program_has_shell_or_edit",
+              "signature": "pub(super) fn program_has_shell_or_edit(program: &Program) -> bool {",
+              "line": 29
+            },
+            {
+              "name": "step_results_have_shell_or_edit",
+              "signature": "pub(super) fn step_results_have_shell_or_edit(step_results: &[StepResult]) -> bool {",
+              "line": 33
+            },
+            {
+              "name": "run_staged_reviewers_once",
+              "signature": "async fn run_staged_reviewers_once(",
+              "line": 43
+            },
+            {
+              "name": "run_autonomous_loop",
+              "signature": "pub(crate) async fn run_autonomous_loop(",
+              "line": 159
+            }
+          ],
+          "fingerprint": "414b0b152d05de4e8933600602e97f852b1eeb6dea644cc1312da42d2c16815c"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/tool_discovery.rs`",
+      "snapshots": [
+        {
+          "path": "src/tool_discovery.rs",
+          "functions": [
+            {
+              "name": "new",
+              "signature": "pub fn new() -> Self {",
+              "line": 65
+            },
+            {
+              "name": "needs_discovery",
+              "signature": "pub fn needs_discovery(&self) -> bool {",
+              "line": 74
+            },
+            {
+              "name": "add_tool",
+              "signature": "pub fn add_tool(&mut self, tool: ToolCapability) {",
+              "line": 79
+            },
+            {
+              "name": "get_tool",
+              "signature": "pub fn get_tool(&self, name: &str) -> Option<&ToolCapability> {",
+              "line": 90
+            },
+            {
+              "name": "format_for_display",
+              "signature": "pub fn format_for_display(&self) -> String {",
+              "line": 95
+            },
+            {
+              "name": "discover_workspace_tools",
+              "signature": "pub fn discover_workspace_tools(workspace_root: &Path) -> Result<ToolRegistry> {",
+              "line": 164
+            },
+            {
+              "name": "discover_scripts",
+              "signature": "fn discover_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {",
+              "line": 185
+            },
+            {
+              "name": "discover_makefile_targets",
+              "signature": "fn discover_makefile_targets(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {",
+              "line": 242
+            },
+            {
+              "name": "discover_npm_scripts",
+              "signature": "fn discover_npm_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {",
+              "line": 278
+            },
+            {
+              "name": "verify_project_tools",
+              "signature": "fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {",
+              "line": 303
+            },
+            {
+              "name": "command_exists",
+              "signature": "pub fn command_exists(cmd: &str) -> bool {",
+              "line": 359
+            },
+            {
+              "name": "test_registry_needs_discovery",
+              "signature": "fn test_registry_needs_discovery() {",
+              "line": 372
+            },
+            {
+              "name": "test_add_tool",
+              "signature": "fn test_add_tool() {",
+              "line": 382
+            },
+            {
+              "name": "test_command_exists",
+              "signature": "fn test_command_exists() {",
+              "line": 397
+            }
+          ],
+          "fingerprint": "53bda970fb3c0da544315e9ef27b3debedafe199da854ed78774f50884fcdc86"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/tune_scenario.rs`",
+      "snapshots": [
+        {
+          "path": "src/tune_scenario.rs",
+          "functions": [
+            {
+              "name": "evaluate_runtime_scenario",
+              "signature": "pub(crate) async fn evaluate_runtime_scenario(",
+              "line": 8
+            }
+          ],
+          "fingerprint": "fb88e36d8f22e9296c1f3fd6249d337f4febf48e7c32420b792d618093ff2ec0"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/types_core.rs`",
+      "snapshots": [
+        {
+          "path": "src/types_core.rs",
+          "functions": [
+            {
+              "name": "new",
+              "signature": "pub fn new(objective: String) -> Self {",
+              "line": 27
+            },
+            {
+              "name": "complete_subgoal",
+              "signature": "pub fn complete_subgoal(&mut self, subgoal: String) {",
+              "line": 42
+            },
+            {
+              "name": "add_pending_subgoal",
+              "signature": "pub fn add_pending_subgoal(&mut self, subgoal: String) {",
+              "line": 53
+            },
+            {
+              "name": "clear",
+              "signature": "pub fn clear(&mut self) {",
+              "line": 65
+            },
+            {
+              "name": "has_active_goal",
+              "signature": "pub fn has_active_goal(&self) -> bool {",
+              "line": 72
+            },
+            {
+              "name": "default_runtime_safe",
+              "signature": "fn default_runtime_safe() -> bool {",
+              "line": 295
+            },
+            {
+              "name": "from",
+              "signature": "fn from(decision: &RouteDecision) -> Self {",
+              "line": 513
+            },
+            {
+              "name": "id",
+              "signature": "pub(crate) fn id(&self) -> &str {",
+              "line": 592
+            },
+            {
+              "name": "kind",
+              "signature": "pub(crate) fn kind(&self) -> &str {",
+              "line": 600
+            },
+            {
+              "name": "purpose",
+              "signature": "pub(crate) fn purpose(&self) -> &str {",
+              "line": 613
+            }
+          ],
+          "fingerprint": "626268e283e695c05e9c1db97d07f763f3af7adc0b50b9021d4f8be8a93fd116"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-03-30T17:17:29.978048Z"
+}

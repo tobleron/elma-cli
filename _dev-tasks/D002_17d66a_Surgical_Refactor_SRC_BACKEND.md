@@ -1,4 +1,4 @@
-# Task D002_8ddf40: Surgical Refactor SRC BACKEND
+# Task D002_17d66a: Surgical Refactor SRC BACKEND
 
 ## Objective
 Senior Refactoring Engineer. Reduce estimated modification risk below the applicable drag target without fragmenting cohesive modules. Extract highlighted 'Hotspots' into sub-modules only when the resulting split stays within the preferred size policy. The file should remain a clear 'Orchestrator' or 'Service' boundary, with only truly dense or isolated logic moved to specialized siblings.
@@ -8,8 +8,7 @@ Senior Refactoring Engineer. Reduce estimated modification risk below the applic
 ### 🔧 Action: De-bloat
 **Directive:** Decompose & Flatten: Use guard clauses to reduce nesting and extract dense logic into private helper functions.
 - [ ] **../../src/app_bootstrap.rs** (Metric: [Nesting: 1.80, Density: 0.07, Coupling: 0.00] | Drag: 2.95 | LOC: 674/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC)
-- [ ] **../../src/app_chat.rs** (Metric: [Nesting: 3.00, Density: 0.05, Coupling: 0.00] | Drag: 4.12 | LOC: 957/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC)
-- [ ] **../../src/execution_steps.rs** (Metric: [Nesting: 5.40, Density: 0.05, Coupling: 0.00] | Drag: 6.63 | LOC: 1360/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → 🏗️ Split into 3 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC)
+- [ ] **../../src/execution_steps_shell.rs** (Metric: [Nesting: 5.40, Density: 0.07, Coupling: 0.00] | Drag: 6.76 | LOC: 644/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC)
 - [ ] **../../src/optimization_tune.rs** (Metric: [Nesting: 3.00, Density: 0.06, Coupling: 0.00] | Drag: 4.26 | LOC: 484/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → Refactor in-place (keep near ~400 LOC and above 220 LOC floor)
 - [ ] **../../src/orchestration_loop.rs** (Metric: [Nesting: 3.00, Density: 0.04, Coupling: 0.00] | Drag: 4.25 | LOC: 683/400  ⚠️ Trigger: Drag above target (2.60); keep the module within the 350-450 LOC working band if you extract helpers.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC)
 - [ ] **../../src/tool_discovery.rs** (Metric: [Nesting: 3.00, Density: 0.05, Coupling: 0.01] | Drag: 4.19 | LOC: 404/400  ⚠️ Trigger: Drag above target (2.60) with file already at 404 LOC.) → Refactor in-place (keep near ~400 LOC and above 220 LOC floor)
@@ -19,8 +18,8 @@ Senior Refactoring Engineer. Reduce estimated modification risk below the applic
 - [ ] **../../src/types_core.rs** (Metric: [Nesting: 1.20, Density: 0.01, Coupling: 0.00] | Drag: 2.26 | LOC: 620/400  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.) → 🏗️ Split into 2 modules (target 350-450 LOC each, center ~400 LOC, floor 220 LOC) [Size-only candidate; drag already within target.]
 
 ## 🔎 Programmatic Verification
-- Baseline artifacts: `_dev-system/tmp/D002_8ddf40_Surgical_Refactor_SRC_BACKEND/verification.json` (files at `_dev-system/tmp/D002_8ddf40_Surgical_Refactor_SRC_BACKEND/files/`).
-- Run `cargo run --manifest-path _dev-system/analyzer/Cargo.toml --bin spec_diff -- --baseline _dev-system/tmp/D002_8ddf40_Surgical_Refactor_SRC_BACKEND/verification.json --targets <refactored files>` once the refactor is ready to ensure the function surface matches the captured snapshots.
+- Baseline artifacts: `_dev-system/tmp/D002_17d66a_Surgical_Refactor_SRC_BACKEND/verification.json` (files at `_dev-system/tmp/D002_17d66a_Surgical_Refactor_SRC_BACKEND/files/`).
+- Run `cargo run --manifest-path _dev-system/analyzer/Cargo.toml --bin spec_diff -- --baseline _dev-system/tmp/D002_17d66a_Surgical_Refactor_SRC_BACKEND/verification.json --targets <refactored files>` once the refactor is ready to ensure the function surface matches the captured snapshots.
 
 ### Pre-split snapshot for `src/app_bootstrap.rs`
 - `src/app_bootstrap.rs` (12 functions, fingerprint 7e3a2229f431ae8979e1438399f55e59c6276fa06bd077656a0a93d00b555c5e)
@@ -38,39 +37,10 @@ Senior Refactoring Engineer. Reduce estimated modification risk below the applic
         - sync_and_upgrade_profiles × 1 (lines: 335)
         - validate_mode_flags × 1 (lines: 156)
     - Detailed entries are preserved in baseline JSON (`verification.json`) for machine-level diffs.
-### Pre-split snapshot for `src/app_chat.rs`
-- `src/app_chat.rs` (17 functions, fingerprint 843f79e8967926c19b7898b8ab7e770a28258068b720f5f5588992ee803a8521)
+### Pre-split snapshot for `src/execution_steps_shell.rs`
+- `src/execution_steps_shell.rs` (1 functions, fingerprint 7a17ae1e22b0027280b95da251f69b2ae61ea35a445756c46cfff4fe0bcddbd0)
     - Grouped summary:
-        - build_program × 1 (lines: 525)
-        - handle_discover_tools × 1 (lines: 43)
-        - handle_manual_rollback × 1 (lines: 741)
-        - handle_manual_snapshot × 1 (lines: 664)
-        - handle_runtime_tune × 1 (lines: 705)
-        - handle_show_goals × 1 (lines: 9)
-        - maybe_save_formula_memory × 1 (lines: 845)
-        - persist_runtime_workspace_intel × 1 (lines: 824)
-        - print_final_output × 1 (lines: 630)
-        - rebuild_system_content × 1 (lines: 811)
-        - refresh_runtime_workspace × 1 (lines: 789)
-        - resolve_final_text × 1 (lines: 602)
-        - run_chat_loop × 1 (lines: 59)
-        - trace_complexity × 1 (lines: 429)
-        - trace_formula × 1 (lines: 501)
-        - trace_route_decision × 1 (lines: 335)
-        - trace_scope × 1 (lines: 453)
-    - Detailed entries are preserved in baseline JSON (`verification.json`) for machine-level diffs.
-### Pre-split snapshot for `src/execution_steps.rs`
-- `src/execution_steps.rs` (9 functions, fingerprint 1f6ed214f56641e58228823560f173329895f474c8293ce1df5da1183b556249)
-    - Grouped summary:
-        - command_is_unavailable × 1 (lines: 92)
-        - handle_edit_step × 1 (lines: 551)
-        - handle_program_step × 1 (lines: 134)
-        - handle_shell_step × 1 (lines: 724)
-        - primary_shell_command × 1 (lines: 17)
-        - probe_command_compatibility × 1 (lines: 44)
-        - shell_output_indicates_command_not_found × 1 (lines: 86)
-        - unavailable_reply_instructions × 1 (lines: 116)
-        - unavailable_summary × 1 (lines: 97)
+        - handle_shell_step × 1 (lines: 9)
     - Detailed entries are preserved in baseline JSON (`verification.json`) for machine-level diffs.
 ### Pre-split snapshot for `src/optimization_tune.rs`
 - `src/optimization_tune.rs` (1 functions, fingerprint 002c501ec2d68f43f017ef1f5ce5aa27e3d18cc2874f32f347ddb09436c7c1c4)
