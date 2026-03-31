@@ -20,9 +20,9 @@ pub(crate) fn mode_code_pairs() -> &'static [(&'static str, &'static str)] {
 
 pub(crate) fn speech_act_code_pairs() -> &'static [(&'static str, &'static str)] {
     &[
-        ("1", "CAPABILITY_CHECK"),
-        ("2", "INFO_REQUEST"),
-        ("3", "ACTION_REQUEST"),
+        ("1", "SHELL"),
+        ("2", "INFO"),
+        ("3", "CHAT"),
     ]
 }
 

@@ -32,7 +32,12 @@ pub(crate) async fn orchestrate_program_once(
         ws_brief,
         messages,
     );
-    orchestration_helpers::request_program_or_repair(client, chat_url, orchestrator_cfg, &prompt)
+    
+    // Use GBNF grammar for SHELL routes to ensure valid JSON
+    let use_grammar = route_decision.route.eq_ignore_ascii_case("SHELL")
+        || route_decision.route.eq_ignore_ascii_case("WORKFLOW");
+    
+    orchestration_helpers::request_program_or_repair(client, chat_url, orchestrator_cfg, &prompt, use_grammar)
         .await
 }
 

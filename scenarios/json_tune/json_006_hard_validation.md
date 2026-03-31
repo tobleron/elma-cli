@@ -1,0 +1,1 @@
+user: Return a JSON Schema-like object defining a user model with: "$schema" (URI), "type" (object), "properties" (object with "id", "name", "email", "roles" each having "type" and optional "format" or "items"), "required" (array), and "additionalProperties" (boolean)

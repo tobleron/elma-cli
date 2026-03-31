@@ -38,6 +38,7 @@ mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
 mod intel;
+mod json_tuning;  // JSON temperature tuning
 mod metrics;
 mod models_api;
 mod optimization;
@@ -98,6 +99,7 @@ pub(crate) use defaults::*;
 pub(crate) use evaluation::*;
 pub(crate) use execution::*;
 pub(crate) use intel::*;
+pub(crate) use json_tuning::*;  // JSON temperature tuning
 pub(crate) use metrics::*;
 pub(crate) use models_api::*;
 pub(crate) use optimization::*;

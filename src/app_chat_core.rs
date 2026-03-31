@@ -172,59 +172,78 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         }
 
         let features = ClassificationFeatures::from(&route_decision);
-        match reflect_on_program(
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.profiles.reflection_cfg,
-            &program,
-            &features,
-            &runtime.ws,
-        ).await {
-            Ok(reflection) => {
-                trace(
-                    &runtime.args,
-                    &format!(
-                        "reflection_confidence={:.2} concerns={} missing={}",
-                        reflection.confidence_score,
-                        reflection.concerns.len(),
-                        reflection.missing_points.len()
-                    ),
-                );
-                show_process_step_verbose(runtime.verbose, "REFLECT", &format!(
-                    "confidence={:.0}%{}",
-                    reflection.confidence_score * 100.0,
-                    if !reflection.is_confident { " ⚠️" } else { "" }
-                ));
-                if !reflection.is_confident || reflection.confidence_score < 0.6 {
-                    trace_verbose(runtime.verbose, &format!("reflection_warnings={:?}", reflection.concerns));
+        let skip_intel = should_skip_intel(&complexity);
+
+        if !skip_intel {
+            match reflect_on_program(
+                &runtime.client,
+                &runtime.chat_url,
+                &runtime.profiles.reflection_cfg,
+                &program,
+                &features,
+                &runtime.ws,
+            ).await {
+                Ok(reflection) => {
+                    trace(
+                        &runtime.args,
+                        &format!(
+                            "reflection_confidence={:.2} concerns={} missing={}",
+                            reflection.confidence_score,
+                            reflection.concerns.len(),
+                            reflection.missing_points.len()
+                        ),
+                    );
+                    show_process_step_verbose(runtime.verbose, "REFLECT", &format!(
+                        "confidence={:.0}%{}",
+                        reflection.confidence_score * 100.0,
+                        if !reflection.is_confident { " ⚠️" } else { "" }
+                    ));
+                    if !reflection.is_confident || reflection.confidence_score < 0.6 {
+                        trace_verbose(runtime.verbose, &format!("reflection_warnings={:?}", reflection.concerns));
+                    }
+                }
+                Err(error) => {
+                    trace_verbose(runtime.verbose, &format!("reflection_failed error={}", error));
                 }
             }
-            Err(error) => {
-                trace_verbose(runtime.verbose, &format!("reflection_failed error={}", error));
-            }
+        } else {
+            trace(&runtime.args, "reflection_skipped complexity=direct");
         }
 
-        let mut loop_outcome = orchestrate_with_retries(
-            &runtime.args,
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.session,
-            &runtime.repo,
-            program,
-            &route_decision,
-            workflow_plan.as_ref(),
-            &complexity,
-            &scope,
-            &formula,
-            &runtime.ws,
-            &runtime.ws_brief,
-            &runtime.messages,
-            &runtime.profiles,
-            runtime.args.max_retries,
-            runtime.args.retry_temp_step,
-            runtime.args.max_retry_temp,
-        )
-        .await?;
+        // For CHAT+reply_only, skip retry loop entirely - just execute the simple reply program
+        let mut loop_outcome = if route_decision.route.eq_ignore_ascii_case("CHAT")
+            && formula.primary.eq_ignore_ascii_case("reply_only")
+        {
+            // Direct execution without retries for simple chat replies
+            AutonomousLoopOutcome {
+                program: program.clone(),
+                step_results: vec![],
+                final_reply: None,
+                reasoning_clean: true,
+            }
+        } else {
+            orchestrate_with_retries(
+                &runtime.args,
+                &runtime.client,
+                &runtime.chat_url,
+                &runtime.session,
+                &runtime.repo,
+                program,
+                &route_decision,
+                workflow_plan.as_ref(),
+                &complexity,
+                &scope,
+                &formula,
+                &runtime.ws,
+                &runtime.ws_brief,
+                &runtime.messages,
+                &runtime.profiles,
+                runtime.args.max_retries,
+                runtime.args.retry_temp_step,
+                runtime.args.max_retry_temp,
+            )
+            .await?
+        };
         let mut program = loop_outcome.program;
         let mut step_results = loop_outcome.step_results;
         let mut final_reply = loop_outcome.final_reply;
@@ -285,6 +304,29 @@ async fn build_program(
     scope: &ScopePlan,
     formula: &FormulaSelection,
 ) -> Program {
+    // For CHAT routes with reply_only formula, skip orchestrator entirely
+    // No need to request JSON for simple conversational replies
+    if route_decision.route.eq_ignore_ascii_case("CHAT") 
+        && formula.primary.eq_ignore_ascii_case("reply_only") 
+    {
+        trace(&runtime.args, &format!("chat_reply_only_fast_path route={} formula={}", route_decision.route, formula.primary));
+        return Program {
+            objective: line.to_string(),
+            steps: vec![Step::Reply {
+                id: "r1".to_string(),
+                instructions: format!("Respond naturally to: {}", line),
+                common: StepCommon {
+                    purpose: "conversational reply".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "user receives a natural, helpful response".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            }],
+        };
+    }
+
     match orchestrate_program_once(
         &runtime.client,
         &runtime.chat_url,
@@ -307,33 +349,54 @@ async fn build_program(
                 &runtime.args,
                 &format!("orchestrator_repair_parse_error={error}"),
             );
-            if !route_decision.route.eq_ignore_ascii_case("CHAT") {
-                operator_trace(&runtime.args, "repairing the workflow plan");
-                trace_verbose(runtime.verbose, "workflow_recovery=ok source=orchestrator_parse_error");
-                if let Ok(program) = recover_program_once(
-                    &runtime.client,
-                    &runtime.chat_url,
-                    &runtime.profiles.orchestrator_cfg,
-                    line,
-                    route_decision,
-                    workflow_plan,
-                    complexity,
-                    scope,
-                    formula,
-                    &runtime.ws,
-                    &runtime.ws_brief,
-                    &runtime.messages,
-                    &format!("orchestrator_parse_error: {error}"),
-                    None,
-                    &[],
-                )
-                .await
-                {
-                    trace_verbose(runtime.verbose, "workflow_recovery=ok source=orchestrator_parse_error");
-                    return program;
-                }
-                trace_verbose(runtime.verbose, "workflow_recovery=failed source=orchestrator_parse_error");
+
+            // If it's a CHAT route, provide a robust direct reply fallback Program
+            // instead of trying recovery, which might also fail if the model is being stubborn.
+            if route_decision.route.eq_ignore_ascii_case("CHAT") {
+                trace(&runtime.args, "chat_route_fallback_program");
+                return Program {
+                    objective: line.to_string(),
+                    steps: vec![Step::Reply {
+                        id: "r1".to_string(),
+                        instructions: format!("Answer the user's message directly: {}", line),
+                        common: StepCommon {
+                            purpose: "direct chat response fallback".to_string(),
+                            depends_on: Vec::new(),
+                            success_condition: "response sent".to_string(),
+                            parent_id: None,
+                            depth: None,
+                            unit_type: None,
+                        },
+                    }],
+                };
             }
+
+            operator_trace(&runtime.args, "repairing the workflow plan");
+            trace_verbose(runtime.verbose, "workflow_recovery=attempting");
+            if let Ok(program) = recover_program_once(
+                &runtime.client,
+                &runtime.chat_url,
+                &runtime.profiles.orchestrator_cfg,
+                line,
+                route_decision,
+                workflow_plan,
+                complexity,
+                scope,
+                formula,
+                &runtime.ws,
+                &runtime.ws_brief,
+                &runtime.messages,
+                &format!("orchestrator_parse_error: {error}"),
+                None,
+                &[],
+            )
+            .await
+            {
+                trace_verbose(runtime.verbose, "workflow_recovery=ok source=orchestrator_parse_error");
+                return program;
+            }
+            trace_verbose(runtime.verbose, "workflow_recovery=failed source=orchestrator_parse_error");
+            
             Program {
                 objective: "fallback_clarification".to_string(),
                 steps: vec![Step::Reply {

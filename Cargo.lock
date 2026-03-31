@@ -280,6 +280,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "jsonrepair-rs",
  "reqwest",
  "serde",
  "serde_json",
@@ -765,6 +766,12 @@ dependencies = [
  "once_cell",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "jsonrepair-rs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "939ca4d3a8b0bc6a5db2fcc793e6f0dc63035c35ea8ef75385d75533e35dcb49"
 
 [[package]]
 name = "leb128fmt"

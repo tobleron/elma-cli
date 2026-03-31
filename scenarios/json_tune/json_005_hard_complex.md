@@ -1,0 +1,1 @@
+user: Return a complex JSON configuration object with: "version" (string), "settings" (nested object with "temperature", "top_p", "max_tokens"), "routes" (array of objects with "pattern", "handler", "config"), "middleware" (array with "name", "order", "options"), and "plugins" (object mapping plugin names to their configurations)

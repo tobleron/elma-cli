@@ -18,25 +18,34 @@ pub(crate) fn validate_mode_flags(args: &Args) -> Result<()> {
 }
 
 pub(crate) fn should_auto_tune_on_startup(args: &Args, model_cfg_dir: &Path) -> bool {
+    // Explicit tune/calibrate flags always trigger tuning
     if args.tune || args.calibrate || args.restore_base || args.restore_last {
         return false;
     }
-    !model_active_manifest_path(model_cfg_dir).exists()
-}
-
-pub(crate) fn emit_auto_tune_banner(args: &Args, model_id: &str, model_cfg_dir: &Path) {
-    let tune_mode = if args.tune_mode == "quick" { "quick (5 scenarios)" } else { "full" };
-    if args.no_color {
-        eprintln!("First-time model setup");
-        eprintln!("  model    {}", model_id);
-        eprintln!("  config   {}", model_cfg_dir.display());
-        eprintln!("  action   {} tuning before chat startup", tune_mode);
-    } else {
-        eprintln!("{}", ansi_orange("First-time model setup"));
-        eprintln!("{} {}", ansi_grey("  model   "), model_id);
-        eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
-        eprintln!("{} {} {}", ansi_grey("  action  "), tune_mode, "tuning before chat startup");
+    
+    // Check if JSON tuning is complete (has cached results)
+    let json_tune_dir = model_cfg_dir.join("tune").join("json");
+    if !json_tune_dir.exists() {
+        return true; // No JSON tuning directory, need to tune
     }
+    
+    // Check if there are any JSON tuning cache files
+    let has_json_cache = std::fs::read_dir(&json_tune_dir)
+        .map(|mut entries| entries.any(|e| {
+            e.ok().map(|entry| {
+                entry.path().extension()
+                    .and_then(|ext| ext.to_str()) == Some("toml")
+            }).unwrap_or(false)
+        }))
+        .unwrap_or(false);
+    
+    if !has_json_cache {
+        return true; // No cache files, need to tune
+    }
+    
+    // Has JSON cache - skip full tuning, use cached results
+    // The model has been tuned before, no need to re-tune
+    false
 }
 
 pub(crate) async fn handle_special_modes(
@@ -140,6 +149,7 @@ pub(crate) fn emit_startup_banner(
     model_id: &str,
     model_cfg_dir: &Path,
     session: &SessionPaths,
+    tuned: bool,
 ) {
     let target = chat_url
         .host_str()
@@ -160,6 +170,9 @@ pub(crate) fn emit_startup_banner(
         eprintln!("  model    {model_id}");
         eprintln!("  config   {}", model_cfg_dir.display());
         eprintln!("  session  {session_name}");
+        if tuned {
+            eprintln!("  status   ✓ tuned (using cached results)");
+        }
         eprintln!("  commands /exit  /reset  /snapshot  /rollback <id>  /tune\n");
         return;
     }
@@ -169,8 +182,8 @@ pub(crate) fn emit_startup_banner(
     eprintln!("{} {model_id}", ansi_grey("  model   "));
     eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
     eprintln!("{} {session_name}", ansi_grey("  session "));
-    eprintln!(
-        "{} /exit  /reset  /snapshot  /rollback <id>  /tune\n",
-        ansi_grey("  commands")
-    );
+    if tuned {
+        eprintln!("{} {}", ansi_soft_green("  status  "), "✓ tuned (using cached results)");
+    }
+    eprintln!("{} /exit  /reset  /snapshot  /rollback <id>  /tune\n", ansi_grey("  commands"));
 }

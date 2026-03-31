@@ -35,13 +35,50 @@ pub(crate) async fn optimize_model(
         },
     )?;
 
-    let active_baseline_dir = make_candidate_dir(&run_root, "00_active_baseline")?;
-    snapshot_active_profile_set(model_cfg_dir, &active_baseline_dir)?;
+    // Stage 0: JSON Temperature Tuning (NEW - Priority 0)
+    // Directly updates config files in model_cfg_dir
+    calibration_progress(
+        args,
+        &format!(
+            "tune stage 0/5: JSON temperature tuning for {model_id}",
+        ),
+    );
+    let json_tuning_result = run_json_temperature_tuning(
+        args,
+        client,
+        chat_url,
+        model_cfg_dir,
+        model_id,
+        true,
+    ).await?;
+
+    // Save JSON tuning report
+    save_json_tuning_report(model_cfg_dir, &json_tuning_result)?;
+
+    // Apply optimal temperature to JSON-critical profiles (including routers)
+    apply_json_tuning_temperature(model_cfg_dir, json_tuning_result.recommended_temperature)?;
+
+    calibration_progress(
+        args,
+        &format!(
+            "  JSON tuning complete: optimal_temp={:.2}, recommended_temp={:.2}, score={:.3}",
+            json_tuning_result.optimal_temperature,
+            json_tuning_result.recommended_temperature,
+            json_tuning_result.results_by_temp.iter()
+                .find(|r| r.temperature == json_tuning_result.recommended_temperature)
+                .map(|r| r.weighted_score)
+                .unwrap_or(0.0)
+        ),
+    );
 
     let shipped_src_dir = ensure_baseline_profile_set(model_cfg_dir, base_url, model_id)?;
     let shipped_baseline_dir = make_candidate_dir(&run_root, "00_shipped_baseline")?;
     copy_profile_set(&shipped_src_dir, &shipped_baseline_dir)?;
     sync_profile_dir_base_url_and_model(&shipped_baseline_dir, base_url, model_id)?;
+
+    // Keep active baseline snapshot for later validation/rollback (not for stage 1 evaluation)
+    let active_baseline_dir = make_candidate_dir(&run_root, "00_active_baseline")?;
+    snapshot_active_profile_set(model_cfg_dir, &active_baseline_dir)?;
 
     let runtime_defaults = fetch_runtime_generation_defaults(client, &Url::parse(base_url)?).await?;
     let runtime_baseline_dir = if let Some(defaults) = runtime_defaults.as_ref() {
@@ -57,25 +94,37 @@ pub(crate) async fn optimize_model(
     calibration_progress(
         args,
         &format!(
-            "tune stage 1/4: protected baselines on {} corpus for {model_id}",
+            "tune stage 1/5: protected baselines on {} corpus for {model_id}",
             args.tune_mode
         ),
     );
     let mut protected_search = Vec::new();
-    for (name, dir) in [
-        ("00_active_baseline", active_baseline_dir.clone()),
-        ("00_shipped_baseline", shipped_baseline_dir.clone()),
-    ] {
-        let (score, hard_rejected, note) =
-            evaluate_routing_suite(args, client, chat_url, &dir, model_id).await?;
-        save_stage_score_note(&dir, "stage1_routing", &note)?;
-        protected_search.push(SearchCandidate {
-            name: name.to_string(),
-            dir,
-            score,
-            hard_rejected,
-        });
-    }
+    
+    // Evaluate the ACTUAL config directory (with JSON tuning temps applied) for active baseline
+    // Snapshots are for workspace state, not Elma's own config tuning
+    let (score, hard_rejected, note) =
+        evaluate_routing_suite(args, client, chat_url, model_cfg_dir, model_id).await?;
+    protected_search.push(SearchCandidate {
+        name: "00_active_baseline_with_json_tuning".to_string(),
+        dir: model_cfg_dir.clone(),
+        score,
+        hard_rejected,
+    });
+    calibration_progress(
+        args,
+        &format!("  active baseline (with JSON tuning temps): score={:.3}, hard_rejected={}", score, hard_rejected),
+    );
+    
+    // Evaluate shipped baseline (snapshot from shipped profiles)
+    let (score, hard_rejected, note) =
+        evaluate_routing_suite(args, client, chat_url, &shipped_baseline_dir, model_id).await?;
+    save_stage_score_note(&shipped_baseline_dir, "stage1_routing", &note)?;
+    protected_search.push(SearchCandidate {
+        name: "00_shipped_baseline".to_string(),
+        dir: shipped_baseline_dir.clone(),
+        score,
+        hard_rejected,
+    });
     if let Some(dir) = runtime_baseline_dir.as_ref() {
         let (score, hard_rejected, note) =
             evaluate_routing_suite(args, client, chat_url, dir, model_id).await?;
@@ -109,10 +158,20 @@ pub(crate) async fn optimize_model(
         let mut stage2_scores = Vec::new();
         calibration_progress(
             args,
-            &format!("tune stage 2/4: routing params for {model_id}"),
+            &format!("tune stage 2/5: routing params for {model_id}"),
         );
+        
+        // Quick mode optimization: test default first, skip if it passes
+        let quick_mode = args.tune_mode == "quick";
+        let mut default_passed = false;
+        
         for parent in &beam {
             for variant in router_variants {
+                // In quick mode, test "router_soft" (default-like) first
+                if quick_mode && variant == "router_strict" && !default_passed {
+                    continue; // Skip strict in quick mode if we haven't tested soft yet
+                }
+                
                 let dir =
                     make_candidate_dir(&run_root, &format!("20_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
@@ -133,6 +192,21 @@ pub(crate) async fn optimize_model(
                     score,
                     hard_rejected,
                 };
+                
+                // Quick mode: if soft (default-like) passes well, skip strict
+                if quick_mode && variant == "router_soft" && !hard_rejected && score >= 0.85 {
+                    default_passed = true;
+                    if candidate.score > best_search.score {
+                        best_search = candidate.clone();
+                    }
+                    stage2_scores.push(candidate);
+                    calibration_progress(
+                        args,
+                        &format!("  router default passed (score={:.3}), skipping strict variant", score),
+                    );
+                    break; // Skip remaining variants
+                }
+                
                 if candidate.score > best_search.score {
                     best_search = candidate.clone();
                 }
@@ -160,10 +234,20 @@ pub(crate) async fn optimize_model(
         let mut stage3_scores = Vec::new();
         calibration_progress(
             args,
-            &format!("tune stage 3/4: workflow orchestration for {model_id}"),
+            &format!("tune stage 3/5: workflow orchestration for {model_id}"),
         );
+        
+        // Quick mode optimization: test default (balanced) first, skip if it passes
+        let quick_mode = args.tune_mode == "quick";
+        let mut default_passed = false;
+        
         for parent in &beam {
             for variant in orch_variants {
+                // In quick mode, test balanced first and skip others if it passes
+                if quick_mode && variant != "orch_balanced" && !default_passed {
+                    continue;
+                }
+                
                 let dir =
                     make_candidate_dir(&run_root, &format!("30_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
@@ -184,6 +268,21 @@ pub(crate) async fn optimize_model(
                     score,
                     hard_rejected,
                 };
+                
+                // Quick mode: if balanced (default) passes well, skip other variants
+                if quick_mode && variant == "orch_balanced" && !hard_rejected && score >= 0.80 {
+                    default_passed = true;
+                    if candidate.score > best_search.score {
+                        best_search = candidate.clone();
+                    }
+                    stage3_scores.push(candidate);
+                    calibration_progress(
+                        args,
+                        &format!("  orchestration default passed (score={:.3}), skipping other variants", score),
+                    );
+                    break; // Skip remaining variants
+                }
+                
                 if candidate.score > best_search.score {
                     best_search = candidate.clone();
                 }
@@ -211,10 +310,20 @@ pub(crate) async fn optimize_model(
         let mut stage4_scores = Vec::new();
         calibration_progress(
             args,
-            &format!("tune stage 4/4: response quality for {model_id}"),
+            &format!("tune stage 4/5: response quality for {model_id}"),
         );
+        
+        // Quick mode optimization: test default (balanced) first, skip if it passes
+        let quick_mode = args.tune_mode == "quick";
+        let mut default_passed = false;
+        
         for parent in &beam {
             for variant in response_variants {
+                // In quick mode, test balanced first and skip others if it passes
+                if quick_mode && variant != "response_balanced" && !default_passed {
+                    continue;
+                }
+                
                 let dir =
                     make_candidate_dir(&run_root, &format!("40_{}_{}", parent.name, variant))?;
                 copy_profile_set(&parent.dir, &dir)?;
@@ -235,6 +344,21 @@ pub(crate) async fn optimize_model(
                     score,
                     hard_rejected,
                 };
+                
+                // Quick mode: if balanced (default) passes well, skip other variants
+                if quick_mode && variant == "response_balanced" && !hard_rejected && score >= 0.80 {
+                    default_passed = true;
+                    if candidate.score > best_search.score {
+                        best_search = candidate.clone();
+                    }
+                    stage4_scores.push(candidate);
+                    calibration_progress(
+                        args,
+                        &format!("  response default passed (score={:.3}), skipping other variants", score),
+                    );
+                    break; // Skip remaining variants
+                }
+                
                 if candidate.score > best_search.score {
                     best_search = candidate.clone();
                 }

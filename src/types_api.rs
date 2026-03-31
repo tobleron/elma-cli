@@ -70,6 +70,8 @@ pub(crate) struct ChatCompletionRequest {
     pub(crate) repeat_penalty: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) reasoning_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) grammar: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

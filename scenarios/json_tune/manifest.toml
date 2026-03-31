@@ -1,0 +1,53 @@
+version = 1
+description = "JSON output reliability tuning across difficulty levels and temperatures"
+
+# Low difficulty - simple JSON structures
+[[scenarios]]
+suite = "json_tune"
+file = "json_001_low_simple_object.md"
+difficulty = "LOW"
+expected_json_type = "object"
+min_fields = 2
+notes = "Simple two-field object"
+
+[[scenarios]]
+suite = "json_tune"
+file = "json_002_low_array.md"
+difficulty = "LOW"
+expected_json_type = "array"
+min_items = 3
+notes = "Array of simple objects"
+
+# Medium difficulty - nested structures
+[[scenarios]]
+suite = "json_tune"
+file = "json_003_medium_nested.md"
+difficulty = "MEDIUM"
+expected_json_type = "nested_object"
+min_depth = 2
+notes = "Nested recursive structure"
+
+[[scenarios]]
+suite = "json_tune"
+file = "json_004_medium_program.md"
+difficulty = "MEDIUM"
+expected_json_type = "program"
+min_fields = 2
+notes = "Elma Program JSON structure"
+
+# Hard difficulty - complex schemas
+[[scenarios]]
+suite = "json_tune"
+file = "json_005_hard_complex.md"
+difficulty = "HARD"
+expected_json_type = "complex_config"
+min_fields = 5
+notes = "Complex multi-section config"
+
+[[scenarios]]
+suite = "json_tune"
+file = "json_006_hard_validation.md"
+difficulty = "HARD"
+expected_json_type = "json_schema"
+min_fields = 5
+notes = "JSON Schema definition"

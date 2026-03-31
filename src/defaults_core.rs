@@ -101,9 +101,31 @@ pub(crate) fn default_orchestrator_config(base_url: &str, model: &str) -> Profil
         reasoning_format: "none".to_string(),
         max_tokens: 2048,
         timeout_s: 120,
-        system_prompt: "Create a JSON Program object with steps to achieve the user's objective."
+        system_prompt: "Create a JSON Program object with steps to achieve the user's objective.\n\nStep types and their required fields:\n- shell: {\"id\":\"s1\",\"type\":\"shell\",\"cmd\":\"command\",\"purpose\":\"why\",\"depends_on\":[],\"success_condition\":\"done when\"}\n- reply: {\"id\":\"r1\",\"type\":\"reply\",\"instructions\":\"what to say\",\"purpose\":\"why\",\"depends_on\":[],\"success_condition\":\"done when\"}\n- plan: {\"id\":\"p1\",\"type\":\"plan\",\"goal\":\"objective\",\"purpose\":\"why\",\"depends_on\":[],\"success_condition\":\"done when\"}\n- select: {\"id\":\"sel1\",\"type\":\"select\",\"instructions\":\"what to select\",\"purpose\":\"why\",\"depends_on\":[],\"success_condition\":\"done when\"}\n- decide: {\"id\":\"d1\",\"type\":\"decide\",\"prompt\":\"question to answer\",\"purpose\":\"why\",\"depends_on\":[],\"success_condition\":\"done when\"}\n- edit: {\"id\":\"e1\",\"type\":\"edit\",\"path\":\"file\",\"operation\":\"create|update|delete\",\"content\":\"new content\",\"purpose\":\"why\",\"depends_on\":[],\"success_condition\":\"done when\"}\n\nRules:\n- Use ONLY the fields specified for each step type.\n- Do NOT use 'goal' for reply steps - use 'instructions'.\n- Do NOT mix fields from different step types.\n- Every step must have: id, type, purpose, depends_on, success_condition.\n- Output valid JSON only. No prose."
             .to_string(),
     }
+}
+
+/// GBNF grammar for JSON Program output - ensures valid JSON structure
+pub(crate) fn json_program_grammar() -> String {
+    r#"
+root ::= program
+program ::= "{" ws "\"objective\"" ws ":" ws string ws "," ws "\"steps\"" ws ":" ws "[" ws (step (ws "," ws step)*)? ws "]" ws "}"
+step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws step_type ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws (step_fields)* ws "}"
+step_type ::= "\"shell\"" | "\"reply\"" | "\"plan\"" | "\"select\"" | "\"decide\"" | "\"summarize\"" | "\"edit\"" | "\"masterplan\""
+step_fields ::= (step_field_shell | step_field_reply | step_field_plan | step_field_select | step_field_decide | step_field_edit)
+step_field_shell ::= "," ws "\"cmd\"" ws ":" ws string
+step_field_reply ::= "," ws "\"instructions\"" ws ":" ws string
+step_field_plan ::= "," ws "\"goal\"" ws ":" ws string
+step_field_select ::= "," ws "\"instructions\"" ws ":" ws string
+step_field_decide ::= "," ws "\"prompt\"" ws ":" ws string
+step_field_edit ::= "," ws "\"path\"" ws ":" ws string "," ws "\"operation\"" ws ":" ws edit_op "," ws "\"content\"" ws ":" ws string
+edit_op ::= "\"create\"" | "\"update\"" | "\"delete\""
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" escape
+escape ::= ["\\bfnrt]
+ws ::= [ \t\n\r]*
+"#.to_string()
 }
 
 pub(crate) fn default_critic_config(base_url: &str, model: &str) -> Profile {

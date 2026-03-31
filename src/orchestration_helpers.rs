@@ -1,11 +1,24 @@
 use crate::*;
 
+pub(crate) fn should_skip_intel(complexity: &ComplexityAssessment) -> bool {
+    complexity.complexity.eq_ignore_ascii_case("DIRECT")
+        && (complexity.risk.eq_ignore_ascii_case("LOW")
+            || complexity.risk.eq_ignore_ascii_case("MEDIUM"))
+}
+
 pub(crate) async fn request_program_or_repair(
     client: &reqwest::Client,
     chat_url: &Url,
     orchestrator_cfg: &Profile,
     prompt: &str,
+    use_grammar: bool,
 ) -> Result<(Program, String)> {
+    let grammar = if use_grammar {
+        Some(json_program_grammar())
+    } else {
+        None
+    };
+    
     let orch_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
@@ -25,6 +38,7 @@ pub(crate) async fn request_program_or_repair(
         n_probs: None,
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
+        grammar,
     };
     let (program, json_text) = chat_json_with_repair_text(client, chat_url, &orch_req).await?;
     Ok((program, json_text))
@@ -58,6 +72,7 @@ pub(crate) async fn request_recovery_program(
         n_probs: None,
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair(client, chat_url, &recovery_req).await
 }
@@ -141,6 +156,7 @@ pub(crate) async fn request_critic_verdict(
         n_probs: None,
         repeat_penalty: Some(critic_cfg.repeat_penalty),
         reasoning_format: Some(critic_cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair(client, chat_url, &critic_req).await
 }
@@ -181,6 +197,7 @@ pub(crate) async fn request_risk_review(
         n_probs: None,
         repeat_penalty: Some(risk_cfg.repeat_penalty),
         reasoning_format: Some(risk_cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair(client, chat_url, &risk_req).await
 }
@@ -218,6 +235,7 @@ pub(crate) async fn request_chat_final_text(
         n_probs: None,
         repeat_penalty: Some(elma_cfg.repeat_penalty),
         reasoning_format: Some(elma_cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let parsed = chat_once(client, chat_url, &reply_req).await?;
     let usage_total = parsed.usage.as_ref().and_then(|u| u.total_tokens);
@@ -312,6 +330,7 @@ pub(crate) async fn maybe_format_final_text(
         n_probs: None,
         repeat_penalty: Some(formatter_cfg.repeat_penalty),
         reasoning_format: Some(formatter_cfg.reasoning_format.clone()),
+        grammar: None,
     };
     if let Ok(fmt_resp) = chat_once(client, chat_url, &fmt_req).await {
         let next_usage = fmt_resp
@@ -365,6 +384,52 @@ pub(crate) async fn request_judge_verdict(
         n_probs: None,
         repeat_penalty: Some(judge_cfg.repeat_penalty),
         reasoning_format: Some(judge_cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair(client, chat_url, &req).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_should_skip_intel_direct_low() {
+        let complexity = ComplexityAssessment {
+            complexity: "DIRECT".to_string(),
+            risk: "LOW".to_string(),
+            ..ComplexityAssessment::default()
+        };
+        assert!(should_skip_intel(&complexity));
+    }
+
+    #[test]
+    fn test_should_skip_intel_direct_medium() {
+        let complexity = ComplexityAssessment {
+            complexity: "DIRECT".to_string(),
+            risk: "MEDIUM".to_string(),
+            ..ComplexityAssessment::default()
+        };
+        assert!(should_skip_intel(&complexity));
+    }
+
+    #[test]
+    fn test_should_not_skip_intel_direct_high() {
+        let complexity = ComplexityAssessment {
+            complexity: "DIRECT".to_string(),
+            risk: "HIGH".to_string(),
+            ..ComplexityAssessment::default()
+        };
+        assert!(!should_skip_intel(&complexity));
+    }
+
+    #[test]
+    fn test_should_not_skip_intel_investigate_low() {
+        let complexity = ComplexityAssessment {
+            complexity: "INVESTIGATE".to_string(),
+            risk: "LOW".to_string(),
+            ..ComplexityAssessment::default()
+        };
+        assert!(!should_skip_intel(&complexity));
+    }
 }

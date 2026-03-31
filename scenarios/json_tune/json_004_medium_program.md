@@ -1,0 +1,1 @@
+user: Return a JSON Program object with "objective" (string) and "steps" array. Each step has "id", "type" (shell or reply), "cmd" or "instructions", "purpose", "depends_on" (array), and "success_condition"

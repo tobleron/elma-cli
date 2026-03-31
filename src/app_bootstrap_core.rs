@@ -63,8 +63,23 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         return Ok(None);
     }
 
-    if should_auto_tune_on_startup(&args, &model_cfg_dir) {
-        emit_auto_tune_banner(&args, &model_id, &model_cfg_dir);
+    let is_tuned = !should_auto_tune_on_startup(&args, &model_cfg_dir);
+    
+    if !is_tuned {
+        // Need to tune
+        let tune_mode = if args.tune_mode == "quick" { "quick (5 scenarios)" } else { "full" };
+        if args.no_color {
+            eprintln!("First-time model setup");
+            eprintln!("  model    {}", model_id);
+            eprintln!("  config   {}", model_cfg_dir.display());
+            eprintln!("  action   {} tuning before chat startup", tune_mode);
+        } else {
+            eprintln!("{}", ansi_orange("First-time model setup"));
+            eprintln!("{} {}", ansi_grey("  model   "), model_id);
+            eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
+            eprintln!("{} {} {}", ansi_grey("  action  "), tune_mode, "tuning before chat startup");
+        }
+        
         let mut auto_tune_args = args.clone();
         auto_tune_args.tune = true;
         match optimize_model(
@@ -132,7 +147,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         trace(&args, &format!("loaded_goal_state objective={:?}", goal_state.active_objective));
     }
 
-    emit_startup_banner(&args, &chat_url, &model_id, &model_cfg_dir, &session);
+    emit_startup_banner(&args, &chat_url, &model_id, &model_cfg_dir, &session, is_tuned);
 
     Ok(Some(AppRuntime {
         args,
