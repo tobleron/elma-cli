@@ -1,4 +1,70 @@
 use crate::*;
+use crate::app::LoadedProfiles;
+use std::collections::HashMap;
+
+/// Task 046: Compute SHA256 hash of a system prompt
+fn compute_prompt_hash(prompt: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+    
+    let mut hasher = DefaultHasher::new();
+    prompt.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+/// Task 046: Compute hashes for all intel unit system prompts
+pub(crate) fn compute_all_prompt_hashes(profiles: &LoadedProfiles) -> HashMap<String, String> {
+    let mut hashes = HashMap::new();
+    
+    // Router prompts
+    hashes.insert("router".to_string(), compute_prompt_hash(&profiles.router_cfg.system_prompt));
+    hashes.insert("mode_router".to_string(), compute_prompt_hash(&profiles.mode_router_cfg.system_prompt));
+    hashes.insert("speech_act".to_string(), compute_prompt_hash(&profiles.speech_act_cfg.system_prompt));
+    
+    // Intel unit prompts
+    hashes.insert("complexity_assessor".to_string(), compute_prompt_hash(&profiles.complexity_cfg.system_prompt));
+    hashes.insert("formula_selector".to_string(), compute_prompt_hash(&profiles.formula_cfg.system_prompt));
+    hashes.insert("workflow_planner".to_string(), compute_prompt_hash(&profiles.workflow_planner_cfg.system_prompt));
+    hashes.insert("scope_builder".to_string(), compute_prompt_hash(&profiles.scope_builder_cfg.system_prompt));
+    hashes.insert("evidence_mode".to_string(), compute_prompt_hash(&profiles.evidence_mode_cfg.system_prompt));
+    hashes.insert("outcome_verifier".to_string(), compute_prompt_hash(&profiles.outcome_verifier_cfg.system_prompt));
+    hashes.insert("memory_gate".to_string(), compute_prompt_hash(&profiles.memory_gate_cfg.system_prompt));
+    hashes.insert("orchestrator".to_string(), compute_prompt_hash(&profiles.orchestrator_cfg.system_prompt));
+    hashes.insert("critic".to_string(), compute_prompt_hash(&profiles.critic_cfg.system_prompt));
+    
+    hashes
+}
+
+/// Task 046: Check if any intel unit prompts have changed since last tuning
+pub(crate) fn check_prompt_changes(
+    model_cfg_dir: &PathBuf,
+    current_hashes: &HashMap<String, String>,
+) -> Result<(bool, Vec<String>)> {
+    let manifest_path = model_cfg_dir.join("tune").join("active_manifest.json");
+    
+    if !manifest_path.exists() {
+        // No previous tuning, changes detected
+        return Ok((true, vec![]));
+    }
+    
+    let manifest_json = std::fs::read_to_string(&manifest_path)?;
+    let manifest: TuneRunManifest = serde_json::from_str(&manifest_json)?;
+    
+    let mut changed_units = Vec::new();
+    
+    for (unit_name, current_hash) in current_hashes {
+        if let Some(stored_hash) = manifest.prompt_hashes.get(unit_name) {
+            if stored_hash != current_hash {
+                changed_units.push(unit_name.clone());
+            }
+        } else {
+            // New unit, treat as changed
+            changed_units.push(unit_name.clone());
+        }
+    }
+    
+    Ok((!changed_units.is_empty(), changed_units))
+}
 
 pub(crate) struct TuneResources {
     pub(crate) elma_cfg: Profile,

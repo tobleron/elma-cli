@@ -112,6 +112,58 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         profiles.final_answer_extractor_cfg.clone(),
     ));
 
+    // Task 046: Check if intel unit prompts have changed since last tuning
+    if is_tuned {
+        let current_hashes = crate::tune::compute_all_prompt_hashes(&profiles);
+        match crate::tune::check_prompt_changes(&model_cfg_dir, &current_hashes) {
+            Ok((changed, units)) => {
+                if changed {
+                    // Prompts changed, need to re-tune
+                    if args.no_color {
+                        eprintln!("Prompt changes detected");
+                        eprintln!("  changed units: {}", units.join(", "));
+                        eprintln!("  action: auto-tuning to update profiles");
+                    } else {
+                        eprintln!("{}", ansi_orange("Prompt changes detected"));
+                        eprintln!("{} {}", ansi_grey("  changed units:"), units.join(", "));
+                        eprintln!("{} auto-tuning to update profiles", ansi_grey("  action: "));
+                    }
+                    
+                    // Trigger auto-tune
+                    let mut auto_tune_args = args.clone();
+                    auto_tune_args.tune = true;
+                    match optimize_model(
+                        &auto_tune_args,
+                        &client,
+                        &chat_url,
+                        &base_url,
+                        &model_cfg_dir,
+                        &model_id,
+                    )
+                    .await {
+                        Ok(winner) => {
+                            eprintln!(
+                                "  tuned    score {:.3}  certified {}",
+                                winner.score, winner.report.summary.certified
+                            );
+                            // Reload profiles with new tuning
+                            profiles = load_profiles(&model_cfg_dir)?;
+                            sync_and_upgrade_profiles(&args, &model_cfg_dir, &base_url, &model_id, &mut profiles)?;
+                        }
+                        Err(error) => {
+                            eprintln!("  tuned    failed");
+                            eprintln!("  reason   {error:#}");
+                            eprintln!("  action   continuing with existing profiles");
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                trace(&args, &format!("prompt_change_check_failed error={}", error));
+            }
+        }
+    }
+
     let ctx_max = fetch_ctx_max(&client, &base).await.unwrap_or(None);
     let session = prepare_session(&args)?;
     let repo = repo_root()?;

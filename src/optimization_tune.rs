@@ -5,6 +5,7 @@
 //! Contains the main optimize_model function for parameter tuning.
 
 use crate::*;
+use crate::app_bootstrap_profiles::load_profiles;
 
 pub(crate) async fn optimize_model(
     args: &Args,
@@ -19,6 +20,11 @@ pub(crate) async fn optimize_model(
     std::fs::create_dir_all(run_root.join("candidates"))
         .with_context(|| format!("mkdir {}", run_root.display()))?;
     snapshot_active_profile_set(model_cfg_dir, &run_root.join("live_before"))?;
+    
+    // Task 046: Compute initial prompt hashes
+    let profiles = load_profiles(model_cfg_dir)?;
+    let prompt_hashes = crate::tune::compute_all_prompt_hashes(&profiles);
+    
     save_tune_run_manifest(
         &run_root.join("run_manifest.toml"),
         &TuneRunManifest {
@@ -32,6 +38,7 @@ pub(crate) async fn optimize_model(
             certified: false,
             activation_reason: String::new(),
             baseline_score: 0.0,
+            prompt_hashes,
         },
     )?;
 
@@ -591,6 +598,11 @@ pub(crate) async fn optimize_model(
         &reason,
         baseline_score,
     )?;
+
+    // Task 046: Compute and store prompt hashes for change detection
+    let profiles = load_profiles(model_cfg_dir)?;
+    let prompt_hashes = crate::tune::compute_all_prompt_hashes(&profiles);
+
     save_tune_run_manifest(
         &run_root.join("run_manifest.toml"),
         &TuneRunManifest {
@@ -604,6 +616,7 @@ pub(crate) async fn optimize_model(
             certified: final_certified,
             activation_reason: reason,
             baseline_score,
+            prompt_hashes,
         },
     )?;
 

@@ -217,6 +217,9 @@ pub(crate) struct TuneRunManifest {
     pub(crate) activation_reason: String,
     #[serde(default)]
     pub(crate) baseline_score: f64,
+    /// Task 046: Track system prompt hashes to detect when re-tuning is needed
+    #[serde(default)]
+    pub(crate) prompt_hashes: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
