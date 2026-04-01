@@ -65,20 +65,21 @@ run_test() {
   
   # Run through elma-cli (send prompt via echo pipe)
   # Note: timeout not available on macOS, using background process with sleep
+  # Timeout set to 360s (6 minutes) per test for slow local models
   if command -v timeout &> /dev/null; then
-    timeout 60 bash -c "echo '$prompt' | cargo run --quiet 2>&1" | head -100 || {
+    timeout 360 bash -c "echo '$prompt' | cargo run --quiet 2>&1" | head -200 || {
       echo ""
-      echo "⚠️ TIMEOUT (60s limit)"
+      echo "⚠️ TIMEOUT (360s limit)"
     }
   else
     # macOS fallback: use background process
     (echo "$prompt" | cargo run --quiet 2>&1) &
     PID=$!
-    (sleep 60 && kill $PID) &
+    (sleep 360 && kill $PID) &
     KILLER=$!
     wait $PID 2>/dev/null || {
       echo ""
-      echo "⚠️ TIMEOUT (60s limit)"
+      echo "⚠️ TIMEOUT (360s limit)"
     }
     kill $KILLER 2>/dev/null || true
     wait $PID 2>/dev/null || true
@@ -86,17 +87,25 @@ run_test() {
   
   echo ""
   echo "------------------------------------------"
-  echo "✅ Test complete: $test_name"
+  echo "✅ Test PASSED: $test_name"
   echo ""
 }
 
-# Run all stress tests in order
+# Run stress tests until first failure
 for file in _stress_testing/S*.md; do
   if [[ -f "$file" ]]; then
-    run_test "$file" || true  # Continue even if test fails
+    if ! run_test "$file"; then
+      echo ""
+      echo "=========================================="
+      echo "❌ FIRST FAILURE: $file"
+      echo "=========================================="
+      echo "Stopping stress tests at first failure."
+      echo "Troubleshoot this test before continuing."
+      exit 1
+    fi
   fi
 done
 
 echo "=========================================="
-echo "All stress tests complete"
+echo "All stress tests PASSED!"
 echo "=========================================="

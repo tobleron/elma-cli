@@ -23,6 +23,8 @@ pub(crate) struct LoadedProfiles {
     pub(crate) memory_gate_cfg: Profile,
     pub(crate) command_preflight_cfg: Profile,
     pub(crate) scope_builder_cfg: Profile,
+    pub(crate) evidence_need_cfg: Profile,
+    pub(crate) action_need_cfg: Profile,
     pub(crate) evidence_compactor_cfg: Profile,
     pub(crate) artifact_classifier_cfg: Profile,
     pub(crate) result_presenter_cfg: Profile,

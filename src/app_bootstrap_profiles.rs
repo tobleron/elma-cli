@@ -60,6 +60,8 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         memory_gate_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("memory_gate.toml"))?,
         command_preflight_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("command_preflight.toml"))?,
         scope_builder_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("scope_builder.toml"))?,
+        evidence_need_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("evidence_needs_classifier.toml"))?,
+        action_need_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("action_needs_classifier.toml"))?,
         evidence_compactor_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("evidence_compactor.toml"))?,
         artifact_classifier_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("artifact_classifier.toml"))?,
         result_presenter_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("result_presenter.toml"))?,
