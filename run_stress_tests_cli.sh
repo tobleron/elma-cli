@@ -6,6 +6,10 @@ set -euo pipefail
 # - Formula selection
 # - Step limit validation
 # - Output truncation
+# - Progress monitoring (prevents endless loops)
+#
+# Timeout: 30 minutes per test with progress monitoring
+# If no output progress for 10 minutes, test is terminated
 #
 # Usage:
 #   ./run_stress_tests_cli.sh
@@ -64,25 +68,69 @@ run_test() {
   echo "------------------------------------------"
   
   # Run through elma-cli (send prompt via echo pipe)
-  # Note: timeout not available on macOS, using background process with sleep
-  # Timeout set to 360s (6 minutes) per test for slow local models
+  # Timeout set to 1800s (30 minutes) per test for complex tasks
+  # But Elma must verify progress - endless loops not allowed
+  echo "Starting test with 30-minute timeout (progress monitored)..."
+  
   if command -v timeout &> /dev/null; then
-    timeout 360 bash -c "echo '$prompt' | cargo run --quiet 2>&1" | head -200 || {
+    timeout 1800 bash -c "echo '$prompt' | cargo run --quiet 2>&1" | head -300 || {
       echo ""
-      echo "⚠️ TIMEOUT (360s limit)"
+      echo "⚠️ TIMEOUT (30-minute limit) - Elma may be stuck in a loop"
     }
   else
-    # macOS fallback: use background process
-    (echo "$prompt" | cargo run --quiet 2>&1) &
+    # macOS fallback: use background process with progress monitoring
+    # Create a temp file to capture output
+    OUTPUT_FILE="/tmp/elma_stress_test_$$.txt"
+    
+    (echo "$prompt" | cargo run --quiet 2>&1) > "$OUTPUT_FILE" &
     PID=$!
-    (sleep 360 && kill $PID) &
-    KILLER=$!
+    
+    # Monitor for progress (check if output is still growing)
+    ELAPSED=0
+    LAST_SIZE=0
+    NO_PROGRESS_COUNT=0
+    MAX_NO_PROGRESS=10  # 10 checks with no progress = stuck
+    
+    while kill -0 $PID 2>/dev/null; do
+      sleep 60  # Check every minute
+      ELAPSED=$((ELAPSED + 60))
+      
+      # Check if test is still producing output (progress check)
+      if [[ -f "$OUTPUT_FILE" ]]; then
+        CURRENT_SIZE=$(wc -c < "$OUTPUT_FILE")
+        if [[ "$CURRENT_SIZE" -eq "$LAST_SIZE" ]]; then
+          NO_PROGRESS_COUNT=$((NO_PROGRESS_COUNT + 1))
+          echo "⚠️ No progress detected ($NO_PROGRESS_COUNT/$MAX_NO_PROGRESS checks)"
+          
+          if [[ $NO_PROGRESS_COUNT -ge $MAX_NO_PROGRESS ]]; then
+            echo "❌ Elma appears stuck - no progress for 10 minutes"
+            echo "Terminating test..."
+            kill $PID 2>/dev/null
+            break
+          fi
+        else
+          NO_PROGRESS_COUNT=0
+          LAST_SIZE=$CURRENT_SIZE
+          echo "✓ Progress detected (${CURRENT_SIZE} bytes so far)"
+        fi
+      fi
+      
+      # Hard timeout at 30 minutes
+      if [[ $ELAPSED -ge 1800 ]]; then
+        echo "⚠️ 30-minute timeout reached"
+        kill $PID 2>/dev/null
+        break
+      fi
+    done
+    
+    # Show output
+    cat "$OUTPUT_FILE" | head -300
+    rm -f "$OUTPUT_FILE"
+    
     wait $PID 2>/dev/null || {
       echo ""
-      echo "⚠️ TIMEOUT (360s limit)"
+      echo "⚠️ Test terminated (timeout or no progress)"
     }
-    kill $KILLER 2>/dev/null || true
-    wait $PID 2>/dev/null || true
   fi
   
   echo ""
