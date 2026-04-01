@@ -1,6 +1,30 @@
 use crate::*;
 use crate::formulas::FormulaPattern;
 
+/// Calculate variance from a slice of scores
+pub(crate) fn calculate_variance(scores: &[f64]) -> f64 {
+    if scores.is_empty() {
+        return 0.0;
+    }
+    let mean = scores.iter().sum::<f64>() / scores.len() as f64;
+    let sum_sq_diff = scores.iter().map(|s| (s - mean).powi(2)).sum::<f64>();
+    sum_sq_diff / scores.len() as f64
+}
+
+/// Calculate standard deviation from variance
+pub(crate) fn calculate_std_dev(variance: f64) -> f64 {
+    variance.sqrt()
+}
+
+/// Calculate adjusted score with variance penalty
+pub(crate) fn calculate_adjusted_score(mean_score: f64, std_dev: f64, penalty_multiplier: f64) -> f64 {
+    // Penalize high-variance candidates
+    (mean_score - (std_dev * penalty_multiplier)).max(0.0)
+}
+
+/// Default variance penalty multiplier (can be tuned)
+pub(crate) const VARIANCE_PENALTY_MULTIPLIER: f64 = 0.5;
+
 /// Explicit allowlist of profile fields that tuning variants may change.
 /// Any mutation outside this list is a tuning boundary violation.
 #[allow(dead_code)]

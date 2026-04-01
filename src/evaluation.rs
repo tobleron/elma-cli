@@ -112,9 +112,13 @@ pub(crate) async fn evaluate_candidate_dir(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "candidate".to_string()),
         dir: candidate_dir.clone(),
-        report,
+        report: report.clone(),
         score,
         hard_rejected,
+        variance: 0.0,  // Task 009: Will be calculated in repeated evaluations
+        std_dev: 0.0,
+        parse_failure_count: report.summary.all_ok.total - report.summary.all_ok.correct,
+        latency_avg_ms: 0.0,  // Task 009: Will be measured in repeated evaluations
     })
 }
 

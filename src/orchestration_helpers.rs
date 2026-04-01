@@ -1,6 +1,11 @@
 use crate::*;
 
+// Task 001 (Modified): Level-aware intel skipping
+// Skip intel units (including reflection) for Action-level (DIRECT+LOW/MEDIUM) requests
+// This saves latency and tokens on simple requests that don't need overhead
 pub(crate) fn should_skip_intel(complexity: &ComplexityAssessment) -> bool {
+    // Skip for Action-level requests (DIRECT complexity with LOW/MEDIUM risk)
+    // Run for Task/Plan/MasterPlan level (INVESTIGATE/MULTISTEP/OPEN_ENDED, or HIGH risk)
     complexity.complexity.eq_ignore_ascii_case("DIRECT")
         && (complexity.risk.eq_ignore_ascii_case("LOW")
             || complexity.risk.eq_ignore_ascii_case("MEDIUM"))
@@ -49,15 +54,44 @@ pub(crate) async fn request_recovery_program(
     chat_url: &Url,
     orchestrator_cfg: &Profile,
     prompt: &str,
+    failed_steps: &[StepResult],  // NEW: Track failed steps to forbid repetition
 ) -> Result<Program> {
+    // Build list of failed commands to explicitly forbid
+    let failed_commands: Vec<String> = failed_steps
+        .iter()
+        .filter(|s| s.kind == "shell" && !s.ok)
+        .filter_map(|s| s.command.clone())
+        .collect();
+    
+    let failed_commands_str = if failed_commands.is_empty() {
+        "None".to_string()
+    } else {
+        failed_commands.iter()
+            .map(|c| format!("- {}", c))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    
     let recovery_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),
                 content: format!(
-                    "{}\n\nRECOVERY MODE:\n- A previous workflow attempt failed or was unusable.\n- Return ONLY one valid Program JSON object.\n- Do not output reply-only for a non-CHAT route unless asking one concise clarifying question is the only safe next step.\n- Use current_program_steps and observed_step_results to repair the workflow, not to restate or hallucinate completion.\n- DO NOT repeat steps that are already marked as successful ('ok': true) in observed_step_results unless you have a strong reason to believe they must be rerun to satisfy the objective.\n- If the task asks to choose, rank, prioritize, or select workspace items, inspect evidence first, then decide or summarize, then reply.\n- If a select step exists or should exist, later shell steps that consume that selection should normally reference it directly with a placeholder such as {{sel1|shell_words}}.\n- If the task asks to show file contents, inspect the selected files before replying.\n- Prefer the smallest valid program that can still satisfy the request.",
-                    orchestrator_cfg.system_prompt
+                    "{}\n\nRECOVERY MODE:\n\
+                    - A previous workflow attempt failed or was unusable.\n\
+                    - Return ONLY one valid Program JSON object.\n\
+                    - Do not output reply-only for a non-CHAT route unless asking one concise clarifying question is the only safe next step.\n\
+                    - Use current_program_steps and observed_step_results to repair the workflow, not to restate or hallucinate completion.\n\
+                    - DO NOT repeat steps that are already marked as successful ('ok': true) in observed_step_results.\n\
+                    - DO NOT repeat previously FAILED commands (see list below).\n\
+                    - If the task asks to choose, rank, prioritize, or select workspace items, inspect evidence first, then decide or summarize, then reply.\n\
+                    - If a select step exists or should exist, later shell steps that consume that selection should normally reference it directly with a placeholder such as {{sel1|shell_words}}.\n\
+                    - If the task asks to show file contents, inspect the selected files before replying.\n\
+                    - Prefer the smallest valid program that can still satisfy the request.\n\n\
+                    PREVIOUSLY FAILED COMMANDS (DO NOT REPEAT - USE DIFFERENT APPROACH):\n{}\n",
+                    orchestrator_cfg.system_prompt,
+                    failed_commands_str
                 ),
             },
             ChatMessage {

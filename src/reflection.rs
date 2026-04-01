@@ -79,13 +79,44 @@ pub async fn reflect_on_program(
 /// Build the reflection prompt
 fn build_reflection_prompt(
     program: &Program,
-    _priors: &ClassificationFeatures,
-    _workspace: &str,
+    priors: &ClassificationFeatures,
+    workspace: &str,
     objective: &str,  // Rephrased objective
 ) -> String {
     let mut prompt = String::new();
 
+    // Add classification context (soft guidance, not rules)
     prompt.push_str("Evaluate success rate of the proposed solution: 0.0 to 1.0\n\n");
+    
+    // Classification features as context (Task 007: Decouple Classification From Execution)
+    prompt.push_str("**Classification Context (use as evidence, not rules):**\n");
+    if let Some((speech_act, speech_p)) = priors.speech_act_probs.first() {
+        prompt.push_str(&format!("- Speech act: {} ({:.0}%)\n", speech_act, speech_p * 100.0));
+    }
+    if let Some((route, route_p)) = priors.route_probs.first() {
+        prompt.push_str(&format!("- Route: {} ({:.0}%)\n", route, route_p * 100.0));
+    }
+    prompt.push_str(&format!("- Entropy: {:.2} (", priors.entropy));
+    if priors.entropy > 0.8 {
+        prompt.push_str("HIGH UNCERTAINTY - classifier is unsure)\n");
+    } else if priors.entropy > 0.5 {
+        prompt.push_str("moderate uncertainty)\n");
+    } else {
+        prompt.push_str("low uncertainty - classifier is confident)\n");
+    }
+    
+    // Check for close calls
+    if priors.route_probs.len() >= 2 {
+        let margin = priors.route_probs[0].1 - priors.route_probs[1].1;
+        prompt.push_str(&format!("- Route margin: {:.2} (", margin));
+        if margin < 0.2 {
+            prompt.push_str("CLOSE CALL - top routes are similar)\n");
+        } else {
+            prompt.push_str("clear preference)\n");
+        }
+    }
+    prompt.push('\n');
+    
     prompt.push_str(&format!("**Rephrased Intention:** {}\n\n", objective));
     prompt.push_str("**Proposed Solution:**\n");
     for (i, step) in program.steps.iter().enumerate() {
@@ -106,6 +137,8 @@ fn build_reflection_prompt(
     prompt.push_str("Rules:\n");
     prompt.push_str("- Be honest and critical\n");
     prompt.push_str("- Justification explains WHY you gave this confidence score\n");
+    prompt.push_str("- If classification is uncertain (high entropy, low margin), mention this in your concerns\n");
+    prompt.push_str("- If the program doesn't match the top classification but makes sense, say so\n");
     prompt.push_str("- If confidence < 0.51: Orchestrator will use your justification to improve the plan\n");
     prompt.push_str("- If confidence >= 0.51: Justification is logged for session trace\n");
 

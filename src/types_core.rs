@@ -303,6 +303,16 @@ pub(crate) struct CalibrationMetric {
     pub(crate) accuracy: f64,
 }
 
+impl Default for CalibrationMetric {
+    fn default() -> Self {
+        Self {
+            total: 0,
+            correct: 0,
+            accuracy: 0.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CalibrationConfusion {
     pub(crate) expected: String,
@@ -384,6 +394,33 @@ pub(crate) struct CalibrationSummary {
     pub(crate) certification_rule: String,
 }
 
+impl Default for CalibrationSummary {
+    fn default() -> Self {
+        Self {
+            total_cases: 0,
+            speech_act: CalibrationMetric::default(),
+            workflow: CalibrationMetric::default(),
+            mode: CalibrationMetric::default(),
+            route: CalibrationMetric::default(),
+            program_parse: CalibrationMetric::default(),
+            program_shape: CalibrationMetric::default(),
+            program_policy: CalibrationMetric::default(),
+            program_consistency: CalibrationMetric::default(),
+            execution: CalibrationMetric::default(),
+            critic: CalibrationMetric::default(),
+            response: CalibrationMetric::default(),
+            scope: CalibrationMetric::default(),
+            compaction: CalibrationMetric::default(),
+            classification: CalibrationMetric::default(),
+            claim_check: CalibrationMetric::default(),
+            presentation: CalibrationMetric::default(),
+            all_ok: CalibrationMetric::default(),
+            certified: false,
+            certification_rule: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CalibrationReport {
     pub(crate) version: u32,
@@ -397,6 +434,24 @@ pub(crate) struct CalibrationReport {
     pub(crate) mode_confusions: Vec<CalibrationConfusion>,
     pub(crate) route_confusions: Vec<CalibrationConfusion>,
     pub(crate) scenarios: Vec<ScenarioCalibrationResult>,
+}
+
+impl Default for CalibrationReport {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            model: String::new(),
+            base_url: String::new(),
+            supports_logprobs: false,
+            n_probs: 64,
+            summary: CalibrationSummary::default(),
+            speech_act_confusions: Vec::new(),
+            workflow_confusions: Vec::new(),
+            mode_confusions: Vec::new(),
+            route_confusions: Vec::new(),
+            scenarios: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -477,6 +532,27 @@ pub(crate) struct CandidateScore {
     pub(crate) report: CalibrationReport,
     pub(crate) score: f64,
     pub(crate) hard_rejected: bool,
+    // Task 009: Variance/stability tracking
+    pub(crate) variance: f64,
+    pub(crate) std_dev: f64,
+    pub(crate) parse_failure_count: usize,
+    pub(crate) latency_avg_ms: f64,
+}
+
+impl Default for CandidateScore {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            dir: PathBuf::new(),
+            report: CalibrationReport::default(),
+            score: 0.0,
+            hard_rejected: false,
+            variance: 0.0,
+            std_dev: 0.0,
+            parse_failure_count: 0,
+            latency_avg_ms: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -485,6 +561,77 @@ pub(crate) struct SearchCandidate {
     pub(crate) dir: PathBuf,
     pub(crate) score: f64,
     pub(crate) hard_rejected: bool,
+    // Task 009: Variance/stability tracking
+    pub(crate) variance: f64,
+    pub(crate) std_dev: f64,
+}
+
+impl Default for SearchCandidate {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            dir: PathBuf::new(),
+            score: 0.0,
+            hard_rejected: false,
+            variance: 0.0,
+            std_dev: 0.0,
+        }
+    }
+}
+
+/// Parameter search bands by unit type (Task 009)
+#[derive(Debug, Clone)]
+pub(crate) struct ParameterBands {
+    pub temperature: (f64, f64),
+    pub top_p: (f64, f64),
+    pub repeat_penalty: (f64, f64),
+    pub max_tokens: (u32, u32),
+}
+
+impl ParameterBands {
+    /// Get safe parameter bands for a given unit type
+    pub fn for_unit_type(unit_type: &str) -> Self {
+        match unit_type {
+            // Routing/verification/JSON units: near-deterministic
+            "speech_act" | "router" | "mode_router" | "critic" | "logical_reviewer" |
+            "efficiency_reviewer" | "risk_reviewer" | "outcome_verifier" |
+            "execution_sufficiency" | "command_preflight" | "task_semantics_guard" => {
+                Self {
+                    temperature: (0.0, 0.1),
+                    top_p: (1.0, 1.0),
+                    repeat_penalty: (1.0, 1.0),
+                    max_tokens: (64, 256),
+                }
+            }
+            // Orchestration units: low creativity
+            "orchestrator" | "workflow_planner" | "formula_selector" | "scope_builder" |
+            "complexity_assessor" | "refinement" => {
+                Self {
+                    temperature: (0.2, 0.5),
+                    top_p: (0.9, 1.0),
+                    repeat_penalty: (1.0, 1.1),
+                    max_tokens: (2048, 4096),
+                }
+            }
+            // Response units: modest creativity
+            "elma" | "summarizer" | "result_presenter" | "formatter" | "claim_checker" |
+            "evidence_mode" | "evidence_compactor" | "artifact_classifier" => {
+                Self {
+                    temperature: (0.4, 0.7),
+                    top_p: (0.9, 1.0),
+                    repeat_penalty: (1.0, 1.2),
+                    max_tokens: (1024, 4096),
+                }
+            }
+            // Default bands
+            _ => Self {
+                temperature: (0.2, 0.6),
+                top_p: (0.9, 1.0),
+                repeat_penalty: (1.0, 1.1),
+                max_tokens: (1024, 4096),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

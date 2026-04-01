@@ -109,6 +109,8 @@ pub(crate) async fn optimize_model(
         dir: model_cfg_dir.clone(),
         score,
         hard_rejected,
+        variance: 0.0,  // Task 009: Will be calculated in repeated evaluations
+        std_dev: 0.0,
     });
     calibration_progress(
         args,
@@ -124,6 +126,8 @@ pub(crate) async fn optimize_model(
         dir: shipped_baseline_dir.clone(),
         score,
         hard_rejected,
+        variance: 0.0,
+        std_dev: 0.0,
     });
     if let Some(dir) = runtime_baseline_dir.as_ref() {
         let (score, hard_rejected, note) =
@@ -134,6 +138,8 @@ pub(crate) async fn optimize_model(
             dir: dir.clone(),
             score,
             hard_rejected,
+            variance: 0.0,
+            std_dev: 0.0,
         });
     }
 
@@ -191,6 +197,8 @@ pub(crate) async fn optimize_model(
                     dir,
                     score,
                     hard_rejected,
+                    variance: 0.0,
+                    std_dev: 0.0,
                 };
                 
                 // Quick mode: if soft (default-like) passes well, skip strict
@@ -267,6 +275,8 @@ pub(crate) async fn optimize_model(
                     dir,
                     score,
                     hard_rejected,
+                    variance: 0.0,
+                    std_dev: 0.0,
                 };
                 
                 // Quick mode: if balanced (default) passes well, skip other variants
@@ -343,6 +353,8 @@ pub(crate) async fn optimize_model(
                     dir,
                     score,
                     hard_rejected,
+                    variance: 0.0,
+                    std_dev: 0.0,
                 };
                 
                 // Quick mode: if balanced (default) passes well, skip other variants

@@ -125,6 +125,44 @@ pub(crate) async fn run_autonomous_loop(
             .count();
         step_results.extend(batch_results);
 
+        // Task 011: Check for goal drift (state-aware guardrails)
+        let drift_verdict = check_goal_drift(
+            &plan.objective,
+            &plan.current_program,
+            &step_results,
+        );
+        if drift_verdict.drift_detected {
+            trace(
+                args,
+                &format!(
+                    "guardrail_drift_detected confidence={:.2} reason={}",
+                    drift_verdict.confidence,
+                    drift_verdict.reason.as_deref().unwrap_or("unknown")
+                ),
+            );
+            
+            // Trigger refinement phase
+            operator_trace(args, "context drift detected - running refinement phase");
+            
+            let refined_program = run_refinement_phase(
+                client,
+                chat_url,
+                refinement_cfg,
+                &plan.objective,
+                &step_results,
+                drift_verdict.reason.as_deref().unwrap_or("Goal alignment lost"),
+                ws,
+                ws_brief,
+            ).await?;
+            
+            plan.current_program = refined_program.clone();
+            plan.program_history.push(refined_program);
+            plan.attempts += 1;
+            
+            // Continue with refined program
+            continue;
+        }
+
         if route_decision.route.eq_ignore_ascii_case("CHAT") {
             return Ok(AutonomousLoopOutcome {
                 program: merged_program_from_history(&plan),

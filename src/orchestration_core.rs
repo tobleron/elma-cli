@@ -87,7 +87,7 @@ pub(crate) async fn recover_program_once(
         current_program,
         step_results,
     );
-    orchestration_helpers::request_recovery_program(client, chat_url, orchestrator_cfg, &prompt)
+    orchestration_helpers::request_recovery_program(client, chat_url, orchestrator_cfg, &prompt, step_results)
         .await
 }
 

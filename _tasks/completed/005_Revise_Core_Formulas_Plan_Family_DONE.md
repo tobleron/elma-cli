@@ -108,6 +108,67 @@ Add pre-execution validation:
 ## Dependencies
 - Task 023 (hierarchical decomposition) - for masterplan
 - Task 047 (Read/Search step types) - code_search uses Search
+- **Task 044 (Execution Ladder) - clarifies Plan vs MasterPlan semantics**
+
+## Relationship to Task 044 (Execution Ladder)
+
+**Task 044 provides clear semantic boundaries for Plan vs MasterPlan:**
+
+| Level | Formula | When to Use |
+|-------|---------|-------------|
+| **Task** | `inspect_reply`, `inspect_summarize_reply` | Bounded outcome, no planning artifact needed |
+| **Plan** | `plan_reply` | Tactical breakdown, ordered steps |
+| **MasterPlan** | `masterplan_reply` | Strategic phases, multi-session |
+
+### Formula Validation by Level
+
+Task 044 adds program validation that enforces:
+- `plan_reply` formula → Program must have `Plan` step
+- `masterplan_reply` formula → Program must have `MasterPlan` step with phases
+- `inspect_reply` formula → Program should NOT have Plan/MasterPlan steps
+
+### Prompt Coordination
+
+**Task 006 updates formula prompts, Task 044 provides level semantics:**
+
+```toml
+# Task 006: plan_reply formula prompt
+system_prompt = """
+Use plan_reply when user requests tactical implementation plan.
+
+Principle (from Task 044):
+- Plan level = ordered breakdown where dependencies matter
+- Bounded scope (single session or tightly coupled)
+- Output: numbered steps with clear success conditions
+
+NOT MasterPlan:
+- Don't create phases unless explicitly requested
+- Don't add strategic overview unless needed
+"""
+
+# Task 006: masterplan_reply formula prompt
+system_prompt = """
+Use masterplan_reply when user requests strategic decomposition.
+
+Principle (from Task 044):
+- MasterPlan level = phased strategy for open-ended objectives
+- Multi-session or multi-milestone work
+- Output: phases with goals, success criteria, dependencies
+
+NOT Plan:
+- Don't create executable steps (that's Plan level)
+- Keep strategic, not tactical
+"""
+```
+
+### Implementation Order
+
+**Recommended:** Complete Task 044 first (or in parallel), then Task 006 uses level semantics.
+
+**Rationale:**
+- Task 044 defines what Plan vs MasterPlan means at execution level
+- Task 006 formulas should align with those semantics
+- Avoids formula/level mismatch
 
 ## Verification
 - `cargo build`

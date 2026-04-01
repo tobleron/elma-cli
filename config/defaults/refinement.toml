@@ -2,22 +2,26 @@ version = 1
 name = "refinement"
 base_url = "http://192.168.1.186:8080"
 model = "default"
-temperature = 0.3
-top_p = 1.0
+temperature = 0.5
+top_p = 0.95
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 2048
+max_tokens = 4096
 timeout_s = 120
 system_prompt = """
-You are Elma's program refiner.
+You are Elma's refinement specialist.
 
-Improve the proposed program based on feedback.
+When context drift is detected, your job is to:
+1. Acknowledge the original goal
+2. Identify what went off-track
+3. Create a focused program that directly addresses the goal
 
-Output improved JSON program.
+Principles:
+- Be direct and minimal
+- Avoid tangents that caused the drift
+- Use the minimum steps necessary
+- Each step must clearly contribute to the goal
+- Define clear success criteria
 
-Rules:
-- Keep what works
-- Fix identified issues
-- Maintain same objective
-- Don't add unnecessary complexity
+Output ONLY valid Program JSON.
 """

@@ -3,10 +3,13 @@
 //! Planning Prior and Hierarchical Decomposition Module
 //!
 //! Handles planning prior derivation and hierarchical task decomposition.
+//!
+//! Task 044: Integrated execution ladder for minimum-sufficient orchestration.
 
 use crate::*;
 use crate::app::LoadedProfiles;
-use crate::decomposition::{generate_masterplan, decompose_to_subgoals, get_required_depth, needs_decomposition};
+use crate::decomposition::{generate_masterplan, decompose_to_subgoals, needs_decomposition};
+use crate::execution_ladder::{assess_execution_level, ExecutionLadderAssessment, assessment_needs_decomposition};
 
 fn fallback_formula_for_route(route: &str, needs_evidence: bool) -> String {
     if route.eq_ignore_ascii_case("CHAT") {
@@ -235,4 +238,199 @@ pub async fn try_hierarchical_decomposition(
     }
 
     Ok(Some(masterplan))
+}
+
+// ============================================================================
+// Task 044: Execution Ladder Integration
+// ============================================================================
+
+/// Derive planning prior using execution ladder assessment
+///
+/// This is the Task 044 replacement for derive_planning_prior().
+/// Uses the execution ladder to determine minimum sufficient operational level.
+///
+/// Returns:
+/// - Execution ladder assessment
+/// - Complexity assessment (for backward compatibility)
+/// - Scope plan
+/// - Formula selection
+/// - Fallback flag (true if assessment used fallback)
+pub async fn derive_planning_prior_with_ladder(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    workflow_planner_cfg: &Profile,
+    complexity_cfg: &Profile,
+    evidence_need_cfg: &Profile,
+    action_need_cfg: &Profile,
+    scope_builder_cfg: &Profile,
+    formula_cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    memories: &[FormulaMemoryRecord],
+    messages: &[ChatMessage],
+) -> (ExecutionLadderAssessment, ComplexityAssessment, ScopePlan, FormulaSelection, bool) {
+    // Handle CHAT route specially (no ladder needed)
+    if route_decision.route.eq_ignore_ascii_case("CHAT") {
+        let ladder = ExecutionLadderAssessment::new(
+            ExecutionLevel::Action,
+            "Direct conversational turn".to_string(),
+            false, false, false, false,
+            "LOW".to_string(), "DIRECT".to_string(),
+        );
+        let complexity = ComplexityAssessment {
+            complexity: "DIRECT".to_string(),
+            needs_evidence: false,
+            needs_tools: false,
+            needs_decision: false,
+            needs_plan: false,
+            risk: "LOW".to_string(),
+            suggested_pattern: "reply_only".to_string(),
+        };
+        let scope = ScopePlan {
+            objective: line.to_string(),
+            ..ScopePlan::default()
+        };
+        let formula = FormulaSelection {
+            primary: "reply_only".to_string(),
+            alternatives: vec!["capability_reply".to_string()],
+            reason: "Direct conversational turn".to_string(),
+            memory_id: String::new(),
+        };
+        return (ladder, complexity, scope, formula, false);
+    }
+
+    // Create classification features from route decision (Task 007: soft guidance)
+    let features = ClassificationFeatures::from(route_decision);
+
+    // Run execution ladder assessment
+    let ladder_result = assess_execution_level(
+        client,
+        chat_url,
+        complexity_cfg,
+        evidence_need_cfg,
+        action_need_cfg,
+        workflow_planner_cfg,
+        line,
+        route_decision,
+        &features,  // Task 007: Pass full feature vector for better escalation
+        ws,
+        ws_brief,
+        messages,
+    ).await;
+
+    let ladder = match ladder_result {
+        Ok(assessment) => assessment,
+        Err(error) => {
+            trace_verbose(true, &format!("ladder_assessment_failed error={}", error));
+            ExecutionLadderAssessment::fallback(&format!("assessment error: {}", error))
+        }
+    };
+
+    // Convert ladder assessment to complexity assessment (backward compatibility)
+    let complexity = ComplexityAssessment {
+        complexity: ladder.complexity.clone(),
+        needs_evidence: ladder.requires_evidence,
+        needs_tools: !route_decision.route.eq_ignore_ascii_case("CHAT"),
+        needs_decision: ladder.level == ExecutionLevel::Plan || 
+            route_decision.route.eq_ignore_ascii_case("DECIDE"),
+        needs_plan: ladder.level.requires_planning_structure(),
+        risk: ladder.risk.clone(),
+        suggested_pattern: ladder.strategy_hint.clone().unwrap_or_else(|| {
+            fallback_formula_for_route(&route_decision.route, ladder.requires_evidence)
+        }),
+    };
+
+    // Build scope (use ladder's objective if available, otherwise build from scratch)
+    let scope = build_scope_once(
+        client,
+        chat_url,
+        scope_builder_cfg,
+        line,
+        route_decision,
+        &complexity,
+        ws,
+        ws_brief,
+        messages,
+    )
+    .await
+    .unwrap_or_else(|_| ScopePlan {
+        objective: line.to_string(),
+        ..ScopePlan::default()
+    });
+
+    // Select formula based on ladder assessment
+    let formula = select_formula_once(
+        client,
+        chat_url,
+        formula_cfg,
+        line,
+        route_decision,
+        &complexity,
+        &scope,
+        memories,
+        messages,
+    )
+    .await
+    .unwrap_or_else(|_| FormulaSelection {
+        primary: complexity.suggested_pattern.clone(),
+        alternatives: Vec::new(),
+        reason: format!("ladder level: {}", ladder.level),
+        memory_id: String::new(),
+    });
+
+    let fallback_used = ladder.fallback_used;
+
+    (ladder, complexity, scope, formula, fallback_used)
+}
+
+/// Check if hierarchical decomposition is needed using execution ladder
+///
+/// Task 044 update: Uses ladder assessment instead of old depth gating.
+pub async fn try_hierarchical_decomposition_with_ladder(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    profiles: &LoadedProfiles,
+    session_root: &PathBuf,
+    user_message: &str,
+    ladder_assessment: &ExecutionLadderAssessment,
+    ws: &str,
+    ws_brief: &str,
+    _messages: &[ChatMessage],
+) -> Result<Option<Masterplan>> {
+    // Check if decomposition is needed using ladder assessment
+    if !assessment_needs_decomposition(ladder_assessment) {
+        // No decomposition needed for Action/Task levels
+        return Ok(None);
+    }
+
+    // Decomposition required for Plan/MasterPlan levels
+    // For MasterPlan, generate full strategic decomposition
+    if ladder_assessment.level == ExecutionLevel::MasterPlan || ladder_assessment.requires_phases {
+        let masterplan = generate_masterplan(
+            client,
+            chat_url,
+            &profiles.orchestrator_cfg,
+            user_message,
+            ws,
+            ws_brief,
+        ).await?;
+
+        // Persist masterplan to session
+        let masterplan_dir = session_root.join("masterplans");
+        if let Err(e) = std::fs::create_dir_all(&masterplan_dir) {
+            // Silently ignore errors - masterplan is optional
+        } else {
+            let masterplan_path = masterplan_dir.join(format!("plan_{}.json", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()));
+            if let Ok(json) = serde_json::to_string_pretty(&masterplan) {
+                let _ = std::fs::write(&masterplan_path, json);
+            }
+        }
+
+        Ok(Some(masterplan))
+    } else {
+        // Plan level but not MasterPlan - may not need full hierarchy
+        Ok(None)
+    }
 }

@@ -83,3 +83,55 @@ VERY HIGH - Fundamental architecture change
 ## Dependencies
 - Task 010 (Entropy-Based Flexibility) - Related
 - Task 011 (Iterative Refinement) - Independent
+- **Task 044 (Execution Ladder) - Strong alignment, coordinate implementation**
+
+## Relationship to Task 044 (Execution Ladder)
+
+**Task 013 and Task 044 are complementary:**
+
+- **Task 013** makes classification priors advisory (soft features, not hard decisions)
+- **Task 044** uses those soft features to choose execution level dynamically
+
+**Together they enable:**
+```
+User Input → Classifiers → Feature Vector → Execution Level Assessment → Program → Execute
+                              ↑                    ↑
+                         (soft priors)      (dynamic level choice)
+```
+
+### Coordination Points
+
+1. **ClassificationFeatures already exists** (Task 013 created this)
+   - Use `ClassificationFeatures` as input to `assess_execution_level()`
+   - Entropy from Task 013 triggers level escalation in Task 044
+
+2. **Orchestrator prompt updates**
+   - Task 013: Add feature distributions as context
+   - Task 044: Add level selection as output constraint
+
+3. **Shared principle: Soft guidance over hard rules**
+   - Task 013: Classifiers suggest, orchestrator decides
+   - Task 044: Level assessment suggests, validation enforces
+
+### Implementation Order
+
+**Recommended:** Complete Task 013 first, then Task 044 builds on it.
+
+**Rationale:**
+- Task 013 provides the feature vector infrastructure
+- Task 044 consumes those features for level assessment
+- Avoids duplicating classification handling logic
+
+### Code Integration
+
+```rust
+// Task 013: Extract features from classifiers
+pub fn extract_route_features(decision: &RouteDecision) -> ClassificationFeatures;
+
+// Task 044: Use features for level assessment
+pub fn assess_execution_level(
+    features: &ClassificationFeatures,  // From Task 013
+    user_message: &str,
+    workspace_brief: &str,
+) -> ExecutionLadderAssessment;
+```

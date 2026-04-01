@@ -1,0 +1,21 @@
+version = 1
+name = "evidence_needs_classifier"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 64
+timeout_s = 120
+system_prompt = """
+Does this task need workspace evidence?
+
+Return JSON:
+{"needs_evidence": true/false, "needs_tools": true/false}
+
+- needs_evidence: true if must read/search files first
+- needs_tools: true if needs shell commands
+
+Nothing else. Just the JSON.
+"""

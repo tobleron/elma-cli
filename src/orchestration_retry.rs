@@ -3,12 +3,15 @@
 //! Retry Orchestration Module
 //!
 //! Handles retry logic with temperature escalation and meta-review synthesis.
+//! Task 010: Integrated strategy chains for fallback-based retries.
 
 use crate::*;
 use crate::app::LoadedProfiles;
 
-/// Retry orchestration with temperature escalation and prompt variants.
+/// Retry orchestration with strategy chains and temperature escalation.
 /// Returns the best program from all attempts, or a meta-review synthesized program.
+/// 
+/// Task 010: Now uses strategy fallback chains instead of just temperature escalation.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn orchestrate_with_retries(
     args: &Args,
@@ -32,42 +35,68 @@ pub(crate) async fn orchestrate_with_retries(
 ) -> Result<AutonomousLoopOutcome> {
     use crate::defaults::get_retry_prompt_variant;
 
+    // Task 010: Create strategy chain based on task characteristics
+    let mut strategy_chain = select_strategy_chain(
+        messages.iter().rev().find(|m| m.role == "user").map(|m| m.content.as_str()).unwrap_or(""),
+        complexity,
+        route_decision,
+    );
+    
+    trace(
+        args,
+        &format!(
+            "strategy_chain_selected primary={:?} fallbacks={}",
+            strategy_chain.primary,
+            strategy_chain.fallbacks.len()
+        ),
+    );
+
     let mut best_outcome: Option<AutonomousLoopOutcome> = None;
     let mut attempt_history: Vec<(u32, Program, String)> = Vec::new(); // (attempt, program, error)
 
     for attempt in 0..max_retries {
-        // Calculate temperature for this attempt
-        let temperature = (profiles.orchestrator_cfg.temperature + (attempt as f64 * temp_step)).min(max_temp);
+        // Task 010: Get next strategy from chain (or use temperature escalation as before)
+        let strategy = if let Some(s) = strategy_chain.next_strategy() {
+            s
+        } else {
+            // Strategy chain exhausted, fall back to temperature escalation
+            ExecutionStrategy::Direct
+        };
+        
+        // Calculate temperature for this attempt (adjusted by strategy)
+        let base_temperature = profiles.orchestrator_cfg.temperature;
+        let temp_adjustment = match strategy {
+            ExecutionStrategy::Direct => 0.0,
+            ExecutionStrategy::InspectFirst => -0.1,
+            ExecutionStrategy::PlanThenExecute => 0.1,
+            ExecutionStrategy::SafeMode => -0.2,
+            ExecutionStrategy::Incremental => 0.0,
+        };
+        let temperature = (base_temperature + (attempt as f64 * temp_step) + temp_adjustment).min(max_temp);
 
-        // Show retry intel summary
+        // Show retry intel summary with strategy
         show_intel_summary(
             args.show_process,
             &format!(
-                "Retry {}/{} (temp={:.1}, strategy={})",
+                "Retry {}/{} (temp={:.1}, strategy={:?})",
                 attempt + 1,
                 max_retries,
                 temperature,
-                match attempt {
-                    0 => "standard",
-                    1 => "step-by-step",
-                    2 => "challenge",
-                    _ => "simplify"
-                }
+                strategy
             ),
         );
 
-        // Build program with retry-specific prompt variant
-        let retry_program = build_program_with_retry(
+        // Build program with strategy-aware prompt
+        let retry_program = build_program_with_strategy(
             client,
             chat_url,
             &profiles.orchestrator_cfg,
+            strategy,
             temperature,
-            get_retry_prompt_variant(attempt),
             messages,
             ws,
             ws_brief,
             route_decision,
-            workflow_plan,
             complexity,
             scope,
             formula,
@@ -275,6 +304,97 @@ async fn build_program_with_retry(
     parse_json_loose(json_str)
 }
 
+/// Build a program with strategy-aware prompt and temperature.
+/// Task 010: Uses strategy-specific prompts from config/defaults/
+async fn build_program_with_strategy(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    strategy: ExecutionStrategy,
+    temperature: f64,
+    messages: &[ChatMessage],
+    ws: &str,
+    ws_brief: &str,
+    route_decision: &RouteDecision,
+    complexity: &ComplexityAssessment,
+    scope: &ScopePlan,
+    formula: &FormulaSelection,
+    attempt_history: &[(u32, Program, String)],
+) -> Result<Program> {
+    // Get tool registry for this workspace
+    let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let tool_registry = crate::tools::ToolRegistry::new(&workspace_path);
+
+    // Select optimal formula for this strategy
+    let formula_selection = crate::formulas::select_optimal_formula(
+        &complexity.complexity,
+        &complexity.risk,
+        0.6,  // Slightly more efficiency-focused
+    );
+
+    // Build enhanced prompt with strategy context
+    let mut prompt = build_orchestrator_user_content(
+        &messages.last().map(|m| m.content.clone()).unwrap_or_default(),
+        route_decision,
+        None,  // workflow_plan
+        complexity,
+        scope,
+        formula,
+        ws,
+        ws_brief,
+        messages,
+        &tool_registry,
+        &formula_selection,
+    );
+
+    // Add strategy context
+    prompt.push_str(&format!(
+        "\n\n=== EXECUTION STRATEGY ===\nStrategy: {:?}\nGuidance: {}\n",
+        strategy,
+        strategy.hint()
+    ));
+
+    // Add failure history with strategy context
+    if !attempt_history.is_empty() {
+        prompt.push_str("\n\n=== PREVIOUS FAILED ATTEMPTS ===\n");
+        for (attempt, _program, error) in attempt_history {
+            prompt.push_str(&format!("\nAttempt {}: {}\n", attempt + 1, error));
+        }
+        prompt.push_str("\nTry a DIFFERENT approach based on the current strategy.\n");
+    }
+
+    // Make request with strategy-adjusted temperature
+    let request = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            },
+        ],
+        temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
+    };
+
+    let response = chat_once(client, chat_url, &request).await?;
+    let response_text = extract_response_text(&response);
+
+    // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
+    let json_str = crate::routing::extract_first_json_object(&response_text)
+        .unwrap_or(&response_text);
+    parse_json_loose(json_str)
+}
+
 /// Synthesize a new program from meta-review of all failed attempts.
 async fn synthesize_meta_review(
     client: &reqwest::Client,
@@ -293,14 +413,8 @@ async fn synthesize_meta_review(
     prompt.push_str("=== FAILED ATTEMPTS ===\n");
     for (attempt, program, error) in attempt_history {
         prompt.push_str(&format!(
-            "\nAttempt {} (strategy: {}):\n- Error: {}\n- Steps: {}\n",
+            "\nAttempt {}:\n- Error: {}\n- Steps: {}\n",
             attempt + 1,
-            match attempt {
-                0 => "standard",
-                1 => "step-by-step",
-                2 => "challenge",
-                _ => "simplify"
-            },
             error,
             program.steps.iter().map(|s| format!("{} ({})", s.id(), s.kind())).collect::<Vec<_>>().join(", ")
         ));
@@ -313,6 +427,14 @@ async fn synthesize_meta_review(
 
     prompt.push_str("\n\n=== ROUTE PRIOR ===\n");
     prompt.push_str(&format!("Suggested route: {}\n", route_decision.route));
+
+    prompt.push_str("\n\n=== INSTRUCTION ===\n");
+    prompt.push_str("Analyze all failed attempts and synthesize a NEW approach that:\n");
+    prompt.push_str("1. Avoids the mistakes from previous attempts\n");
+    prompt.push_str("2. Uses a different strategy than those that failed\n");
+    prompt.push_str("3. Is grounded in the workspace context provided\n");
+    prompt.push_str("4. Has clear, achievable steps\n\n");
+    prompt.push_str("Output ONLY valid Program JSON.\n");
 
     let request = ChatCompletionRequest {
         model: cfg.model.clone(),

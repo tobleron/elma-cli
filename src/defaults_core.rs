@@ -140,7 +140,23 @@ pub(crate) fn default_critic_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "Evaluate if the workflow program and step results achieve the objective. Return JSON: {\"status\":\"ok\"|\"retry\",\"reason\":\"...\"}"
+        system_prompt: r#"Evaluate if the workflow program and step results achieve the objective.
+
+Return ONLY one valid JSON object. No prose. No thinking tokens. No code fences.
+
+Schema:
+{
+  "status": "ok" | "retry",
+  "reason": "one short sentence"
+}
+
+Rules:
+- Output MUST be valid JSON only
+- Do not include thinking tokens or reasoning outside JSON
+- Do not use markdown code fences
+- Keep reason concise (one sentence)
+- If uncertain, return status="ok" with conservative reason
+"#
             .to_string(),
     }
 }
@@ -208,7 +224,23 @@ pub(crate) fn default_logical_reviewer_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "Evaluate if the program logic is sound. Return JSON: {\"status\":\"ok\"|\"retry\",\"reason\":\"...\"}"
+        system_prompt: r#"Evaluate if the program logic is sound.
+
+Return ONLY one valid JSON object. No prose. No thinking tokens. No code fences.
+
+Schema:
+{
+  "status": "ok" | "retry",
+  "reason": "one short sentence"
+}
+
+Rules:
+- Output MUST be valid JSON only
+- Do not include thinking tokens or reasoning outside JSON
+- Do not use markdown code fences
+- Keep reason concise (one sentence)
+- If uncertain, return status="ok" with conservative reason
+"#
             .to_string(),
     }
 }
@@ -242,7 +274,23 @@ pub(crate) fn default_efficiency_reviewer_config(base_url: &str, model: &str) ->
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "Evaluate if the program uses minimal steps without redundancy. Return JSON: {\"status\":\"ok\"|\"retry\",\"reason\":\"...\"}"
+        system_prompt: r#"Evaluate if the program uses minimal steps without redundancy.
+
+Return ONLY one valid JSON object. No prose. No thinking tokens. No code fences.
+
+Schema:
+{
+  "status": "ok" | "retry",
+  "reason": "one short sentence"
+}
+
+Rules:
+- Output MUST be valid JSON only
+- Do not include thinking tokens or reasoning outside JSON
+- Do not use markdown code fences
+- Keep reason concise (one sentence)
+- If uncertain, return status="ok" with conservative reason
+"#
             .to_string(),
     }
 }
@@ -276,7 +324,23 @@ pub(crate) fn default_risk_reviewer_config(base_url: &str, model: &str) -> Profi
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "Evaluate if the program contains risky commands. Return JSON: {\"status\":\"ok\"|\"caution\",\"reason\":\"...\"}"
+        system_prompt: r#"Evaluate if the program contains risky commands.
+
+Return ONLY one valid JSON object. No prose. No thinking tokens. No code fences.
+
+Schema:
+{
+  "status": "ok" | "caution",
+  "reason": "one short sentence"
+}
+
+Rules:
+- Output MUST be valid JSON only
+- Do not include thinking tokens or reasoning outside JSON
+- Do not use markdown code fences
+- Keep reason concise (one sentence)
+- If uncertain, return status="ok" with conservative reason
+"#
             .to_string(),
     }
 }

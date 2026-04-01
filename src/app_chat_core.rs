@@ -205,10 +205,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         let features = ClassificationFeatures::from(&route_decision);
 
-        // Run reflection for SHELL/EXECUTE routes (actions that execute commands)
-        // Skip reflection for CHAT, INFO, DECIDE routes (no execution risk)
-        let needs_reflection = route_decision.route.eq_ignore_ascii_case("SHELL")
-            || route_decision.route.eq_ignore_ascii_case("EXECUTE");
+        // Task 001 (Modified): Level-aware reflection
+        // Skip reflection for Action-level (DIRECT complexity) requests
+        // Run reflection for Task/Plan/MasterPlan level (INVESTIGATE/MULTISTEP/OPEN_ENDED)
+        // This saves ~200ms latency and ~300-500 tokens on simple requests
+        let needs_reflection = !complexity.complexity.eq_ignore_ascii_case("DIRECT");
 
         if needs_reflection {
             // If confidence < 51%, escalate orchestrator temperature and regenerate program

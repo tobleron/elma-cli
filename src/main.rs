@@ -39,7 +39,12 @@ mod execution_steps_search;
 mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
+mod execution_ladder;  // Execution ladder for minimum-sufficient orchestration
+mod strategy;  // Multi-strategy planning with fallback chains (Task 010)
+mod guardrails;  // State-aware guardrails for context drift (Task 011)
 mod intel;
+mod intel_trait;  // Intel unit trait and interfaces
+mod intel_units;  // Migrated intel units (complexity, evidence, action, workflow)
 mod json_error_handler;  // JSON error handling with circuit breaker
 mod json_tuning;  // JSON temperature tuning
 mod metrics;
@@ -105,7 +110,12 @@ pub(crate) use defaults_evidence::*;  // JSON pipeline intel functions
 pub(crate) use defaults::*;
 pub(crate) use evaluation::*;
 pub(crate) use execution::*;
+pub(crate) use execution_ladder::*;  // Execution ladder types and functions
+pub(crate) use strategy::*;  // Multi-strategy planning (Task 010)
+pub(crate) use guardrails::*;  // State-aware guardrails (Task 011)
 pub(crate) use intel::*;
+pub(crate) use intel_trait::*;  // Intel unit trait and interfaces
+pub(crate) use intel_units::*;  // Migrated intel units
 pub(crate) use json_error_handler::*;  // JSON error handling
 pub(crate) use json_tuning::*;  // JSON temperature tuning
 pub(crate) use metrics::*;
