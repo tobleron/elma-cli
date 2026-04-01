@@ -67,6 +67,53 @@ Use INVESTIGATE when the model cannot determine what to do without first explori
 ### Rule of Thumb:
 If your prompt says "if X then Y" with specific examples, you're doing it wrong. Instead, explain the **principle** behind when to use Y.
 
+---
+
+## 🚫 CRITICAL: Never Use Word-Based Pattern Matching
+
+**NEVER implement routing/classification using hardcoded word patterns.**
+
+### Wrong Approach (Word-Based Pattern Matching):
+```rust
+// ❌ WRONG: Hardcoded word patterns
+fn is_obvious_chat(input: &str) -> bool {
+    if input.starts_with("hello") || input.contains("who are you") {
+        return true;  // Forces CHAT route
+    }
+}
+```
+
+**Why this violates Elma's philosophy:**
+- Turns Elma into a keyword-matching robot
+- Breaks on variations ("Hey there" vs "Hello")
+- Cannot handle novel phrasings
+- Violates "adaptive reasoning over deterministic rules"
+
+### Right Approach (Confidence-Based Fallback):
+```rust
+// ✅ RIGHT: Use model's own uncertainty
+if route_decision.entropy > 0.8 || route_decision.margin < 0.15 {
+    // Model is uncertain → use safe default
+    return CHAT;  // Principle: when uncertain, under-execute
+}
+```
+
+**Why this aligns with Elma's philosophy:**
+- Uses model's own confidence metrics
+- Principle-based: "when uncertain, be conservative"
+- Works on ANY input the model is uncertain about
+- Allows model to reason, not match keywords
+
+### Rule of Thumb:
+**If you're checking `input.contains("word")` to make routing decisions, you're doing it wrong.**
+
+Instead, use:
+- Model confidence (entropy, margin)
+- Classification distributions
+- Principle-based thresholds
+
+---
+
 ## Essential Commands
 
 ### Development

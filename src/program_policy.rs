@@ -411,13 +411,6 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
                     step_count
                 ));
             }
-            // Action level should NOT have shell steps (prevents over-orchestration on chat)
-            let has_shell = program.steps.iter().any(|s| matches!(s, Step::Shell { .. }));
-            if has_shell {
-                return Err(
-                    "Action-level chat request should not execute shell commands".to_string()
-                );
-            }
         }
 
         ExecutionLevel::Task => {
