@@ -24,8 +24,9 @@
 - ✅ Task 011 - State-Aware Guardrails
 - ✅ Task 012 - Review Intel Unit Atomicity
 - ✅ Task 013 - Verify JSON Pipeline For Small Models
-- ✅ Task 014 - Entropy Based Flexibility (Superseded - entropy already implemented)
-- ✅ Task 018 - Improve JSON Repair (Superseded by Task 003/009)
+- ✅ Task 014 - Confidence-Based Routing with Pattern Fallbacks
+- ✅ Task 015 - Entropy Based Flexibility (Superseded - entropy already implemented)
+- ✅ Task 019 - Improve JSON Repair (Superseded by Task 003/009)
 - ✅ Task 024 - Revise And Perfect Existing Formulas (Superseded by Task 044)
 - ✅ Task 034 - Formalize Intel Unit Interfaces
 - ✅ Task 044 - Integrate Execution Ladder

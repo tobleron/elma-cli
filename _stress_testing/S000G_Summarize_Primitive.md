@@ -1,16 +1,19 @@
-# Stress Test S000G: The Summarize Primitive
+# Stress Test S000G: Summarize Primitive
 
 ## 1. The Test (Prompt)
-"Read the `README.md` in `_stress_testing/_opencode_for_testing/`. Use your 'Summarize' tool to create a 3-bullet point executive summary for a senior developer."
+"Read the README.md in _stress_testing/_opencode_for_testing/ and create a 3-bullet point executive summary."
 
-## 2. Debugging Result Understanding
-- **Success Criteria**: Agent uses the `Summarize` step type. The output is significantly more compact than the source text while retaining key technical details.
-- **Common Failure Modes**:
-    - Verbosity: Failing to actually summarize, just repeating the text.
-    - Tool Misuse: Using `reply` instead of `summarize` for the compaction phase.
+## 2. Expected Behavior
+- **Route:** PLAN (needs evidence + summarization)
+- **Formula:** inspect_summarize_reply
+- **Steps:** 2-4 (read + summarize + reply)
 
-## 3. Bottleneck Detection
-- **Token Efficiency**: Does the summary actually reduce the context load for subsequent steps?
+## 3. Success Criteria
+- Agent reads README.md
+- Uses Summarize step
+- Output is exactly 3 bullet points
+- Maximum 8 steps (step limit enforced)
 
-## 4. Resolution & Iteration
-- (Iterative refinement to be recorded here during execution)
+## 4. Common Failure Modes
+- Not actually summarizing (just repeating text)
+- Wrong number of bullet points

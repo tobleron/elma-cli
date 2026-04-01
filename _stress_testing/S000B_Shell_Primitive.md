@@ -1,17 +1,20 @@
-# Stress Test S000B: External FS Visibility
+# Stress Test S000B: Shell Primitive
 
 ## 1. The Test (Prompt)
-"List the files in `_stress_testing/_opencode_for_testing/` and identify the primary entry point of this codebase."
+"List the files in _stress_testing/_opencode_for_testing/ and identify the primary entry point of this codebase."
 
-## 2. Debugging Result Understanding
-- **Success Criteria**: Agent executes `ls` on the test directory. It correctly identifies the main entry point (e.g., `main.rs`, `index.js`, `app.py`) based on the file list.
-- **Common Failure Modes**:
-    - Incorrect Pathing: Trying to `ls` the root instead of the test folder.
-    - Reasoning Failure: Identifying a minor utility as the entry point.
+## 2. Expected Behavior
+- **Route:** SHELL
+- **Formula:** execute_reply or inspect_reply
+- **Steps:** 2-4 (ls command + optional inspection + reply)
 
-## 3. Bottleneck Detection
-- **Shell Overhead**: Delays in shell execution.
-- **Output Parsing**: Confusing the test directory with the project root.
+## 3. Success Criteria
+- Agent executes ls on the test directory
+- Correctly identifies main entry point (main.rs, Cargo.toml, etc.)
+- Maximum 8 steps (step limit enforced)
+- No duplicate/repeated commands
 
-## 4. Resolution & Iteration
-- (Iterative refinement to be recorded here during execution)
+## 4. Common Failure Modes
+- Incorrect pathing (wrong directory)
+- Plan collapse (40+ identical steps)
+- Duplicate step loops

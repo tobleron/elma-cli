@@ -1,18 +1,21 @@
 # Stress Test S006: Global Architecture Audit
 
 ## 1. The Test (Prompt)
-"Perform a principal-level audit of the entire `src/` directory. Score every file based on its 'Drag' (complexity vs utility) using the logic described in `_dev-system/ARCHITECTURE.md`. Generate a comprehensive report and identify the top 3 modules that are most in need of a 'Surgical Refactor'. Do not use the existing analyzer; perform this logic yourself."
+"Perform an audit of the entire src/ directory. Score every file based on its complexity vs utility. Generate a report identifying the top 3 modules most in need of refactoring."
 
-## 2. Debugging Result Understanding
-- **Success Criteria**: The model must read the `ARCHITECTURE.md`, understand the mathematical formula, and manually apply it to a sample of files.
-- **Common Failure Modes**:
-    - Math errors in the Drag calculation.
-    - Laziness: Only auditing 1-2 files instead of a representative sample.
-    - Hallucinating the analyzer's output instead of performing the audit itself.
+## 2. Expected Behavior
+- **Route:** PLAN (complex analysis task)
+- **Formula:** inspect_reply or plan_reply
+- **Steps:** 8-12 (survey files + analyze + report)
 
-## 3. Bottleneck Detection
-- **Cognitive Load**: The model's ability to maintain the "mathematical state" across multiple file reads.
-- **Utility Gap**: If the model's "manual" audit contradicts the automated analyzer without a good reason.
+## 3. Success Criteria
+- Agent samples multiple src/ files
+- Applies scoring criteria
+- Identifies top 3 refactor candidates
+- Maximum 12 steps (absolute limit enforced)
+- No duplicate steps (>50% duplicates = fail)
 
-## 4. Resolution & Iteration
-- (Iterative refinement to be recorded here during execution)
+## 4. Common Failure Modes
+- Only auditing 1-2 files (laziness)
+- Plan collapse (25+ identical grep commands)
+- Math errors in scoring

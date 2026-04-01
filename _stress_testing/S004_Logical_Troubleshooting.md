@@ -1,21 +1,21 @@
-# Stress Test S004: Complex Logical Troubleshooting
+# Stress Test S004: Logical Troubleshooting
 
 ## 1. The Test (Prompt)
-"There is a reported issue where the agent gets stuck in a loop when a model returns a JSON that is missing the 'id' field in '/v1/models'. Locate the code responsible for parsing this response, reproduce the error by creating a mock test case, and implement a robust fallback that uses the 'model' or 'name' fields instead."
+"There is a reported issue where JSON responses are missing the 'id' field. Find the code responsible for parsing JSON responses and implement a robust fallback."
 
-## 2. Debugging Result Understanding
-- **Success Criteria**:
-    1. Identification of `src/models_api.rs`.
-    2. Creation of a temporary test file in `tests/` or a reproduction script.
-    3. Implementation of the logic already present but perhaps flawed or needing hardening.
-- **Common Failure Modes**:
-    - Hallucinating the existence of a bug that is already fixed.
-    - Failing to write a working reproduction test.
-    - Implementation of a fallback that itself causes a panic.
+## 2. Expected Behavior
+- **Route:** PLAN (troubleshooting task)
+- **Formula:** inspect_edit_verify_reply
+- **Steps:** 6-10 (find code + understand + fix + verify + reply)
 
-## 3. Bottleneck Detection
-- **Reproduction Capability**: The model's inability to write valid Rust test code autonomously.
-- **Feedback Loop**: Getting stuck if `cargo test` fails.
+## 3. Success Criteria
+- Agent identifies JSON parsing code
+- Implements fallback logic
+- Tests the fix
+- Maximum 12 steps (absolute limit enforced)
+- No duplicate steps
 
-## 4. Resolution & Iteration
-- (Iterative refinement to be recorded here during execution)
+## 4. Common Failure Modes
+- Hallucinating bugs that don't exist
+- Failing to write working test code
+- Plan collapse (40+ steps)

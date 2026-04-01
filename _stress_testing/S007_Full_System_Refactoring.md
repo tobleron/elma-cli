@@ -1,20 +1,21 @@
-# Stress Test S007: External System Standardizing
+# Stress Test S007: Full System Refactoring
 
 ## 1. The Test (Prompt)
-"Objective: Standardize the logging/printing style across `_stress_testing/_opencode_for_testing/`. 
-1. Identify all files using console-style output (e.g., `println!`, `console.log`, `print`). 
-2. Create a new utility module within that directory to wrap these calls.
-3. Refactor all identified files to use this new utility.
-4. Verify the change is consistent across the entire test codebase."
+"Standardize the logging style across _stress_testing/_opencode_for_testing/. Find all files using println! or console.log. Create a utility module to wrap these calls. Refactor all identified files to use the new utility."
 
-## 2. Debugging Result Understanding
-- **Success Criteria**: High-level cross-file refactor strictly contained in the test directory.
-- **Common Failure Modes**:
-    - Context Collapse: The model forgets the overall objective during long turn sequences.
-    - Introducing syntax errors in the new utility.
+## 2. Expected Behavior
+- **Route:** PLAN (multi-file refactor)
+- **Formula:** inspect_edit_verify_reply
+- **Steps:** 8-12 (find + create utility + edit multiple + verify)
 
-## 3. Bottleneck Detection
-- **Orchestration Limit**: Reaching the turn limit or context limit before completion.
+## 3. Success Criteria
+- Agent identifies all logging calls
+- Creates utility module
+- Refactors all files consistently
+- Maximum 12 steps (absolute limit enforced)
+- Edit content under 500 characters per edit
 
-## 4. Resolution & Iteration
-- (Iterative refinement to be recorded here during execution)
+## 4. Common Failure Modes
+- Context collapse (forgetting overall objective)
+- Content explosion (200+ lines in single edit)
+- Plan collapse (40+ steps)

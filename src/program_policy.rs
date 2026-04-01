@@ -299,15 +299,95 @@ pub(crate) fn apply_capability_guard(
 // Task 044: Execution Level Validation
 // ============================================================================
 
+/// Detect duplicate step ratio in a program
+/// 
+/// Task 014: Returns the ratio of duplicate steps (0.0 to 1.0).
+/// High ratio indicates a planning loop.
+fn detect_duplicate_step_ratio(program: &Program) -> f64 {
+    if program.steps.len() < 2 {
+        return 0.0;
+    }
+
+    // Group steps by (type, cmd/content, purpose) signature
+    let mut step_signatures: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    
+    for step in &program.steps {
+        let signature = match step {
+            Step::Shell { cmd, common, .. } => {
+                format!("shell:{}:{}", cmd, common.purpose)
+            }
+            Step::Read { path, common, .. } => {
+                format!("read:{}:{}", path, common.purpose)
+            }
+            Step::Search { query, paths, common, .. } => {
+                format!("search:{}:{:?}", query, common.purpose)
+            }
+            Step::Select { instructions, common, .. } => {
+                format!("select:{}:{}", instructions, common.purpose)
+            }
+            Step::Plan { goal, common, .. } => {
+                format!("plan:{}:{}", goal, common.purpose)
+            }
+            Step::MasterPlan { goal, common, .. } => {
+                format!("masterplan:{}:{}", goal, common.purpose)
+            }
+            Step::Decide { prompt, common, .. } => {
+                format!("decide:{}:{}", prompt, common.purpose)
+            }
+            Step::Summarize { instructions, common, .. } => {
+                format!("summarize:{}:{}", instructions, common.purpose)
+            }
+            Step::Edit { spec, common, .. } => {
+                format!("edit:{}:{}:{}", spec.operation, spec.path, common.purpose)
+            }
+            Step::Reply { instructions, common, .. } => {
+                format!("reply:{}:{}", instructions, common.purpose)
+            }
+        };
+        
+        *step_signatures.entry(signature).or_insert(0) += 1;
+    }
+
+    // Count duplicates (steps that appear more than once)
+    let duplicate_count: usize = step_signatures.values()
+        .filter(|&&count| count > 1)
+        .sum();
+    
+    duplicate_count as f64 / program.steps.len() as f64
+}
+
 /// Check if a program matches the required execution level
 ///
 /// Validates that the program is neither overbuilt nor underbuilt for the level.
+/// Also enforces hard step limits to prevent plan collapse (40+ identical steps).
 pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) -> Result<(), String> {
     let has_plan = program.steps.iter().any(|s| matches!(s, Step::Plan { .. }));
     let has_masterplan = program.steps.iter().any(|s| matches!(s, Step::MasterPlan { .. }));
     let step_count = program.steps.len();
     let has_reply = program.steps.iter().any(|s| matches!(s, Step::Reply { .. }));
-    
+
+    // Task 014: Hard maximum step limit to prevent plan collapse
+    // No program should exceed 12 steps - if it does, it's likely a loop
+    const MAX_STEPS_ABSOLUTE: usize = 12;
+    if step_count > MAX_STEPS_ABSOLUTE {
+        return Err(format!(
+            "Program exceeds maximum step limit: {} steps (max: {}). This indicates a planning loop.",
+            step_count, MAX_STEPS_ABSOLUTE
+        ));
+    }
+
+    // Task 014: Detect duplicate step loops
+    // If >50% of steps are duplicates, reject as a loop
+    if step_count >= 4 {
+        let duplicate_ratio = detect_duplicate_step_ratio(program);
+        if duplicate_ratio > 0.5 {
+            return Err(format!(
+                "Program has {}% duplicate steps (max: 50%). This indicates a planning loop.",
+                (duplicate_ratio * 100.0) as usize
+            ));
+        }
+    }
+
     match required_level {
         ExecutionLevel::Action => {
             // Action level: should be 1-2 steps (primary action + reply)
@@ -332,7 +412,7 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
                 ));
             }
         }
-        
+
         ExecutionLevel::Task => {
             // Task level: bounded outcome, 2-6 steps typical
             // Reject if has Plan/MasterPlan structure
@@ -362,7 +442,7 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
                 ));
             }
         }
-        
+
         ExecutionLevel::Plan => {
             // Plan level: must have explicit Plan step
             if !has_plan {
@@ -371,14 +451,21 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
                 );
             }
             // Should have reasonable structure (Plan + supporting steps + reply)
+            // Task 014: Add upper bound to prevent explosion
             if step_count < 2 {
                 return Err(format!(
-                    "Plan-level request has too few steps: {} (expected 2+)",
+                    "Plan-level request has too few steps: {} (expected 2-10)",
+                    step_count
+                ));
+            }
+            if step_count > 10 {
+                return Err(format!(
+                    "Plan-level request has too many steps: {} (expected 2-10)",
                     step_count
                 ));
             }
         }
-        
+
         ExecutionLevel::MasterPlan => {
             // MasterPlan level: must have explicit MasterPlan step
             if !has_masterplan {
@@ -387,15 +474,22 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
                 );
             }
             // Should have strategic structure (MasterPlan + phases + reply)
+            // Task 014: Add upper bound to prevent explosion
             if step_count < 2 {
                 return Err(format!(
-                    "MasterPlan-level request has too few steps: {} (expected 2+)",
+                    "MasterPlan-level request has too few steps: {} (expected 2-12)",
+                    step_count
+                ));
+            }
+            if step_count > 12 {
+                return Err(format!(
+                    "MasterPlan-level request has too many steps: {} (expected 2-12)",
                     step_count
                 ));
             }
         }
     }
-    
+
     // All levels require a Reply step
     if !has_reply {
         return Err("Program must have Reply step".to_string());
@@ -421,6 +515,31 @@ pub fn program_is_underbuilt(program: &Program, level: ExecutionLevel) -> bool {
         ExecutionLevel::MasterPlan => !program.steps.iter().any(|s| matches!(s, Step::MasterPlan { .. })),
         _ => false,
     }
+}
+
+/// Validate that formula matches the execution level
+/// 
+/// Task 014: Formula should align with ladder-determined level.
+/// This is a safety net - the main alignment happens in orchestration_planning.rs.
+pub fn validate_formula_level(
+    formula: &FormulaSelection,
+    level: ExecutionLevel,
+) -> Result<(), String> {
+    let allowed_formulas = match level {
+        ExecutionLevel::Action => vec!["reply_only", "execute_reply"],
+        ExecutionLevel::Task => vec!["inspect_reply", "inspect_summarize_reply", "inspect_decide_reply", "inspect_edit_verify_reply"],
+        ExecutionLevel::Plan => vec!["plan_reply"],
+        ExecutionLevel::MasterPlan => vec!["masterplan_reply"],
+    };
+
+    if !allowed_formulas.iter().any(|f| formula.primary.eq_ignore_ascii_case(f)) {
+        return Err(format!(
+            "Formula '{}' not allowed for {:?} level (allowed: {})",
+            formula.primary, level, allowed_formulas.join(", ")
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -576,5 +695,185 @@ mod tests {
         assert!(program_is_underbuilt(&program, ExecutionLevel::MasterPlan));
         assert!(!program_is_underbuilt(&program, ExecutionLevel::Action));
         assert!(!program_is_underbuilt(&program, ExecutionLevel::Task));
+    }
+
+    #[test]
+    fn test_validate_formula_level_action() {
+        let formula = FormulaSelection {
+            primary: "reply_only".to_string(),
+            alternatives: vec![],
+            reason: "test".to_string(),
+            memory_id: String::new(),
+        };
+        assert!(validate_formula_level(&formula, ExecutionLevel::Action).is_ok());
+        
+        let formula = FormulaSelection {
+            primary: "execute_reply".to_string(),
+            alternatives: vec![],
+            reason: "test".to_string(),
+            memory_id: String::new(),
+        };
+        assert!(validate_formula_level(&formula, ExecutionLevel::Action).is_ok());
+        
+        // Plan formula should fail for Action level
+        let formula = FormulaSelection {
+            primary: "plan_reply".to_string(),
+            alternatives: vec![],
+            reason: "test".to_string(),
+            memory_id: String::new(),
+        };
+        assert!(validate_formula_level(&formula, ExecutionLevel::Action).is_err());
+    }
+
+    #[test]
+    fn test_validate_formula_level_task() {
+        let formula = FormulaSelection {
+            primary: "inspect_reply".to_string(),
+            alternatives: vec![],
+            reason: "test".to_string(),
+            memory_id: String::new(),
+        };
+        assert!(validate_formula_level(&formula, ExecutionLevel::Task).is_ok());
+        
+        // Plan formula should fail for Task level
+        let formula = FormulaSelection {
+            primary: "plan_reply".to_string(),
+            alternatives: vec![],
+            reason: "test".to_string(),
+            memory_id: String::new(),
+        };
+        assert!(validate_formula_level(&formula, ExecutionLevel::Task).is_err());
+    }
+
+    #[test]
+    fn test_validate_formula_level_plan() {
+        let formula = FormulaSelection {
+            primary: "plan_reply".to_string(),
+            alternatives: vec![],
+            reason: "test".to_string(),
+            memory_id: String::new(),
+        };
+        assert!(validate_formula_level(&formula, ExecutionLevel::Plan).is_ok());
+        
+        // Simple reply should fail for Plan level
+        let formula = FormulaSelection {
+            primary: "reply_only".to_string(),
+            alternatives: vec![],
+            reason: "test".to_string(),
+            memory_id: String::new(),
+        };
+        assert!(validate_formula_level(&formula, ExecutionLevel::Plan).is_err());
+    }
+
+    #[test]
+    fn test_detect_duplicate_step_ratio_no_duplicates() {
+        let program = make_program(vec![
+            Step::Shell {
+                id: "s1".to_string(),
+                cmd: "ls".to_string(),
+                common: StepCommon { purpose: "list files".to_string(), ..StepCommon::default() },
+            },
+            Step::Shell {
+                id: "s2".to_string(),
+                cmd: "cat file.txt".to_string(),
+                common: StepCommon { purpose: "read file".to_string(), ..StepCommon::default() },
+            },
+            Step::Reply {
+                id: "r1".to_string(),
+                instructions: "done".to_string(),
+                common: StepCommon { purpose: "answer".to_string(), ..StepCommon::default() },
+            },
+        ]);
+        
+        let ratio = detect_duplicate_step_ratio(&program);
+        assert!(ratio < 0.1);  // Should be 0 or very low
+    }
+
+    #[test]
+    fn test_detect_duplicate_step_ratio_with_duplicates() {
+        let program = make_program(vec![
+            Step::Shell {
+                id: "s1".to_string(),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count functions".to_string(), ..StepCommon::default() },
+            },
+            Step::Shell {
+                id: "s2".to_string(),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count functions".to_string(), ..StepCommon::default() },
+            },
+            Step::Shell {
+                id: "s3".to_string(),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count functions".to_string(), ..StepCommon::default() },
+            },
+            Step::Shell {
+                id: "s4".to_string(),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count functions".to_string(), ..StepCommon::default() },
+            },
+        ]);
+        
+        let ratio = detect_duplicate_step_ratio(&program);
+        assert!(ratio > 0.5);  // All 4 steps are duplicates
+    }
+
+    #[test]
+    fn test_program_matches_level_rejects_excessive_steps() {
+        // Create a program with 20 identical steps (simulating plan collapse)
+        let mut steps = Vec::new();
+        for i in 0..20 {
+            steps.push(Step::Shell {
+                id: format!("s{}", i),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count functions".to_string(), ..StepCommon::default() },
+            });
+        }
+        steps.push(Step::Reply {
+            id: "r1".to_string(),
+            instructions: "done".to_string(),
+            common: StepCommon { purpose: "answer".to_string(), ..StepCommon::default() },
+        });
+        
+        let program = Program {
+            objective: "test".to_string(),
+            steps,
+        };
+        
+        // Should reject regardless of level due to absolute limit
+        let result = program_matches_level(&program, ExecutionLevel::Task);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("maximum step limit"));
+    }
+
+    #[test]
+    fn test_program_matches_level_rejects_duplicate_loop() {
+        // Create a program with 50%+ duplicate steps
+        let program = make_program(vec![
+            Step::Shell {
+                id: "s1".to_string(),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count".to_string(), ..StepCommon::default() },
+            },
+            Step::Shell {
+                id: "s2".to_string(),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count".to_string(), ..StepCommon::default() },
+            },
+            Step::Shell {
+                id: "s3".to_string(),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count".to_string(), ..StepCommon::default() },
+            },
+            Step::Shell {
+                id: "s4".to_string(),
+                cmd: "grep fn".to_string(),
+                common: StepCommon { purpose: "count".to_string(), ..StepCommon::default() },
+            },
+        ]);
+        
+        let result = program_matches_level(&program, ExecutionLevel::Task);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("duplicate steps"));
     }
 }

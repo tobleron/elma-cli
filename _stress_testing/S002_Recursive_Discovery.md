@@ -1,16 +1,19 @@
-# Stress Test S002: External Recursive Discovery
+# Stress Test S002: Recursive Discovery
 
 ## 1. The Test (Prompt)
-"Perform a recursive scan of `_stress_testing/_opencode_for_testing/`. Map the directory structure and identify the top 3 largest files by line count. Analyze their imports to determine if they are cohesive modules."
+"Perform a recursive scan of _stress_testing/_opencode_for_testing/. Map the directory structure and identify the top 3 largest files by line count."
 
-## 2. Debugging Result Understanding
-- **Success Criteria**: Agent uses `ls -R` or `find`. It identifies the large files and reads their headers to check imports.
-- **Common Failure Modes**:
-    - "Losing" context of which folder it is scanning.
-    - Plan collapse: Mapping the folder but forgetting the import analysis.
+## 2. Expected Behavior
+- **Route:** PLAN (multi-step investigation)
+- **Formula:** inspect_reply
+- **Steps:** 4-8 (find + count + sort + reply)
 
-## 3. Bottleneck Detection
-- **Context Fog**: High file count in the test directory causing reasoning errors.
+## 3. Success Criteria
+- Agent maps directory structure
+- Identifies top 3 largest files
+- Maximum 12 steps (absolute limit enforced)
+- No duplicate steps (>50% duplicates = fail)
 
-## 4. Resolution & Iteration
-- (Iterative refinement to be recorded here during execution)
+## 4. Common Failure Modes
+- Plan collapse (40+ identical steps)
+- Duplicate step loops

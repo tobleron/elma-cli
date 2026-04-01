@@ -1,17 +1,19 @@
-# Stress Test S000F: The Select Primitive
+# Stress Test S000F: Select Primitive
 
 ## 1. The Test (Prompt)
-"In `_stress_testing/_opencode_for_testing/`, identify three potential files that could be the main application logic. Use your internal 'Select' tool to choose the most likely candidate and explain your reasoning."
+"In _stress_testing/_opencode_for_testing/, identify three potential files that could be the main application logic. Select the most likely candidate and explain your reasoning."
 
-## 2. Debugging Result Understanding
-- **Success Criteria**: Agent uses the `Select` step type. It presents options and successfully chooses one based on file naming or content hints (e.g., `main.go` vs `sqlc.yaml`).
-- **Common Failure Modes**:
-    - Skipping Select: Just picking one without using the formal `select` step.
-    - Hallucination: Selecting a file that doesn't exist.
+## 2. Expected Behavior
+- **Route:** PLAN (needs selection)
+- **Formula:** inspect_decide_reply or inspect_reply with Select step
+- **Steps:** 2-4 (list files + select + reply)
 
-## 3. Bottleneck Detection
-- **Selection Logic**: If the model provides poor criteria for selection.
-- **Workflow Interruption**: If the `select` step causes a hang in the orchestration loop.
+## 3. Success Criteria
+- Agent lists candidate files
+- Uses Select step to choose one
+- Explains reasoning for selection
+- Maximum 8 steps (step limit enforced)
 
-## 4. Resolution & Iteration
-- (Iterative refinement to be recorded here during execution)
+## 4. Common Failure Modes
+- Skipping Select step
+- Selecting non-existent files

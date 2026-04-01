@@ -271,6 +271,72 @@ pub async fn derive_planning_prior_with_ladder(
     memories: &[FormulaMemoryRecord],
     messages: &[ChatMessage],
 ) -> (ExecutionLadderAssessment, ComplexityAssessment, ScopePlan, FormulaSelection, bool) {
+    // Task 014: Check for obvious chat patterns BEFORE classification
+    // This catches greetings and simple questions that models often misclassify
+    if is_obvious_chat(line) {
+        // Force CHAT route for obvious chat patterns
+        let ladder = ExecutionLadderAssessment::new(
+            ExecutionLevel::Action,
+            "Obvious chat pattern detected".to_string(),
+            false, false, false, false,
+            "LOW".to_string(), "DIRECT".to_string(),
+        );
+        let complexity = ComplexityAssessment {
+            complexity: "DIRECT".to_string(),
+            needs_evidence: false,
+            needs_tools: false,
+            needs_decision: false,
+            needs_plan: false,
+            risk: "LOW".to_string(),
+            suggested_pattern: "reply_only".to_string(),
+        };
+        let scope = ScopePlan {
+            objective: line.to_string(),
+            ..ScopePlan::default()
+        };
+        let formula = FormulaSelection {
+            primary: "reply_only".to_string(),
+            alternatives: vec!["capability_reply".to_string()],
+            reason: "Obvious chat pattern".to_string(),
+            memory_id: String::new(),
+        };
+        return (ladder, complexity, scope, formula, false);
+    }
+
+    // Task 014: Check classification confidence
+    // If model is uncertain (high entropy or low margin), default to safe CHAT route
+    // This prevents over-orchestration on ambiguous inputs
+    if route_decision.entropy > 0.8 || route_decision.margin < 0.15 {
+        // Override to CHAT for uncertain classifications
+        // Safer to under-execute than over-execute
+        let ladder = ExecutionLadderAssessment::new(
+            ExecutionLevel::Action,
+            "Classification uncertain, using safe default".to_string(),
+            false, false, false, false,
+            "LOW".to_string(), "DIRECT".to_string(),
+        );
+        let complexity = ComplexityAssessment {
+            complexity: "DIRECT".to_string(),
+            needs_evidence: false,
+            needs_tools: false,
+            needs_decision: false,
+            needs_plan: false,
+            risk: "LOW".to_string(),
+            suggested_pattern: "reply_only".to_string(),
+        };
+        let scope = ScopePlan {
+            objective: line.to_string(),
+            ..ScopePlan::default()
+        };
+        let formula = FormulaSelection {
+            primary: "reply_only".to_string(),
+            alternatives: vec!["capability_reply".to_string()],
+            reason: "Classification uncertain, using safe default".to_string(),
+            memory_id: String::new(),
+        };
+        return (ladder, complexity, scope, formula, false);
+    }
+
     // Handle CHAT route specially (no ladder needed)
     if route_decision.route.eq_ignore_ascii_case("CHAT") {
         let ladder = ExecutionLadderAssessment::new(
@@ -361,7 +427,7 @@ pub async fn derive_planning_prior_with_ladder(
     });
 
     // Select formula based on ladder assessment
-    let formula = select_formula_once(
+    let mut formula = select_formula_once(
         client,
         chat_url,
         formula_cfg,
@@ -379,6 +445,24 @@ pub async fn derive_planning_prior_with_ladder(
         reason: format!("ladder level: {}", ladder.level),
         memory_id: String::new(),
     });
+
+    // Task 014: Enforce formula-level alignment (ladder determines allowed formulas)
+    // This ensures formula complexity matches the minimum sufficient level
+    let allowed_formulas = match ladder.level {
+        ExecutionLevel::Action => vec!["reply_only", "execute_reply"],
+        ExecutionLevel::Task => vec!["inspect_reply", "inspect_summarize_reply", "inspect_decide_reply", "inspect_edit_verify_reply"],
+        ExecutionLevel::Plan => vec!["plan_reply"],
+        ExecutionLevel::MasterPlan => vec!["masterplan_reply"],
+    };
+
+    if !allowed_formulas.iter().any(|f| formula.primary.eq_ignore_ascii_case(f)) {
+        // Formula doesn't match ladder level - override to appropriate formula
+        formula.reason = format!(
+            "Aligned with ladder level {:?} (was: {})",
+            ladder.level, formula.primary
+        );
+        formula.primary = allowed_formulas[0].to_string();
+    }
 
     let fallback_used = ladder.fallback_used;
 
@@ -432,5 +516,122 @@ pub async fn try_hierarchical_decomposition_with_ladder(
     } else {
         // Plan level but not MasterPlan - may not need full hierarchy
         Ok(None)
+    }
+}
+
+// ============================================================================
+// Task 014: Obvious Chat Pattern Detection
+// ============================================================================
+
+/// Check if input is an obvious chat message that should always route to CHAT
+/// 
+/// Task 014: Pattern matching for greetings and simple questions.
+/// This catches cases where the classifier might overthink simple inputs.
+fn is_obvious_chat(input: &str) -> bool {
+    let lower = input.to_lowercase();
+    
+    // Greetings
+    if lower.starts_with("hello") || 
+       lower.starts_with("hi ") ||
+       lower.starts_with("hey ") ||
+       lower.starts_with("good morning") ||
+       lower.starts_with("good afternoon") ||
+       lower.starts_with("good evening") 
+    {
+        return true;
+    }
+    
+    // Identity questions
+    if lower.contains("who are you") ||
+       lower.contains("what are you") ||
+       lower.contains("what is elma")
+    {
+        return true;
+    }
+    
+    // Capability questions (without execution request)
+    if lower.contains("what can you do") ||
+       lower.contains("what can you help")
+    {
+        return true;
+    }
+    
+    // Simple status questions
+    if lower.contains("how are you") ||
+       lower.contains("how's it going")
+    {
+        return true;
+    }
+    
+    // Short inputs without action words are likely chat
+    // But exclude if they contain file/command keywords
+    if input.len() < 30 {
+        let has_action_words = lower.contains("file") ||
+            lower.contains("run") ||
+            lower.contains("execute") ||
+            lower.contains("list") ||
+            lower.contains("show") ||
+            lower.contains("find") ||
+            lower.contains("search") ||
+            lower.contains("read") ||
+            lower.contains("edit") ||
+            lower.contains("create") ||
+            lower.contains("delete");
+        
+        if !has_action_words {
+            return true;
+        }
+    }
+    
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_obvious_chat_greetings() {
+        assert!(is_obvious_chat("Hello"));
+        assert!(is_obvious_chat("Hello Elma"));
+        assert!(is_obvious_chat("Hi there"));
+        assert!(is_obvious_chat("Hey Elma"));
+        assert!(is_obvious_chat("Good morning"));
+    }
+
+    #[test]
+    fn test_is_obvious_chat_identity() {
+        assert!(is_obvious_chat("Who are you?"));
+        assert!(is_obvious_chat("What are you?"));
+        assert!(is_obvious_chat("What is Elma?"));
+    }
+
+    #[test]
+    fn test_is_obvious_chat_status() {
+        assert!(is_obvious_chat("How are you?"));
+        assert!(is_obvious_chat("How's it going?"));
+    }
+
+    #[test]
+    fn test_is_obvious_chat_short_no_action() {
+        assert!(is_obvious_chat("Testing"));
+        assert!(is_obvious_chat("Quick question"));
+    }
+
+    #[test]
+    fn test_is_obvious_chat_short_with_action() {
+        assert!(!is_obvious_chat("List files"));
+        assert!(!is_obvious_chat("Run tests"));
+        assert!(!is_obvious_chat("Find function"));
+        assert!(!is_obvious_chat("Read file"));
+    }
+
+    #[test]
+    fn test_is_obvious_chat_long_input() {
+        // Long inputs starting with greetings should still match
+        assert!(is_obvious_chat("Hello I need you to help me with a complex task"));
+        
+        // But long inputs without greetings should not match
+        assert!(!is_obvious_chat("I need you to help me with a complex task involving multiple files"));
     }
 }

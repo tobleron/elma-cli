@@ -1,16 +1,19 @@
-# Stress Test S000H: The Decide Primitive
+# Stress Test S000H: Decide Primitive
 
 ## 1. The Test (Prompt)
-"Examine the `main.go` file in `_stress_testing/_opencode_for_testing/`. Use your 'Decide' tool to determine if the current implementation uses a database. If it does, find the schema file; if not, identify where state is stored."
+"Examine _stress_testing/_opencode_for_testing/ and decide: does this project use a database? If yes, find the schema file. If not, identify where state is stored."
 
-## 2. Debugging Result Understanding
-- **Success Criteria**: Agent uses the `Decide` step. It makes a binary or multi-choice decision based on evidence (e.g., finding `sqlc.yaml` or DB imports) and branches its next action accordingly.
-- **Common Failure Modes**:
-    - Indecision: Running both branches regardless of the evidence.
-    - Logic Swap: Deciding "No DB" while looking at an SQL import.
+## 2. Expected Behavior
+- **Route:** PLAN (needs decision)
+- **Formula:** inspect_decide_reply
+- **Steps:** 3-6 (inspect + decide + find + reply)
 
-## 3. Bottleneck Detection
-- **Branching Complexity**: Does the agent lose its place after the decision point?
+## 3. Success Criteria
+- Agent inspects files for database usage
+- Uses Decide step for yes/no determination
+- Follows correct branch based on decision
+- Maximum 10 steps (step limit enforced)
 
-## 4. Resolution & Iteration
-- (Iterative refinement to be recorded here during execution)
+## 4. Common Failure Modes
+- Running both branches regardless of decision
+- Incorrect decision based on evidence
