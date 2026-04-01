@@ -279,7 +279,7 @@ pub async fn derive_planning_prior_with_ladder(
         // Override to CHAT for uncertain classifications
         // Safer to under-execute than over-execute
         let ladder = ExecutionLadderAssessment::new(
-            ExecutionLevel::Action,
+            ExecutionLevel::AtomicOperation,
             "Classification uncertain, using safe default".to_string(),
             false, false, false, false,
             "LOW".to_string(), "DIRECT".to_string(),
@@ -309,7 +309,7 @@ pub async fn derive_planning_prior_with_ladder(
     // Handle CHAT route specially (no ladder needed)
     if route_decision.route.eq_ignore_ascii_case("CHAT") {
         let ladder = ExecutionLadderAssessment::new(
-            ExecutionLevel::Action,
+            ExecutionLevel::AtomicOperation,
             "Direct conversational turn".to_string(),
             false, false, false, false,
             "LOW".to_string(), "DIRECT".to_string(),
@@ -368,7 +368,7 @@ pub async fn derive_planning_prior_with_ladder(
         complexity: ladder.complexity.clone(),
         needs_evidence: ladder.requires_evidence,
         needs_tools: !route_decision.route.eq_ignore_ascii_case("CHAT"),
-        needs_decision: ladder.level == ExecutionLevel::Plan || 
+        needs_decision: ladder.level == ExecutionLevel::OperationalPlan || 
             route_decision.route.eq_ignore_ascii_case("DECIDE"),
         needs_plan: ladder.level.requires_planning_structure(),
         risk: ladder.risk.clone(),
@@ -418,10 +418,10 @@ pub async fn derive_planning_prior_with_ladder(
     // Task 014: Enforce formula-level alignment (ladder determines allowed formulas)
     // This ensures formula complexity matches the minimum sufficient level
     let allowed_formulas = match ladder.level {
-        ExecutionLevel::Action => vec!["reply_only", "execute_reply"],
-        ExecutionLevel::Task => vec!["inspect_reply", "inspect_summarize_reply", "inspect_decide_reply", "inspect_edit_verify_reply"],
-        ExecutionLevel::Plan => vec!["plan_reply"],
-        ExecutionLevel::MasterPlan => vec!["masterplan_reply"],
+        ExecutionLevel::AtomicOperation => vec!["reply_only", "execute_reply"],
+        ExecutionLevel::DiscoveryTask => vec!["inspect_reply", "inspect_summarize_reply", "inspect_decide_reply", "inspect_edit_verify_reply"],
+        ExecutionLevel::OperationalPlan => vec!["plan_reply"],
+        ExecutionLevel::StrategicPlan => vec!["masterplan_reply"],
     };
 
     if !allowed_formulas.iter().any(|f| formula.primary.eq_ignore_ascii_case(f)) {
@@ -460,7 +460,7 @@ pub async fn try_hierarchical_decomposition_with_ladder(
 
     // Decomposition required for Plan/MasterPlan levels
     // For MasterPlan, generate full strategic decomposition
-    if ladder_assessment.level == ExecutionLevel::MasterPlan || ladder_assessment.requires_phases {
+    if ladder_assessment.level == ExecutionLevel::StrategicPlan || ladder_assessment.requires_phases {
         let masterplan = generate_masterplan(
             client,
             chat_url,

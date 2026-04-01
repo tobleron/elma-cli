@@ -16,7 +16,8 @@ pub(crate) fn default_router_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "none".to_string(),
         max_tokens: 1,
         timeout_s: 120,
-        system_prompt: "You are Elma's workflow gate estimator.\n\nReturn exactly one digit and nothing else.\n\nMapping:\n1 = CHAT\n2 = WORKFLOW\n\nInterpretation:\n- 1 CHAT: answer directly without an internal workflow.\n- 2 WORKFLOW: use internal reasoning steps, workspace evidence, or another intel unit before the final answer.\n\nImportant distinctions:\n- Greetings or general knowledge questions are usually 1.\n- Questions about the current project, files, code, commands, or tasks that need planning or decisions are usually 2.\n\nRules:\n- Output must be exactly one digit from 1 to 2.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents whether Elma should enter workflow mode.\n".to_string(),
+        // Task 045: Updated from CHAT/WORKFLOW to DIRECT_ANSWER/ORCHESTRATED_TASK
+        system_prompt: "You are Elma's workflow gate estimator.\n\nReturn exactly one digit and nothing else.\n\nMapping:\n1 = DIRECT_ANSWER\n2 = ORCHESTRATED_TASK\n\nInterpretation:\n- 1 DIRECT_ANSWER: answer directly without an internal workflow.\n- 2 ORCHESTRATED_TASK: use internal reasoning steps, workspace evidence, or another intel unit before the final answer.\n\nImportant distinctions:\n- Greetings or general knowledge questions are usually 1.\n- Questions about the current project, files, code, commands, or tasks that need planning or decisions are usually 2.\n\nRules:\n- Output must be exactly one digit from 1 to 2.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents whether Elma should enter workflow mode.\n".to_string(),
     }
 }
 
@@ -32,7 +33,8 @@ pub(crate) fn default_mode_router_config(base_url: &str, model: &str) -> Profile
         reasoning_format: "none".to_string(),
         max_tokens: 1,
         timeout_s: 120,
-        system_prompt: "You are Elma's workflow mode estimator.\n\nReturn exactly one digit and nothing else.\n\nMapping:\n1 = INSPECT\n2 = EXECUTE\n3 = PLAN\n4 = MASTERPLAN\n5 = DECIDE\n\nInterpretation:\n- 1 INSPECT: inspect workspace evidence, files, code, or configuration.\n- 2 EXECUTE: run commands or carry out direct terminal actions.\n- 3 PLAN: create one concrete step-by-step plan.\n- 4 MASTERPLAN: create a higher-level overall plan across phases.\n- 5 DECIDE: return a concise decision or label.\n\nImportant distinctions:\n- \"What is my current project about?\", \"read Cargo.toml and summarize it\", and \"find where fetch_ctx_max is defined\" are usually 1.\n- \"list files\", \"run tests\", and \"build the project\" are usually 2.\n- \"Create a step-by-step plan\" is 3, not 4.\n- Only choose 4 when the user truly wants an overall master plan.\n\nRules:\n- Output must be exactly one digit from 1 to 5.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents the workflow mode.\n".to_string(),
+        // Task 045: Updated from INSPECT/EXECUTE/PLAN/MASTERPLAN/DECIDE to DISCOVER/ACT/OPERATIONAL_PLAN/STRATEGIC_PLAN/EVALUATE
+        system_prompt: "You are Elma's workflow mode estimator.\n\nReturn exactly one digit and nothing else.\n\nMapping:\n1 = DISCOVER\n2 = ACT\n3 = OPERATIONAL_PLAN\n4 = STRATEGIC_PLAN\n5 = EVALUATE\n\nInterpretation:\n- 1 DISCOVER: inspect workspace evidence, files, code, or configuration.\n- 2 ACT: run commands or carry out direct terminal actions.\n- 3 OPERATIONAL_PLAN: create one concrete step-by-step plan.\n- 4 STRATEGIC_PLAN: create a higher-level overall plan across phases.\n- 5 EVALUATE: return a concise decision or label.\n\nImportant distinctions:\n- \"What is my current project about?\", \"read Cargo.toml and summarize it\", and \"find where fetch_ctx_max is defined\" are usually 1.\n- \"list files\", \"run tests\", and \"build the project\" are usually 2.\n- \"Create a step-by-step plan\" is 3, not 4.\n- Only choose 4 when the user truly wants an overall master plan.\n\nRules:\n- Output must be exactly one digit from 1 to 5.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents the workflow mode.\n".to_string(),
     }
 }
 
@@ -65,7 +67,8 @@ pub(crate) fn default_action_type_config(base_url: &str, model: &str) -> Profile
         reasoning_format: "none".to_string(),
         max_tokens: 16,
         timeout_s: 120,
-        system_prompt: "Classify the user's request into exactly ONE WORD route.\n\nAllowed routes:\nCHAT\nSHELL\nPLAN\nMASTERPLAN\nDECIDE\n\nGuidance:\n- CHAT: greetings, smalltalk, questions that do not require terminal/workspace changes.\n- SHELL: any request to run a terminal command (list files, search, build, test, run scripts, inspect files).\n- PLAN: user asks for a step-by-step plan.\n- MASTERPLAN: user asks for an overall master plan for a multi-step objective.\n- DECIDE: user asks for a single-word decision/label.\n\nRules:\n- Output must be exactly one word from the allowed routes.\n- No punctuation.\n- No explanation.\n"
+        // Task 045: Updated from CHAT/SHELL/PLAN/MASTERPLAN/DECIDE to CONVERSATION/TERMINAL_ACTION/OPERATIONAL_PLAN/STRATEGIC_PLAN/JUDGMENT
+        system_prompt: "Classify the user's request into exactly ONE WORD route.\n\nAllowed routes:\nCONVERSATION\nTERMINAL_ACTION\nOPERATIONAL_PLAN\nSTRATEGIC_PLAN\nJUDGMENT\n\nGuidance:\n- CONVERSATION: greetings, smalltalk, questions that do not require terminal/workspace changes.\n- TERMINAL_ACTION: any request to run a terminal command (list files, search, build, test, run scripts, inspect files).\n- OPERATIONAL_PLAN: user asks for a step-by-step plan.\n- STRATEGIC_PLAN: user asks for an overall master plan for a multi-step objective.\n- JUDGMENT: user asks for a single-word decision/label.\n\nRules:\n- Output must be exactly one word from the allowed routes.\n- No punctuation.\n- No explanation.\n"
             .to_string(),
     }
 }

@@ -1,28 +1,34 @@
 //! @efficiency-role: util-pure
 //!
 //! Routing - Calculations and Distribution Handling
+//!
+//! Task 045: Updated terminology for better articulation accuracy
 
 use crate::*;
 
+/// Task 045: Updated from CHAT/WORKFLOW to DIRECT_ANSWER/ORCHESTRATED_TASK
 pub(crate) fn workflow_code_pairs() -> &'static [(&'static str, &'static str)] {
-    &[("1", "CHAT"), ("2", "WORKFLOW")]
+    &[("1", "DIRECT_ANSWER"), ("2", "ORCHESTRATED_TASK")]
 }
 
+/// Task 045: Updated from INSPECT/EXECUTE/PLAN/MASTERPLAN/DECIDE
+/// to DISCOVER/ACT/OPERATIONAL_PLAN/STRATEGIC_PLAN/EVALUATE
 pub(crate) fn mode_code_pairs() -> &'static [(&'static str, &'static str)] {
     &[
-        ("1", "INSPECT"),
-        ("2", "EXECUTE"),
-        ("3", "PLAN"),
-        ("4", "MASTERPLAN"),
-        ("5", "DECIDE"),
+        ("1", "DISCOVER"),
+        ("2", "ACT"),
+        ("3", "OPERATIONAL_PLAN"),
+        ("4", "STRATEGIC_PLAN"),
+        ("5", "EVALUATE"),
     ]
 }
 
+/// Task 045: Updated from SHELL/INFO/CHAT to TERMINAL_ACTION/INQUIRY/CONVERSATION
 pub(crate) fn speech_act_code_pairs() -> &'static [(&'static str, &'static str)] {
     &[
-        ("1", "SHELL"),
-        ("2", "INFO"),
-        ("3", "CHAT"),
+        ("1", "TERMINAL_ACTION"),
+        ("2", "INQUIRY"),
+        ("3", "CONVERSATION"),
     ]
 }
 

@@ -389,7 +389,7 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
     }
 
     match required_level {
-        ExecutionLevel::Action => {
+        ExecutionLevel::AtomicOperation => {
             // Action level: should be 1-2 steps (primary action + reply)
             // Reject if has Plan/MasterPlan structure
             if has_plan {
@@ -413,7 +413,7 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
             }
         }
 
-        ExecutionLevel::Task => {
+        ExecutionLevel::DiscoveryTask => {
             // Task level: bounded outcome, 2-6 steps typical
             // Reject if has Plan/MasterPlan structure
             if has_plan {
@@ -443,7 +443,7 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
             }
         }
 
-        ExecutionLevel::Plan => {
+        ExecutionLevel::OperationalPlan => {
             // Plan level: must have explicit Plan step
             if !has_plan {
                 return Err(
@@ -466,7 +466,7 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
             }
         }
 
-        ExecutionLevel::MasterPlan => {
+        ExecutionLevel::StrategicPlan => {
             // MasterPlan level: must have explicit MasterPlan step
             if !has_masterplan {
                 return Err(
@@ -501,7 +501,7 @@ pub fn program_matches_level(program: &Program, required_level: ExecutionLevel) 
 /// Check if program is overbuilt for the level
 pub fn program_is_overbuilt(program: &Program, level: ExecutionLevel) -> bool {
     match level {
-        ExecutionLevel::Action | ExecutionLevel::Task => {
+        ExecutionLevel::AtomicOperation | ExecutionLevel::DiscoveryTask => {
             program.steps.iter().any(|s| matches!(s, Step::Plan { .. } | Step::MasterPlan { .. }))
         }
         _ => false,
@@ -511,8 +511,8 @@ pub fn program_is_overbuilt(program: &Program, level: ExecutionLevel) -> bool {
 /// Check if program is underbuilt for the level
 pub fn program_is_underbuilt(program: &Program, level: ExecutionLevel) -> bool {
     match level {
-        ExecutionLevel::Plan => !program.steps.iter().any(|s| matches!(s, Step::Plan { .. })),
-        ExecutionLevel::MasterPlan => !program.steps.iter().any(|s| matches!(s, Step::MasterPlan { .. })),
+        ExecutionLevel::OperationalPlan => !program.steps.iter().any(|s| matches!(s, Step::Plan { .. })),
+        ExecutionLevel::StrategicPlan => !program.steps.iter().any(|s| matches!(s, Step::MasterPlan { .. })),
         _ => false,
     }
 }
@@ -526,10 +526,10 @@ pub fn validate_formula_level(
     level: ExecutionLevel,
 ) -> Result<(), String> {
     let allowed_formulas = match level {
-        ExecutionLevel::Action => vec!["reply_only", "execute_reply"],
-        ExecutionLevel::Task => vec!["inspect_reply", "inspect_summarize_reply", "inspect_decide_reply", "inspect_edit_verify_reply"],
-        ExecutionLevel::Plan => vec!["plan_reply"],
-        ExecutionLevel::MasterPlan => vec!["masterplan_reply"],
+        ExecutionLevel::AtomicOperation => vec!["reply_only", "execute_reply"],
+        ExecutionLevel::DiscoveryTask => vec!["inspect_reply", "inspect_summarize_reply", "inspect_decide_reply", "inspect_edit_verify_reply"],
+        ExecutionLevel::OperationalPlan => vec!["plan_reply"],
+        ExecutionLevel::StrategicPlan => vec!["masterplan_reply"],
     };
 
     if !allowed_formulas.iter().any(|f| formula.primary.eq_ignore_ascii_case(f)) {
@@ -568,7 +568,7 @@ mod tests {
             },
         ]);
         
-        let result = program_matches_level(&program, ExecutionLevel::Action);
+        let result = program_matches_level(&program, ExecutionLevel::AtomicOperation);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Plan"));
     }
@@ -588,7 +588,7 @@ mod tests {
             },
         ]);
         
-        let result = program_matches_level(&program, ExecutionLevel::Action);
+        let result = program_matches_level(&program, ExecutionLevel::AtomicOperation);
         assert!(result.is_ok());
     }
 
@@ -612,7 +612,7 @@ mod tests {
             },
         ]);
         
-        let result = program_matches_level(&program, ExecutionLevel::Task);
+        let result = program_matches_level(&program, ExecutionLevel::DiscoveryTask);
         assert!(result.is_err());
     }
 
@@ -631,7 +631,7 @@ mod tests {
             },
         ]);
         
-        let result = program_matches_level(&program, ExecutionLevel::Plan);
+        let result = program_matches_level(&program, ExecutionLevel::OperationalPlan);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Plan"));
     }
@@ -651,7 +651,7 @@ mod tests {
             },
         ]);
         
-        let result = program_matches_level(&program, ExecutionLevel::MasterPlan);
+        let result = program_matches_level(&program, ExecutionLevel::StrategicPlan);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("MasterPlan"));
     }
@@ -671,9 +671,9 @@ mod tests {
             },
         ]);
         
-        assert!(program_is_overbuilt(&program, ExecutionLevel::Action));
-        assert!(program_is_overbuilt(&program, ExecutionLevel::Task));
-        assert!(!program_is_overbuilt(&program, ExecutionLevel::Plan));
+        assert!(program_is_overbuilt(&program, ExecutionLevel::AtomicOperation));
+        assert!(program_is_overbuilt(&program, ExecutionLevel::DiscoveryTask));
+        assert!(!program_is_overbuilt(&program, ExecutionLevel::OperationalPlan));
     }
 
     #[test]
@@ -691,10 +691,10 @@ mod tests {
             },
         ]);
         
-        assert!(program_is_underbuilt(&program, ExecutionLevel::Plan));
-        assert!(program_is_underbuilt(&program, ExecutionLevel::MasterPlan));
-        assert!(!program_is_underbuilt(&program, ExecutionLevel::Action));
-        assert!(!program_is_underbuilt(&program, ExecutionLevel::Task));
+        assert!(program_is_underbuilt(&program, ExecutionLevel::OperationalPlan));
+        assert!(program_is_underbuilt(&program, ExecutionLevel::StrategicPlan));
+        assert!(!program_is_underbuilt(&program, ExecutionLevel::AtomicOperation));
+        assert!(!program_is_underbuilt(&program, ExecutionLevel::DiscoveryTask));
     }
 
     #[test]
@@ -705,7 +705,7 @@ mod tests {
             reason: "test".to_string(),
             memory_id: String::new(),
         };
-        assert!(validate_formula_level(&formula, ExecutionLevel::Action).is_ok());
+        assert!(validate_formula_level(&formula, ExecutionLevel::AtomicOperation).is_ok());
         
         let formula = FormulaSelection {
             primary: "execute_reply".to_string(),
@@ -713,7 +713,7 @@ mod tests {
             reason: "test".to_string(),
             memory_id: String::new(),
         };
-        assert!(validate_formula_level(&formula, ExecutionLevel::Action).is_ok());
+        assert!(validate_formula_level(&formula, ExecutionLevel::AtomicOperation).is_ok());
         
         // Plan formula should fail for Action level
         let formula = FormulaSelection {
@@ -722,7 +722,7 @@ mod tests {
             reason: "test".to_string(),
             memory_id: String::new(),
         };
-        assert!(validate_formula_level(&formula, ExecutionLevel::Action).is_err());
+        assert!(validate_formula_level(&formula, ExecutionLevel::AtomicOperation).is_err());
     }
 
     #[test]
@@ -733,7 +733,7 @@ mod tests {
             reason: "test".to_string(),
             memory_id: String::new(),
         };
-        assert!(validate_formula_level(&formula, ExecutionLevel::Task).is_ok());
+        assert!(validate_formula_level(&formula, ExecutionLevel::DiscoveryTask).is_ok());
         
         // Plan formula should fail for Task level
         let formula = FormulaSelection {
@@ -742,7 +742,7 @@ mod tests {
             reason: "test".to_string(),
             memory_id: String::new(),
         };
-        assert!(validate_formula_level(&formula, ExecutionLevel::Task).is_err());
+        assert!(validate_formula_level(&formula, ExecutionLevel::DiscoveryTask).is_err());
     }
 
     #[test]
@@ -753,7 +753,7 @@ mod tests {
             reason: "test".to_string(),
             memory_id: String::new(),
         };
-        assert!(validate_formula_level(&formula, ExecutionLevel::Plan).is_ok());
+        assert!(validate_formula_level(&formula, ExecutionLevel::OperationalPlan).is_ok());
         
         // Simple reply should fail for Plan level
         let formula = FormulaSelection {
@@ -762,7 +762,7 @@ mod tests {
             reason: "test".to_string(),
             memory_id: String::new(),
         };
-        assert!(validate_formula_level(&formula, ExecutionLevel::Plan).is_err());
+        assert!(validate_formula_level(&formula, ExecutionLevel::OperationalPlan).is_err());
     }
 
     #[test]
@@ -841,7 +841,7 @@ mod tests {
         };
         
         // Should reject regardless of level due to absolute limit
-        let result = program_matches_level(&program, ExecutionLevel::Task);
+        let result = program_matches_level(&program, ExecutionLevel::DiscoveryTask);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("maximum step limit"));
     }
@@ -872,7 +872,7 @@ mod tests {
             },
         ]);
         
-        let result = program_matches_level(&program, ExecutionLevel::Task);
+        let result = program_matches_level(&program, ExecutionLevel::DiscoveryTask);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("duplicate steps"));
     }
