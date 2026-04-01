@@ -89,6 +89,8 @@ pub(crate) fn program_signature(program: &Program) -> String {
         .iter()
         .map(|step| match step {
             Step::Shell { cmd, .. } => format!("shell:{}", normalize_shell_cmd(cmd)),
+            Step::Read { path, .. } => format!("read:{}", path.trim()),
+            Step::Search { query, .. } => format!("search:{}", query.trim()),
             Step::Select { instructions, .. } => {
                 format!("select:{}", instructions.trim())
             }
@@ -114,6 +116,8 @@ pub(crate) fn evaluate_program_for_scenario(
     let mut ids: HashMap<String, usize> = HashMap::new();
     let mut has_reply = false;
     let mut has_shell = false;
+    let mut has_read = false;
+    let mut has_search = false;
     let mut has_plan = false;
     let mut has_masterplan = false;
     let mut has_decide = false;
@@ -147,6 +151,8 @@ pub(crate) fn evaluate_program_for_scenario(
                     executable_in_tune = false;
                 }
             }
+            Step::Read { .. } => { has_read = true; }
+            Step::Search { .. } => { has_search = true; }
             Step::Select { .. } => {}
             Step::Plan { .. } => has_plan = true,
             Step::MasterPlan { .. } => has_masterplan = true,

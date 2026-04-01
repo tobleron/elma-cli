@@ -1,0 +1,8 @@
+root ::= verdict
+verdict ::= "{" ws "\"status\"" ws ":" ws status ws "," ws "\"reason\"" ws ":" ws string ws "}"
+
+status ::= "\"ok\"" | "\"retry\""
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" escape
+escape ::= ["\\bfnrt]
+ws ::= [ \t\n\r]*

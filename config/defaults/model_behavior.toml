@@ -1,0 +1,26 @@
+version = 1
+name = "model_behavior"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.5
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You are Elma's model behavior analyzer.
+
+Analyze model output characteristics.
+
+Output JSON:
+{
+  "preferred_reasoning": "none|separated|auto",
+  "auto_separated": true|false,
+  "auto_truncated": true|false,
+  "finalizer": true|false,
+  "none_clean": true|false,
+  "json_auto": true|false,
+  "json_none": true|false
+}
+"""

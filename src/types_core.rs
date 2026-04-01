@@ -572,6 +572,10 @@ pub(crate) struct EditSpec {
 pub(crate) enum Step {
     #[serde(rename = "shell")]
     Shell { id: String, cmd: String, #[serde(flatten)] common: StepCommon },
+    #[serde(rename = "read")]
+    Read { id: String, path: String, #[serde(flatten)] common: StepCommon },
+    #[serde(rename = "search")]
+    Search { id: String, query: String, paths: Vec<String>, #[serde(flatten)] common: StepCommon },
     #[serde(rename = "select")]
     Select { id: String, #[serde(default)] instructions: String, #[serde(flatten)] common: StepCommon },
     #[serde(rename = "plan")]
@@ -591,7 +595,8 @@ pub(crate) enum Step {
 impl Step {
     pub(crate) fn id(&self) -> &str {
         match self {
-            Step::Shell { id, .. } | Step::Select { id, .. } | Step::Plan { id, .. } |
+            Step::Shell { id, .. } | Step::Read { id, .. } | Step::Search { id, .. } |
+            Step::Select { id, .. } | Step::Plan { id, .. } |
             Step::MasterPlan { id, .. } | Step::Decide { id, .. } | Step::Summarize { id, .. } |
             Step::Edit { id, .. } | Step::Reply { id, .. } => id,
         }
@@ -600,6 +605,8 @@ impl Step {
     pub(crate) fn kind(&self) -> &str {
         match self {
             Step::Shell { .. } => "shell",
+            Step::Read { .. } => "read",
+            Step::Search { .. } => "search",
             Step::Select { .. } => "select",
             Step::Plan { .. } => "plan",
             Step::MasterPlan { .. } => "masterplan",
@@ -612,7 +619,8 @@ impl Step {
 
     pub(crate) fn purpose(&self) -> &str {
         match self {
-            Step::Shell { common, .. } | Step::Select { common, .. } | Step::Plan { common, .. } |
+            Step::Shell { common, .. } | Step::Read { common, .. } | Step::Search { common, .. } |
+            Step::Select { common, .. } | Step::Plan { common, .. } |
             Step::MasterPlan { common, .. } | Step::Decide { common, .. } | Step::Summarize { common, .. } |
             Step::Edit { common, .. } | Step::Reply { common, .. } => &common.purpose,
         }

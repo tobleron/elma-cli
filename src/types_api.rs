@@ -410,7 +410,7 @@ pub(crate) struct AutonomousLoopOutcome {
     pub(crate) reasoning_clean: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct CriticVerdict {
     pub(crate) status: String,
     #[serde(default)]

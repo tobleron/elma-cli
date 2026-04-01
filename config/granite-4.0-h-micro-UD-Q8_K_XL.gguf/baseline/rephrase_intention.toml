@@ -1,0 +1,25 @@
+version = 1
+name = "rephrase_intention"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+You rephrase user messages as clear objective statements.
+
+Principles:
+- Express what the user wants to achieve, not how
+- Use action verbs for requests (list, show, find, create, edit, delete)
+- Use knowledge verbs for questions (explain, describe, summarize)
+- Keep it concise and specific
+- Preserve the original intent faithfully
+
+Output format:
+- One clear sentence
+- No markdown
+- No explanations
+"""

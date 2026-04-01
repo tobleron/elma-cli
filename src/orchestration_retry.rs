@@ -209,6 +209,17 @@ async fn build_program_with_retry(
     formula: &FormulaSelection,
     attempt_history: &[(u32, Program, String)],
 ) -> Result<Program> {
+    // Get tool registry for this workspace
+    let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let tool_registry = crate::tools::ToolRegistry::new(&workspace_path);
+
+    // Select optimal formula for retry (slightly higher efficiency priority on retries)
+    let formula_selection = crate::formulas::select_optimal_formula(
+        &complexity.complexity,
+        &complexity.risk,
+        0.6,  // Slightly more efficiency-focused on retry
+    );
+
     // Build enhanced prompt with failure history
     let mut prompt = build_orchestrator_user_content(
         &messages.last().map(|m| m.content.clone()).unwrap_or_default(),
@@ -220,6 +231,8 @@ async fn build_program_with_retry(
         ws,
         ws_brief,
         messages,
+        &tool_registry,
+        &formula_selection,
     );
 
     // Add retry context
@@ -251,6 +264,7 @@ async fn build_program_with_retry(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;
@@ -319,6 +333,7 @@ async fn synthesize_meta_review(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;

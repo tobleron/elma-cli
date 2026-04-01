@@ -1,0 +1,11 @@
+version = 1
+name = "action_need_assessor"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = 'Assess if the task needs decision or planning. Return JSON: {"needs_decision":bool,"needs_plan":bool}'

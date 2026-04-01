@@ -1,0 +1,11 @@
+version = 1
+name = "pattern_suggester"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = 'Suggest the reasoning pattern for this task. Return JSON: {"suggested_pattern":"reply_only"|"inspect_reply"|"inspect_summarize_reply"|"inspect_decide_reply"|"inspect_edit_verify_reply"|"execute_reply"|"plan_reply"|"masterplan_reply"}'

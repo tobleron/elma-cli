@@ -62,6 +62,38 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             content: line.to_string(),
         });
 
+        // Step 1: Rephrase user intention as clear objective
+        let rephrased_objective = rephrase_user_intention(
+            &runtime.client,
+            &runtime.chat_url,
+            &runtime.profiles.rephrase_intention_cfg,
+            line,
+        ).await.unwrap_or_else(|e| {
+            trace_verbose(runtime.verbose, &format!("rephrase_intention_failed error={}", e));
+            line.to_string()  // Fallback to original
+        });
+        trace(
+            &runtime.args,
+            &format!("rephrased_objective={}", rephrased_objective),
+        );
+
+        // Step 2: Run Angel Helper with rephrased objective for clearer classification
+        let helper_response = angel_helper_intention(
+            &runtime.client,
+            &runtime.chat_url,
+            &runtime.profiles.angel_helper_cfg,
+            &rephrased_objective,  // Use rephrased, not raw user input!
+        ).await.unwrap_or_else(|e| {
+            trace_verbose(runtime.verbose, &format!("angel_helper_failed error={}", e));
+            "UNKNOWN".to_string()
+        });
+        trace(
+            &runtime.args,
+            &format!("angel_helper_response={}", helper_response),
+        );
+
+        // Step 3: Classify with rephrased objective + Angel's guidance
+        // Angel's output (e.g., "execute ls -ltr on shell") helps classifier decide route
         let route_decision = infer_route_prior(
             &runtime.client,
             &runtime.chat_url,
@@ -69,7 +101,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.profiles.router_cfg,
             &runtime.profiles.mode_router_cfg,
             &runtime.profiles.router_cal,
-            line,
+            &format!("{}\n\nRephrased: {}\nAngel's Guidance: {}", line, rephrased_objective, helper_response),
             &runtime.ws,
             &runtime.ws_brief,
             &runtime.messages,
@@ -172,42 +204,104 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         }
 
         let features = ClassificationFeatures::from(&route_decision);
-        let skip_intel = should_skip_intel(&complexity);
 
-        if !skip_intel {
-            match reflect_on_program(
-                &runtime.client,
-                &runtime.chat_url,
-                &runtime.profiles.reflection_cfg,
-                &program,
-                &features,
-                &runtime.ws,
-            ).await {
-                Ok(reflection) => {
-                    trace(
-                        &runtime.args,
-                        &format!(
-                            "reflection_confidence={:.2} concerns={} missing={}",
-                            reflection.confidence_score,
-                            reflection.concerns.len(),
-                            reflection.missing_points.len()
-                        ),
-                    );
-                    show_process_step_verbose(runtime.verbose, "REFLECT", &format!(
-                        "confidence={:.0}%{}",
-                        reflection.confidence_score * 100.0,
-                        if !reflection.is_confident { " ⚠️" } else { "" }
-                    ));
-                    if !reflection.is_confident || reflection.confidence_score < 0.6 {
-                        trace_verbose(runtime.verbose, &format!("reflection_warnings={:?}", reflection.concerns));
+        // Run reflection for SHELL/EXECUTE routes (actions that execute commands)
+        // Skip reflection for CHAT, INFO, DECIDE routes (no execution risk)
+        let needs_reflection = route_decision.route.eq_ignore_ascii_case("SHELL")
+            || route_decision.route.eq_ignore_ascii_case("EXECUTE");
+
+        if needs_reflection {
+            // If confidence < 51%, escalate orchestrator temperature and regenerate program
+            let mut orchestrator_temp = runtime.profiles.orchestrator_cfg.temperature;
+            let max_program_attempts = 3;
+            let mut program_attempts = 0;
+            
+            while program_attempts < max_program_attempts {
+                // Run reflection on current program
+                match reflect_on_program(
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.profiles.reflection_cfg,
+                    &program,
+                    &features,
+                    &runtime.ws,
+                    &rephrased_objective,  // Pass rephrased objective
+                ).await {
+                    Ok(reflection) => {
+                        trace(
+                            &runtime.args,
+                            &format!(
+                                "reflection_confidence={:.2} concerns={} missing={} attempt={}",
+                                reflection.confidence_score,
+                                reflection.concerns.len(),
+                                reflection.missing_points.len(),
+                                program_attempts + 1
+                            ),
+                        );
+                        show_process_step_verbose(runtime.verbose, "REFLECT", &format!(
+                            "confidence={:.0}%{}",
+                            reflection.confidence_score * 100.0,
+                            if !reflection.is_confident { " ⚠️" } else { "" }
+                        ));
+                        if !reflection.is_confident || reflection.confidence_score < 0.6 {
+                            trace_verbose(runtime.verbose, &format!("reflection_warnings={:?}", reflection.concerns));
+                        }
+
+                        // If confidence >= 51%, accept and proceed
+                        if reflection.confidence_score >= 0.51 {
+                            break;  // Proceed with execution
+                        }
+
+                        // Confidence < 51%, escalate orchestrator temperature and regenerate program
+                        program_attempts += 1;
+                        if program_attempts < max_program_attempts {
+                            orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
+                            trace(
+                                &runtime.args,
+                                &format!(
+                                    "program_regenerating orchestrator_temp={} reason=reflection_confidence_below_51_percent",
+                                    orchestrator_temp
+                                ),
+                            );
+
+                            // Regenerate program with higher temperature
+                            program = build_program_with_temp(
+                                runtime,
+                                line,
+                                &route_decision,
+                                workflow_plan.as_ref(),
+                                &complexity,
+                                &scope,
+                                &formula,
+                                orchestrator_temp,
+                            ).await;
+                        } else {
+                            // Max attempts reached, proceed with low confidence program
+                            trace(
+                                &runtime.args,
+                                "reflection_max_attempts_reached proceeding_with_low_confidence_program",
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        trace_verbose(runtime.verbose, &format!("reflection_failed error={}", error));
+                        program_attempts += 1;
+                        if program_attempts < max_program_attempts {
+                            orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
+                            program = build_program_with_temp(
+                                runtime,
+                                line,
+                                &route_decision,
+                                workflow_plan.as_ref(),
+                                &complexity,
+                                &scope,
+                                &formula,
+                                orchestrator_temp,
+                            ).await;
+                        }
                     }
                 }
-                Err(error) => {
-                    trace_verbose(runtime.verbose, &format!("reflection_failed error={}", error));
-                }
             }
-        } else {
-            trace(&runtime.args, "reflection_skipped complexity=direct");
         }
 
         // For CHAT+reply_only, skip retry loop entirely - just execute the simple reply program
@@ -304,10 +398,32 @@ async fn build_program(
     scope: &ScopePlan,
     formula: &FormulaSelection,
 ) -> Program {
+    build_program_with_temp(
+        runtime,
+        line,
+        route_decision,
+        workflow_plan,
+        complexity,
+        scope,
+        formula,
+        runtime.profiles.orchestrator_cfg.temperature,
+    ).await
+}
+
+async fn build_program_with_temp(
+    runtime: &AppRuntime,
+    line: &str,
+    route_decision: &RouteDecision,
+    workflow_plan: Option<&WorkflowPlannerOutput>,
+    complexity: &ComplexityAssessment,
+    scope: &ScopePlan,
+    formula: &FormulaSelection,
+    temperature: f64,
+) -> Program {
     // For CHAT routes with reply_only formula, skip orchestrator entirely
     // No need to request JSON for simple conversational replies
-    if route_decision.route.eq_ignore_ascii_case("CHAT") 
-        && formula.primary.eq_ignore_ascii_case("reply_only") 
+    if route_decision.route.eq_ignore_ascii_case("CHAT")
+        && formula.primary.eq_ignore_ascii_case("reply_only")
     {
         trace(&runtime.args, &format!("chat_reply_only_fast_path route={} formula={}", route_decision.route, formula.primary));
         return Program {
@@ -327,10 +443,14 @@ async fn build_program(
         };
     }
 
+    // Create a modified orchestrator config with the escalated temperature
+    let mut orchestrator_cfg = runtime.profiles.orchestrator_cfg.clone();
+    orchestrator_cfg.temperature = temperature;
+
     match orchestrate_program_once(
         &runtime.client,
         &runtime.chat_url,
-        &runtime.profiles.orchestrator_cfg,
+        &orchestrator_cfg,
         line,
         route_decision,
         workflow_plan,

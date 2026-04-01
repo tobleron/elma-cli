@@ -6,6 +6,8 @@
 //! - execution_steps_compat: Command compatibility and probing
 //! - execution_steps_edit: Edit step handling
 //! - execution_steps_shell: Shell step handling
+//! - execution_steps_read: Read step handling
+//! - execution_steps_search: Search step handling
 
 use crate::execution::ExecutionState;
 use crate::*;
@@ -13,6 +15,8 @@ use crate::*;
 pub(crate) use execution_steps_compat::*;
 pub(crate) use execution_steps_edit::*;
 pub(crate) use execution_steps_shell::*;
+pub(crate) use execution_steps_read::*;
+pub(crate) use execution_steps_search::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_program_step(
@@ -62,6 +66,12 @@ pub(crate) async fn handle_program_step(
     }
 
     match step {
+        Step::Read { id: _, path, .. } => {
+            handle_read_step(args, session, workdir, sid, &kind, purpose, depends_on, success_condition, &path, state).await?;
+        }
+        Step::Search { id: _, query, paths, .. } => {
+            handle_search_step(args, session, workdir, sid, &kind, purpose, depends_on, success_condition, &query, paths, state).await?;
+        }
         Step::Shell { id: _, cmd, .. } => {
             handle_shell_step(
                 args,
@@ -193,6 +203,7 @@ pub(crate) async fn handle_program_step(
                 n_probs: None,
                 repeat_penalty: Some(summarizer_cfg.repeat_penalty),
                 reasoning_format: Some(summarizer_cfg.reasoning_format.clone()),
+                grammar: None,
             };
             let sum_resp = chat_once(client, chat_url, &sum_req).await?;
             let sum_text = sum_resp
@@ -261,6 +272,7 @@ pub(crate) async fn handle_program_step(
                 n_probs: None,
                 repeat_penalty: Some(planner_cfg.repeat_penalty),
                 reasoning_format: Some(planner_cfg.reasoning_format.clone()),
+                grammar: None,
             };
             let resp = chat_once(client, chat_url, &req).await?;
             let text = resp
@@ -312,6 +324,7 @@ pub(crate) async fn handle_program_step(
                 n_probs: None,
                 repeat_penalty: Some(planner_master_cfg.repeat_penalty),
                 reasoning_format: Some(planner_master_cfg.reasoning_format.clone()),
+                grammar: None,
             };
             let resp = chat_once(client, chat_url, &req).await?;
             let text = resp
@@ -364,6 +377,7 @@ pub(crate) async fn handle_program_step(
                 n_probs: None,
                 repeat_penalty: Some(decider_cfg.repeat_penalty),
                 reasoning_format: Some(decider_cfg.reasoning_format.clone()),
+                grammar: None,
             };
             let resp = chat_once(client, chat_url, &req).await?;
             let word = resp

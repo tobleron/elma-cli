@@ -44,13 +44,25 @@ pub(crate) fn default_task_semantics_guard_config(base_url: &str, model: &str) -
         name: "task_semantics_guard".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.4,
+        temperature: 0.0,
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "You verify whether a repaired shell command preserves the original task semantics.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"status\": \"accept\" | \"reject\",\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Accept only if the repaired command keeps the same operation type and user intent.\n- Reject if the repaired command changes the task into listing instead of reading, searching instead of editing, printing names instead of contents, or any other material semantic shift.\n- Use the objective and step purpose to preserve the stage of the workflow. A candidate-inspection or file-listing step must not become a content-reading or selection step.\n- If the original command depends on selected items or placeholder-based inputs, the repaired command must preserve that dependency instead of replacing it with guessed filenames or broader searches.\n- Portability, quoting, and syntax fixes are acceptable only when the task meaning stays the same.\n- Be strict.\n"
+        system_prompt: r#"You verify whether a repaired shell command preserves the original task semantics.
+
+Return ONLY one valid JSON object. No prose.
+
+Schema:
+{
+  "status": "accept" | "reject",
+  "reason": "one short sentence"
+}
+
+Rule:
+- Accept only if the repaired command keeps the same operation type and user intent. Reject otherwise.
+"#
             .to_string(),
     }
 }
@@ -67,7 +79,30 @@ pub(crate) fn default_execution_sufficiency_config(base_url: &str, model: &str) 
         reasoning_format: "none".to_string(),
         max_tokens: 1024,
         timeout_s: 120,
-        system_prompt: "Judge if the executed workflow satisfied the user's request. Return JSON: {\"status\":\"ok\"|\"retry\",\"reason\":\"...\"}"
+        system_prompt: r#"Judge if the executed workflow satisfied the user's request.
+
+Return ONLY one valid JSON object. No prose.
+
+Schema:
+{
+  "status": "ok" | "retry",
+  "reason": "one short sentence",
+  "program": <Program or null>
+}
+
+Principles:
+- Choose "ok" when step results provide evidence that directly addresses the user's request
+- Choose "retry" when there is a clear mismatch between what was requested and what was delivered
+
+Use "ok" only when there is verifiable evidence from the output that denotes success:
+- Command succeeded (exit_code=0) AND output is relevant to the request
+- Requested files or data appear in the output
+- Selected items are actually used in subsequent steps
+
+Do not choose retry based on vague judgments. Ground decisions in observable evidence.
+
+When choosing retry, provide a corrected Program only if you can safely fix the issue.
+Do not invent files, commands, or outputs not grounded in the evidence."#
             .to_string(),
     }
 }
@@ -330,6 +365,8 @@ pub(crate) fn default_status_message_generator_config(base_url: &str, model: &st
 pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'static str, Profile)> {
     vec![
         ("_elma.config", default_elma_config(base_url, model)),
+        ("rephrase_intention.toml", default_rephrase_intention_config(base_url, model)),
+        ("angel_helper.toml", default_angel_helper_config(base_url, model)),
         ("intention.toml", default_intention_config(base_url, model)),
         ("gate.toml", default_gate_config(base_url, model)),
         ("gate_why.toml", default_gate_why_config(base_url, model)),
@@ -386,11 +423,448 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'stati
         ("speech_act.toml", default_speech_act_config(base_url, model)),
         ("intention_tune.toml", default_intention_tune_config(base_url, model)),
         ("status_message_generator.toml", default_status_message_generator_config(base_url, model)),
+        // JSON Pipeline Intel Units (Task 008 Phase 3)
+        ("text_generator.toml", default_text_generator_config(base_url, model)),
+        ("json_converter.toml", default_json_converter_config(base_url, model)),
+        ("verify_checker.toml", default_verify_checker_config(base_url, model)),
+        ("json_repair.toml", default_json_repair_config(base_url, model)),
     ]
 }
 
 pub(crate) fn managed_profile_file_names() -> Vec<&'static str> {
     managed_profile_specs("", "").into_iter().map(|(name, _)| name).collect()
+}
+
+// ============================================================================
+// JSON Pipeline Intel Units (Task 008 Phase 3)
+// ============================================================================
+
+pub(crate) fn default_text_generator_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "text_generator".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.2,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 512,
+        timeout_s: 120,
+        system_prompt: r#"You are Elma's text generator.
+
+Your job is to convert reasoning into simple, clear text that describes what needs to be done.
+
+Rules:
+- Output simple text only. No JSON. No code fences.
+- Be concise and specific.
+- Describe the action, purpose, and expected outcome.
+- Do not include technical details or implementation specifics.
+- Focus on WHAT needs to be done, not HOW.
+
+Example output:
+"List all pending task files in the _tasks/pending/ directory and summarize their objectives.""#
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_json_converter_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "json_converter".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1024,
+        timeout_s: 120,
+        system_prompt: r#"You are Elma's JSON converter.
+
+Your job is to convert simple text descriptions into valid JSON that matches the target schema.
+
+Rules:
+- Output JSON only. No prose. No code fences. No markdown.
+- Match the target schema exactly.
+- Use the text description as the semantic source.
+- Strip any extra prose from the input.
+- Preserve field names exactly as specified in the schema.
+- Use empty strings, empty arrays, false, or null for optional fields when appropriate.
+- Never invent unrelated fields.
+
+Target schema will be provided in the user input."#
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_verify_checker_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "verify_checker".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 256,
+        timeout_s: 120,
+        system_prompt: r#"You are Elma's JSON verify checker.
+
+Your job is to check if JSON output is well-formed and identify any problems.
+
+Return ONLY one valid JSON object. No prose.
+
+Schema:
+{
+  "status": "ok" | "problems",
+  "problems": ["list of specific problems found, or empty array if ok"]
+}
+
+Rules:
+- Check for missing required fields.
+- Check for invalid field types.
+- Check for empty required strings.
+- Check for invalid enum values.
+- Check for structural issues (wrong nesting, missing brackets, etc.).
+- List each problem specifically and clearly.
+- If no problems, return status "ok" with empty problems array.
+
+Example output with problems:
+{"status":"problems","problems":["Missing required field 'status'","Field 'reason' is empty"]}
+
+Example output without problems:
+{"status":"ok","problems":[]}"#
+            .to_string(),
+    }
+}
+
+pub(crate) fn default_json_repair_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "json_repair".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 1024,
+        timeout_s: 120,
+        system_prompt: r#"You are Elma's JSON repair specialist.
+
+Your job is to fix JSON based on a list of identified problems.
+
+Return ONLY the repaired JSON object. No prose. No code fences. No markdown.
+
+Rules:
+- Fix each problem listed without changing unrelated content.
+- Preserve the original intent and meaning.
+- Do not add new fields unless required to fix a listed problem.
+- Do not remove fields unless they are causing a listed problem.
+- Ensure the repaired JSON is valid and complete.
+- If a problem cannot be fixed without changing semantics, preserve the original value.
+
+Input format:
+- Original JSON: <the json to repair>
+- Problems: <list of problems to fix>
+
+Output: Only the repaired JSON."#
+            .to_string(),
+    }
+}
+
+// ============================================================================
+// Intel Functions for JSON Pipeline (Task 008 Phase 3)
+// ============================================================================
+
+/// Generate simple text from reasoning
+pub(crate) async fn generate_text_from_reasoning(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    reasoning: &str,
+) -> Result<String> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: format!("Convert this reasoning into simple action text:\n\n{}", reasoning),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
+    };
+    
+    let resp = chat_once(client, chat_url, &req).await?;
+    Ok(extract_response_text(&resp).trim().to_string())
+}
+
+/// Convert text to JSON using schema
+pub(crate) async fn convert_text_to_json(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    text: &str,
+    schema_description: &str,
+) -> Result<String> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: format!(
+                    "Convert this text to JSON matching the schema:\n\nSchema:\n{}\n\nText:\n{}",
+                    schema_description, text
+                ),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
+    };
+    
+    let resp = chat_once(client, chat_url, &req).await?;
+    Ok(extract_response_text(&resp).trim().to_string())
+}
+
+/// Verify JSON and list problems
+pub(crate) async fn verify_json(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    json: &str,
+) -> Result<VerifyCheckResult> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: format!("Verify this JSON:\n\n{}", json),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
+    };
+    
+    chat_json_with_repair(client, chat_url, &req).await
+}
+
+/// Repair JSON based on problems
+pub(crate) async fn repair_json(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    json: &str,
+    problems: &[String],
+) -> Result<String> {
+    let problems_text = if problems.is_empty() {
+        "No problems found".to_string()
+    } else {
+        problems.iter().map(|p| format!("- {}", p)).collect::<Vec<_>>().join("\n")
+    };
+    
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: format!(
+                    "Original JSON:\n{}\n\nProblems to fix:\n{}",
+                    json, problems_text
+                ),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
+    };
+    
+    let resp = chat_once(client, chat_url, &req).await?;
+    Ok(extract_response_text(&resp).trim().to_string())
+}
+
+/// Result of JSON verification check
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct VerifyCheckResult {
+    pub status: String,  // "ok" or "problems"
+    pub problems: Vec<String>,
+}
+
+// ============================================================================
+// Angel Helper - Intention Clarification (Task 010)
+// ============================================================================
+
+pub(crate) fn default_angel_helper_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "angel_helper".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.7,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 256,
+        timeout_s: 120,
+        system_prompt: r#"Determine user intention and express what is the most appropriate way to respond.
+"#
+            .to_string(),
+    }
+}
+
+/// Angel Helper: Inspire Elma on how to respond
+pub(crate) async fn angel_helper_intention(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    rephrased_objective: &str,  // Takes rephrased intention as input
+) -> Result<String> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: rephrased_objective.to_string(),  // Use rephrased objective
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
+    };
+
+    let resp = chat_once(client, chat_url, &req).await?;
+    Ok(extract_response_text(&resp).trim().to_string())
+}
+
+/// Parse helper response to extract intention type
+pub(crate) fn parse_helper_intention(helper_response: &str) -> &str {
+    let response_upper = helper_response.to_uppercase();
+    if response_upper.starts_with("ACTION:") {
+        "ACTION"
+    } else if response_upper.starts_with("INFO:") {
+        "INFO"
+    } else if response_upper.starts_with("CHAT:") {
+        "CHAT"
+    } else {
+        "UNKNOWN"
+    }
+}
+
+// ============================================================================
+// Rephrase Intention - Clarify User Input (Task 010 Phase 2)
+// ============================================================================
+
+pub(crate) fn default_rephrase_intention_config(base_url: &str, model: &str) -> Profile {
+    Profile {
+        version: 1,
+        name: "rephrase_intention".to_string(),
+        base_url: base_url.to_string(),
+        model: model.to_string(),
+        temperature: 0.3,
+        top_p: 1.0,
+        repeat_penalty: 1.0,
+        reasoning_format: "none".to_string(),
+        max_tokens: 128,
+        timeout_s: 120,
+        system_prompt: r#"You rephrase user messages as clear objective statements.
+
+Principles:
+- Express what the user wants to achieve, not how
+- Use action verbs for requests (list, show, find, create, edit, delete)
+- Use knowledge verbs for questions (explain, describe, summarize)
+- Keep it concise and specific
+- Preserve the original intent faithfully
+
+Output format:
+- One clear sentence
+- No markdown
+- No explanations
+"#
+            .to_string(),
+    }
+}
+
+/// Rephrase user intention as clear objective
+pub(crate) async fn rephrase_user_intention(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    user_message: &str,
+) -> Result<String> {
+    let req = ChatCompletionRequest {
+        model: cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user_message.to_string(),
+            },
+        ],
+        temperature: cfg.temperature,
+        top_p: cfg.top_p,
+        stream: false,
+        max_tokens: cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(cfg.repeat_penalty),
+        reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
+    };
+
+    let resp = chat_once(client, chat_url, &req).await?;
+    Ok(extract_response_text(&resp).trim().to_string())
 }
 
 pub(crate) fn get_retry_prompt_variant(attempt: u32) -> &'static str {

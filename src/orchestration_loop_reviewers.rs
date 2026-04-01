@@ -47,9 +47,13 @@ pub(crate) async fn run_staged_reviewers_once(
             Some(verdict)
         }
         Err(error) => {
+            record_json_failure(args, "logical_reviewer");
             reasoning_clean = false;
             trace(args, &format!("logical_review_parse_error={error}"));
-            None
+            // FALLBACK: Assume ok rather than block execution
+            let fallback = default_critic_verdict();
+            log_fallback_usage(args, "logical_reviewer", &error.to_string(), "default_ok");
+            Some(fallback)
         }
     };
 
@@ -78,9 +82,13 @@ pub(crate) async fn run_staged_reviewers_once(
             Some(verdict)
         }
         Err(error) => {
+            record_json_failure(args, "efficiency_reviewer");
             reasoning_clean = false;
             trace(args, &format!("efficiency_review_parse_error={error}"));
-            None
+            // FALLBACK: Assume ok rather than block execution
+            let fallback = default_critic_verdict();
+            log_fallback_usage(args, "efficiency_reviewer", &error.to_string(), "default_ok");
+            Some(fallback)
         }
     };
 
@@ -109,9 +117,16 @@ pub(crate) async fn run_staged_reviewers_once(
                 Some(verdict)
             }
             Err(error) => {
+                record_json_failure(args, "risk_reviewer");
                 reasoning_clean = false;
                 trace(args, &format!("risk_review_parse_error={error}"));
-                None
+                // FALLBACK: Assume caution rather than block execution
+                let fallback = RiskReviewVerdict {
+                    status: "caution".to_string(),
+                    reason: "Risk review unavailable, proceed with caution".to_string(),
+                };
+                log_fallback_usage(args, "risk_reviewer", &error.to_string(), "default_caution");
+                Some(fallback)
             }
         }
     } else {

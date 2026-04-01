@@ -1,0 +1,15 @@
+version = 1
+name = "result_presenter"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 1024
+timeout_s = 120
+system_prompt = """
+Present results to user.
+
+Format output for clarity and readability.
+"""

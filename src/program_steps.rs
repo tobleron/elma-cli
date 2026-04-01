@@ -7,6 +7,8 @@ use crate::*;
 pub(crate) fn step_kind(s: &Step) -> &'static str {
     match s {
         Step::Shell { .. } => "shell",
+        Step::Read { .. } => "read",
+        Step::Search { .. } => "search",
         Step::Select { .. } => "select",
         Step::Plan { .. } => "plan",
         Step::MasterPlan { .. } => "masterplan",
@@ -19,7 +21,7 @@ pub(crate) fn step_kind(s: &Step) -> &'static str {
 
 pub(crate) fn step_id(s: &Step) -> &str {
     match s {
-        Step::Shell { id, .. } => id,
+        Step::Shell { id, .. } | Step::Read { id, .. } | Step::Search { id, .. } => id,
         Step::Select { id, .. } => id,
         Step::Plan { id, .. } => id,
         Step::MasterPlan { id, .. } => id,
@@ -32,7 +34,7 @@ pub(crate) fn step_id(s: &Step) -> &str {
 
 pub(crate) fn step_common(s: &Step) -> &StepCommon {
     match s {
-        Step::Shell { common, .. } => common,
+        Step::Shell { common, .. } | Step::Read { common, .. } | Step::Search { common, .. } => common,
         Step::Select { common, .. } => common,
         Step::Plan { common, .. } => common,
         Step::MasterPlan { common, .. } => common,
@@ -50,6 +52,8 @@ pub(crate) fn step_purpose(s: &Step) -> String {
     }
     match s {
         Step::Shell { .. } => "shell".to_string(),
+        Step::Read { .. } => "read".to_string(),
+        Step::Search { .. } => "search".to_string(),
         Step::Select { .. } => "select".to_string(),
         Step::Plan { .. } => "plan".to_string(),
         Step::MasterPlan { .. } => "masterplan".to_string(),
@@ -84,6 +88,13 @@ pub(crate) fn program_step_json(step: &Step) -> serde_json::Value {
                 "placeholder_refs".to_string(),
                 serde_json::json!(command_placeholder_refs(cmd)),
             );
+        }
+        Step::Read { path, .. } => {
+            obj.insert("path".to_string(), serde_json::json!(path.trim()));
+        }
+        Step::Search { query, paths, .. } => {
+            obj.insert("query".to_string(), serde_json::json!(query.trim()));
+            obj.insert("paths".to_string(), serde_json::json!(paths));
         }
         Step::Select { instructions, .. } => {
             obj.insert(

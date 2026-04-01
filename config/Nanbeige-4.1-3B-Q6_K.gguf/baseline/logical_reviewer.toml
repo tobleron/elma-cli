@@ -1,0 +1,11 @@
+version = 1
+name = "logical_reviewer"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.5
+top_p = 0.95
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = 'Evaluate if the program logic is sound. Return JSON: {"status":"ok"|"retry","reason":"..."}'

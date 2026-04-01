@@ -1,0 +1,18 @@
+root ::= verdict
+verdict ::= "{" ws "\"status\"" ws ":" ws status ws "," ws "\"reason\"" ws ":" ws string (ws "," ws "\"program\"" ws ":" ws (program | "null"))? ws "}"
+
+status ::= "\"ok\"" | "\"retry\""
+program ::= "{" ws "\"objective\"" ws ":" ws string ws "," ws "\"steps\"" ws ":" ws "[" ws (step (ws "," ws step)*)? ws "]" ws "}"
+step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws step_type ws "," ws step_fields ws "}"
+step_type ::= "\"shell\"" | "\"reply\"" | "\"plan\"" | "\"masterplan\"" | "\"select\"" | "\"decide\"" | "\"summarize\"" | "\"edit\""
+step_fields ::= shell_fields | reply_fields | plan_fields | edit_fields | common_fields
+shell_fields ::= "\"cmd\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string
+reply_fields ::= "\"instructions\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string
+plan_fields ::= "\"goal\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string
+edit_fields ::= "\"path\"" ws ":" ws string ws "," ws "\"operation\"" ws ":" ws edit_op ws "," ws "\"content\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string
+common_fields ::= "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string
+edit_op ::= "\"create\"" | "\"update\"" | "\"delete\""
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" escape
+escape ::= ["\\bfnrt]
+ws ::= [ \t\n\r]*

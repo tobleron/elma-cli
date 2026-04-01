@@ -31,6 +31,7 @@ pub(crate) async fn infer_digit_router(
         n_probs: Some(router_cal.n_probs.max(16)),
         repeat_penalty: Some(router_cfg.repeat_penalty),
         reasoning_format: Some(router_cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let resp = chat_once(client, chat_url, &req).await?;
     let raw = resp
@@ -172,23 +173,31 @@ pub(crate) async fn infer_route_prior(
         ("MASTERPLAN".to_string(), masterplan_p),
         ("DECIDE".to_string(), decide_p),
     ];
-    let capability_p = probability_of(&speech_act.distribution, "CAPABILITY_CHECK");
-    for (label, p) in &mut distribution {
-        if label == "CHAT" {
-            *p = capability_p + (1.0 - capability_p) * *p;
-        } else {
-            *p *= 1.0 - capability_p;
+    
+    // Map new speech act labels to route adjustments
+    // "general chat" → boost CHAT route
+    // "inquiry" → neutral (user wants information)
+    // "instruction" → boost non-CHAT routes (user wants action)
+    let chat_p = probability_of(&speech_act.distribution, "general chat");
+    let instruction_p = probability_of(&speech_act.distribution, "instruction");
+    
+    // If "general chat" is high, boost CHAT route
+    if chat_p > 0.5 {
+        for (label, p) in &mut distribution {
+            if label == "CHAT" {
+                *p = chat_p + (1.0 - chat_p) * *p;
+            } else {
+                *p *= 1.0 - chat_p;
+            }
         }
     }
     
-    // Speech-act override: If ACTION_REQUEST is high confidence (>0.6), ensure WORKFLOW route gets consideration
-    let action_request_p = probability_of(&speech_act.distribution, "ACTION_REQUEST");
-    if action_request_p > 0.6 {
-        // Boost non-CHAT routes when user clearly wants action
-        let chat_p = probability_of(&distribution, "CHAT");
-        let workflow_boost = (action_request_p - 0.5) * 0.4;  // Up to 40% boost
+    // If "instruction" is high, boost non-CHAT routes (user wants action)
+    if instruction_p > 0.5 {
+        let current_chat_p = probability_of(&distribution, "CHAT");
+        let workflow_boost = (instruction_p - 0.5) * 0.4;  // Up to 40% boost
         let non_chat_total: f64 = distribution.iter().filter(|(l, _)| l != "CHAT").map(|(_, p)| *p).sum();
-        
+
         for (label, p) in &mut distribution {
             if label != "CHAT" && non_chat_total > 0.0 {
                 *p += workflow_boost * (*p / non_chat_total);

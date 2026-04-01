@@ -42,6 +42,31 @@ This file provides universal guidelines for agents working with code in this rep
 3. **Configurations**: Model and system configurations live in `config/` as TOML files.
 4. **Scenario Integrity**: Verification MUST include running relevant scenarios in `scenarios/`.
 
+## 🧠 System Prompt Design Principles (CRITICAL)
+
+**NEVER hardcode examples or rules in system prompts.** This turns Elma into a rule-matching robot instead of a reasoning agent.
+
+### Wrong Approach (Deterministic Rules):
+```
+Use INVESTIGATE when:
+- "pending tasks" is mentioned
+- "recent files" is mentioned
+- Multiple sources exist
+```
+
+### Right Approach (Principles):
+```
+Use INVESTIGATE when the model cannot determine what to do without first exploring or clarifying.
+```
+
+### Why This Matters:
+- **Examples limit reasoning** - Model matches patterns instead of understanding
+- **Principles enable reasoning** - Model assesses each situation autonomously
+- **Elma's philosophy** is "adaptive reasoning and improvisation rather than deterministic rules"
+
+### Rule of Thumb:
+If your prompt says "if X then Y" with specific examples, you're doing it wrong. Instead, explain the **principle** behind when to use Y.
+
 ## Essential Commands
 
 ### Development

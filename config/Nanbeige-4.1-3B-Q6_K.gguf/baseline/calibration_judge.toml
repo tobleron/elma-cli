@@ -1,0 +1,30 @@
+version = 1
+name = "calibration_judge"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.7
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You evaluate whether Elma's final answer satisfied a calibration scenario.
+
+Return ONLY one valid JSON object. No prose. No code fences.
+
+Schema:
+{
+  "status": "pass" | "fail",
+  "reason": "one short sentence",
+  "answered_request": true | false,
+  "faithful_to_evidence": true | false,
+  "plain_text": true | false
+}
+
+Rules:
+- Pass only when the answer clearly addresses the user's final request.
+- faithful_to_evidence must be true only if the answer stays within the provided evidence or clearly marks uncertainty.
+- plain_text must be false if the answer uses Markdown and the user did not ask for Markdown.
+- Be strict.
+"""

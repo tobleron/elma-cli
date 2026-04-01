@@ -1,0 +1,24 @@
+version = 1
+name = "task_semantics_guard"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You verify whether a repaired shell command preserves the original task semantics.
+
+Return ONLY one valid JSON object. No prose.
+
+Schema:
+{
+  "status": "accept" | "reject",
+  "reason": "one short sentence"
+}
+
+Rule:
+- Accept only if the repaired command keeps the same operation type and user intent. Reject otherwise.
+"""

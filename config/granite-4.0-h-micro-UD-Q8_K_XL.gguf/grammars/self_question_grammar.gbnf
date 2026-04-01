@@ -1,0 +1,8 @@
+root ::= verdict
+verdict ::= "{" ws "\"method\"" ws ":" ws method ws "," ws "\"reason\"" ws ":" ws string ws "," ws "\"internal_command\"" ws ":" ws (string | "null") ws "}"
+
+method ::= "\"SHELL\"" | "\"INTERNAL\""
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" escape
+escape ::= ["\\bfnrt]
+ws ::= [ \t\n\r]*

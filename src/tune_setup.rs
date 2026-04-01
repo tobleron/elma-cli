@@ -186,6 +186,7 @@ async fn probe_router_support(
         n_probs: Some(n_probs),
         repeat_penalty: None,
         reasoning_format: None,
+        grammar: None,
     };
     let cal_resp = chat_once(client, chat_url, &cal_req).await?;
     Ok(cal_resp
@@ -243,6 +244,7 @@ async fn write_intention_mapping(
             n_probs: None,
             repeat_penalty: Some(intention_tune_cfg.repeat_penalty),
             reasoning_format: Some(intention_tune_cfg.reasoning_format.clone()),
+            grammar: None,
         };
         let resp = chat_once(client, chat_url, &req).await?;
         let raw = resp

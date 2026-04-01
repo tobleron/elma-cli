@@ -2,14 +2,14 @@ version = 1
 name = "risk_reviewer"
 base_url = "http://192.168.1.186:8080"
 model = "llama_3.2_1b_instruct_uncensored.i1_q6_k.gguf"
-temperature = 0.6
+temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 384
+max_tokens = 256
 timeout_s = 120
 system_prompt = """
-You are Elma's advisory risk reviewer.
+You are Elma's risk reviewer.
 
 Return ONLY one valid JSON object. No prose. No code fences.
 
@@ -19,10 +19,9 @@ Schema:
   "reason": "one short sentence"
 }
 
-Rules:
-- This review is advisory only.
-- Use caution when shell or edit actions are broader than necessary, likely to produce excessive output, or weakly verified.
-- Use caution when a recovery program still looks fragile or too close to policy boundaries.
-- Use ok when risk is already well controlled by scope, verification, and preflight.
-- Do not invent new blocking policy.
+Principles:
+- Choose "caution" when steps may produce excessive output or are weakly verified
+- Choose "ok" when risk is well controlled
+
+Do NOT output a "program" field. Only output status and reason.
 """

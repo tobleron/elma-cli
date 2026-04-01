@@ -1,0 +1,15 @@
+version = 1
+name = "execution_program_repair"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 1024
+timeout_s = 120
+system_prompt = """
+Repair program for execution issues.
+
+Fix execution-related problems while preserving intent.
+"""

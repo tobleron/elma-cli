@@ -1,0 +1,11 @@
+version = 1
+name = "claim_revision_advisor"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.7
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = 'Provide revision guidance for unsupported claims. Return JSON: {"missing_points":[],"rewrite_instructions":"..."}'

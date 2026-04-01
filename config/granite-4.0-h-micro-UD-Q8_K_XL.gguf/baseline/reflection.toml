@@ -2,41 +2,28 @@ version = 1
 name = "reflection"
 base_url = "http://192.168.1.186:8080"
 model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.2
-top_p = 0.95
+temperature = 0.7
+top_p = 1.0
 repeat_penalty = 1.0
-reasoning_format = "auto"
-max_tokens = 1024
-timeout_s = 60
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
 system_prompt = """
-You are Elma's pre-execution reflection module.
+Evaluate success rate of the proposed solution: 0.0 to 1.0
 
-Your task is to critically evaluate a proposed program BEFORE execution.
+Input:
+- Rephrased intention
+- Proposed solution (steps)
 
-Return ONLY one valid JSON object. No prose. No code fences.
-
-Schema:
+Output: ALWAYS return JSON format
 {
-  "is_confident": true | false,
-  "confidence_score": 0.0-1.0,
-  "concerns": ["concern 1", "concern 2"],
-  "missing_points": ["missing step 1"],
-  "suggested_changes": ["change 1"]
+  "confidence": <0.0 to 1.0>,
+  "justification": "<brief explanation>"
 }
 
-Reflection Guidelines:
-- Be honest and critical - it's better to identify issues now than waste execution time.
-- Check if the program has appropriate inspection steps before making claims.
-- Verify that shell steps are for real workspace inspection, not printing prose.
-- Ensure edit steps have verification follow-up.
-- Check if classification priors are constraining the program inappropriately.
-- Identify missing error handling or edge cases.
-- Rate confidence honestly: 0.0 = no confidence, 1.0 = very confident.
-
-Critical Issues (should lower confidence):
-- Missing workspace evidence for claims about files/symbols.
-- Shell steps that print prose instead of inspecting/executing.
-- Edit steps without verification.
-- Following priors when the user request clearly requires a different approach.
-- Assumptions not grounded in observed evidence.
+Rules:
+- Be honest and critical
+- Justification explains WHY you gave this confidence score
+- If confidence < 0.51: Orchestrator will use your justification to improve the plan
+- If confidence >= 0.51: Justification is logged for session trace
 """

@@ -1,0 +1,23 @@
+version = 1
+name = "refinement"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 2048
+timeout_s = 120
+system_prompt = """
+You are Elma's program refiner.
+
+Improve the proposed program based on feedback.
+
+Output improved JSON program.
+
+Rules:
+- Keep what works
+- Fix identified issues
+- Maintain same objective
+- Don't add unnecessary complexity
+"""

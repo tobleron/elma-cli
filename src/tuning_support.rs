@@ -1,4 +1,5 @@
 use crate::*;
+use crate::formulas::FormulaPattern;
 
 /// Explicit allowlist of profile fields that tuning variants may change.
 /// Any mutation outside this list is a tuning boundary violation.
@@ -332,9 +333,11 @@ pub(crate) fn build_orchestrator_user_content(
     ws: &str,
     ws_brief: &str,
     messages: &[ChatMessage],
+    tool_registry: &crate::tools::ToolRegistry,
+    formula_selection: &crate::formulas::FormulaSelectionResult,
 ) -> String {
     let features = ClassificationFeatures::from(route_decision);
-    
+
     // Determine entropy warning level
     let entropy_warning = if features.entropy < 0.05 {
         "⚠️ EXTREMELY LOW - Classifier is over-confident. Probabilities have been adjusted to encourage alternative reasoning."
@@ -368,9 +371,39 @@ pub(crate) fn build_orchestrator_user_content(
         entropy_warning,
         features.suggested_route
     );
-    
+
+    // Build available tools section
+    let tools_section = tool_registry.format_tools_for_prompt();
+
+    // Build formula section with scores
+    let formula_section = format!(
+        "## Formula Pattern\n\n\
+         **Selected Formula:** {}\n\
+         **Intent:** {}\n\
+         **Expected Steps:** {:?}\n\
+         **Cost Score:** {} (1-10, lower = cheaper)\n\
+         **Value Score:** {} (1-10, higher = more thorough)\n\
+         **Efficiency Ratio:** {:.2} (value / cost)\n\
+         **Selection Reason:** {}\n\n\
+         **INSTRUCTION:** Generate program steps that match this formula pattern.\n\
+         Use available tools from the tool registry to implement each step.\n\
+         For example, if formula is 'inspect_reply', use read/search/workspace_tree tools for inspection,\n\
+         then use reply tool to present findings.\n\n",
+        formula_selection.formula,
+        FormulaPattern::by_name(&formula_selection.formula)
+            .map(|f| f.intent)
+            .unwrap_or("Execute task"),
+        formula_selection.scores.expected_steps,
+        formula_selection.scores.cost_score,
+        formula_selection.scores.value_score,
+        formula_selection.scores.efficiency_ratio,
+        formula_selection.reason
+    );
+
     format!(
         "User message:\n{line}\n\n{}\
+         {}\n\n\
+         {}\n\n\
          Workflow planner prior:\n{}\n\n\
          Complexity prior:\n{}\n\n\
          Scope prior:\n{}\n\n\
@@ -379,6 +412,8 @@ pub(crate) fn build_orchestrator_user_content(
          Workspace brief:\n{}\n\n\
          Conversation so far (most recent last):\n{}",
         classification_section,
+        tools_section,
+        formula_section,
         workflow_plan
             .map(|plan| serde_json::to_string_pretty(plan).unwrap_or_else(|_| "{}".to_string()))
             .unwrap_or_else(|| "null".to_string()),

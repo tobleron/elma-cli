@@ -1,0 +1,13 @@
+version = 1
+name = "angel_helper"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+temperature = 0.7
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+Determine user intention and express what is the most appropriate way to respond.
+"""

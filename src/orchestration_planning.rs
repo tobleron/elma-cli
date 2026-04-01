@@ -6,6 +6,7 @@
 
 use crate::*;
 use crate::app::LoadedProfiles;
+use crate::decomposition::{generate_masterplan, decompose_to_subgoals, get_required_depth, needs_decomposition};
 
 fn fallback_formula_for_route(route: &str, needs_evidence: bool) -> String {
     if route.eq_ignore_ascii_case("CHAT") {
@@ -191,7 +192,7 @@ pub(crate) async fn derive_planning_prior(
 /// Check if hierarchical decomposition is needed and trigger it
 ///
 /// Returns:
-/// - Some(Goal) if decomposition was triggered (OPEN_ENDED or HIGH risk)
+/// - Some(Masterplan) if decomposition was triggered (OPEN_ENDED or HIGH risk)
 /// - None if direct execution should proceed
 pub async fn try_hierarchical_decomposition(
     client: &reqwest::Client,
@@ -202,43 +203,36 @@ pub async fn try_hierarchical_decomposition(
     complexity: &ComplexityAssessment,
     ws: &str,
     ws_brief: &str,
-    messages: &[ChatMessage],
-) -> Result<Option<Goal>> {
+    _messages: &[ChatMessage],
+) -> Result<Option<Masterplan>> {
     // Check if decomposition is needed
     let required_depth = get_required_depth(&complexity.complexity, &complexity.risk);
 
-    if required_depth < 3 {
-        // No decomposition needed - use direct execution
+    if required_depth < 4 {
+        // No decomposition needed for simple tasks - use direct execution
         return Ok(None);
     }
 
     // Decomposition required - generate masterplan (Goal level)
-    let goal = generate_masterplan(
+    let masterplan = generate_masterplan(
         client,
         chat_url,
         &profiles.orchestrator_cfg,
         user_message,
-        complexity,
         ws,
         ws_brief,
-        messages,
     ).await?;
 
-    // Persist hierarchy to session (Task 023)
-    let hierarchy_dir = save_hierarchy(
-        session_root,
-        &goal,
-        &[],  // Subgoals will be added later
-        &[],  // Tasks will be added later
-        &[],  // Methods will be added later
-    )?;
+    // Persist masterplan to session
+    let masterplan_dir = session_root.join("masterplans");
+    if let Err(e) = std::fs::create_dir_all(&masterplan_dir) {
+        // Silently ignore errors - masterplan is optional
+    } else {
+        let masterplan_path = masterplan_dir.join(format!("plan_{}.json", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()));
+        if let Ok(json) = serde_json::to_string_pretty(&masterplan) {
+            let _ = std::fs::write(&masterplan_path, json);
+        }
+    }
 
-    // Log decomposition trigger
-    eprintln!("[DECOMPOSITION] Triggered for complexity={} risk={} depth={}",
-              complexity.complexity, complexity.risk, required_depth);
-    eprintln!("[DECOMPOSITION] Goal: {}", goal.description);
-    eprintln!("[DECOMPOSITION] Phases: {:?}", goal.phases);
-    eprintln!("[DECOMPOSITION] Saved to: {}", hierarchy_dir.display());
-
-    Ok(Some(goal))
+    Ok(Some(masterplan))
 }

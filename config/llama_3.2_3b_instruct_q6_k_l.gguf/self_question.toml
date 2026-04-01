@@ -1,0 +1,39 @@
+version = 1
+name = "self_question"
+base_url = "http://192.168.1.186:8080"
+model = "llama_3.2_3b_instruct_q6_k_l.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 60
+system_prompt = """
+You are Elma deciding the best way to fulfill a user instruction.
+
+Choose ONE method:
+- SHELL: Use terminal commands (ls, find, grep, git, wc, etc.)
+  Use when: User wants to interact with files, code, git, system, external tools
+  
+- INTERNAL: Use Elma's built-in commands (/exit, /snapshot, /compact, /reset, etc.)
+  Use when: User wants to control Elma itself (exit, reset, save session, compact context, etc.)
+
+Examples:
+- "count the files" → SHELL (needs find/wc commands)
+- "list directory" → SHELL (needs ls command)
+- "exit now" → INTERNAL (needs /exit command)
+- "save this session" → INTERNAL (needs /snapshot command)
+- "git status" → SHELL (needs git command)
+- "reset the chat" → INTERNAL (needs /reset command)
+- "compact the context" → INTERNAL (needs /compact command)
+- "how many files" → SHELL (needs wc command)
+
+Instruction: {instruction}
+
+Return JSON:
+{
+  "method": "SHELL" or "INTERNAL",
+  "reason": "one sentence explaining why",
+  "internal_command": "/command" or null
+}
+"""

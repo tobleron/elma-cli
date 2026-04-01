@@ -34,10 +34,13 @@ mod execution;
 mod execution_steps;
 mod execution_steps_compat;
 mod execution_steps_edit;
+mod execution_steps_read;
+mod execution_steps_search;
 mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
 mod intel;
+mod json_error_handler;  // JSON error handling with circuit breaker
 mod json_tuning;  // JSON temperature tuning
 mod metrics;
 mod models_api;
@@ -94,15 +97,21 @@ mod ui_state;
 mod ui_trace;
 mod verification;
 mod workspace;
+mod workspace_tree;
+mod tools;
+mod formulas;
 
+pub(crate) use defaults_evidence::*;  // JSON pipeline intel functions
 pub(crate) use defaults::*;
 pub(crate) use evaluation::*;
 pub(crate) use execution::*;
 pub(crate) use intel::*;
+pub(crate) use json_error_handler::*;  // JSON error handling
 pub(crate) use json_tuning::*;  // JSON temperature tuning
 pub(crate) use metrics::*;
 pub(crate) use models_api::*;
 pub(crate) use optimization::*;
+pub(crate) use orchestration_helpers::*;  // should_skip_intel
 pub(crate) use decomposition::*;  // Task 023
 pub(crate) use orchestration::*;
 pub(crate) use paths::*;

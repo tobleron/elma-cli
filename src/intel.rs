@@ -28,6 +28,7 @@ pub(crate) async fn generate_status_message_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
     Ok(result.get("status").and_then(|v| v.as_str()).unwrap_or(current_action).to_string())
@@ -72,6 +73,7 @@ pub(crate) async fn assess_complexity_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
 }
@@ -108,6 +110,7 @@ pub(crate) async fn assess_evidence_needs_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
     let needs_evidence = result.get("needs_evidence").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -147,6 +150,7 @@ pub(crate) async fn assess_action_needs_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
     let needs_decision = result.get("needs_decision").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -182,6 +186,7 @@ pub(crate) async fn suggest_pattern_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
     Ok(result.get("suggested_pattern").and_then(|v| v.as_str()).unwrap_or("reply_only").to_string())
@@ -223,6 +228,7 @@ pub(crate) async fn build_scope_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let objective_result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &objective_req, cfg.timeout_s).await?;
     let objective = objective_result.get("objective").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -252,6 +258,7 @@ pub(crate) async fn build_scope_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let scope_result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &scope_req, cfg.timeout_s).await?;
     
@@ -315,6 +322,7 @@ pub(crate) async fn select_formula_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let memory_result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &memory_match_req, cfg.timeout_s).await?;
     let memory_id = memory_result.get("memory_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -352,6 +360,7 @@ pub(crate) async fn select_formula_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let selector_result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &selector_req, cfg.timeout_s).await?;
     
@@ -401,6 +410,7 @@ pub(crate) async fn plan_workflow_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let scope_result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &scope_req, cfg.timeout_s).await?;
     
@@ -426,6 +436,7 @@ pub(crate) async fn plan_workflow_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let complexity_result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &complexity_req, cfg.timeout_s).await?;
     
@@ -449,6 +460,7 @@ pub(crate) async fn plan_workflow_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let reason_result: serde_json::Value = chat_json_with_repair_timeout(client, chat_url, &reason_req, cfg.timeout_s).await?;
     
@@ -512,6 +524,7 @@ pub(crate) async fn select_items_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
 }
@@ -589,6 +602,7 @@ pub(crate) async fn decide_evidence_mode_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
 }
@@ -629,6 +643,7 @@ pub(crate) async fn compact_evidence_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
 }
@@ -665,6 +680,7 @@ pub(crate) async fn classify_artifacts_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
 }
@@ -706,6 +722,7 @@ pub(crate) async fn present_result_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let resp = chat_once_with_timeout(client, chat_url, &req, cfg.timeout_s).await?;
     let text = resp
@@ -752,6 +769,7 @@ pub(crate) async fn repair_command_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
 }

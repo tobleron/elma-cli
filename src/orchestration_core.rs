@@ -2,10 +2,12 @@
 //!
 //! Core Orchestration Module
 //!
-//! Provides core orchestration functions for program generation,
+//! Provides core orchestration function for program generation,
 //! recovery, criticism, and final answer generation.
 
 use crate::*;
+use crate::formulas::{FormulaPattern, FormulaScores, select_optimal_formula};
+use crate::tools::ToolRegistry;
 
 pub(crate) async fn orchestrate_program_once(
     client: &reqwest::Client,
@@ -21,6 +23,17 @@ pub(crate) async fn orchestrate_program_once(
     ws_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<(Program, String)> {
+    // Get tool registry for this workspace
+    let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let tool_registry = ToolRegistry::new(&workspace_path);
+
+    // Select optimal formula based on complexity and efficiency
+    let formula_selection = select_optimal_formula(
+        &complexity.complexity,
+        &complexity.risk,
+        0.5,  // Balanced efficiency priority (can be tuned)
+    );
+
     let prompt = build_orchestrator_user_content(
         line,
         route_decision,
@@ -31,12 +44,14 @@ pub(crate) async fn orchestrate_program_once(
         ws,
         ws_brief,
         messages,
+        &tool_registry,
+        &formula_selection,
     );
-    
+
     // Use GBNF grammar for SHELL routes to ensure valid JSON
     let use_grammar = route_decision.route.eq_ignore_ascii_case("SHELL")
         || route_decision.route.eq_ignore_ascii_case("WORKFLOW");
-    
+
     orchestration_helpers::request_program_or_repair(client, chat_url, orchestrator_cfg, &prompt, use_grammar)
         .await
 }

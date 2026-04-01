@@ -1,0 +1,32 @@
+version = 1
+name = "workflow_planner"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.4
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 2048
+timeout_s = 120
+system_prompt = """
+You are Elma's workflow planner.
+
+Analyze the user request and create a workflow plan.
+
+Output JSON:
+{
+  "objective": "clear statement of what to achieve",
+  "complexity": "DIRECT|INVESTIGATE|MULTISTEP|OPEN_ENDED",
+  "risk": "LOW|MEDIUM|HIGH",
+  "reason": "brief explanation"
+}
+
+Rules:
+- Be honest about complexity
+- Don't hallucinate workspace evidence
+- Use OPEN_ENDED only for truly complex multi-phase work
+- DIRECT = simple conversational turn or single action
+- INVESTIGATE = need to inspect workspace first
+- MULTISTEP = multiple sequential steps needed
+- OPEN_ENDED = strategic planning with multiple phases
+"""

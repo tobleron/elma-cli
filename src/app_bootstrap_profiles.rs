@@ -1,55 +1,84 @@
 //! @efficiency-role: orchestrator
 //!
 //! App Bootstrap - Profile Loading and Synchronization
+//!
+//! Loading order:
+//! 1. Model-specific config (e.g., config/llama_3.2_3b_instruct_q6_k_l.gguf/angel_helper.toml)
+//! 2. Global defaults (config/defaults/angel_helper.toml)
+//! 3. Built-in fallback (minimal, should never be needed)
 
 use crate::app::LoadedProfiles;
 use crate::*;
 
+/// Load agent config with fallback to global defaults
+fn load_agent_config_with_fallback(path: &PathBuf) -> Result<Profile> {
+    // Try model-specific config first
+    if path.exists() {
+        return load_agent_config(path);
+    }
+    
+    // Fall back to global defaults
+    let defaults_dir = std::path::PathBuf::from("config/defaults");
+    let default_path = defaults_dir.join(path.file_name().unwrap());
+    
+    if default_path.exists() {
+        return load_agent_config(&default_path);
+    }
+    
+    // Final fallback: return error (should never happen if defaults are complete)
+    Err(anyhow::anyhow!(
+        "Config not found: {} (and no default available)",
+        path.display()
+    ))
+}
+
 pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
     Ok(LoadedProfiles {
-        elma_cfg: load_agent_config(&model_cfg_dir.join("_elma.config"))?,
-        planner_master_cfg: load_agent_config(&model_cfg_dir.join("planner_master.toml"))?,
-        planner_cfg: load_agent_config(&model_cfg_dir.join("planner.toml"))?,
-        decider_cfg: load_agent_config(&model_cfg_dir.join("decider.toml"))?,
-        selector_cfg: load_agent_config(&model_cfg_dir.join("selector.toml"))?,
-        summarizer_cfg: load_agent_config(&model_cfg_dir.join("summarizer.toml"))?,
-        formatter_cfg: load_agent_config(&model_cfg_dir.join("formatter.toml"))?,
-        json_outputter_cfg: load_agent_config(&model_cfg_dir.join("json_outputter.toml"))?,
-        final_answer_extractor_cfg: load_agent_config(
+        elma_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("_elma.config"))?,
+        planner_master_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("planner_master.toml"))?,
+        planner_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("planner.toml"))?,
+        decider_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("decider.toml"))?,
+        selector_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("selector.toml"))?,
+        summarizer_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("summarizer.toml"))?,
+        formatter_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("formatter.toml"))?,
+        json_outputter_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("json_outputter.toml"))?,
+        final_answer_extractor_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("final_answer_extractor.toml"),
         )?,
-        complexity_cfg: load_agent_config(&model_cfg_dir.join("complexity_assessor.toml"))?,
-        formula_cfg: load_agent_config(&model_cfg_dir.join("formula_selector.toml"))?,
-        workflow_planner_cfg: load_agent_config(&model_cfg_dir.join("workflow_planner.toml"))?,
-        evidence_mode_cfg: load_agent_config(&model_cfg_dir.join("evidence_mode.toml"))?,
-        command_repair_cfg: load_agent_config(&model_cfg_dir.join("command_repair.toml"))?,
-        task_semantics_guard_cfg: load_agent_config(
+        complexity_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("complexity_assessor.toml"))?,
+        formula_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("formula_selector.toml"))?,
+        workflow_planner_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("workflow_planner.toml"))?,
+        evidence_mode_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("evidence_mode.toml"))?,
+        command_repair_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("command_repair.toml"))?,
+        task_semantics_guard_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("task_semantics_guard.toml"),
         )?,
-        execution_sufficiency_cfg: load_agent_config(
+        execution_sufficiency_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("execution_sufficiency.toml"),
         )?,
-        outcome_verifier_cfg: load_agent_config(&model_cfg_dir.join("outcome_verifier.toml"))?,
-        memory_gate_cfg: load_agent_config(&model_cfg_dir.join("memory_gate.toml"))?,
-        command_preflight_cfg: load_agent_config(&model_cfg_dir.join("command_preflight.toml"))?,
-        scope_builder_cfg: load_agent_config(&model_cfg_dir.join("scope_builder.toml"))?,
-        evidence_compactor_cfg: load_agent_config(&model_cfg_dir.join("evidence_compactor.toml"))?,
-        artifact_classifier_cfg: load_agent_config(&model_cfg_dir.join("artifact_classifier.toml"))?,
-        result_presenter_cfg: load_agent_config(&model_cfg_dir.join("result_presenter.toml"))?,
-        claim_checker_cfg: load_agent_config(&model_cfg_dir.join("claim_checker.toml"))?,
-        orchestrator_cfg: load_agent_config(&model_cfg_dir.join("orchestrator.toml"))?,
-        critic_cfg: load_agent_config(&model_cfg_dir.join("critic.toml"))?,
-        logical_reviewer_cfg: load_agent_config(&model_cfg_dir.join("logical_reviewer.toml"))?,
-        efficiency_reviewer_cfg: load_agent_config(
+        outcome_verifier_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("outcome_verifier.toml"))?,
+        memory_gate_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("memory_gate.toml"))?,
+        command_preflight_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("command_preflight.toml"))?,
+        scope_builder_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("scope_builder.toml"))?,
+        evidence_compactor_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("evidence_compactor.toml"))?,
+        artifact_classifier_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("artifact_classifier.toml"))?,
+        result_presenter_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("result_presenter.toml"))?,
+        claim_checker_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("claim_checker.toml"))?,
+        orchestrator_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("orchestrator.toml"))?,
+        critic_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("critic.toml"))?,
+        logical_reviewer_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("logical_reviewer.toml"))?,
+        efficiency_reviewer_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("efficiency_reviewer.toml"),
         )?,
-        risk_reviewer_cfg: load_agent_config(&model_cfg_dir.join("risk_reviewer.toml"))?,
-        refinement_cfg: load_agent_config(&model_cfg_dir.join("refinement.toml"))?,
-        reflection_cfg: load_agent_config(&model_cfg_dir.join("reflection.toml"))?,
-        meta_review_cfg: load_agent_config(&model_cfg_dir.join("meta_review.toml"))?,
-        router_cfg: load_agent_config(&model_cfg_dir.join("router.toml"))?,
-        mode_router_cfg: load_agent_config(&model_cfg_dir.join("mode_router.toml"))?,
-        speech_act_cfg: load_agent_config(&model_cfg_dir.join("speech_act.toml"))?,
+        risk_reviewer_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("risk_reviewer.toml"))?,
+        refinement_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("refinement.toml"))?,
+        reflection_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("reflection.toml"))?,
+        meta_review_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("meta_review.toml"))?,
+        router_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("router.toml"))?,
+        mode_router_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("mode_router.toml"))?,
+        speech_act_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("speech_act.toml"))?,
+        rephrase_intention_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("rephrase_intention.toml"))?,
+        angel_helper_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("angel_helper.toml"))?,
         router_cal: load_router_calibration(&model_cfg_dir.join("router_calibration.toml"))?,
     })
 }

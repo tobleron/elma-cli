@@ -266,6 +266,7 @@ async fn finalize_text_response_once(
         n_probs: None,
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
+        grammar: None,
     };
     let envelope: FinalAnswerEnvelope = chat_json_with_repair(client, chat_url, &req).await?;
     Ok(envelope.final_text.trim().to_string())

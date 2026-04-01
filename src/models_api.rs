@@ -258,6 +258,7 @@ async fn probe_logprobs_support(
         n_probs: Some(8),
         repeat_penalty: Some(1.0),
         reasoning_format: Some("none".to_string()),
+        grammar: None,
     };
     let resp = probe_chat_completion_raw(client, chat_url, &req).await?;
     Ok(resp
@@ -307,6 +308,7 @@ pub(crate) async fn ensure_model_behavior_profile(
             n_probs: None,
             repeat_penalty: Some(1.0),
             reasoning_format: Some(reasoning_format.to_string()),
+            grammar: None,
         }
     };
 

@@ -62,36 +62,5 @@ pub(crate) fn gather_workspace_context(repo_root: &Path) -> String {
 }
 
 pub(crate) fn gather_workspace_brief(repo_root: &Path) -> String {
-    let mut parts: Vec<String> = Vec::new();
-
-    if let Ok(rd) = std::fs::read_dir(repo_root) {
-        let mut names: Vec<String> = rd
-            .filter_map(|e| e.ok())
-            .filter_map(|e| e.file_name().into_string().ok())
-            .filter(|n| n != "target" && n != "sessions" && !n.starts_with(".git"))
-            .collect();
-        names.sort();
-        parts.push(format!(
-            "top_level: {}",
-            names.into_iter().take(24).collect::<Vec<_>>().join(", ")
-        ));
-    }
-
-    let cargo = repo_root.join("Cargo.toml");
-    if let Ok(text) = std::fs::read_to_string(&cargo) {
-        let excerpt = text.lines().take(24).collect::<Vec<_>>().join("\n");
-        parts.push(format!("Cargo.toml:\n{excerpt}"));
-    }
-
-    let src_dir = repo_root.join("src");
-    if let Ok(rd) = std::fs::read_dir(&src_dir) {
-        let mut names: Vec<String> = rd
-            .filter_map(|e| e.ok())
-            .filter_map(|e| e.file_name().into_string().ok())
-            .collect();
-        names.sort();
-        parts.push(format!("src_files: {}", names.join(", ")));
-    }
-
-    parts.join("\n\n")
+    crate::workspace_tree::generate_workspace_brief(repo_root)
 }

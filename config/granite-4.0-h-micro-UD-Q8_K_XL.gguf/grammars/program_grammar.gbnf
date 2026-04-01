@@ -1,0 +1,26 @@
+root ::= program
+program ::= "{" ws "\"objective\"" ws ":" ws string ws "," ws "\"steps\"" ws ":" ws "[" ws (step (ws "," ws step)*)? ws "]" ws "}"
+
+step ::= shell_step | reply_step | plan_step | masterplan_step | select_step | decide_step | summarize_step | edit_step
+
+shell_step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws "\"shell\"" ws "," ws "\"cmd\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws "}"
+
+reply_step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws "\"reply\"" ws "," ws "\"instructions\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws "}"
+
+plan_step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws "\"plan\"" ws "," ws "\"goal\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws "}"
+
+masterplan_step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws "\"masterplan\"" ws "," ws "\"goal\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws "}"
+
+select_step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws "\"select\"" ws "," ws "\"instructions\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws "}"
+
+decide_step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws "\"decide\"" ws "," ws "\"prompt\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws "}"
+
+summarize_step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws "\"summarize\"" ws "," ws "\"text\"" ws ":" ws string ws "," ws "\"instructions\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws "}"
+
+edit_step ::= "{" ws "\"id\"" ws ":" ws string ws "," ws "\"type\"" ws ":" ws "\"edit\"" ws "," ws "\"path\"" ws ":" ws string ws "," ws "\"operation\"" ws ":" ws edit_op ws "," ws "\"content\"" ws ":" ws string ws "," ws "\"purpose\"" ws ":" ws string ws "," ws "\"depends_on\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]" ws "," ws "\"success_condition\"" ws ":" ws string ws "}"
+
+edit_op ::= "\"create\"" | "\"update\"" | "\"delete\""
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" escape
+escape ::= ["\\bfnrt]
+ws ::= [ \t\n\r]*
