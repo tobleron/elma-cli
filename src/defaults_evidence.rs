@@ -363,23 +363,25 @@ pub(crate) fn default_status_message_generator_config(base_url: &str, model: &st
 }
 
 pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(String, Profile)> {
-    // Load all profiles from config/defaults/ TOML files
-    // This ensures system prompts come from config files, not hardcoded strings
+    // Load all seed profiles from config/defaults/.
+    // Canonical system prompts for managed intel units are enforced later
+    // by startup sync through prompt_constants.rs.
     let defaults_dir = std::path::PathBuf::from("config/defaults");
     let mut specs = Vec::new();
 
     for entry in std::fs::read_dir(&defaults_dir).ok().into_iter().flatten() {
         if let Ok(entry) = entry {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "toml") {
-                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                    if let Ok(profile) = load_agent_config(&path) {
-                        specs.push((filename.to_string(), profile));
+                let path = entry.path();
+                if path.extension().map_or(false, |e| e == "toml") {
+                    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                        if let Ok(mut profile) = load_agent_config(&path) {
+                            apply_canonical_system_prompt(&mut profile);
+                            specs.push((filename.to_string(), profile));
+                        }
                     }
                 }
             }
         }
-    }
 
     specs
 }

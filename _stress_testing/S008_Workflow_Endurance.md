@@ -1,7 +1,7 @@
 # Stress Test S008: Workflow Endurance (The Marathon)
 
 ## 1. The Test (Prompt)
-"Perform a complete documentation audit of _stress_testing/_opencode_for_testing/. Map every directory. For every .go file, identify the main functions. Compare implementation against README.md. Create AUDIT_REPORT.md with your findings. Summarize the biggest inconsistency found."
+"Perform a documentation audit inside _stress_testing/_opencode_for_testing/ only. Map the major directories, inspect a representative subset of the Go files, compare the implementation against README.md, create _stress_testing/_opencode_for_testing/AUDIT_REPORT.md with your findings, and summarize the single biggest inconsistency you found. Stay inside _stress_testing/ for all reads and writes."
 
 ## 2. Expected Behavior
 - **Route:** PLAN (multi-step endurance test)
@@ -14,8 +14,10 @@
 - Identifies biggest inconsistency
 - Maximum 12 steps (absolute limit enforced)
 - No infinite loops or hangs
+- No reads or writes outside `_stress_testing/`
 
 ## 4. Common Failure Modes
 - Infinite loops (searching same folder repeatedly)
 - Hangs (orchestration loop fails to produce next step)
 - Goal drift (forgetting the summary requirement by turn 10+)
+- Escaping the sandbox boundary

@@ -52,6 +52,7 @@ pub(crate) fn ensure_baseline_profile_set(
         let specs = managed_profile_specs(base_url, model);
         write_profile_specs_to_dir(&dir, &specs)?;
     }
+    sync_profile_dir_base_url_and_model(&dir, base_url, model)?;
     Ok(dir)
 }
 
@@ -97,6 +98,7 @@ pub(crate) fn sync_profile_dir_base_url_and_model(
         let mut profile = load_agent_config(&path)?;
         profile.base_url = base_url.to_string();
         profile.model = model.to_string();
+        apply_canonical_system_prompt(&mut profile);
         save_agent_config(&path, &profile)?;
     }
     Ok(())
@@ -269,6 +271,7 @@ pub(crate) fn ensure_model_config_folder(
     if !critic_path.exists() {
         save_agent_config(&critic_path, &default_critic_config(base_url, model_id))?;
     }
+    sync_profile_dir_base_url_and_model(&dir, base_url, model_id)?;
     let _ = ensure_baseline_profile_set(&dir, base_url, model_id)?;
 
     Ok(dir)
@@ -285,11 +288,8 @@ pub(crate) fn maybe_upgrade_system_prompt(
     if profile.system_prompt.contains(patch) {
         return false;
     }
-    // Non-destructive upgrade: append a small block that corrects known failures
-    // without overwriting user customizations.
-    profile.system_prompt.push_str("\n\n");
-    profile.system_prompt.push_str(patch);
-    true
+    let _ = patch;
+    apply_canonical_system_prompt(profile)
 }
 
 #[cfg(test)]
@@ -361,6 +361,9 @@ pub(crate) fn replace_system_prompt_if_missing(
 ) -> bool {
     if profile.name != expected_name {
         return false;
+    }
+    if canonical_system_prompt(expected_name).is_some() {
+        return apply_canonical_system_prompt(profile);
     }
     if profile.system_prompt.contains(must_contain) {
         return false;

@@ -1,7 +1,7 @@
 # Stress Test S005: High-Intensity Master Planning
 
 ## 1. The Test (Prompt)
-"Develop a Master Plan to implement an Audit Log system for Elma CLI. This log should record every tool call, its parameters, and the model's reasoning into sessions/audit/. Plan the implementation phases, then implement the first phase: the core trait for auditing."
+"Develop a Master Plan for adding a lightweight audit log system inside _stress_testing/_opencode_for_testing/ only. The system should write audit events under _stress_testing/_opencode_for_testing/tmp_audit/. Plan the phases, then implement only Phase 1: the smallest core audit interface or helper needed to start the system. Do not inspect or modify Elma's own src/, config/, or sessions/ directories."
 
 ## 2. Expected Behavior
 - **Route:** MASTERPLAN
@@ -13,8 +13,10 @@
 - Implements first phase (core trait)
 - Maximum 12 steps (absolute limit enforced)
 - No duplicate steps (>50% duplicates = fail)
+- All file changes remain under `_stress_testing/_opencode_for_testing/`
 
 ## 4. Common Failure Modes
 - Plan is too vague to be actionable
 - Plan collapse (35+ identical steps)
 - Context explosion
+- Escaping the sandbox and proposing changes to Elma itself

@@ -18,6 +18,8 @@ pub(crate) async fn evaluate_workflow_suite_impl(
     let formula_cfg = load_agent_config(&candidate_dir.join("formula_selector.toml"))?;
     let workflow_planner_cfg = load_agent_config(&candidate_dir.join("workflow_planner.toml"))?;
     let orchestrator_cfg = load_agent_config(&candidate_dir.join("orchestrator.toml"))?;
+    let status_message_cfg =
+        load_agent_config(&candidate_dir.join("status_message_generator.toml"))?;
     let critic_cfg = load_agent_config(&candidate_dir.join("critic.toml"))?;
     let planner_master_cfg = load_agent_config(&candidate_dir.join("planner_master.toml"))?;
     let planner_cfg = load_agent_config(&candidate_dir.join("planner.toml"))?;
@@ -196,6 +198,7 @@ pub(crate) async fn evaluate_workflow_suite_impl(
                 &ws_brief,
                 &conversation_messages,
                 &orchestrator_cfg,
+                &status_message_cfg,
                 &planner_cfg,
                 &planner_master_cfg,
                 &decider_cfg,

@@ -117,6 +117,7 @@ pub(crate) struct TuneResources {
     pub(crate) router_cfg: Profile,
     pub(crate) mode_router_cfg: Profile,
     pub(crate) speech_act_cfg: Profile,
+    pub(crate) status_message_cfg: Profile,
     pub(crate) planner_master_cfg: Profile,
     pub(crate) planner_cfg: Profile,
     pub(crate) decider_cfg: Profile,

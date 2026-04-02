@@ -1,6 +1,6 @@
 root ::= "{" ws "\"choice\":" ws choice ws "," ws "\"label\":" ws label ws "," ws "\"reason\":" ws string ws "," ws "\"entropy\":" ws number ws "}"
-choice ::= "\"1\"" | "\"2\"" | "\"3\""
-label ::= "\"CHAT\"" | "\"INSTRUCT\"" | "\"INQUIRE\""
+choice ::= "\"1\"" | "\"2\"" | "\"3\"" | "\"4\"" | "\"5\""
+label ::= "\"INSPECT\"" | "\"EXECUTE\"" | "\"PLAN\"" | "\"MASTERPLAN\"" | "\"DECIDE\""
 string ::= "\"" chars "\""
 chars ::= "" | char chars
 char ::= [a-zA-Z0-9_.,;:!?() /-]

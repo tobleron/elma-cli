@@ -1,7 +1,7 @@
 # Stress Test S000A: Pure Conversational Baseline
 
 ## 1. The Test (Prompt)
-"Hello Elma. Briefly explain your primary goal as a CLI agent."
+"Hello Elma. This is a pure chat baseline inside _stress_testing/: briefly explain your primary goal as a CLI agent. Do not inspect, search, read, or modify any files inside or outside _stress_testing/."
 
 ## 2. Expected Behavior
 - **Route:** CHAT

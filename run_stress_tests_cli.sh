@@ -27,6 +27,9 @@ echo "=========================================="
 echo "Base URL: $BASE_URL"
 echo ""
 
+STRESS_SANDBOX_ROOT="_stress_testing"
+export ELMA_STRESS_SANDBOX_ROOT="$STRESS_SANDBOX_ROOT"
+
 # Extract prompt from stress test file
 extract_prompt() {
   local file="$1"
@@ -46,6 +49,16 @@ else:
 PY
 }
 
+validate_prompt_sandbox() {
+  local file="$1"
+  local prompt="$2"
+
+  if [[ "$prompt" != *"$STRESS_SANDBOX_ROOT/"* ]] && [[ "$prompt" != *"$STRESS_SANDBOX_ROOT"* ]]; then
+    echo "FAILED: $file does not keep the prompt inside $STRESS_SANDBOX_ROOT" >&2
+    return 1
+  fi
+}
+
 # Run single stress test through CLI
 run_test() {
   local file="$1"
@@ -61,8 +74,12 @@ run_test() {
     echo "FAILED: $prompt"
     return 1
   fi
+
+  validate_prompt_sandbox "$file" "$prompt" || return 1
   
   echo "Prompt: $prompt"
+  echo ""
+  echo "Sandbox root: $STRESS_SANDBOX_ROOT"
   echo ""
   echo "Response:"
   echo "------------------------------------------"

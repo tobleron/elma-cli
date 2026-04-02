@@ -224,6 +224,7 @@ pub(crate) async fn execute_and_evaluate_program(
         &resources.ws_brief,
         conversation_messages,
         &resources.orchestrator_cfg,
+        &resources.status_message_cfg,
         &resources.planner_cfg,
         &resources.planner_master_cfg,
         &resources.decider_cfg,

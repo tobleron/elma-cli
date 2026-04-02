@@ -28,6 +28,8 @@ pub(crate) async fn prepare_tune_resources(
     let router_cfg = load_agent_config(&model_cfg_dir.join("router.toml"))?;
     let mode_router_cfg = load_agent_config(&model_cfg_dir.join("mode_router.toml"))?;
     let speech_act_cfg = load_agent_config(&model_cfg_dir.join("speech_act.toml"))?;
+    let status_message_cfg =
+        load_agent_config(&model_cfg_dir.join("status_message_generator.toml"))?;
     let planner_master_cfg = load_agent_config(&model_cfg_dir.join("planner_master.toml"))?;
     let planner_cfg = load_agent_config(&model_cfg_dir.join("planner.toml"))?;
     let decider_cfg = load_agent_config(&model_cfg_dir.join("decider.toml"))?;
@@ -119,6 +121,7 @@ pub(crate) async fn prepare_tune_resources(
         router_cfg,
         mode_router_cfg,
         speech_act_cfg,
+        status_message_cfg,
         planner_master_cfg,
         planner_cfg,
         decider_cfg,

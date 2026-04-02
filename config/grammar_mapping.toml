@@ -5,16 +5,13 @@
 # Grammar files are loaded from config/grammars/ directory.
 
 [router]
-grammar_path = "grammars/router_choice_1of5.json.gbnf"
+grammar_path = "grammars/workflow_gate_choice_1of2.json.gbnf"
 
 [speech_act]
 grammar_path = "grammars/speech_act_choice_1of3.json.gbnf"
 
 [mode_router]
-grammar_path = "grammars/mode_router_choice_1of4.json.gbnf"
-
-[complexity_assessor]
-grammar_path = "grammars/complexity_choice_1of4.json.gbnf"
+grammar_path = "grammars/mode_router_choice_1of5.json.gbnf"
 
 [workflow_planner]
 grammar_path = "grammars/workflow_planner.json.gbnf"

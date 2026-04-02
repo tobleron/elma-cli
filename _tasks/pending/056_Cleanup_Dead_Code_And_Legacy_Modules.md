@@ -1,18 +1,13 @@
-# ⏸️ POSTPONED
-
-**Status:** POSTPONED until P0-1, P0-2, P0-3, P0-4 complete
-
-**Reason:** Per REPRIORITIZED_ROADMAP.md, these advanced features are blocked until the 4 foundational pillars are stable:
-- P0-1: JSON Reliability (Tasks 001-004)
-- P0-2: Context Narrative (Tasks 005-007)
-- P0-3: Workflow Sequence (Tasks 008-011)
-- P0-4: Reliability Tasks (Tasks 012-018)
-
-**Do not start work on this task** until all P0-1 through P0-4 tasks are complete.
-
----
-
 # Task 056: Cleanup Dead Code and Legacy Modules
+
+## Priority
+**P0 - FIRST IMPLEMENTATION TASK UNDER TASK 058**
+
+## Status
+**IN PROGRESS UNDER TASK 058**
+
+## Masterplan Alignment
+Task 058 reclassified this task as the first implementation target because reducing dead code and legacy paths lowers the risk and cost of the remaining stabilization work.
 
 ## Objective
 Perform a systematic cleanup of unreachable code, legacy modules, and redundant logic identified during the architectural audit.
@@ -33,3 +28,8 @@ As the project has evolved (especially with the `_dev-system` guidance), several
 - `cargo build` (Zero warnings).
 - Ensure no regression in existing tests or scenarios.
 - Quantifiable reduction in total project LOC without loss of functionality.
+
+## Progress Notes
+- Managed `status_message_generator` is now loaded and synchronized like other canonical intel-unit profiles.
+- Removed the inline shell-step prompt/profile construction so runtime execution no longer bypasses the canonical prompt registry for status messages.
+- Verified after this slice with `cargo build`, `cargo test`, and `./run_intention_scenarios.sh`.
