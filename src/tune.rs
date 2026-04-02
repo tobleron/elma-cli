@@ -40,15 +40,25 @@ pub(crate) fn check_prompt_changes(
     model_cfg_dir: &PathBuf,
     current_hashes: &HashMap<String, String>,
 ) -> Result<(bool, Vec<String>)> {
-    let manifest_path = model_cfg_dir.join("tune").join("active_manifest.json");
+    // Try both .toml and .json formats
+    let manifest_path = model_cfg_dir.join("tune").join("active_manifest.toml");
+    let manifest_path_json = model_cfg_dir.join("tune").join("active_manifest.json");
     
-    if !manifest_path.exists() {
+    let manifest_path = if manifest_path.exists() {
+        &manifest_path
+    } else if manifest_path_json.exists() {
+        &manifest_path_json
+    } else {
         // No previous tuning, changes detected
         return Ok((true, vec![]));
-    }
+    };
     
-    let manifest_json = std::fs::read_to_string(&manifest_path)?;
-    let manifest: TuneRunManifest = serde_json::from_str(&manifest_json)?;
+    let manifest_json = std::fs::read_to_string(manifest_path)?;
+    let manifest: TuneRunManifest = if manifest_path.extension().map_or(false, |e| e == "json") {
+        serde_json::from_str(&manifest_json)?
+    } else {
+        toml::from_str(&manifest_json)?
+    };
     
     let mut changed_units = Vec::new();
     
@@ -58,7 +68,7 @@ pub(crate) fn check_prompt_changes(
                 changed_units.push(unit_name.clone());
             }
         } else {
-            // New unit, treat as changed
+            // New unit or old manifest without prompt_hashes, treat as changed
             changed_units.push(unit_name.clone());
         }
     }

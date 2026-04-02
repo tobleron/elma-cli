@@ -23,63 +23,60 @@ use crate::intel_units::*;
 /// The minimum sufficient operational level for executing a request.
 /// 
 /// Elma starts at the lowest plausible level and escalates only when needed.
-/// 
-/// Task 045: Updated terminology from Action/Task/Plan/MasterPlan to
-/// ATOMIC_OPERATION/DISCOVERY_TASK/OPERATIONAL_PLAN/STRATEGIC_PLAN
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionLevel {
     /// One primary operation is sufficient.
     /// No decomposition, evidence chain, or dependency chain required.
     /// Example shape: one Shell/Read/Search/Select/Decide/Edit step + Reply
-    AtomicOperation,
+    Action,
     
     /// One bounded user outcome requiring a short sequence of actions.
     /// Evidence gathering and transformation are local.
     /// No explicit tactical planning artifact needed.
     /// Examples: Read→Summarize→Reply, Search→Read→Reply
-    DiscoveryTask,
+    Task,
     
     /// Tactical ordered breakdown where order/dependencies matter.
     /// User explicitly asks for a plan, or task needs staged execution.
     /// Remains bounded in scope (single session or tightly coupled sessions).
-    OperationalPlan,
+    Plan,
     
     /// Strategic phased decomposition for open-ended, multi-session objectives.
     /// Major milestones, dependencies, or phased rollout required.
     /// Strategic decomposition IS the output or prerequisite.
-    StrategicPlan,
+    MasterPlan,
 }
 
 impl ExecutionLevel {
     /// Get human-readable description
     pub fn description(&self) -> &'static str {
         match self {
-            ExecutionLevel::AtomicOperation => "Single primary operation (no decomposition needed)",
-            ExecutionLevel::DiscoveryTask => "Bounded outcome requiring short action sequence",
-            ExecutionLevel::OperationalPlan => "Tactical ordered breakdown (dependencies matter)",
-            ExecutionLevel::StrategicPlan => "Strategic phased decomposition (multi-session)",
+            ExecutionLevel::Action => "Single primary operation (no decomposition needed)",
+            ExecutionLevel::Task => "Bounded outcome requiring short action sequence",
+            ExecutionLevel::Plan => "Tactical ordered breakdown (dependencies matter)",
+            ExecutionLevel::MasterPlan => "Strategic phased decomposition (multi-session)",
         }
     }
     
     /// Check if this level requires planning structure
     pub fn requires_planning_structure(&self) -> bool {
-        matches!(self, ExecutionLevel::OperationalPlan | ExecutionLevel::StrategicPlan)
+        matches!(self, ExecutionLevel::Plan | ExecutionLevel::MasterPlan)
     }
     
     /// Check if this level allows direct execution
     pub fn allows_direct_execution(&self) -> bool {
-        matches!(self, ExecutionLevel::AtomicOperation | ExecutionLevel::DiscoveryTask)
+        matches!(self, ExecutionLevel::Action | ExecutionLevel::Task)
     }
 }
 
 impl std::fmt::Display for ExecutionLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExecutionLevel::AtomicOperation => write!(f, "AtomicOperation"),
-            ExecutionLevel::DiscoveryTask => write!(f, "DiscoveryTask"),
-            ExecutionLevel::OperationalPlan => write!(f, "OperationalPlan"),
-            ExecutionLevel::StrategicPlan => write!(f, "StrategicPlan"),
+            ExecutionLevel::Action => write!(f, "Action"),
+            ExecutionLevel::Task => write!(f, "Task"),
+            ExecutionLevel::Plan => write!(f, "Plan"),
+            ExecutionLevel::MasterPlan => write!(f, "MasterPlan"),
         }
     }
 }
@@ -170,7 +167,7 @@ impl ExecutionLadderAssessment {
     /// Create assessment with fallback defaults
     pub fn fallback(reason: &str) -> Self {
         Self {
-            level: ExecutionLevel::DiscoveryTask,  // Safe default
+            level: ExecutionLevel::Task,  // Safe default
             reason: reason.to_string(),
             requires_evidence: false,
             requires_ordering: false,
@@ -263,24 +260,24 @@ pub async fn assess_execution_level(
     
     // Escalate for explicit planning request
     if requests_planning(user_message) {
-        if level < ExecutionLevel::OperationalPlan {
-            level = ExecutionLevel::OperationalPlan;
+        if level < ExecutionLevel::Plan {
+            level = ExecutionLevel::Plan;
             escalation_factors.push("explicit planning request");
         }
     }
     
     // Escalate for strategic request
     if requests_strategy(user_message) {
-        if level < ExecutionLevel::StrategicPlan {
-            level = ExecutionLevel::StrategicPlan;
+        if level < ExecutionLevel::MasterPlan {
+            level = ExecutionLevel::MasterPlan;
             escalation_factors.push("strategic decomposition request");
         }
     }
     
     // Escalate for high risk
     if complexity.risk == "HIGH" {
-        if level < ExecutionLevel::DiscoveryTask {
-            level = ExecutionLevel::DiscoveryTask;
+        if level < ExecutionLevel::Task {
+            level = ExecutionLevel::Task;
             escalation_factors.push("high risk");
         }
     }
@@ -288,16 +285,16 @@ pub async fn assess_execution_level(
     // Escalate for high entropy (uncertain classification)
     // Task 007: Use full feature vector for better escalation decisions
     if features.entropy > 0.8 {
-        if level < ExecutionLevel::DiscoveryTask {
-            level = ExecutionLevel::DiscoveryTask;
+        if level < ExecutionLevel::Task {
+            level = ExecutionLevel::Task;
             escalation_factors.push("high classification uncertainty");
         }
     }
 
     // Escalate for low margin (close classification)
     if route_decision.margin < 0.2 {
-        if level < ExecutionLevel::DiscoveryTask {
-            level = ExecutionLevel::DiscoveryTask;
+        if level < ExecutionLevel::Task {
+            level = ExecutionLevel::Task;
             escalation_factors.push("low classification margin");
         }
     }
@@ -309,14 +306,14 @@ pub async fn assess_execution_level(
         features.route_probs.first()
     ) {
         if speech_act == "ACTION_REQUEST" && route == "CHAT" {
-            if level < ExecutionLevel::DiscoveryTask {
-                level = ExecutionLevel::DiscoveryTask;
+            if level < ExecutionLevel::Task {
+                level = ExecutionLevel::Task;
                 escalation_factors.push("speech act/route mismatch");
             }
         }
         if speech_act == "INSTRUCTION" && route == "CHAT" {
-            if level < ExecutionLevel::DiscoveryTask {
-                level = ExecutionLevel::DiscoveryTask;
+            if level < ExecutionLevel::Task {
+                level = ExecutionLevel::Task;
                 escalation_factors.push("instruction classified as chat");
             }
         }
@@ -325,8 +322,8 @@ pub async fn assess_execution_level(
     // Check for low confidence in top route choice
     if let Some((_, top_prob)) = features.route_probs.first() {
         if *top_prob < 0.5 {
-            if level < ExecutionLevel::DiscoveryTask {
-                level = ExecutionLevel::DiscoveryTask;
+            if level < ExecutionLevel::Task {
+                level = ExecutionLevel::Task;
                 escalation_factors.push("low confidence in route choice");
             }
         }
@@ -336,7 +333,7 @@ pub async fn assess_execution_level(
     let requires_ordering = needs_plan || has_dependencies(user_message, workspace_brief);
     
     // Determine requires_phases
-    let requires_phases = level == ExecutionLevel::StrategicPlan || 
+    let requires_phases = level == ExecutionLevel::MasterPlan || 
         requests_phases(user_message) ||
         complexity.complexity == "OPEN_ENDED";
     
@@ -378,11 +375,11 @@ pub async fn assess_execution_level(
 /// Map complexity classification to base execution level
 fn complexity_to_level(complexity: &str) -> ExecutionLevel {
     match complexity {
-        "DIRECT" => ExecutionLevel::AtomicOperation,
-        "INVESTIGATE" => ExecutionLevel::DiscoveryTask,
-        "MULTISTEP" => ExecutionLevel::OperationalPlan,
-        "OPEN_ENDED" => ExecutionLevel::StrategicPlan,
-        _ => ExecutionLevel::DiscoveryTask,  // Safe default
+        "DIRECT" => ExecutionLevel::Action,
+        "INVESTIGATE" => ExecutionLevel::Task,
+        "MULTISTEP" => ExecutionLevel::Plan,
+        "OPEN_ENDED" => ExecutionLevel::MasterPlan,
+        _ => ExecutionLevel::Task,  // Safe default
     }
 }
 
@@ -472,10 +469,10 @@ fn generate_level_reason(
     let truncated = truncate_message(user_message);
     
     let base_reason = match level {
-        ExecutionLevel::AtomicOperation => format!("Direct execution: '{}'", truncated),
-        ExecutionLevel::DiscoveryTask => format!("Bounded outcome requiring evidence chain: '{}'", truncated),
-        ExecutionLevel::OperationalPlan => format!("Tactical breakdown required: '{}'", truncated),
-        ExecutionLevel::StrategicPlan => format!("Strategic decomposition required: '{}'", truncated),
+        ExecutionLevel::Action => format!("Direct execution: '{}'", truncated),
+        ExecutionLevel::Task => format!("Bounded outcome requiring evidence chain: '{}'", truncated),
+        ExecutionLevel::Plan => format!("Tactical breakdown required: '{}'", truncated),
+        ExecutionLevel::MasterPlan => format!("Strategic decomposition required: '{}'", truncated),
     };
     
     if escalation_factors.is_empty() {
@@ -492,19 +489,19 @@ fn generate_strategy_hint(
     requires_ordering: bool,
 ) -> Option<String> {
     match (level, requires_evidence, requires_ordering) {
-        (ExecutionLevel::AtomicOperation, false, false) => {
+        (ExecutionLevel::Action, false, false) => {
             None  // No hint needed for simple action
         }
-        (ExecutionLevel::DiscoveryTask, true, false) => {
+        (ExecutionLevel::Task, true, false) => {
             Some("gather evidence before execution".to_string())
         }
-        (ExecutionLevel::DiscoveryTask, true, true) => {
+        (ExecutionLevel::Task, true, true) => {
             Some("gather evidence, then execute in order".to_string())
         }
-        (ExecutionLevel::OperationalPlan, _, _) => {
+        (ExecutionLevel::Plan, _, _) => {
             Some("explicit planning structure required".to_string())
         }
-        (ExecutionLevel::StrategicPlan, _, _) => {
+        (ExecutionLevel::MasterPlan, _, _) => {
             Some("phased strategic decomposition".to_string())
         }
         _ => None,
@@ -555,26 +552,26 @@ fn truncate_message(msg: &str) -> String {
 
 /// Check if hierarchical decomposition is needed (compatibility wrapper)
 pub fn assessment_needs_decomposition(assessment: &ExecutionLadderAssessment) -> bool {
-    matches!(assessment.level, ExecutionLevel::OperationalPlan | ExecutionLevel::StrategicPlan)
+    matches!(assessment.level, ExecutionLevel::Plan | ExecutionLevel::MasterPlan)
 }
 
 /// Convert assessment to legacy depth (compatibility wrapper)
 pub fn assessment_to_depth(assessment: &ExecutionLadderAssessment) -> u8 {
     match assessment.level {
-        ExecutionLevel::AtomicOperation => 1,
-        ExecutionLevel::DiscoveryTask => 2,
-        ExecutionLevel::OperationalPlan => 3,
-        ExecutionLevel::StrategicPlan => 4,
+        ExecutionLevel::Action => 1,
+        ExecutionLevel::Task => 2,
+        ExecutionLevel::Plan => 3,
+        ExecutionLevel::MasterPlan => 4,
     }
 }
 
 /// Convert legacy depth to level (compatibility wrapper)
 pub fn depth_to_level(depth: u8) -> ExecutionLevel {
     match depth {
-        0 | 1 => ExecutionLevel::AtomicOperation,
-        2 => ExecutionLevel::DiscoveryTask,
-        3 => ExecutionLevel::OperationalPlan,
-        _ => ExecutionLevel::StrategicPlan,
+        0 | 1 => ExecutionLevel::Action,
+        2 => ExecutionLevel::Task,
+        3 => ExecutionLevel::Plan,
+        _ => ExecutionLevel::MasterPlan,
     }
 }
 
@@ -588,35 +585,35 @@ mod tests {
 
     #[test]
     fn test_execution_level_display() {
-        assert_eq!(format!("{}", ExecutionLevel::AtomicOperation), "AtomicOperation");
-        assert_eq!(format!("{}", ExecutionLevel::DiscoveryTask), "DiscoveryTask");
-        assert_eq!(format!("{}", ExecutionLevel::OperationalPlan), "OperationalPlan");
-        assert_eq!(format!("{}", ExecutionLevel::StrategicPlan), "StrategicPlan");
+        assert_eq!(format!("{}", ExecutionLevel::Action), "Action");
+        assert_eq!(format!("{}", ExecutionLevel::Task), "Task");
+        assert_eq!(format!("{}", ExecutionLevel::Plan), "Plan");
+        assert_eq!(format!("{}", ExecutionLevel::MasterPlan), "MasterPlan");
     }
 
     #[test]
     fn test_execution_level_requires_planning_structure() {
-        assert!(!ExecutionLevel::AtomicOperation.requires_planning_structure());
-        assert!(!ExecutionLevel::DiscoveryTask.requires_planning_structure());
-        assert!(ExecutionLevel::OperationalPlan.requires_planning_structure());
-        assert!(ExecutionLevel::StrategicPlan.requires_planning_structure());
+        assert!(!ExecutionLevel::Action.requires_planning_structure());
+        assert!(!ExecutionLevel::Task.requires_planning_structure());
+        assert!(ExecutionLevel::Plan.requires_planning_structure());
+        assert!(ExecutionLevel::MasterPlan.requires_planning_structure());
     }
 
     #[test]
     fn test_execution_level_allows_direct_execution() {
-        assert!(ExecutionLevel::AtomicOperation.allows_direct_execution());
-        assert!(ExecutionLevel::DiscoveryTask.allows_direct_execution());
-        assert!(!ExecutionLevel::OperationalPlan.allows_direct_execution());
-        assert!(!ExecutionLevel::StrategicPlan.allows_direct_execution());
+        assert!(ExecutionLevel::Action.allows_direct_execution());
+        assert!(ExecutionLevel::Task.allows_direct_execution());
+        assert!(!ExecutionLevel::Plan.allows_direct_execution());
+        assert!(!ExecutionLevel::MasterPlan.allows_direct_execution());
     }
 
     #[test]
     fn test_complexity_to_level() {
-        assert_eq!(complexity_to_level("DIRECT"), ExecutionLevel::AtomicOperation);
-        assert_eq!(complexity_to_level("INVESTIGATE"), ExecutionLevel::DiscoveryTask);
-        assert_eq!(complexity_to_level("MULTISTEP"), ExecutionLevel::OperationalPlan);
-        assert_eq!(complexity_to_level("OPEN_ENDED"), ExecutionLevel::StrategicPlan);
-        assert_eq!(complexity_to_level("UNKNOWN"), ExecutionLevel::DiscoveryTask);
+        assert_eq!(complexity_to_level("DIRECT"), ExecutionLevel::Action);
+        assert_eq!(complexity_to_level("INVESTIGATE"), ExecutionLevel::Task);
+        assert_eq!(complexity_to_level("MULTISTEP"), ExecutionLevel::Plan);
+        assert_eq!(complexity_to_level("OPEN_ENDED"), ExecutionLevel::MasterPlan);
+        assert_eq!(complexity_to_level("UNKNOWN"), ExecutionLevel::Task);
     }
 
     #[test]
@@ -640,7 +637,7 @@ mod tests {
     #[test]
     fn test_assessment_fallback() {
         let assessment = ExecutionLadderAssessment::fallback("test error");
-        assert_eq!(assessment.level, ExecutionLevel::DiscoveryTask);
+        assert_eq!(assessment.level, ExecutionLevel::Task);
         assert!(assessment.fallback_used);
         assert_eq!(assessment.confidence, 0.5);
     }
@@ -648,15 +645,15 @@ mod tests {
     #[test]
     fn test_generate_strategy_hint() {
         assert_eq!(
-            generate_strategy_hint(ExecutionLevel::AtomicOperation, false, false),
+            generate_strategy_hint(ExecutionLevel::Action, false, false),
             None
         );
         assert_eq!(
-            generate_strategy_hint(ExecutionLevel::DiscoveryTask, true, false),
+            generate_strategy_hint(ExecutionLevel::Task, true, false),
             Some("gather evidence before execution".to_string())
         );
         assert_eq!(
-            generate_strategy_hint(ExecutionLevel::OperationalPlan, false, false),
+            generate_strategy_hint(ExecutionLevel::Plan, false, false),
             Some("explicit planning structure required".to_string())
         );
     }
