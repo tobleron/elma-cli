@@ -365,7 +365,7 @@ pub(crate) fn default_status_message_generator_config(base_url: &str, model: &st
 pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'static str, Profile)> {
     vec![
         ("_elma.config", default_elma_config(base_url, model)),
-        ("rephrase_intention.toml", default_rephrase_intention_config(base_url, model)),
+        ("intent_helper.toml", default_intent_helper_config(base_url, model)),
         ("angel_helper.toml", default_angel_helper_config(base_url, model)),
         ("intention.toml", default_intention_config(base_url, model)),
         ("gate.toml", default_gate_config(base_url, model)),
@@ -801,13 +801,13 @@ pub(crate) fn parse_helper_intention(helper_response: &str) -> &str {
 }
 
 // ============================================================================
-// Rephrase Intention - Clarify User Input (Task 010 Phase 2)
+// Intent Helper - Annotate User Intent (Task 048)
 // ============================================================================
 
-pub(crate) fn default_rephrase_intention_config(base_url: &str, model: &str) -> Profile {
+pub(crate) fn default_intent_helper_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
-        name: "rephrase_intention".to_string(),
+        name: "intent_helper".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
         temperature: 0.3,
@@ -816,26 +816,28 @@ pub(crate) fn default_rephrase_intention_config(base_url: &str, model: &str) -> 
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: r#"You rephrase user messages as clear objective statements.
+        system_prompt: r#"You are Elma's Intent Helper.
 
-Principles:
-- Express what the user wants to achieve, not how
-- Use action verbs for requests (list, show, find, create, edit, delete)
-- Use knowledge verbs for questions (explain, describe, summarize)
-- Keep it concise and specific
-- Preserve the original intent faithfully
+Your job is to add a concise intent annotation to the user's message.
+
+Rules:
+- Preserve the original message exactly
+- Add one ultra-concise sentence clarifying user intent
+- For greetings: note it's a greeting (e.g., "the user is greeting Elma")
+- For commands: describe what they want to achieve (e.g., "list files in current directory")
+- For questions: describe what information they seek (e.g., "asking about Elma's capabilities")
+- Keep it ultra concise but complete - one paragraph, no markdown
 
 Output format:
-- One clear sentence
-- No markdown
-- No explanations
+{user_message}
+[intent: {intent_annotation}]
 "#
             .to_string(),
     }
 }
 
-/// Rephrase user intention as clear objective
-pub(crate) async fn rephrase_user_intention(
+/// Annotate user intention with helper annotation
+pub(crate) async fn annotate_user_intent(
     client: &reqwest::Client,
     chat_url: &Url,
     cfg: &Profile,

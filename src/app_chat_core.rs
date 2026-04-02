@@ -62,19 +62,19 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             content: line.to_string(),
         });
 
-        // Step 1: Rephrase user intention as clear objective
-        let rephrased_objective = rephrase_user_intention(
+        // Step 1: Annotate user intention with helper
+        let rephrased_objective = annotate_user_intent(
             &runtime.client,
             &runtime.chat_url,
-            &runtime.profiles.rephrase_intention_cfg,
+            &runtime.profiles.intent_helper_cfg,
             line,
         ).await.unwrap_or_else(|e| {
-            trace_verbose(runtime.verbose, &format!("rephrase_intention_failed error={}", e));
+            trace_verbose(runtime.verbose, &format!("intent_helper_failed error={}", e));
             line.to_string()  // Fallback to original
         });
         trace(
             &runtime.args,
-            &format!("rephrased_objective={}", rephrased_objective),
+            &format!("intent_annotation={}", rephrased_objective),
         );
 
         // Step 2: Run Angel Helper with rephrased objective for clearer classification

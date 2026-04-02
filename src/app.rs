@@ -2,7 +2,7 @@ use crate::*;
 
 pub(crate) struct LoadedProfiles {
     pub(crate) elma_cfg: Profile,
-    pub(crate) rephrase_intention_cfg: Profile,
+    pub(crate) intent_helper_cfg: Profile,
     pub(crate) angel_helper_cfg: Profile,
     pub(crate) planner_master_cfg: Profile,
     pub(crate) planner_cfg: Profile,

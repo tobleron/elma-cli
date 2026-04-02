@@ -77,7 +77,7 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         router_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("router.toml"))?,
         mode_router_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("mode_router.toml"))?,
         speech_act_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("speech_act.toml"))?,
-        rephrase_intention_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("rephrase_intention.toml"))?,
+        intent_helper_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("intent_helper.toml"))?,
         angel_helper_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("angel_helper.toml"))?,
         router_cal: load_router_calibration(&model_cfg_dir.join("router_calibration.toml"))?,
     })
