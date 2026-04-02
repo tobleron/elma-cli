@@ -789,13 +789,33 @@ Output format:
     }
 }
 
-/// Annotate user intention with helper annotation
+/// Annotate user intention with helper annotation, considering conversation context
 pub(crate) async fn annotate_user_intent(
     client: &reqwest::Client,
     chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
+    conversation_history: &[ChatMessage],
 ) -> Result<String> {
+    // Build narrative input with conversation history (exclude system messages)
+    let mut input = String::new();
+    input.push_str("CONVERSATION HISTORY:\n");
+    for msg in conversation_history {
+        // Skip system messages
+        if msg.role == "system" {
+            continue;
+        }
+        let role = if msg.role == "user" { "User" } else { "Elma" };
+        // Truncate long messages to avoid token explosion
+        let content = if msg.content.len() > 200 {
+            format!("{}...", &msg.content[..200])
+        } else {
+            msg.content.clone()
+        };
+        input.push_str(&format!("{}: {}\n", role, content));
+    }
+    input.push_str(&format!("\nUser: {}\n", user_message));
+    
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
@@ -805,7 +825,7 @@ pub(crate) async fn annotate_user_intent(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: user_message.to_string(),
+                content: input,
             },
         ],
         temperature: cfg.temperature,

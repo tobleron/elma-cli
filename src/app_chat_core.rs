@@ -62,12 +62,13 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             content: line.to_string(),
         });
 
-        // Step 1: Annotate user intention with helper
+        // Step 1: Annotate user intention with helper (considering conversation context)
         let intent_annotation = annotate_user_intent(
             &runtime.client,
             &runtime.chat_url,
             &runtime.profiles.intent_helper_cfg,
             line,
+            &runtime.messages,  // Pass full conversation history
         ).await.unwrap_or_else(|e| {
             trace_verbose(runtime.verbose, &format!("intent_helper_failed error={}", e));
             "unknown intent".to_string()  // Fallback

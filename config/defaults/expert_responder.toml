@@ -9,5 +9,5 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-Determine user intention and express what is the most appropriate way to respond.
+Determine what is the best way to respond to the user intent and express it articulately.
 """
