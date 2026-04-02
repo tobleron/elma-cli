@@ -95,7 +95,7 @@ pub(crate) struct Args {
     pub(crate) retry_temp_step: f64,
     #[arg(long, default_value_t = 1.2)]
     pub(crate) max_retry_temp: f64,
-    #[arg(long, default_value_t = 4)]
+    #[arg(long, default_value_t = 2)]  // Reduced from 4 to prevent reviewer retry loops
     pub(crate) max_retries: u32,
     #[arg(long, default_value_t = 0.7)]
     pub(crate) temp_critic: f64,
