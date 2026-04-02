@@ -139,6 +139,11 @@ pub(crate) fn sync_and_upgrade_profiles(
         save_agent_config(&speech_act_cfg_path, &profiles.speech_act_cfg)?;
     }
 
+    let intent_helper_cfg_path = model_cfg_dir.join("intent_helper.toml");
+    profiles.intent_helper_cfg.base_url = base_url.to_string();
+    profiles.intent_helper_cfg.model = model_id.to_string();
+    save_agent_config(&intent_helper_cfg_path, &profiles.intent_helper_cfg)?;
+
     let orchestrator_cfg_path = model_cfg_dir.join("orchestrator.toml");
     if replace_system_prompt_if_missing(
         &mut profiles.orchestrator_cfg,
@@ -167,6 +172,7 @@ pub(crate) fn sync_and_upgrade_profiles(
         &router_cfg_path,
         &mode_router_cfg_path,
         &speech_act_cfg_path,
+        &intent_helper_cfg_path,
         &orchestrator_cfg_path,
         &critic_cfg_path,
         profiles,
@@ -179,6 +185,7 @@ fn apply_prompt_upgrades(
     router_cfg_path: &PathBuf,
     mode_router_cfg_path: &PathBuf,
     speech_act_cfg_path: &PathBuf,
+    intent_helper_cfg_path: &PathBuf,
     orchestrator_cfg_path: &PathBuf,
     critic_cfg_path: &PathBuf,
     profiles: &mut LoadedProfiles,
