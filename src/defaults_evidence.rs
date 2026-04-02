@@ -362,76 +362,29 @@ pub(crate) fn default_status_message_generator_config(base_url: &str, model: &st
     }
 }
 
-pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(&'static str, Profile)> {
-    vec![
-        ("_elma.config", default_elma_config(base_url, model)),
-        ("intent_helper.toml", default_intent_helper_config(base_url, model)),
-        ("angel_helper.toml", default_angel_helper_config(base_url, model)),
-        ("intention.toml", default_intention_config(base_url, model)),
-        ("gate.toml", default_gate_config(base_url, model)),
-        ("gate_why.toml", default_gate_why_config(base_url, model)),
-        ("tooler.toml", default_tooler_config(base_url, model)),
-        ("action_type.toml", default_action_type_config(base_url, model)),
-        ("planner_master.toml", default_planner_master_config(base_url, model)),
-        ("planner.toml", default_planner_config(base_url, model)),
-        ("decider.toml", default_decider_config(base_url, model)),
-        ("selector.toml", default_selector_config(base_url, model)),
-        ("summarizer.toml", default_summarizer_config(base_url, model)),
-        ("formatter.toml", default_formatter_config(base_url, model)),
-        ("json_outputter.toml", default_json_outputter_config(base_url, model)),
-        ("final_answer_extractor.toml", default_final_answer_extractor_config(base_url, model)),
-        ("calibration_judge.toml", default_calibration_judge_config(base_url, model)),
-        ("complexity_assessor.toml", default_complexity_assessor_config(base_url, model)),
-        ("evidence_need_assessor.toml", default_evidence_need_assessor_config(base_url, model)),
-        ("action_need_assessor.toml", default_action_need_assessor_config(base_url, model)),
-        ("pattern_suggester.toml", default_pattern_suggester_config(base_url, model)),
-        ("formula_selector.toml", default_formula_selector_config(base_url, model)),
-        ("formula_memory_matcher.toml", default_formula_memory_matcher_config(base_url, model)),
-        ("workflow_planner.toml", default_workflow_planner_config(base_url, model)),
-        ("workflow_complexity_planner.toml", default_workflow_complexity_planner_config(base_url, model)),
-        ("workflow_reason_planner.toml", default_workflow_reason_planner_config(base_url, model)),
-        ("evidence_mode.toml", default_evidence_mode_config(base_url, model)),
-        ("command_repair.toml", default_command_repair_config(base_url, model)),
-        ("command_reviser.toml", default_command_reviser_config(base_url, model)),
-        ("execution_mode_setter.toml", default_execution_mode_setter_config(base_url, model)),
-        ("task_semantics_guard.toml", default_task_semantics_guard_config(base_url, model)),
-        ("execution_sufficiency.toml", default_execution_sufficiency_config(base_url, model)),
-        ("execution_program_repair.toml", default_execution_program_repair_config(base_url, model)),
-        ("outcome_verifier.toml", default_outcome_verifier_config(base_url, model)),
-        ("memory_gate.toml", default_memory_gate_config(base_url, model)),
-        ("command_preflight.toml", default_command_preflight_config(base_url, model)),
-        ("scope_builder.toml", default_scope_builder_config(base_url, model)),
-        ("scope_objective_builder.toml", default_scope_objective_builder_config(base_url, model)),
-        ("evidence_compactor.toml", default_evidence_compactor_config(base_url, model)),
-        ("artifact_classifier.toml", default_artifact_classifier_config(base_url, model)),
-        ("result_presenter.toml", default_result_presenter_config(base_url, model)),
-        ("claim_checker.toml", default_claim_checker_config(base_url, model)),
-        ("claim_revision_advisor.toml", default_claim_revision_advisor_config(base_url, model)),
-        ("critic.toml", default_critic_config(base_url, model)),
-        ("program_repair.toml", default_program_repair_config(base_url, model)),
-        ("orchestrator.toml", default_orchestrator_config(base_url, model)),
-        ("refinement.toml", default_refinement_config(base_url, model)),
-        ("reflection.toml", default_reflection_config(base_url, model)),
-        ("logical_reviewer.toml", default_logical_reviewer_config(base_url, model)),
-        ("logical_program_repair.toml", default_logical_program_repair_config(base_url, model)),
-        ("efficiency_reviewer.toml", default_efficiency_reviewer_config(base_url, model)),
-        ("efficiency_program_repair.toml", default_efficiency_program_repair_config(base_url, model)),
-        ("risk_reviewer.toml", default_risk_reviewer_config(base_url, model)),
-        ("meta_review.toml", default_meta_review_config(base_url, model)),
-        ("router.toml", default_router_config(base_url, model)),
-        ("mode_router.toml", default_mode_router_config(base_url, model)),
-        ("speech_act.toml", default_speech_act_config(base_url, model)),
-        ("intention_tune.toml", default_intention_tune_config(base_url, model)),
-        ("status_message_generator.toml", default_status_message_generator_config(base_url, model)),
-        // JSON Pipeline Intel Units (Task 008 Phase 3)
-        ("text_generator.toml", default_text_generator_config(base_url, model)),
-        ("json_converter.toml", default_json_converter_config(base_url, model)),
-        ("verify_checker.toml", default_verify_checker_config(base_url, model)),
-        ("json_repair.toml", default_json_repair_config(base_url, model)),
-    ]
+pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(String, Profile)> {
+    // Load all profiles from config/defaults/ TOML files
+    // This ensures system prompts come from config files, not hardcoded strings
+    let defaults_dir = std::path::PathBuf::from("config/defaults");
+    let mut specs = Vec::new();
+    
+    for entry in std::fs::read_dir(&defaults_dir).ok().into_iter().flatten() {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "toml") {
+                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    if let Ok(profile) = load_agent_config(&path) {
+                        specs.push((filename.to_string(), profile));
+                    }
+                }
+            }
+        }
+    }
+    
+    specs
 }
 
-pub(crate) fn managed_profile_file_names() -> Vec<&'static str> {
+pub(crate) fn managed_profile_file_names() -> Vec<String> {
     managed_profile_specs("", "").into_iter().map(|(name, _)| name).collect()
 }
 

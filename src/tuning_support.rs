@@ -64,8 +64,8 @@ pub(crate) fn validate_tuning_mutation(original: &Profile, mutated: &Profile) ->
 /// Compares each managed profile file against the originals from src_dir.
 pub(crate) fn validate_tuning_mutations(src_dir: &Path, dst_dir: &Path) -> Result<()> {
     for filename in managed_profile_file_names() {
-        let src_path = src_dir.join(filename);
-        let dst_path = dst_dir.join(filename);
+        let src_path = src_dir.join(&filename);
+        let dst_path = dst_dir.join(&filename);
         if !src_path.exists() || !dst_path.exists() {
             continue;
         }
@@ -179,7 +179,7 @@ pub(crate) fn apply_runtime_generation_defaults(
     defaults: &RuntimeGenerationDefaults,
 ) -> Result<()> {
     for filename in managed_profile_file_names() {
-        let path = dir.join(filename);
+        let path = dir.join(&filename);
         if !path.exists() {
             continue;
         }

@@ -34,7 +34,7 @@ pub(crate) fn model_formula_memory_dir(model_cfg_dir: &Path) -> PathBuf {
     model_cfg_dir.join("formula_memory")
 }
 
-pub(crate) fn write_profile_specs_to_dir(dir: &Path, specs: &[(&str, Profile)]) -> Result<()> {
+pub(crate) fn write_profile_specs_to_dir(dir: &Path, specs: &[(String, Profile)]) -> Result<()> {
     std::fs::create_dir_all(dir).with_context(|| format!("mkdir {}", dir.display()))?;
     for (filename, profile) in specs {
         save_agent_config(&dir.join(filename), profile)?;
@@ -58,11 +58,11 @@ pub(crate) fn ensure_baseline_profile_set(
 pub(crate) fn copy_profile_set(src_dir: &Path, dst_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(dst_dir).with_context(|| format!("mkdir {}", dst_dir.display()))?;
     for filename in managed_profile_file_names() {
-        let src = src_dir.join(filename);
+        let src = src_dir.join(&filename);
         if !src.exists() {
             continue;
         }
-        let dst = dst_dir.join(filename);
+        let dst = dst_dir.join(&filename);
         std::fs::copy(&src, &dst)
             .with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
     }
@@ -73,11 +73,11 @@ pub(crate) fn snapshot_active_profile_set(model_cfg_dir: &Path, snapshot_dir: &P
     std::fs::create_dir_all(snapshot_dir)
         .with_context(|| format!("mkdir {}", snapshot_dir.display()))?;
     for filename in managed_profile_file_names() {
-        let src = model_cfg_dir.join(filename);
+        let src = model_cfg_dir.join(&filename);
         if !src.exists() {
             continue;
         }
-        let dst = snapshot_dir.join(filename);
+        let dst = snapshot_dir.join(&filename);
         std::fs::copy(&src, &dst)
             .with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
     }

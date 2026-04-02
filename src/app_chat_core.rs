@@ -63,37 +63,30 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         });
 
         // Step 1: Annotate user intention with helper
-        let rephrased_objective = annotate_user_intent(
+        let intent_annotation = annotate_user_intent(
             &runtime.client,
             &runtime.chat_url,
             &runtime.profiles.intent_helper_cfg,
             line,
         ).await.unwrap_or_else(|e| {
             trace_verbose(runtime.verbose, &format!("intent_helper_failed error={}", e));
-            line.to_string()  // Fallback to original
+            "unknown intent".to_string()  // Fallback
         });
+        
+        // Extract just the intent sentence (model may include original message)
+        // Take the last line which should be the intent
+        let intent_only = intent_annotation.lines().last().unwrap_or(&intent_annotation).trim().to_string();
+        
+        // Format: user message + intent annotation (programmatic, not from model)
+        let rephrased_objective = format!("{}\n[intent: {}]", line, intent_only);
+
         trace(
             &runtime.args,
             &format!("intent_annotation={}", rephrased_objective),
         );
 
-        // Step 2: Run Angel Helper with rephrased objective for clearer classification
-        let helper_response = angel_helper_intention(
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.profiles.angel_helper_cfg,
-            &rephrased_objective,  // Use rephrased, not raw user input!
-        ).await.unwrap_or_else(|e| {
-            trace_verbose(runtime.verbose, &format!("angel_helper_failed error={}", e));
-            "UNKNOWN".to_string()
-        });
-        trace(
-            &runtime.args,
-            &format!("angel_helper_response={}", helper_response),
-        );
-
-        // Step 3: Classify with rephrased objective + Angel's guidance
-        // Angel's output (e.g., "execute ls -ltr on shell") helps classifier decide route
+        // Step 2: Classify with intent-annotated message
+        // The intent annotation helps classifier decide route
         let route_decision = infer_route_prior(
             &runtime.client,
             &runtime.chat_url,
@@ -101,7 +94,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.profiles.router_cfg,
             &runtime.profiles.mode_router_cfg,
             &runtime.profiles.router_cal,
-            &format!("{}\n\nRephrased: {}\nAngel's Guidance: {}", line, rephrased_objective, helper_response),
+            &rephrased_objective,  // Use intent-annotated message directly
             &runtime.ws,
             &runtime.ws_brief,
             &runtime.messages,

@@ -3,8 +3,8 @@
 //! App Bootstrap - Profile Loading and Synchronization
 //!
 //! Loading order:
-//! 1. Model-specific config (e.g., config/llama_3.2_3b_instruct_q6_k_l.gguf/angel_helper.toml)
-//! 2. Global defaults (config/defaults/angel_helper.toml)
+//! 1. Model-specific config (e.g., config/llama_3.2_3b_instruct_q6_k_l.gguf/intent_helper.toml)
+//! 2. Global defaults (config/defaults/intent_helper.toml)
 //! 3. Built-in fallback (minimal, should never be needed)
 
 use crate::app::LoadedProfiles;
@@ -78,7 +78,6 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         mode_router_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("mode_router.toml"))?,
         speech_act_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("speech_act.toml"))?,
         intent_helper_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("intent_helper.toml"))?,
-        angel_helper_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("angel_helper.toml"))?,
         router_cal: load_router_calibration(&model_cfg_dir.join("router_calibration.toml"))?,
     })
 }
