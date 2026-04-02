@@ -260,8 +260,6 @@ pub async fn derive_planning_prior_with_ladder(
     chat_url: &Url,
     workflow_planner_cfg: &Profile,
     complexity_cfg: &Profile,
-    evidence_need_cfg: &Profile,
-    action_need_cfg: &Profile,
     scope_builder_cfg: &Profile,
     formula_cfg: &Profile,
     line: &str,
@@ -344,8 +342,8 @@ pub async fn derive_planning_prior_with_ladder(
         client,
         chat_url,
         complexity_cfg,
-        evidence_need_cfg,
-        action_need_cfg,
+        complexity_cfg,  // evidence_need (disabled, use complexity as fallback)
+        complexity_cfg,  // action_need (disabled, use complexity as fallback)
         workflow_planner_cfg,
         line,
         route_decision,

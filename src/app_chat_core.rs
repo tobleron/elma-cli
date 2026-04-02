@@ -116,14 +116,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         trace_route_decision(&runtime.args, &route_decision);
 
         let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
-        // Task 014: Use new function with pattern matching and confidence fallback
+        // Task 014: Use new function with confidence fallback
         let (ladder, complexity, scope, formula, planner_fallback_used) = derive_planning_prior_with_ladder(
             &runtime.client,
             &runtime.chat_url,
             &runtime.profiles.workflow_planner_cfg,
             &runtime.profiles.complexity_cfg,
-            &runtime.profiles.evidence_need_cfg,
-            &runtime.profiles.action_need_cfg,
             &runtime.profiles.scope_builder_cfg,
             &runtime.profiles.formula_cfg,
             line,

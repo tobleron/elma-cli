@@ -21,7 +21,7 @@ pub(crate) fn compute_all_prompt_hashes(profiles: &LoadedProfiles) -> HashMap<St
     hashes.insert("mode_router".to_string(), compute_prompt_hash(&profiles.mode_router_cfg.system_prompt));
     hashes.insert("speech_act".to_string(), compute_prompt_hash(&profiles.speech_act_cfg.system_prompt));
     
-    // Intel unit prompts
+    // Intel unit prompts (only those that exist and are tuned)
     hashes.insert("complexity_assessor".to_string(), compute_prompt_hash(&profiles.complexity_cfg.system_prompt));
     hashes.insert("formula_selector".to_string(), compute_prompt_hash(&profiles.formula_cfg.system_prompt));
     hashes.insert("workflow_planner".to_string(), compute_prompt_hash(&profiles.workflow_planner_cfg.system_prompt));

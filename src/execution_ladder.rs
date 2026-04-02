@@ -207,8 +207,8 @@ pub async fn assess_execution_level(
     client: &reqwest::Client,
     chat_url: &Url,
     complexity_profile: &Profile,
-    evidence_need_profile: &Profile,
-    action_need_profile: &Profile,
+    _evidence_need_profile: &Profile,  // Reserved for future use
+    _action_need_profile: &Profile,  // Reserved for future use
     workflow_planner_profile: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
@@ -234,18 +234,22 @@ pub async fn assess_execution_level(
     let complexity_output = complexity_unit.execute_with_fallback(&context).await?;
     let complexity: ComplexityAssessment = serde_json::from_value(complexity_output.data.clone())
         .unwrap_or_else(|_| ComplexityAssessment::default());
-    
-    // 2. Get evidence needs
-    let evidence_unit = EvidenceNeedsUnit::new(evidence_need_profile.clone());
-    let evidence_output = evidence_unit.execute_with_fallback(&context).await?;
-    let needs_evidence = evidence_output.get_bool("needs_evidence").unwrap_or(false);
-    let needs_tools = evidence_output.get_bool("needs_tools").unwrap_or(false);
-    
-    // 3. Get action needs
-    let action_unit = ActionNeedsUnit::new(action_need_profile.clone());
-    let action_output = action_unit.execute_with_fallback(&context).await?;
-    let needs_decision = action_output.get_bool("needs_decision").unwrap_or(false);
-    let needs_plan = action_output.get_bool("needs_plan").unwrap_or(false);
+
+    // 2. Get evidence needs (DISABLED - unit not configured)
+    // let evidence_unit = EvidenceNeedsUnit::new(evidence_need_profile.clone());
+    // let evidence_output = evidence_unit.execute_with_fallback(&context).await?;
+    // let needs_evidence = evidence_output.get_bool("needs_evidence").unwrap_or(false);
+    // let needs_tools = evidence_output.get_bool("needs_tools").unwrap_or(false);
+    let needs_evidence = complexity.needs_evidence;
+    let needs_tools = complexity.needs_tools;
+
+    // 3. Get action needs (DISABLED - unit not configured)
+    // let action_unit = ActionNeedsUnit::new(action_need_profile.clone());
+    // let action_output = action_unit.execute_with_fallback(&context).await?;
+    // let needs_decision = action_output.get_bool("needs_decision").unwrap_or(false);
+    // let needs_plan = action_output.get_bool("needs_plan").unwrap_or(false);
+    let needs_decision = complexity.needs_decision;
+    let needs_plan = complexity.needs_plan;
     
     // 4. Get workflow plan (includes objective and reason)
     let workflow_unit = WorkflowPlannerUnit::new(workflow_planner_profile.clone());
@@ -345,15 +349,15 @@ pub async fn assess_execution_level(
     
     // Generate strategy hint
     let strategy_hint = generate_strategy_hint(level, needs_evidence, requires_ordering);
-    
-    // Calculate confidence
+
+    // Calculate confidence (DISABLED units use complexity as fallback)
     let confidence = calculate_confidence(
         &complexity_output,
-        &evidence_output,
-        &action_output,
+        &complexity_output,  // Use complexity as fallback for evidence
+        &complexity_output,  // Use complexity as fallback for action
         &workflow_output,
     );
-    
+
     Ok(ExecutionLadderAssessment {
         level,
         reason,
@@ -364,9 +368,7 @@ pub async fn assess_execution_level(
         risk: complexity.risk.clone(),
         complexity: complexity.complexity.clone(),
         strategy_hint,
-        fallback_used: complexity_output.fallback_used || 
-            evidence_output.fallback_used || 
-            action_output.fallback_used || 
+        fallback_used: complexity_output.fallback_used ||
             workflow_output.fallback_used,
         confidence,
     })

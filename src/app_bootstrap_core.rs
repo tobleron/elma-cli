@@ -113,6 +113,8 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
     ));
 
     // Task 046: Check if intel unit prompts have changed since last tuning
+    // TEMPORARILY DISABLED for stress testing - causes issues
+    /*
     if is_tuned {
         let current_hashes = crate::tune::compute_all_prompt_hashes(&profiles);
         match crate::tune::check_prompt_changes(&model_cfg_dir, &current_hashes) {
@@ -163,6 +165,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
             }
         }
     }
+    */
 
     let ctx_max = fetch_ctx_max(&client, &base).await.unwrap_or(None);
     let session = prepare_session(&args)?;
