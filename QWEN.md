@@ -1,5 +1,3 @@
-# AGENTS.md
-
 This file provides universal guidelines for agents working with code in this repository.
 
 ## 🤖 Elma CLI Agent Philosophy
@@ -44,28 +42,62 @@ This file provides universal guidelines for agents working with code in this rep
 
 ## 🧠 System Prompt Design Principles (CRITICAL)
 
-**NEVER hardcode examples or rules in system prompts.** This turns Elma into a rule-matching robot instead of a reasoning agent.
+**Do not build system prompts around long deterministic rule lists or brittle pattern examples.**  
+Prompts must remain principle-first. Minimal examples are allowed only to clarify a boundary when the principle could otherwise be misread.
 
-### Wrong Approach (Deterministic Rules):
-```
+### Required Prompt Pattern
+1. State the governing principle first.
+2. Add a short example block only if it sharpens the decision boundary.
+3. Use a **4:1 ratio** of representative positive examples to negative edge cases.
+4. Keep examples short, canonical, and high-signal.
+5. Examples must anchor judgment, not replace reasoning.
+
+### Wrong Approach (Deterministic Rule Dump)
+```text
 Use INVESTIGATE when:
 - "pending tasks" is mentioned
 - "recent files" is mentioned
 - Multiple sources exist
 ```
 
-### Right Approach (Principles):
-```
-Use INVESTIGATE when the model cannot determine what to do without first exploring or clarifying.
+### Right Approach (Principle First, Minimal Boundary Examples)
+```text
+Use INVESTIGATE when the model cannot determine what to do responsibly without first exploring the workspace, validating evidence, or clarifying missing context.
+
+Examples:
+- Need to inspect files before answering a repo-specific question -> INVESTIGATE
+- Need to search symbols before making a code claim -> INVESTIGATE
+- Need to examine task state before proposing next implementation step -> INVESTIGATE
+- Need to gather workspace evidence before confirming a result -> INVESTIGATE
+
+Edge case:
+- User asks a self-contained conceptual question that can be answered without workspace inspection -> do not force INVESTIGATE
 ```
 
-### Why This Matters:
-- **Examples limit reasoning** - Model matches patterns instead of understanding
-- **Principles enable reasoning** - Model assesses each situation autonomously
-- **Elma's philosophy** is "adaptive reasoning and improvisation rather than deterministic rules"
+### Critic Prompt Example (Preferred Style)
+```text
+Principle:
+Return retry when a repo-specific claim is not supported by actual workspace evidence in the step results. Return ok when the evidence clearly supports the claim.
 
-### Rule of Thumb:
-If your prompt says "if X then Y" with specific examples, you're doing it wrong. Instead, explain the **principle** behind when to use Y.
+Examples:
+- The answer claims a file was inspected, but no read/search output exists -> retry
+- The answer claims a symbol exists, but no grep/read evidence exists -> retry
+- The answer claims a file was edited, but no edit or verification evidence exists -> retry
+- The answer claims a test passed, but no test output exists -> retry
+
+Edge case:
+- The step results clearly show the relevant file contents or command output and the answer is grounded in that evidence -> ok
+```
+
+### Why This Matters
+- **Long example lists limit reasoning** - the model starts pattern-matching instead of assessing the situation
+- **Principles preserve flexibility** - the model can generalize to novel cases
+- **Minimal examples improve calibration** - they clarify the boundary without turning the prompt into a script
+- **Elma's philosophy** is adaptive reasoning and improvisation, not rigid rule playback
+
+### Rule of Thumb
+If the prompt is mostly examples, exception lists, or "if X then Y" rules, rewrite it.
+If the principle is clear but the boundary is fuzzy, add a small example block with a 4:1 positive-to-edge-case ratio.
 
 ---
 
