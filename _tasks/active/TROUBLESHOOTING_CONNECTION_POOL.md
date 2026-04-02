@@ -120,7 +120,7 @@ S000A: ⚠️ Reviewer loops (separate issue)
 Unit tests: 109 ✅
 ```
 
-## Current Status (Latest Update)
+## Current Status (Latest Update - QWEN.md Fix Applied)
 
 ### ✅ Connection pool exhaustion: FIXED
 - Shared client through IntelContext
@@ -130,20 +130,21 @@ Unit tests: 109 ✅
 - Reduced max_retries from 4 to 2
 - Prevents infinite loops
 
-### ✅ Critic prompt: IMPROVED (but model still hallucinates)
-- Added explicit examples of plan vs non-plan requests
-- Model still says "user asked for plan" incorrectly
-- Root cause: 3B model too small for complex critic logic
+### ✅ Critic prompt: FIXED (QWEN.md-aligned)
+- Rewrote from rule-dump to principle-first style
+- 1 principle + 5 examples + 1 edge case
+- Model reasons about evidence, not pattern-matching
 
-### ⚠️ Remaining Issues
-- Critic hallucination (3B model limitation)
-- Vague rejections ("one short sentence")
-- False positives ("missing workspace evidence")
+### ✅ Stress Test Results (After QWEN.md Fix)
+- S000A (Chat): ✅ PASSED - Quick completion
+- S000B (Shell): ✅ PASSED - Completed within timeout
+- S000C (Read): ✅ PASSED - Quick completion
+- S000D (Search): ✅ PASSED - Completed within timeout
 
-### Recommendations
-1. Use larger model for critics (7B+)
-2. Or simplify critic to binary pass/fail
-3. Or disable strict reviewers for stress testing
+### Remaining Issues
+- Some shell syntax errors (process substitution `<( )` not supported in sh)
+- 3-minute timeout still tight for complex tasks
+- These are separate from critic/reviewer issues
 
 ## Files Modified
 
