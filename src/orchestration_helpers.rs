@@ -1,16 +1,5 @@
 use crate::*;
 
-// Task 001 (Modified): Level-aware intel skipping
-// Skip intel units (including reflection) for Action-level (DIRECT+LOW/MEDIUM) requests
-// This saves latency and tokens on simple requests that don't need overhead
-pub(crate) fn should_skip_intel(complexity: &ComplexityAssessment) -> bool {
-    // Skip for Action-level requests (DIRECT complexity with LOW/MEDIUM risk)
-    // Run for Task/Plan/MasterPlan level (INVESTIGATE/MULTISTEP/OPEN_ENDED, or HIGH risk)
-    complexity.complexity.eq_ignore_ascii_case("DIRECT")
-        && (complexity.risk.eq_ignore_ascii_case("LOW")
-            || complexity.risk.eq_ignore_ascii_case("MEDIUM"))
-}
-
 pub(crate) async fn request_program_or_repair(
     client: &reqwest::Client,
     chat_url: &Url,
@@ -23,7 +12,7 @@ pub(crate) async fn request_program_or_repair(
     } else {
         None
     };
-    
+
     let orch_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
@@ -54,7 +43,7 @@ pub(crate) async fn request_recovery_program(
     chat_url: &Url,
     orchestrator_cfg: &Profile,
     prompt: &str,
-    failed_steps: &[StepResult],  // NEW: Track failed steps to forbid repetition
+    failed_steps: &[StepResult], // NEW: Track failed steps to forbid repetition
 ) -> Result<Program> {
     // Build list of failed commands to explicitly forbid
     let failed_commands: Vec<String> = failed_steps
@@ -62,16 +51,17 @@ pub(crate) async fn request_recovery_program(
         .filter(|s| s.kind == "shell" && !s.ok)
         .filter_map(|s| s.command.clone())
         .collect();
-    
+
     let failed_commands_str = if failed_commands.is_empty() {
         "None".to_string()
     } else {
-        failed_commands.iter()
+        failed_commands
+            .iter()
             .map(|c| format!("- {}", c))
             .collect::<Vec<_>>()
             .join("\n")
     };
-    
+
     let recovery_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
@@ -115,22 +105,21 @@ pub(crate) async fn request_critic_verdict(
     client: &reqwest::Client,
     chat_url: &Url,
     critic_cfg: &Profile,
-    line: &str,
-    route_decision: &RouteDecision,
+    _line: &str,
+    _route_decision: &RouteDecision,
     program: &Program,
     step_results: &[StepResult],
-    sufficiency: Option<&ExecutionSufficiencyVerdict>,
+    _sufficiency: Option<&ExecutionSufficiencyVerdict>,
     attempt: u32,
 ) -> Result<CriticVerdict> {
-    // Task: Use narrative format instead of JSON noise
     let narrative = crate::intel_narrative::build_critic_narrative(
         &program.objective,
         program,
         step_results,
         attempt,
-        2,  // max_retries
+        2, // max_retries
     );
-    
+
     let critic_req = ChatCompletionRequest {
         model: critic_cfg.model.clone(),
         messages: vec![
@@ -140,7 +129,7 @@ pub(crate) async fn request_critic_verdict(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: narrative,  // Plain text narrative, not JSON
+                content: narrative, // Plain text narrative, not JSON
             },
         ],
         temperature: critic_cfg.temperature,
@@ -152,19 +141,65 @@ pub(crate) async fn request_critic_verdict(
         reasoning_format: Some(critic_cfg.reasoning_format.clone()),
         grammar: None,
     };
-    chat_json_with_repair(client, chat_url, &critic_req).await
+    chat_json_with_repair_for_profile(client, chat_url, &critic_req, &critic_cfg.name).await
+}
+
+pub(crate) async fn request_reviewer_verdict(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    reviewer_cfg: &Profile,
+    program: &Program,
+    step_results: &[StepResult],
+    review_type: &str,
+) -> Result<CriticVerdict> {
+    let narrative = crate::intel_narrative::build_reviewer_narrative(
+        &program.objective,
+        program,
+        step_results,
+        review_type,
+    );
+
+    let reviewer_req = ChatCompletionRequest {
+        model: reviewer_cfg.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: reviewer_cfg.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: narrative,
+            },
+        ],
+        temperature: reviewer_cfg.temperature,
+        top_p: reviewer_cfg.top_p,
+        stream: false,
+        max_tokens: reviewer_cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(reviewer_cfg.repeat_penalty),
+        reasoning_format: Some(reviewer_cfg.reasoning_format.clone()),
+        grammar: None,
+    };
+    chat_json_with_repair_for_profile(client, chat_url, &reviewer_req, &reviewer_cfg.name).await
 }
 
 pub(crate) async fn request_risk_review(
     client: &reqwest::Client,
     chat_url: &Url,
     risk_cfg: &Profile,
-    line: &str,
-    route_decision: &RouteDecision,
+    _line: &str,
+    _route_decision: &RouteDecision,
     program: &Program,
     step_results: &[StepResult],
-    attempt: u32,
+    _attempt: u32,
 ) -> Result<RiskReviewVerdict> {
+    let narrative = crate::intel_narrative::build_reviewer_narrative(
+        &program.objective,
+        program,
+        step_results,
+        "risk",
+    );
+
     let risk_req = ChatCompletionRequest {
         model: risk_cfg.model.clone(),
         messages: vec![
@@ -174,14 +209,7 @@ pub(crate) async fn request_risk_review(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": line,
-                    "route": route_decision.route,
-                    "attempt": attempt,
-                    "program_steps": program.steps.iter().map(program_step_json).collect::<Vec<_>>(),
-                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
-                })
-                .to_string(),
+                content: narrative,
             },
         ],
         temperature: risk_cfg.temperature,
@@ -193,7 +221,7 @@ pub(crate) async fn request_risk_review(
         reasoning_format: Some(risk_cfg.reasoning_format.clone()),
         grammar: None,
     };
-    chat_json_with_repair(client, chat_url, &risk_req).await
+    chat_json_with_repair_for_profile(client, chat_url, &risk_req, &risk_cfg.name).await
 }
 
 pub(crate) async fn request_chat_final_text(
@@ -238,7 +266,10 @@ pub(crate) async fn request_chat_final_text(
         .get(0)
         .context("No choices[0] in response")?
         .message;
-    Ok((msg.content.as_deref().unwrap_or("").trim().to_string(), usage_total))
+    Ok((
+        msg.content.as_deref().unwrap_or("").trim().to_string(),
+        usage_total,
+    ))
 }
 
 pub(crate) async fn maybe_revise_presented_result(
@@ -381,49 +412,4 @@ pub(crate) async fn request_judge_verdict(
         grammar: None,
     };
     chat_json_with_repair(client, chat_url, &req).await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_should_skip_intel_direct_low() {
-        let complexity = ComplexityAssessment {
-            complexity: "DIRECT".to_string(),
-            risk: "LOW".to_string(),
-            ..ComplexityAssessment::default()
-        };
-        assert!(should_skip_intel(&complexity));
-    }
-
-    #[test]
-    fn test_should_skip_intel_direct_medium() {
-        let complexity = ComplexityAssessment {
-            complexity: "DIRECT".to_string(),
-            risk: "MEDIUM".to_string(),
-            ..ComplexityAssessment::default()
-        };
-        assert!(should_skip_intel(&complexity));
-    }
-
-    #[test]
-    fn test_should_not_skip_intel_direct_high() {
-        let complexity = ComplexityAssessment {
-            complexity: "DIRECT".to_string(),
-            risk: "HIGH".to_string(),
-            ..ComplexityAssessment::default()
-        };
-        assert!(!should_skip_intel(&complexity));
-    }
-
-    #[test]
-    fn test_should_not_skip_intel_investigate_low() {
-        let complexity = ComplexityAssessment {
-            complexity: "INVESTIGATE".to_string(),
-            risk: "LOW".to_string(),
-            ..ComplexityAssessment::default()
-        };
-        assert!(!should_skip_intel(&complexity));
-    }
 }

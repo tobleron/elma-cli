@@ -115,9 +115,14 @@ pub(crate) async fn run_autonomous_loop(
         )
         .await;
 
-        let results_are_good = !batch_results.is_empty() && batch_results.iter().all(|r| {
-            r.ok && r.outcome_status.as_deref().map(|s| s.eq_ignore_ascii_case("ok")).unwrap_or(true)
-        });
+        let results_are_good = !batch_results.is_empty()
+            && batch_results.iter().all(|r| {
+                r.ok && r
+                    .outcome_status
+                    .as_deref()
+                    .map(|s| s.eq_ignore_ascii_case("ok"))
+                    .unwrap_or(true)
+            });
 
         plan.executed_steps += batch_results
             .iter()
@@ -126,11 +131,7 @@ pub(crate) async fn run_autonomous_loop(
         step_results.extend(batch_results);
 
         // Task 011: Check for goal drift (state-aware guardrails)
-        let drift_verdict = check_goal_drift(
-            &plan.objective,
-            &plan.current_program,
-            &step_results,
-        );
+        let drift_verdict = check_goal_drift(&plan.objective, &plan.current_program, &step_results);
         if drift_verdict.drift_detected {
             trace(
                 args,
@@ -140,25 +141,29 @@ pub(crate) async fn run_autonomous_loop(
                     drift_verdict.reason.as_deref().unwrap_or("unknown")
                 ),
             );
-            
+
             // Trigger refinement phase
             operator_trace(args, "context drift detected - running refinement phase");
-            
+
             let refined_program = run_refinement_phase(
                 client,
                 chat_url,
                 refinement_cfg,
                 &plan.objective,
                 &step_results,
-                drift_verdict.reason.as_deref().unwrap_or("Goal alignment lost"),
+                drift_verdict
+                    .reason
+                    .as_deref()
+                    .unwrap_or("Goal alignment lost"),
                 ws,
                 ws_brief,
-            ).await?;
-            
+            )
+            .await?;
+
             plan.current_program = refined_program.clone();
             plan.program_history.push(refined_program);
             plan.attempts += 1;
-            
+
             // Continue with refined program
             continue;
         }
@@ -512,7 +517,15 @@ pub(crate) async fn run_autonomous_loop(
                 ),
             };
 
-            match refine_program(client, chat_url, refinement_cfg, &refinement_ctx, &achievement).await {
+            match refine_program(
+                client,
+                chat_url,
+                refinement_cfg,
+                &refinement_ctx,
+                &achievement,
+            )
+            .await
+            {
                 Ok(refined_program) => {
                     trace(args, "refinement_success applying refined program");
                     let (refined_results, refined_reply) = execute_program(
@@ -538,7 +551,8 @@ pub(crate) async fn run_autonomous_loop(
                         &merged_program.objective,
                         false,
                         false,
-                    ).await?;
+                    )
+                    .await?;
 
                     step_results.extend(refined_results);
                     if refined_reply.is_some() {

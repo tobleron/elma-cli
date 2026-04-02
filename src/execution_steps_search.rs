@@ -16,19 +16,25 @@ pub(crate) async fn handle_search_step(
     paths: Vec<String>,
     state: &mut ExecutionState,
 ) -> Result<()> {
-    trace(args, &format!("step id={} type=search purpose={}", sid, purpose));
+    trace(
+        args,
+        &format!("step id={} type=search purpose={}", sid, purpose),
+    );
     trace(args, &format!("search query={} paths={:?}", query, paths));
 
     let search_paths = if paths.is_empty() {
         vec![workdir.clone()]
     } else {
-        paths.iter().map(|p| {
-            if p.starts_with('/') {
-                PathBuf::from(p)
-            } else {
-                workdir.join(p)
-            }
-        }).collect()
+        paths
+            .iter()
+            .map(|p| {
+                if p.starts_with('/') {
+                    PathBuf::from(p)
+                } else {
+                    workdir.join(p)
+                }
+            })
+            .collect()
     };
 
     let mut cmd = std::process::Command::new("rg");
@@ -62,7 +68,10 @@ pub(crate) async fn handle_search_step(
 
     state.artifacts.insert(sid.clone(), output_text.clone());
 
-    trace(args, &format!("search_ok={} bytes={}", ok, output_text.len()));
+    trace(
+        args,
+        &format!("search_ok={} bytes={}", ok, output_text.len()),
+    );
 
     state.step_results.push(StepResult {
         id: sid,

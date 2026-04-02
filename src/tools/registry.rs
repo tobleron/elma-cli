@@ -53,7 +53,10 @@ impl ToolRegistry {
             },
         ];
 
-        Self { discovered, builtin }
+        Self {
+            discovered,
+            builtin,
+        }
     }
 
     pub fn available_tools(&self) -> Vec<&ToolCapability> {
@@ -75,7 +78,10 @@ impl ToolRegistry {
 
         // Check builtin steps
         if let Some(step) = self.builtin.iter().find(|s| s.name == name) {
-            return Some(format!("{}: {} (Type: {})", step.name, step.description, step.step_type));
+            return Some(format!(
+                "{}: {} (Type: {})",
+                step.name, step.description, step.step_type
+            ));
         }
 
         None

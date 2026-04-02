@@ -71,12 +71,10 @@ pub(crate) fn filter_scenarios_by_mode(
             .into_iter()
             .filter(|s| {
                 // Prioritize scenarios that test core classification
-                matches!(
-                    s.speech_act.as_str(),
-                    "INFO_REQUEST" | "ACTION_REQUEST"
-                ) && s.route.eq_ignore_ascii_case("WORKFLOW")
+                matches!(s.speech_act.as_str(), "INFO_REQUEST" | "ACTION_REQUEST")
+                    && s.route.eq_ignore_ascii_case("WORKFLOW")
             })
-            .take(5)  // Limit to 5 scenarios for quick tuning
+            .take(5) // Limit to 5 scenarios for quick tuning
             .collect()
     } else {
         // Full mode: All scenarios

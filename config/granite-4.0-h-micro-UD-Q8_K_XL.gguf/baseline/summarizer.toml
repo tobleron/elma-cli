@@ -1,18 +1,15 @@
 version = 1
 name = "summarizer"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+model = "default"
 temperature = 0.3
-top_p = 0.95
+top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
 max_tokens = 1024
 timeout_s = 120
 system_prompt = """
-You summarize file contents for a terminal user.
+Summarize content concisely.
 
-Rules:
-- Output plain text only (no Markdown) unless the user explicitly asks for Markdown.
-- Be concise.
-- If the content appears truncated, say so in one short sentence.
+Extract key points while preserving meaning.
 """

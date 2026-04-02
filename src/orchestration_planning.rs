@@ -6,10 +6,12 @@
 //!
 //! Task 044: Integrated execution ladder for minimum-sufficient orchestration.
 
-use crate::*;
 use crate::app::LoadedProfiles;
-use crate::decomposition::{generate_masterplan, decompose_to_subgoals, needs_decomposition};
-use crate::execution_ladder::{assess_execution_level, ExecutionLadderAssessment, assessment_needs_decomposition};
+use crate::decomposition::{decompose_to_subgoals, generate_masterplan, needs_decomposition};
+use crate::execution_ladder::{
+    assess_execution_level, assessment_needs_decomposition, ExecutionLadderAssessment,
+};
+use crate::*;
 
 fn fallback_formula_for_route(route: &str, needs_evidence: bool) -> String {
     if route.eq_ignore_ascii_case("CHAT") {
@@ -87,7 +89,13 @@ pub(crate) async fn derive_planning_prior(
     ws_brief: &str,
     memories: &[FormulaMemoryRecord],
     messages: &[ChatMessage],
-) -> (Option<WorkflowPlannerOutput>, ComplexityAssessment, ScopePlan, FormulaSelection, bool) {
+) -> (
+    Option<WorkflowPlannerOutput>,
+    ComplexityAssessment,
+    ScopePlan,
+    FormulaSelection,
+    bool,
+) {
     if route_decision.route.eq_ignore_ascii_case("CHAT") {
         let complexity = ComplexityAssessment {
             complexity: "DIRECT".to_string(),
@@ -224,14 +232,21 @@ pub async fn try_hierarchical_decomposition(
         user_message,
         ws,
         ws_brief,
-    ).await?;
+    )
+    .await?;
 
     // Persist masterplan to session
     let masterplan_dir = session_root.join("masterplans");
     if let Err(e) = std::fs::create_dir_all(&masterplan_dir) {
         // Silently ignore errors - masterplan is optional
     } else {
-        let masterplan_path = masterplan_dir.join(format!("plan_{}.json", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()));
+        let masterplan_path = masterplan_dir.join(format!(
+            "plan_{}.json",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        ));
         if let Ok(json) = serde_json::to_string_pretty(&masterplan) {
             let _ = std::fs::write(&masterplan_path, json);
         }
@@ -268,7 +283,13 @@ pub async fn derive_planning_prior_with_ladder(
     ws_brief: &str,
     memories: &[FormulaMemoryRecord],
     messages: &[ChatMessage],
-) -> (ExecutionLadderAssessment, ComplexityAssessment, ScopePlan, FormulaSelection, bool) {
+) -> (
+    ExecutionLadderAssessment,
+    ComplexityAssessment,
+    ScopePlan,
+    FormulaSelection,
+    bool,
+) {
     // Task 014: Check classification confidence
     // If model is uncertain (high entropy or low margin), default to safe CHAT route
     // This prevents over-orchestration on ambiguous inputs WITHOUT hardcoded rules
@@ -279,8 +300,12 @@ pub async fn derive_planning_prior_with_ladder(
         let ladder = ExecutionLadderAssessment::new(
             ExecutionLevel::Action,
             "Classification uncertain, using safe default".to_string(),
-            false, false, false, false,
-            "LOW".to_string(), "DIRECT".to_string(),
+            false,
+            false,
+            false,
+            false,
+            "LOW".to_string(),
+            "DIRECT".to_string(),
         );
         let complexity = ComplexityAssessment {
             complexity: "DIRECT".to_string(),
@@ -309,8 +334,12 @@ pub async fn derive_planning_prior_with_ladder(
         let ladder = ExecutionLadderAssessment::new(
             ExecutionLevel::Action,
             "Direct conversational turn".to_string(),
-            false, false, false, false,
-            "LOW".to_string(), "DIRECT".to_string(),
+            false,
+            false,
+            false,
+            false,
+            "LOW".to_string(),
+            "DIRECT".to_string(),
         );
         let complexity = ComplexityAssessment {
             complexity: "DIRECT".to_string(),
@@ -342,16 +371,17 @@ pub async fn derive_planning_prior_with_ladder(
         client,
         chat_url,
         complexity_cfg,
-        complexity_cfg,  // evidence_need (disabled, use complexity as fallback)
-        complexity_cfg,  // action_need (disabled, use complexity as fallback)
+        complexity_cfg, // evidence_need (disabled, use complexity as fallback)
+        complexity_cfg, // action_need (disabled, use complexity as fallback)
         workflow_planner_cfg,
         line,
         route_decision,
-        &features,  // Task 007: Pass full feature vector for better escalation
+        &features, // Task 007: Pass full feature vector for better escalation
         ws,
         ws_brief,
         messages,
-    ).await;
+    )
+    .await;
 
     let ladder = match ladder_result {
         Ok(assessment) => assessment,
@@ -366,8 +396,8 @@ pub async fn derive_planning_prior_with_ladder(
         complexity: ladder.complexity.clone(),
         needs_evidence: ladder.requires_evidence,
         needs_tools: !route_decision.route.eq_ignore_ascii_case("CHAT"),
-        needs_decision: ladder.level == ExecutionLevel::Plan || 
-            route_decision.route.eq_ignore_ascii_case("DECIDE"),
+        needs_decision: ladder.level == ExecutionLevel::Plan
+            || route_decision.route.eq_ignore_ascii_case("DECIDE"),
         needs_plan: ladder.level.requires_planning_structure(),
         risk: ladder.risk.clone(),
         suggested_pattern: ladder.strategy_hint.clone().unwrap_or_else(|| {
@@ -417,12 +447,20 @@ pub async fn derive_planning_prior_with_ladder(
     // This ensures formula complexity matches the minimum sufficient level
     let allowed_formulas = match ladder.level {
         ExecutionLevel::Action => vec!["reply_only", "execute_reply"],
-        ExecutionLevel::Task => vec!["inspect_reply", "inspect_summarize_reply", "inspect_decide_reply", "inspect_edit_verify_reply"],
+        ExecutionLevel::Task => vec![
+            "inspect_reply",
+            "inspect_summarize_reply",
+            "inspect_decide_reply",
+            "inspect_edit_verify_reply",
+        ],
         ExecutionLevel::Plan => vec!["plan_reply"],
         ExecutionLevel::MasterPlan => vec!["masterplan_reply"],
     };
 
-    if !allowed_formulas.iter().any(|f| formula.primary.eq_ignore_ascii_case(f)) {
+    if !allowed_formulas
+        .iter()
+        .any(|f| formula.primary.eq_ignore_ascii_case(f))
+    {
         // Formula doesn't match ladder level - override to appropriate formula
         formula.reason = format!(
             "Aligned with ladder level {:?} (was: {})",
@@ -466,14 +504,21 @@ pub async fn try_hierarchical_decomposition_with_ladder(
             user_message,
             ws,
             ws_brief,
-        ).await?;
+        )
+        .await?;
 
         // Persist masterplan to session
         let masterplan_dir = session_root.join("masterplans");
         if let Err(e) = std::fs::create_dir_all(&masterplan_dir) {
             // Silently ignore errors - masterplan is optional
         } else {
-            let masterplan_path = masterplan_dir.join(format!("plan_{}.json", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()));
+            let masterplan_path = masterplan_dir.join(format!(
+                "plan_{}.json",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            ));
             if let Ok(json) = serde_json::to_string_pretty(&masterplan) {
                 let _ = std::fs::write(&masterplan_path, json);
             }

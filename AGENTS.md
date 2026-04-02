@@ -146,6 +146,48 @@ Instead, use:
 
 ---
 
+## 🧠 Intel Unit Format Standard
+
+**All intel units must follow the standardized JSON output format.**
+
+### Required Reading
+**Before modifying any intel unit configuration, read:**
+→ [`docs/INTEL_UNIT_STANDARD.md`](docs/INTEL_UNIT_STANDARD.md)
+
+### Standard Output Format
+```json
+{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
+```
+
+### System Prompt Structure
+```
+You are Elma's <ROLE>.
+
+Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+
+Choice rules:
+1 = <LABEL>: <what this choice represents about user intention>
+2 = <LABEL>: <what this choice represents about user intention>
+
+Output format:
+{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
+```
+
+### Key Principles
+1. **Choice rules describe intention, not consequence** - What the user IS doing, not what happens after
+2. **No heuristics section** - Trust the model to reason from the definitions
+3. **No example section** - The format specification is sufficient
+4. **Compact JSON** - Minimizes token generation time and latency
+
+### Token Tiers
+| Tier | Max Tokens | Use Case |
+|------|------------|----------|
+| 1 | 64 | Single-choice classifiers (router, speech_act, mode_router) |
+| 2 | 180 | Structured decisions with reason (evidence_mode, command_repair) |
+| 3 | 540 | Multi-step planning (workflow_planner, decomposition) |
+
+---
+
 ## Essential Commands
 
 ### Development

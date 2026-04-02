@@ -82,8 +82,7 @@ pub(crate) fn default_planner_master_config(base_url: &str, model: &str) -> Prof
         reasoning_format: "auto".to_string(),
         max_tokens: 4096,
         timeout_s: 120,
-        system_prompt: "Create a master plan in Markdown with checkbox steps."
-            .to_string(),
+        system_prompt: "Create a master plan in Markdown with checkbox steps.".to_string(),
     }
 }
 
@@ -99,8 +98,9 @@ pub(crate) fn default_planner_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "auto".to_string(),
         max_tokens: 4096,
         timeout_s: 120,
-        system_prompt: "Create a detailed step-by-step plan in Markdown with numbered checkbox actions."
-            .to_string(),
+        system_prompt:
+            "Create a detailed step-by-step plan in Markdown with numbered checkbox actions."
+                .to_string(),
     }
 }
 

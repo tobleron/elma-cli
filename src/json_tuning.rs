@@ -108,10 +108,12 @@ pub(crate) async fn test_json_at_temperature(
     let mut total_attempts = 0;
 
     for scenario in scenarios {
-        let scenario_path = repo_root()?.join("scenarios/json_tune").join(&scenario.file);
+        let scenario_path = repo_root()?
+            .join("scenarios/json_tune")
+            .join(&scenario.file);
         let content = std::fs::read_to_string(&scenario_path)
             .with_context(|| format!("read {}", scenario_path.display()))?;
-        
+
         // Extract user message from scenario
         let user_message = content
             .lines()
@@ -151,19 +153,43 @@ pub(crate) async fn test_json_at_temperature(
         match response {
             Ok(resp) => {
                 let text = extract_response_text(&resp);
-                
-                // Try parsing with our repair pipeline
-                let parse_result: Result<serde_json::Value> = parse_json_loose(&text);
-                match parse_result {
-                    Ok(_json) => {
+
+                // Try parsing with our robust json_parser module
+                // This includes markdown extraction, text extraction, and jsonrepair
+                match crate::json_parser::parse_intel_output(
+                    &text,
+                    &[("1", "VALID"), ("2", "INVALID")],
+                ) {
+                    result if result.label.is_some() => {
+                        // Successfully parsed (possibly after repair)
                         valid += 1;
-                        repairable += 1; // If it parsed, it was repairable
+                        // Check if it was direct JSON or required repair
+                        match result.parse_method {
+                            crate::json_parser::ParseMethod::JsonDirect => {
+                                // Clean JSON - full credit
+                                repairable += 1;
+                            }
+                            crate::json_parser::ParseMethod::JsonMarkdown
+                            | crate::json_parser::ParseMethod::JsonExtracted => {
+                                // Required extraction - still counts as repairable
+                                repairable += 1;
+                            }
+                            crate::json_parser::ParseMethod::LegacyToken => {
+                                // Legacy format - counts as valid but not repairable
+                                // (shouldn't happen in JSON tuning)
+                            }
+                            crate::json_parser::ParseMethod::Failed => {
+                                // Parsing failed after all attempts
+                                failed += 1;
+                            }
+                        }
                     }
-                    Err(_) => {
-                        // Try jsonrepair directly
+                    _ => {
+                        // Complete failure - try direct jsonrepair as last resort
                         if let Ok(repaired) = jsonrepair_rs::jsonrepair(&text) {
                             if serde_json::from_str::<serde_json::Value>(&repaired).is_ok() {
                                 repairable += 1;
+                                valid += 1;
                             } else {
                                 failed += 1;
                             }
@@ -226,20 +252,28 @@ pub(crate) async fn run_json_temperature_tuning(
     if emit_progress {
         calibration_progress(
             args,
-            &format!("JSON temperature tuning for {} ({} scenarios)", model_id, scenarios.len()),
+            &format!(
+                "JSON temperature tuning for {} ({} scenarios)",
+                model_id,
+                scenarios.len()
+            ),
         );
     }
 
     // Check for existing JSON tuning results (caching)
     let tune_dir = model_cfg_dir.join("tune").join("json");
     let cached_result = load_cached_json_tuning_result(&tune_dir)?;
-    
+
     // If we have a complete cached result, use it entirely without any API calls
     if let Some(cached) = &cached_result {
         if cached.results_by_temp.len() == TEMPERATURES.len() {
             if emit_progress {
                 for cached_temp_result in &cached.results_by_temp {
-                    let status = if cached_temp_result.failed_count == 0 { "✓" } else { "✗" };
+                    let status = if cached_temp_result.failed_count == 0 {
+                        "✓"
+                    } else {
+                        "✗"
+                    };
                     calibration_progress(
                         args,
                         &format!(
@@ -269,9 +303,17 @@ pub(crate) async fn run_json_temperature_tuning(
     for &temp in &TEMPERATURES {
         // Check if this temperature was already tested
         if let Some(cached) = &cached_result {
-            if let Some(cached_temp_result) = cached.results_by_temp.iter().find(|r| (r.temperature - temp).abs() < 0.01) {
+            if let Some(cached_temp_result) = cached
+                .results_by_temp
+                .iter()
+                .find(|r| (r.temperature - temp).abs() < 0.01)
+            {
                 if emit_progress {
-                    let status = if cached_temp_result.failed_count == 0 { "✓" } else { "✗" };
+                    let status = if cached_temp_result.failed_count == 0 {
+                        "✓"
+                    } else {
+                        "✗"
+                    };
                     calibration_progress(
                         args,
                         &format!(
@@ -287,11 +329,15 @@ pub(crate) async fn run_json_temperature_tuning(
                 continue; // Skip re-testing
             }
         }
-        
+
         let result = test_json_at_temperature(client, chat_url, model_id, temp, scenarios).await?;
 
         if emit_progress {
-            let status = if result.failed_count == 0 { "✓" } else { "✗" };
+            let status = if result.failed_count == 0 {
+                "✓"
+            } else {
+                "✗"
+            };
             let note = if result.failed_count > 0 {
                 format!(" ({} failed)", result.failed_count)
             } else {
@@ -301,11 +347,7 @@ pub(crate) async fn run_json_temperature_tuning(
                 args,
                 &format!(
                     "  temp={:.1}: {}/{} valid {}{}",
-                    result.temperature,
-                    result.valid_json_count,
-                    result.total_tests,
-                    status,
-                    note,
+                    result.temperature, result.valid_json_count, result.total_tests, status, note,
                 ),
             );
         }
@@ -327,9 +369,12 @@ pub(crate) async fn run_json_temperature_tuning(
             avg_parse_attempts: 0.0,
             weighted_score: 0.0,
         });
-    
+
     // Count how many temps passed
-    let passing_temps = results_by_temp.iter().filter(|r| r.failed_count == 0).count();
+    let passing_temps = results_by_temp
+        .iter()
+        .filter(|r| r.failed_count == 0)
+        .count();
     let total_temps = TEMPERATURES.len();
 
     // Recommended temperature: prefer lower temps if scores are close (more deterministic)
@@ -344,7 +389,7 @@ pub(crate) async fn run_json_temperature_tuning(
     } else {
         optimal.temperature
     };
-    
+
     if emit_progress {
         calibration_progress(
             args,
@@ -369,13 +414,13 @@ pub(crate) fn load_cached_json_tuning_result(tune_dir: &Path) -> Result<Option<J
     if !tune_dir.exists() {
         return Ok(None);
     }
-    
+
     // Find most recent tuning result
     let mut latest_path = None;
     let mut latest_timestamp = 0i64;
-    
-    for entry in std::fs::read_dir(tune_dir)
-        .with_context(|| format!("read_dir {}", tune_dir.display()))?
+
+    for entry in
+        std::fs::read_dir(tune_dir).with_context(|| format!("read_dir {}", tune_dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -393,16 +438,16 @@ pub(crate) fn load_cached_json_tuning_result(tune_dir: &Path) -> Result<Option<J
             }
         }
     }
-    
+
     if let Some(path) = latest_path {
-        let content = std::fs::read_to_string(&path)
-            .with_context(|| format!("read {}", path.display()))?;
-        
+        let content =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+
         // Parse TOML manually to extract results
         // Note: We need a simpler format for caching
         return Ok(parse_cached_result(&content));
     }
-    
+
     Ok(None)
 }
 
@@ -413,11 +458,11 @@ fn parse_cached_result(content: &str) -> Option<JsonTuningResult> {
     let mut in_temps = false;
     let mut passing = 0;
     let mut total = 11; // default
-    
+
     // First pass: collect all data
     for line in content.lines() {
         let line = line.trim();
-        
+
         if line.starts_with("passing_temperatures") {
             if let Some(val) = line.split('=').nth(1) {
                 passing = val.trim().parse().unwrap_or(0);
@@ -437,24 +482,24 @@ fn parse_cached_result(content: &str) -> Option<JsonTuningResult> {
             }
         }
     }
-    
+
     if results_by_temp.is_empty() {
         return None;
     }
-    
+
     // Find optimal and recommended
     let optimal = results_by_temp
         .iter()
         .max_by(|a, b| a.weighted_score.partial_cmp(&b.weighted_score).unwrap())
         .cloned()?;
-    
+
     let recommended = results_by_temp
         .iter()
         .filter(|r| r.weighted_score >= optimal.weighted_score - 0.05)
         .min_by(|a, b| a.temperature.partial_cmp(&b.temperature).unwrap())
         .map(|r| r.temperature)
         .unwrap_or(optimal.temperature);
-    
+
     Some(JsonTuningResult {
         optimal_temperature: optimal.temperature,
         recommended_temperature: recommended,
@@ -473,8 +518,12 @@ fn parse_temp_result_line(line: &str) -> Option<TemperatureResult> {
     let mut repairable = 0;
     let mut failed = 0;
     let mut score = 0.0f32;
-    
-    for part in line.trim_start_matches('{').trim_end_matches('}').split(',') {
+
+    for part in line
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .split(',')
+    {
         let part = part.trim();
         if let Some((key, value)) = part.split_once('=') {
             let key = key.trim();
@@ -490,11 +539,11 @@ fn parse_temp_result_line(line: &str) -> Option<TemperatureResult> {
             }
         }
     }
-    
+
     if total == 0 {
         return None;
     }
-    
+
     Some(TemperatureResult {
         temperature,
         total_tests: total,
@@ -521,10 +570,22 @@ pub(crate) fn save_json_tuning_report(
     let mut content = String::new();
     content.push_str(&format!("# JSON Temperature Tuning Report\n"));
     content.push_str(&format!("timestamp = {}\n", timestamp));
-    content.push_str(&format!("optimal_temperature = {:.2}\n", result.optimal_temperature));
-    content.push_str(&format!("recommended_temperature = {:.2}\n", result.recommended_temperature));
-    content.push_str(&format!("passing_temperatures = {}\n", result.passing_temperatures));
-    content.push_str(&format!("total_temperatures = {}\n\n", result.total_temperatures));
+    content.push_str(&format!(
+        "optimal_temperature = {:.2}\n",
+        result.optimal_temperature
+    ));
+    content.push_str(&format!(
+        "recommended_temperature = {:.2}\n",
+        result.recommended_temperature
+    ));
+    content.push_str(&format!(
+        "passing_temperatures = {}\n",
+        result.passing_temperatures
+    ));
+    content.push_str(&format!(
+        "total_temperatures = {}\n\n",
+        result.total_temperatures
+    ));
 
     content.push_str("# Results by Temperature\n");
     content.push_str("[[temperatures]]\n");
@@ -543,12 +604,9 @@ pub(crate) fn save_json_tuning_report(
 }
 
 /// Apply optimal temperature to orchestrator profiles
-pub(crate) fn apply_json_tuning_temperature(
-    model_cfg_dir: &Path,
-    temperature: f32,
-) -> Result<()> {
+pub(crate) fn apply_json_tuning_temperature(model_cfg_dir: &Path, temperature: f32) -> Result<()> {
     let temp_f64 = temperature as f64;
-    
+
     // Update orchestrator.toml
     let orchestrator_path = model_cfg_dir.join("orchestrator.toml");
     if orchestrator_path.exists() {

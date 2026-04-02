@@ -3,7 +3,7 @@
 //! Execution Ladder Module
 //!
 //! Determines the minimum sufficient operational level before generating or executing a program.
-//! 
+//!
 //! Elma starts at the lowest plausible level and escalates only when needed.
 //!
 //! Operational Ladder (top-to-bottom):
@@ -12,16 +12,16 @@
 //! - Task: Bounded local outcome (short action sequence, evidence chain)
 //! - Action: Single primary operation (no decomposition needed)
 
-use crate::*;
 use crate::intel_trait::*;
 use crate::intel_units::*;
+use crate::*;
 
 // ============================================================================
 // Execution Level
 // ============================================================================
 
 /// The minimum sufficient operational level for executing a request.
-/// 
+///
 /// Elma starts at the lowest plausible level and escalates only when needed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -30,18 +30,18 @@ pub enum ExecutionLevel {
     /// No decomposition, evidence chain, or dependency chain required.
     /// Example shape: one Shell/Read/Search/Select/Decide/Edit step + Reply
     Action,
-    
+
     /// One bounded user outcome requiring a short sequence of actions.
     /// Evidence gathering and transformation are local.
     /// No explicit tactical planning artifact needed.
     /// Examples: Read→Summarize→Reply, Search→Read→Reply
     Task,
-    
+
     /// Tactical ordered breakdown where order/dependencies matter.
     /// User explicitly asks for a plan, or task needs staged execution.
     /// Remains bounded in scope (single session or tightly coupled sessions).
     Plan,
-    
+
     /// Strategic phased decomposition for open-ended, multi-session objectives.
     /// Major milestones, dependencies, or phased rollout required.
     /// Strategic decomposition IS the output or prerequisite.
@@ -58,12 +58,12 @@ impl ExecutionLevel {
             ExecutionLevel::MasterPlan => "Strategic phased decomposition (multi-session)",
         }
     }
-    
+
     /// Check if this level requires planning structure
     pub fn requires_planning_structure(&self) -> bool {
         matches!(self, ExecutionLevel::Plan | ExecutionLevel::MasterPlan)
     }
-    
+
     /// Check if this level allows direct execution
     pub fn allows_direct_execution(&self) -> bool {
         matches!(self, ExecutionLevel::Action | ExecutionLevel::Task)
@@ -86,7 +86,7 @@ impl std::fmt::Display for ExecutionLevel {
 // ============================================================================
 
 /// Result of assessing the minimum sufficient execution level.
-/// 
+///
 /// This assessment becomes the operational bridge between:
 /// - Classification/complexity analysis
 /// - Program generation and validation
@@ -94,44 +94,44 @@ impl std::fmt::Display for ExecutionLevel {
 pub struct ExecutionLadderAssessment {
     /// The chosen execution level
     pub level: ExecutionLevel,
-    
+
     /// Human-readable justification for the level choice
     /// Used for session trace, debugging, and reflection
     pub reason: String,
-    
+
     /// Whether evidence gathering is required before execution
     /// (maps to needs_evidence from ComplexityAssessment)
     pub requires_evidence: bool,
-    
+
     /// Whether explicit ordering of steps matters
     /// (dependencies between steps, sequential execution required)
     pub requires_ordering: bool,
-    
+
     /// Whether phased decomposition is required
     /// (multiple milestones, sessions, or strategic phases)
     pub requires_phases: bool,
-    
+
     /// Whether a revision loop is anticipated
     /// (edit→verify→edit cycles, iterative refinement)
     pub requires_revision_loop: bool,
-    
+
     /// Risk level (LOW/MEDIUM/HIGH)
     /// (preserved from ComplexityAssessment for compatibility)
     pub risk: String,
-    
+
     /// Complexity classification
     /// (DIRECT/INVESTIGATE/MULTISTEP/OPEN_ENDED for backward compat)
     pub complexity: String,
-    
+
     /// Optional hint for formula selection or planning strategy
     /// Examples: "start with search", "verify after edit", "phase by module"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strategy_hint: Option<String>,
-    
+
     /// Whether fallback was used in assessment
     #[serde(default)]
     pub fallback_used: bool,
-    
+
     /// Confidence score (0.0 to 1.0)
     #[serde(default)]
     pub confidence: f64,
@@ -163,11 +163,11 @@ impl ExecutionLadderAssessment {
             confidence: 0.9,
         }
     }
-    
+
     /// Create assessment with fallback defaults
     pub fn fallback(reason: &str) -> Self {
         Self {
-            level: ExecutionLevel::Task,  // Safe default
+            level: ExecutionLevel::Task, // Safe default
             reason: reason.to_string(),
             requires_evidence: false,
             requires_ordering: false,
@@ -187,10 +187,10 @@ impl ExecutionLadderAssessment {
 // ============================================================================
 
 /// Assess the minimum sufficient execution level for a request.
-/// 
+///
 /// Uses principle-based heuristics, not hardcoded rules.
 /// Classification priors are advisory, not deterministic.
-/// 
+///
 /// # Arguments
 /// * `client` - HTTP client for model calls
 /// * `chat_url` - Base URL for chat completions
@@ -207,12 +207,12 @@ pub async fn assess_execution_level(
     client: &reqwest::Client,
     chat_url: &Url,
     complexity_profile: &Profile,
-    _evidence_need_profile: &Profile,  // Reserved for future use
-    _action_need_profile: &Profile,  // Reserved for future use
+    _evidence_need_profile: &Profile, // Reserved for future use
+    _action_need_profile: &Profile,   // Reserved for future use
     workflow_planner_profile: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
-    features: &ClassificationFeatures,  // Task 007: Full feature vector for better escalation
+    features: &ClassificationFeatures, // Task 007: Full feature vector for better escalation
     workspace_facts: &str,
     workspace_brief: &str,
     messages: &[ChatMessage],
@@ -226,10 +226,10 @@ pub async fn assess_execution_level(
         messages.to_vec(),
         client.clone(),
     );
-    
+
     // Run all 4 assessment units in parallel where possible
     // For now, run sequentially (can optimize later)
-    
+
     // 1. Get complexity assessment
     let complexity_unit = ComplexityAssessmentUnit::new(complexity_profile.clone());
     let complexity_output = complexity_unit.execute_with_fallback(&context).await?;
@@ -251,18 +251,18 @@ pub async fn assess_execution_level(
     // let needs_plan = action_output.get_bool("needs_plan").unwrap_or(false);
     let needs_decision = complexity.needs_decision;
     let needs_plan = complexity.needs_plan;
-    
+
     // 4. Get workflow plan (includes objective and reason)
     let workflow_unit = WorkflowPlannerUnit::new(workflow_planner_profile.clone());
     let workflow_output = workflow_unit.execute_with_fallback(&context).await?;
-    
+
     // Determine base level from complexity
     let base_level = complexity_to_level(&complexity.complexity);
-    
+
     // Apply escalation heuristics
     let mut level = base_level;
     let mut escalation_factors = Vec::new();
-    
+
     // Escalate for explicit planning request
     if requests_planning(user_message) {
         if level < ExecutionLevel::Plan {
@@ -270,7 +270,7 @@ pub async fn assess_execution_level(
             escalation_factors.push("explicit planning request");
         }
     }
-    
+
     // Escalate for strategic request
     if requests_strategy(user_message) {
         if level < ExecutionLevel::MasterPlan {
@@ -278,7 +278,7 @@ pub async fn assess_execution_level(
             escalation_factors.push("strategic decomposition request");
         }
     }
-    
+
     // Escalate for high risk
     if complexity.risk == "HIGH" {
         if level < ExecutionLevel::Task {
@@ -286,7 +286,7 @@ pub async fn assess_execution_level(
             escalation_factors.push("high risk");
         }
     }
-    
+
     // Escalate for high entropy (uncertain classification)
     // Task 007: Use full feature vector for better escalation decisions
     if features.entropy > 0.8 {
@@ -303,12 +303,12 @@ pub async fn assess_execution_level(
             escalation_factors.push("low classification margin");
         }
     }
-    
+
     // Task 007: Additional escalation based on feature mismatches
     // Check for speech act / route mismatch (suggests classification confusion)
     if let (Some((speech_act, _)), Some((route, _))) = (
         features.speech_act_probs.first(),
-        features.route_probs.first()
+        features.route_probs.first(),
     ) {
         if speech_act == "ACTION_REQUEST" && route == "CHAT" {
             if level < ExecutionLevel::Task {
@@ -323,7 +323,7 @@ pub async fn assess_execution_level(
             }
         }
     }
-    
+
     // Check for low confidence in top route choice
     if let Some((_, top_prob)) = features.route_probs.first() {
         if *top_prob < 0.5 {
@@ -333,29 +333,29 @@ pub async fn assess_execution_level(
             }
         }
     }
-    
+
     // Determine requires_ordering
     let requires_ordering = needs_plan || has_dependencies(user_message, workspace_brief);
-    
+
     // Determine requires_phases
-    let requires_phases = level == ExecutionLevel::MasterPlan || 
-        requests_phases(user_message) ||
-        complexity.complexity == "OPEN_ENDED";
-    
+    let requires_phases = level == ExecutionLevel::MasterPlan
+        || requests_phases(user_message)
+        || complexity.complexity == "OPEN_ENDED";
+
     // Determine requires_revision_loop
     let requires_revision_loop = needs_revision_loop(user_message, &complexity);
-    
+
     // Generate reason
     let reason = generate_level_reason(level, user_message, &escalation_factors);
-    
+
     // Generate strategy hint
     let strategy_hint = generate_strategy_hint(level, needs_evidence, requires_ordering);
 
     // Calculate confidence (DISABLED units use complexity as fallback)
     let confidence = calculate_confidence(
         &complexity_output,
-        &complexity_output,  // Use complexity as fallback for evidence
-        &complexity_output,  // Use complexity as fallback for action
+        &complexity_output, // Use complexity as fallback for evidence
+        &complexity_output, // Use complexity as fallback for action
         &workflow_output,
     );
 
@@ -369,8 +369,7 @@ pub async fn assess_execution_level(
         risk: complexity.risk.clone(),
         complexity: complexity.complexity.clone(),
         strategy_hint,
-        fallback_used: complexity_output.fallback_used ||
-            workflow_output.fallback_used,
+        fallback_used: complexity_output.fallback_used || workflow_output.fallback_used,
         confidence,
     })
 }
@@ -382,84 +381,130 @@ fn complexity_to_level(complexity: &str) -> ExecutionLevel {
         "INVESTIGATE" => ExecutionLevel::Task,
         "MULTISTEP" => ExecutionLevel::Plan,
         "OPEN_ENDED" => ExecutionLevel::MasterPlan,
-        _ => ExecutionLevel::Task,  // Safe default
+        _ => ExecutionLevel::Task, // Safe default
     }
 }
 
 /// Check if request explicitly asks for planning
 fn requests_planning(user_message: &str) -> bool {
     let lower = user_message.to_lowercase();
-    
+
     // Principle: Look for planning SEMANTICS, not just keywords
     // Sequential language, decomposition language, planning language
-    
+
     let planning_indicators = [
-        "step-by-step", "step by step", "give me a plan", "create a plan",
-        "break down", "breakdown", "detailed plan", "implementation plan",
-        "how would you approach", "what steps", "ordered steps",
+        "step-by-step",
+        "step by step",
+        "give me a plan",
+        "create a plan",
+        "break down",
+        "breakdown",
+        "detailed plan",
+        "implementation plan",
+        "how would you approach",
+        "what steps",
+        "ordered steps",
     ];
-    
-    planning_indicators.iter().any(|indicator| lower.contains(indicator))
+
+    planning_indicators
+        .iter()
+        .any(|indicator| lower.contains(indicator))
 }
 
 /// Check if request implies strategic decomposition
 fn requests_strategy(user_message: &str) -> bool {
     let lower = user_message.to_lowercase();
-    
+
     // Principle: Strategic = multi-phase, multi-session, or architectural
-    
+
     let strategy_indicators = [
-        "migration strategy", "architecture redesign", "phased approach",
-        "long-term plan", "overall strategy", "master plan", "masterplan",
-        "strategic overview", "roadmap", "multi-phase", "multi-session",
+        "migration strategy",
+        "architecture redesign",
+        "phased approach",
+        "long-term plan",
+        "overall strategy",
+        "master plan",
+        "masterplan",
+        "strategic overview",
+        "roadmap",
+        "multi-phase",
+        "multi-session",
     ];
-    
-    strategy_indicators.iter().any(|indicator| lower.contains(indicator))
+
+    strategy_indicators
+        .iter()
+        .any(|indicator| lower.contains(indicator))
 }
 
 /// Check if request asks for phased decomposition
 fn requests_phases(user_message: &str) -> bool {
     let lower = user_message.to_lowercase();
-    
+
     let phase_indicators = [
-        "phases", "phase", "milestone", "stages", "stage",
-        "rollout", "deployment plan", "staged approach",
+        "phases",
+        "phase",
+        "milestone",
+        "stages",
+        "stage",
+        "rollout",
+        "deployment plan",
+        "staged approach",
     ];
-    
-    phase_indicators.iter().any(|indicator| lower.contains(indicator))
+
+    phase_indicators
+        .iter()
+        .any(|indicator| lower.contains(indicator))
 }
 
 /// Check if request has dependencies requiring ordering
 fn has_dependencies(user_message: &str, _workspace_brief: &str) -> bool {
     let lower = user_message.to_lowercase();
-    
+
     // Look for dependency language
     let dependency_indicators = [
-        "first x then y", "before doing", "after completing",
-        "dependencies", "prerequisite", "must complete",
-        "implement feature", "refactor", "clean up",
+        "first x then y",
+        "before doing",
+        "after completing",
+        "dependencies",
+        "prerequisite",
+        "must complete",
+        "implement feature",
+        "refactor",
+        "clean up",
     ];
-    
-    dependency_indicators.iter().any(|indicator| lower.contains(indicator))
+
+    dependency_indicators
+        .iter()
+        .any(|indicator| lower.contains(indicator))
 }
 
 /// Check if request needs revision loop
 fn needs_revision_loop(user_message: &str, complexity: &ComplexityAssessment) -> bool {
     let lower = user_message.to_lowercase();
-    
+
     // Revision indicators
     let revision_indicators = [
-        "fix", "debug", "troubleshoot", "refactor", "iterate",
-        "keep trying", "refine", "adjust", "verify after",
+        "fix",
+        "debug",
+        "troubleshoot",
+        "refactor",
+        "iterate",
+        "keep trying",
+        "refine",
+        "adjust",
+        "verify after",
     ];
-    
-    let has_revision_language = revision_indicators.iter()
+
+    let has_revision_language = revision_indicators
+        .iter()
         .any(|indicator| lower.contains(indicator));
-    
+
     // Edit operations often need revision
-    let is_edit_heavy = lower.contains("edit") || lower.contains("modify") || 
-        lower.contains("update") || lower.contains("change");
-    
+    let is_edit_heavy = lower.contains("edit")
+        || lower.contains("modify")
+        || lower.contains("update")
+        || lower.contains("change");
+
     has_revision_language || (is_edit_heavy && complexity.complexity != "DIRECT")
 }
 
@@ -470,18 +515,24 @@ fn generate_level_reason(
     escalation_factors: &[&str],
 ) -> String {
     let truncated = truncate_message(user_message);
-    
+
     let base_reason = match level {
         ExecutionLevel::Action => format!("Direct execution: '{}'", truncated),
-        ExecutionLevel::Task => format!("Bounded outcome requiring evidence chain: '{}'", truncated),
+        ExecutionLevel::Task => {
+            format!("Bounded outcome requiring evidence chain: '{}'", truncated)
+        }
         ExecutionLevel::Plan => format!("Tactical breakdown required: '{}'", truncated),
         ExecutionLevel::MasterPlan => format!("Strategic decomposition required: '{}'", truncated),
     };
-    
+
     if escalation_factors.is_empty() {
         base_reason
     } else {
-        format!("{} (escalated: {})", base_reason, escalation_factors.join(", "))
+        format!(
+            "{} (escalated: {})",
+            base_reason,
+            escalation_factors.join(", ")
+        )
     }
 }
 
@@ -493,20 +544,14 @@ fn generate_strategy_hint(
 ) -> Option<String> {
     match (level, requires_evidence, requires_ordering) {
         (ExecutionLevel::Action, false, false) => {
-            None  // No hint needed for simple action
+            None // No hint needed for simple action
         }
-        (ExecutionLevel::Task, true, false) => {
-            Some("gather evidence before execution".to_string())
-        }
+        (ExecutionLevel::Task, true, false) => Some("gather evidence before execution".to_string()),
         (ExecutionLevel::Task, true, true) => {
             Some("gather evidence, then execute in order".to_string())
         }
-        (ExecutionLevel::Plan, _, _) => {
-            Some("explicit planning structure required".to_string())
-        }
-        (ExecutionLevel::MasterPlan, _, _) => {
-            Some("phased strategic decomposition".to_string())
-        }
+        (ExecutionLevel::Plan, _, _) => Some("explicit planning structure required".to_string()),
+        (ExecutionLevel::MasterPlan, _, _) => Some("phased strategic decomposition".to_string()),
         _ => None,
     }
 }
@@ -525,17 +570,21 @@ fn calculate_confidence(
         action.confidence,
         workflow.confidence,
     ];
-    
+
     let avg = confidences.iter().sum::<f64>() / confidences.len() as f64;
-    
+
     // Reduce confidence if any unit used fallback
     let fallback_penalty = [
         complexity.fallback_used,
         evidence.fallback_used,
         action.fallback_used,
         workflow.fallback_used,
-    ].iter().filter(|&&x| x).count() as f64 * 0.1;
-    
+    ]
+    .iter()
+    .filter(|&&x| x)
+    .count() as f64
+        * 0.1;
+
     (avg - fallback_penalty).max(0.3).min(1.0)
 }
 
@@ -555,7 +604,10 @@ fn truncate_message(msg: &str) -> String {
 
 /// Check if hierarchical decomposition is needed (compatibility wrapper)
 pub fn assessment_needs_decomposition(assessment: &ExecutionLadderAssessment) -> bool {
-    matches!(assessment.level, ExecutionLevel::Plan | ExecutionLevel::MasterPlan)
+    matches!(
+        assessment.level,
+        ExecutionLevel::Plan | ExecutionLevel::MasterPlan
+    )
 }
 
 /// Convert assessment to legacy depth (compatibility wrapper)
@@ -615,7 +667,10 @@ mod tests {
         assert_eq!(complexity_to_level("DIRECT"), ExecutionLevel::Action);
         assert_eq!(complexity_to_level("INVESTIGATE"), ExecutionLevel::Task);
         assert_eq!(complexity_to_level("MULTISTEP"), ExecutionLevel::Plan);
-        assert_eq!(complexity_to_level("OPEN_ENDED"), ExecutionLevel::MasterPlan);
+        assert_eq!(
+            complexity_to_level("OPEN_ENDED"),
+            ExecutionLevel::MasterPlan
+        );
         assert_eq!(complexity_to_level("UNKNOWN"), ExecutionLevel::Task);
     }
 

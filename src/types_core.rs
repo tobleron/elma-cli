@@ -51,8 +51,7 @@ impl GoalState {
     }
 
     pub fn add_pending_subgoal(&mut self, subgoal: String) {
-        if !self.pending_subgoals.contains(&subgoal)
-            && !self.completed_subgoals.contains(&subgoal)
+        if !self.pending_subgoals.contains(&subgoal) && !self.completed_subgoals.contains(&subgoal)
         {
             self.pending_subgoals.push(subgoal);
             self.last_updated = std::time::SystemTime::now()
@@ -75,7 +74,11 @@ impl GoalState {
 }
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "elma-cli", version, about = "Minimal chat CLI for llama.cpp /v1/chat/completions")]
+#[command(
+    name = "elma-cli",
+    version,
+    about = "Minimal chat CLI for llama.cpp /v1/chat/completions"
+)]
 pub(crate) struct Args {
     #[arg(long, env = "LLAMA_BASE_URL")]
     pub(crate) base_url: Option<String>,
@@ -95,7 +98,7 @@ pub(crate) struct Args {
     pub(crate) retry_temp_step: f64,
     #[arg(long, default_value_t = 1.2)]
     pub(crate) max_retry_temp: f64,
-    #[arg(long, default_value_t = 2)]  // Reduced from 4 to prevent reviewer retry loops
+    #[arg(long, default_value_t = 2)] // Reduced from 4 to prevent reviewer retry loops
     pub(crate) max_retries: u32,
     #[arg(long, default_value_t = 0.7)]
     pub(crate) temp_critic: f64,
@@ -596,43 +599,55 @@ impl ParameterBands {
     pub fn for_unit_type(unit_type: &str) -> Self {
         match unit_type {
             // Routing/verification/JSON units: near-deterministic
-            "speech_act" | "router" | "mode_router" | "critic" | "logical_reviewer" |
-            "efficiency_reviewer" | "risk_reviewer" | "outcome_verifier" |
-            "execution_sufficiency" | "command_preflight" | "task_semantics_guard" => {
-                Self {
-                    temperature: (0.0, 0.1),
-                    top_p: (1.0, 1.0),
-                    repeat_penalty: (1.0, 1.0),
-                    max_tokens: (64, 256),
-                }
-            }
+            "speech_act"
+            | "router"
+            | "mode_router"
+            | "critic"
+            | "logical_reviewer"
+            | "efficiency_reviewer"
+            | "risk_reviewer"
+            | "outcome_verifier"
+            | "execution_sufficiency"
+            | "command_preflight"
+            | "task_semantics_guard" => Self {
+                temperature: (0.0, 0.1),
+                top_p: (1.0, 1.0),
+                repeat_penalty: (1.0, 1.0),
+                max_tokens: (64, 256),
+            },
             // Orchestration units: low creativity
-            "orchestrator" | "workflow_planner" | "formula_selector" | "scope_builder" |
-            "complexity_assessor" | "refinement" => {
-                Self {
-                    temperature: (0.2, 0.5),
-                    top_p: (0.9, 1.0),
-                    repeat_penalty: (1.0, 1.1),
-                    max_tokens: (2048, 4096),
-                }
-            }
+            "orchestrator"
+            | "workflow_planner"
+            | "formula_selector"
+            | "scope_builder"
+            | "complexity_assessor"
+            | "refinement" => Self {
+                temperature: (0.2, 0.5),
+                top_p: (0.9, 1.0),
+                repeat_penalty: (1.0, 1.1),
+                max_tokens: (2048, 4096),
+            },
             // Response units: modest creativity
-            "elma" | "summarizer" | "result_presenter" | "formatter" | "claim_checker" |
-            "evidence_mode" | "evidence_compactor" | "artifact_classifier" => {
-                Self {
-                    temperature: (0.4, 0.7),
-                    top_p: (0.9, 1.0),
-                    repeat_penalty: (1.0, 1.2),
-                    max_tokens: (1024, 4096),
-                }
-            }
+            "elma"
+            | "summarizer"
+            | "result_presenter"
+            | "formatter"
+            | "claim_checker"
+            | "evidence_mode"
+            | "evidence_compactor"
+            | "artifact_classifier" => Self {
+                temperature: (0.4, 0.7),
+                top_p: (0.9, 1.0),
+                repeat_penalty: (1.0, 1.2),
+                max_tokens: (1024, 4096),
+            },
             // Default bands
             _ => Self {
                 temperature: (0.2, 0.6),
                 top_p: (0.9, 1.0),
                 repeat_penalty: (1.0, 1.1),
                 max_tokens: (1024, 4096),
-            }
+            },
         }
     }
 }
@@ -721,34 +736,96 @@ pub(crate) struct EditSpec {
 #[serde(tag = "type")]
 pub(crate) enum Step {
     #[serde(rename = "shell")]
-    Shell { id: String, cmd: String, #[serde(flatten)] common: StepCommon },
+    Shell {
+        id: String,
+        cmd: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "read")]
-    Read { id: String, path: String, #[serde(flatten)] common: StepCommon },
+    Read {
+        id: String,
+        path: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "search")]
-    Search { id: String, query: String, paths: Vec<String>, #[serde(flatten)] common: StepCommon },
+    Search {
+        id: String,
+        query: String,
+        paths: Vec<String>,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "select")]
-    Select { id: String, #[serde(default)] instructions: String, #[serde(flatten)] common: StepCommon },
+    Select {
+        id: String,
+        #[serde(default)]
+        instructions: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "plan")]
-    Plan { id: String, goal: String, #[serde(flatten)] common: StepCommon },
+    Plan {
+        id: String,
+        goal: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "masterplan")]
-    MasterPlan { id: String, goal: String, #[serde(flatten)] common: StepCommon },
+    MasterPlan {
+        id: String,
+        goal: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "decide")]
-    Decide { id: String, prompt: String, #[serde(flatten)] common: StepCommon },
+    Decide {
+        id: String,
+        prompt: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "summarize")]
-    Summarize { id: String, #[serde(default)] text: String, #[serde(default)] instructions: String, #[serde(flatten)] common: StepCommon },
+    Summarize {
+        id: String,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        instructions: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "edit")]
-    Edit { id: String, #[serde(flatten)] spec: EditSpec, #[serde(flatten)] common: StepCommon },
+    Edit {
+        id: String,
+        #[serde(flatten)]
+        spec: EditSpec,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
     #[serde(rename = "reply")]
-    Reply { id: String, instructions: String, #[serde(flatten)] common: StepCommon },
+    Reply {
+        id: String,
+        instructions: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
 }
 
 impl Step {
     pub(crate) fn id(&self) -> &str {
         match self {
-            Step::Shell { id, .. } | Step::Read { id, .. } | Step::Search { id, .. } |
-            Step::Select { id, .. } | Step::Plan { id, .. } |
-            Step::MasterPlan { id, .. } | Step::Decide { id, .. } | Step::Summarize { id, .. } |
-            Step::Edit { id, .. } | Step::Reply { id, .. } => id,
+            Step::Shell { id, .. }
+            | Step::Read { id, .. }
+            | Step::Search { id, .. }
+            | Step::Select { id, .. }
+            | Step::Plan { id, .. }
+            | Step::MasterPlan { id, .. }
+            | Step::Decide { id, .. }
+            | Step::Summarize { id, .. }
+            | Step::Edit { id, .. }
+            | Step::Reply { id, .. } => id,
         }
     }
 
@@ -769,10 +846,16 @@ impl Step {
 
     pub(crate) fn purpose(&self) -> &str {
         match self {
-            Step::Shell { common, .. } | Step::Read { common, .. } | Step::Search { common, .. } |
-            Step::Select { common, .. } | Step::Plan { common, .. } |
-            Step::MasterPlan { common, .. } | Step::Decide { common, .. } | Step::Summarize { common, .. } |
-            Step::Edit { common, .. } | Step::Reply { common, .. } => &common.purpose,
+            Step::Shell { common, .. }
+            | Step::Read { common, .. }
+            | Step::Search { common, .. }
+            | Step::Select { common, .. }
+            | Step::Plan { common, .. }
+            | Step::MasterPlan { common, .. }
+            | Step::Decide { common, .. }
+            | Step::Summarize { common, .. }
+            | Step::Edit { common, .. }
+            | Step::Reply { common, .. } => &common.purpose,
         }
     }
 }

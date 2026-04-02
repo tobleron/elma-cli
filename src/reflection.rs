@@ -41,10 +41,10 @@ pub async fn reflect_on_program(
     program: &Program,
     priors: &ClassificationFeatures,
     workspace: &str,
-    objective: &str,  // Rephrased objective for clarity
+    objective: &str, // Rephrased objective for clarity
 ) -> Result<ProgramReflection> {
     let prompt = build_reflection_prompt(program, priors, workspace, objective);
-    
+
     let messages = vec![
         ChatMessage {
             role: "system".to_string(),
@@ -55,7 +55,7 @@ pub async fn reflect_on_program(
             content: prompt,
         },
     ];
-    
+
     let request = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages,
@@ -68,10 +68,10 @@ pub async fn reflect_on_program(
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
     };
-    
+
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);
-    
+
     // Parse the reflection response
     parse_reflection_response(&response_text)
 }
@@ -81,17 +81,21 @@ fn build_reflection_prompt(
     program: &Program,
     priors: &ClassificationFeatures,
     workspace: &str,
-    objective: &str,  // Rephrased objective
+    objective: &str, // Rephrased objective
 ) -> String {
     let mut prompt = String::new();
 
     // Add classification context (soft guidance, not rules)
     prompt.push_str("Evaluate success rate of the proposed solution: 0.0 to 1.0\n\n");
-    
+
     // Classification features as context (Task 007: Decouple Classification From Execution)
     prompt.push_str("**Classification Context (use as evidence, not rules):**\n");
     if let Some((speech_act, speech_p)) = priors.speech_act_probs.first() {
-        prompt.push_str(&format!("- Speech act: {} ({:.0}%)\n", speech_act, speech_p * 100.0));
+        prompt.push_str(&format!(
+            "- Speech act: {} ({:.0}%)\n",
+            speech_act,
+            speech_p * 100.0
+        ));
     }
     if let Some((route, route_p)) = priors.route_probs.first() {
         prompt.push_str(&format!("- Route: {} ({:.0}%)\n", route, route_p * 100.0));
@@ -104,7 +108,7 @@ fn build_reflection_prompt(
     } else {
         prompt.push_str("low uncertainty - classifier is confident)\n");
     }
-    
+
     // Check for close calls
     if priors.route_probs.len() >= 2 {
         let margin = priors.route_probs[0].1 - priors.route_probs[1].1;
@@ -116,7 +120,7 @@ fn build_reflection_prompt(
         }
     }
     prompt.push('\n');
-    
+
     prompt.push_str(&format!("**Rephrased Intention:** {}\n\n", objective));
     prompt.push_str("**Proposed Solution:**\n");
     for (i, step) in program.steps.iter().enumerate() {
@@ -138,8 +142,12 @@ fn build_reflection_prompt(
     prompt.push_str("- Be honest and critical\n");
     prompt.push_str("- Justification explains WHY you gave this confidence score\n");
     prompt.push_str("- If classification is uncertain (high entropy, low margin), mention this in your concerns\n");
-    prompt.push_str("- If the program doesn't match the top classification but makes sense, say so\n");
-    prompt.push_str("- If confidence < 0.51: Orchestrator will use your justification to improve the plan\n");
+    prompt.push_str(
+        "- If the program doesn't match the top classification but makes sense, say so\n",
+    );
+    prompt.push_str(
+        "- If confidence < 0.51: Orchestrator will use your justification to improve the plan\n",
+    );
     prompt.push_str("- If confidence >= 0.51: Justification is logged for session trace\n");
 
     prompt
@@ -207,10 +215,13 @@ fn parse_reflection_prose(response: &str) -> Result<ProgramReflection> {
         confidence_score = 0.6;
         is_confident = false;
     }
-    
+
     // Try to find numeric confidence
     for word in response.split_whitespace() {
-        if let Ok(num) = word.trim_matches(|c: char| !c.is_numeric() && c != '.').parse::<f64>() {
+        if let Ok(num) = word
+            .trim_matches(|c: char| !c.is_numeric() && c != '.')
+            .parse::<f64>()
+        {
             if num > 0.0 && num <= 1.0 {
                 confidence_score = num;
                 is_confident = num >= 0.7;
@@ -224,17 +235,26 @@ fn parse_reflection_prose(response: &str) -> Result<ProgramReflection> {
     }
 
     // Extract concerns from "What Could Go Wrong" or similar sections
-    if let Some(section) = extract_section(response, &["what could go wrong", "potential issues", "risks"]) {
+    if let Some(section) = extract_section(
+        response,
+        &["what could go wrong", "potential issues", "risks"],
+    ) {
         concerns = split_prose_points(&section);
     }
 
     // Extract missing points from "What's Missing" section
-    if let Some(section) = extract_section(response, &["what's missing", "what is missing", "missing steps"]) {
+    if let Some(section) = extract_section(
+        response,
+        &["what's missing", "what is missing", "missing steps"],
+    ) {
         missing_points = split_prose_points(&section);
     }
 
     // Extract suggested changes from "Suggested Changes" section
-    if let Some(section) = extract_section(response, &["suggested changes", "specific changes", "improvements"]) {
+    if let Some(section) = extract_section(
+        response,
+        &["suggested changes", "specific changes", "improvements"],
+    ) {
         suggested_changes = split_prose_points(&section);
     }
 
@@ -262,26 +282,31 @@ fn parse_reflection_prose(response: &str) -> Result<ProgramReflection> {
 /// Extract a section from prose text based on section headers
 fn extract_section(text: &str, headers: &[&str]) -> Option<String> {
     let text_lower = text.to_lowercase();
-    
+
     for &header in headers {
         if let Some(start) = text_lower.find(header) {
             // Find the start of the actual content (after the header and any punctuation)
             let content_start = start + header.len();
-            
+
             // Find the next section header or end of text
-            let next_headers = headers.iter()
-                .filter_map(|&h| text_lower[content_start..].find(h).map(|pos| content_start + pos))
+            let next_headers = headers
+                .iter()
+                .filter_map(|&h| {
+                    text_lower[content_start..]
+                        .find(h)
+                        .map(|pos| content_start + pos)
+                })
                 .min();
-            
+
             let content_end = next_headers.unwrap_or(text.len());
-            
+
             let section = text[content_start..content_end].trim();
             if !section.is_empty() {
                 return Some(section.to_string());
             }
         }
     }
-    
+
     None
 }
 
@@ -291,7 +316,7 @@ fn split_prose_points(text: &str) -> Vec<String> {
         .filter(|line| {
             let trimmed = line.trim();
             // Skip empty lines and lines that look like headers
-            !trimmed.is_empty() 
+            !trimmed.is_empty()
                 && !trimmed.starts_with('#')
                 && !trimmed.starts_with("```")
                 && trimmed.len() > 10
@@ -316,24 +341,26 @@ pub fn should_proceed_with_execution(reflection: &ProgramReflection) -> bool {
     // 1. Model is confident, OR
     // 2. Confidence score is above threshold, AND
     // 3. No critical concerns identified
-    
+
     const CONFIDENCE_THRESHOLD: f64 = 0.6;
-    
+
     if reflection.is_confident && reflection.confidence_score >= CONFIDENCE_THRESHOLD {
         return true;
     }
-    
+
     // Don't proceed if there are critical concerns
     let critical_keywords = ["cannot", "impossible", "missing evidence", "wrong route"];
     let has_critical_concern = reflection.concerns.iter().any(|concern| {
         let concern_lower = concern.to_lowercase();
-        critical_keywords.iter().any(|kw| concern_lower.contains(kw))
+        critical_keywords
+            .iter()
+            .any(|kw| concern_lower.contains(kw))
     });
-    
+
     if has_critical_concern {
         return false;
     }
-    
+
     // Proceed with caution if confidence is moderate
     reflection.confidence_score >= CONFIDENCE_THRESHOLD - 0.1
 }
@@ -408,17 +435,17 @@ mod tests {
         let result = parse_reflection_prose(prose);
         assert!(result.is_ok());
         let reflection = result.unwrap();
-        
+
         // Should detect "very confident"
         assert!(reflection.is_confident);
         assert!(reflection.confidence_score >= 0.8);
-        
+
         // Should extract some concerns
         assert!(!reflection.concerns.is_empty());
-        
+
         // Should extract missing points
         assert!(!reflection.missing_points.is_empty());
-        
+
         // Should extract suggested changes
         assert!(!reflection.suggested_changes.is_empty());
     }
@@ -438,7 +465,7 @@ Suggested changes:
         let result = parse_reflection_prose(prose);
         assert!(result.is_ok());
         let reflection = result.unwrap();
-        
+
         // Should parse 85% as 0.85
         assert!(reflection.confidence_score >= 0.8);
         assert!(reflection.is_confident);

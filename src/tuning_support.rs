@@ -1,5 +1,5 @@
-use crate::*;
 use crate::formulas::FormulaPattern;
+use crate::*;
 
 /// Calculate variance from a slice of scores
 pub(crate) fn calculate_variance(scores: &[f64]) -> f64 {
@@ -17,7 +17,11 @@ pub(crate) fn calculate_std_dev(variance: f64) -> f64 {
 }
 
 /// Calculate adjusted score with variance penalty
-pub(crate) fn calculate_adjusted_score(mean_score: f64, std_dev: f64, penalty_multiplier: f64) -> f64 {
+pub(crate) fn calculate_adjusted_score(
+    mean_score: f64,
+    std_dev: f64,
+    penalty_multiplier: f64,
+) -> f64 {
     // Penalize high-variance candidates
     (mean_score - (std_dev * penalty_multiplier)).max(0.0)
 }
@@ -28,21 +32,11 @@ pub(crate) const VARIANCE_PENALTY_MULTIPLIER: f64 = 0.5;
 /// Explicit allowlist of profile fields that tuning variants may change.
 /// Any mutation outside this list is a tuning boundary violation.
 #[allow(dead_code)]
-const TUNABLE_FIELDS: &[&str] = &[
-    "temperature",
-    "top_p",
-    "repeat_penalty",
-    "max_tokens",
-];
+const TUNABLE_FIELDS: &[&str] = &["temperature", "top_p", "repeat_penalty", "max_tokens"];
 
 /// Fields that tuning must NEVER change.
 #[allow(dead_code)]
-const IMMUTABLE_FIELDS: &[&str] = &[
-    "system_prompt",
-    "reasoning_format",
-    "name",
-    "version",
-];
+const IMMUTABLE_FIELDS: &[&str] = &["system_prompt", "reasoning_format", "name", "version"];
 
 /// Validate that a tuning variant only changed allowed fields between
 /// an original profile and a mutated profile. Returns an error with
@@ -52,7 +46,9 @@ pub(crate) fn validate_tuning_mutation(original: &Profile, mutated: &Profile) ->
         anyhow::bail!("tuning boundary violation: system_prompt was mutated by a tuning variant");
     }
     if original.reasoning_format != mutated.reasoning_format {
-        anyhow::bail!("tuning boundary violation: reasoning_format was mutated by a tuning variant");
+        anyhow::bail!(
+            "tuning boundary violation: reasoning_format was mutated by a tuning variant"
+        );
     }
     if original.name != mutated.name {
         anyhow::bail!("tuning boundary violation: name was mutated by a tuning variant");
@@ -225,7 +221,17 @@ pub(crate) fn apply_router_param_variant(dir: &Path, variant: &str) -> Result<()
 }
 
 pub(crate) fn apply_orchestrator_param_variant(dir: &Path, variant: &str) -> Result<()> {
-    let (orch_temp, orch_top_p, orch_max_tokens, planner_temp, planner_top_p, planner_tokens, verifier_temp, verifier_top_p, verifier_tokens) = match variant {
+    let (
+        orch_temp,
+        orch_top_p,
+        orch_max_tokens,
+        planner_temp,
+        planner_top_p,
+        planner_tokens,
+        verifier_temp,
+        verifier_top_p,
+        verifier_tokens,
+    ) = match variant {
         "orch_conservative" => (0.0, 0.90, 1024, 0.0, 0.90, 1024, 0.0, 1.0, 1024),
         "orch_balanced" => (0.1, 0.95, 2048, 0.1, 0.95, 1536, 0.0, 1.0, 1024),
         "orch_creative" => (0.2, 1.0, 2048, 0.2, 0.98, 2048, 0.1, 1.0, 1024),
@@ -278,12 +284,13 @@ pub(crate) fn apply_orchestrator_param_variant(dir: &Path, variant: &str) -> Res
 }
 
 pub(crate) fn apply_response_param_variant(dir: &Path, variant: &str) -> Result<()> {
-    let (elma_temp, elma_top_p, sum_temp, plan_temp, presenter_temp, presenter_top_p, max_tokens) = match variant {
-        "response_stable" => (0.3, 0.90, 0.0, 0.4, 0.1, 0.90, 2048),
-        "response_balanced" => (0.5, 0.95, 0.2, 0.6, 0.2, 0.95, 4096),
-        "response_creative" => (0.7, 1.0, 0.3, 0.8, 0.3, 1.0, 4096),
-        other => anyhow::bail!("Unknown response variant: {other}"),
-    };
+    let (elma_temp, elma_top_p, sum_temp, plan_temp, presenter_temp, presenter_top_p, max_tokens) =
+        match variant {
+            "response_stable" => (0.3, 0.90, 0.0, 0.4, 0.1, 0.90, 2048),
+            "response_balanced" => (0.5, 0.95, 0.2, 0.6, 0.2, 0.95, 4096),
+            "response_creative" => (0.7, 1.0, 0.3, 0.8, 0.3, 1.0, 4096),
+            other => anyhow::bail!("Unknown response variant: {other}"),
+        };
     let elma_original = load_agent_config(&dir.join("_elma.config"))?;
     let mut elma = elma_original.clone();
     elma.temperature = elma_temp;

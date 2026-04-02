@@ -1,0 +1,14 @@
+root ::= "{" ws "\"objective\":" ws string ws "," ws "\"complexity\":" ws complexity ws "," ws "\"risk\":" ws risk ws "," ws "\"needs_evidence\":" ws boolean ws "," ws "\"scope\":" ws scope ws "," ws "\"preferred_formula\":" ws formula ws "," ws "\"alternatives\":" ws formula_list ws "," ws "\"memory_id\":" ws string ws "," ws "\"reason\":" ws string ws "}"
+scope ::= "{" ws "\"objective\":" ws string ws "," ws "\"focus_paths\":" ws string_list ws "," ws "\"include_globs\":" ws string_list ws "," ws "\"exclude_globs\":" ws string_list ws "," ws "\"query_terms\":" ws string_list ws "," ws "\"expected_artifacts\":" ws string_list ws "," ws "\"reason\":" ws string ws "}"
+complexity ::= "\"DIRECT\"" | "\"INVESTIGATE\"" | "\"MULTISTEP\"" | "\"OPEN_ENDED\""
+risk ::= "\"LOW\"" | "\"MEDIUM\"" | "\"HIGH\""
+formula ::= "\"reply_only\"" | "\"capability_reply\"" | "\"inspect_reply\"" | "\"inspect_summarize_reply\"" | "\"inspect_decide_reply\"" | "\"inspect_edit_verify_reply\"" | "\"execute_reply\"" | "\"plan_reply\"" | "\"masterplan_reply\""
+formula_list ::= "[" ws "]" | "[" ws formula_items ws "]"
+formula_items ::= formula | formula "," ws formula_items
+string_list ::= "[" ws "]" | "[" ws string_items ws "]"
+string_items ::= string | string "," ws string_items
+boolean ::= "true" | "false"
+string ::= "\"" chars "\""
+chars ::= "" | char chars
+char ::= [a-zA-Z0-9_./:*?&%+#,;!(){}[\]<>='" -]
+ws ::= [ \t\n]*

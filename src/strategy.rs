@@ -18,19 +18,19 @@ pub enum ExecutionStrategy {
     /// Execute immediately with minimal overhead
     /// Best for: Simple, low-risk tasks with clear path
     Direct,
-    
+
     /// Gather evidence first, then act
     /// Best for: Tasks requiring workspace context before execution
     InspectFirst,
-    
+
     /// Create detailed plan, then execute
     /// Best for: Complex tasks with multiple dependencies
     PlanThenExecute,
-    
+
     /// Dry-run/preview first, then execute for real
     /// Best for: Risky operations (deletions, modifications)
     SafeMode,
-    
+
     /// Small verifiable steps with checks between
     /// Best for: Tasks where intermediate verification matters
     Incremental,
@@ -47,7 +47,7 @@ impl ExecutionStrategy {
             ExecutionStrategy::Incremental => "Small verifiable steps with checks",
         }
     }
-    
+
     /// Get strategy hint for prompts
     pub fn hint(&self) -> &'static str {
         match self {
@@ -82,7 +82,7 @@ impl StrategyChain {
             failures: Vec::new(),
         }
     }
-    
+
     /// Get current strategy
     pub fn current_strategy(&self) -> ExecutionStrategy {
         if self.current_attempt == 0 {
@@ -90,10 +90,10 @@ impl StrategyChain {
         } else if self.current_attempt <= self.fallbacks.len() {
             self.fallbacks[self.current_attempt - 1]
         } else {
-            self.primary  // Exhausted, return primary as fallback
+            self.primary // Exhausted, return primary as fallback
         }
     }
-    
+
     /// Get next strategy (returns None if exhausted)
     pub fn next_strategy(&mut self) -> Option<ExecutionStrategy> {
         if self.current_attempt == 0 {
@@ -104,30 +104,30 @@ impl StrategyChain {
             self.current_attempt += 1;
             Some(strategy)
         } else {
-            None  // Exhausted
+            None // Exhausted
         }
     }
-    
+
     /// Record a failure
     pub fn record_failure(&mut self, error: &str) {
         self.failures.push(error.to_string());
     }
-    
+
     /// Record success
     pub fn record_success(&mut self) {
         // Could log success for learning
     }
-    
+
     /// Check if strategies are exhausted
     pub fn is_exhausted(&self) -> bool {
         self.current_attempt >= self.fallbacks.len() + 1
     }
-    
+
     /// Get attempt number
     pub fn attempt(&self) -> usize {
         self.current_attempt
     }
-    
+
     /// Get total strategies available
     pub fn total_strategies(&self) -> usize {
         1 + self.fallbacks.len()
@@ -146,10 +146,10 @@ pub fn select_strategy_chain(
 ) -> StrategyChain {
     // Determine primary strategy based on complexity and risk
     let primary = select_primary_strategy(complexity, route_decision);
-    
+
     // Determine fallbacks based on task type
     let fallbacks = select_fallback_strategies(primary, user_message, complexity);
-    
+
     StrategyChain::new(primary, fallbacks)
 }
 
@@ -162,7 +162,7 @@ fn select_primary_strategy(
     if complexity.risk == "HIGH" {
         return ExecutionStrategy::SafeMode;
     }
-    
+
     // Complex tasks → PlanThenExecute or InspectFirst
     match complexity.complexity.as_str() {
         "OPEN_ENDED" => ExecutionStrategy::PlanThenExecute,
@@ -199,7 +199,7 @@ fn select_fallback_strategies(
     complexity: &ComplexityAssessment,
 ) -> Vec<ExecutionStrategy> {
     let mut fallbacks = Vec::new();
-    
+
     // Add fallbacks based on primary strategy
     match primary {
         ExecutionStrategy::Direct => {
@@ -235,7 +235,7 @@ fn select_fallback_strategies(
             fallbacks.push(ExecutionStrategy::PlanThenExecute);
         }
     }
-    
+
     fallbacks
 }
 
@@ -275,22 +275,22 @@ impl StrategyLog {
             execution_time_ms,
         }
     }
-    
+
     /// Save log entry to session file
     pub fn save_to_session(&self, session_root: &Path) -> Result<()> {
         let log_dir = session_root.join("strategy_logs");
         std::fs::create_dir_all(&log_dir)?;
-        
+
         let log_file = log_dir.join("strategy_log.jsonl");
         let json = serde_json::to_string(self)?;
-        
+
         use std::io::Write;
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log_file)?;
         writeln!(file, "{}", json)?;
-        
+
         Ok(())
     }
 }
@@ -317,7 +317,7 @@ pub async fn execute_with_strategy(
 ) -> Result<Program> {
     // Build strategy-specific prompt
     let strategy_hint = strategy.hint();
-    
+
     // Adjust temperature based on strategy
     let temp = match strategy {
         ExecutionStrategy::Direct => orchestrator_cfg.temperature,
@@ -326,7 +326,7 @@ pub async fn execute_with_strategy(
         ExecutionStrategy::SafeMode => orchestrator_cfg.temperature.min(0.2),
         ExecutionStrategy::Incremental => orchestrator_cfg.temperature,
     };
-    
+
     // Build prompt with strategy context
     let prompt = format!(
         r#"{}
@@ -346,7 +346,7 @@ Generate a program that follows this strategy."#,
         scope.objective,
         formula.primary
     );
-    
+
     // Generate program with strategy-aware temperature
     let req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
@@ -369,7 +369,7 @@ Generate a program that follows this strategy."#,
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar: Some(crate::json_program_grammar()),
     };
-    
+
     let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;
     Ok(program)
 }
@@ -382,9 +382,12 @@ mod tests {
     fn test_strategy_chain_creation() {
         let chain = StrategyChain::new(
             ExecutionStrategy::Direct,
-            vec![ExecutionStrategy::InspectFirst, ExecutionStrategy::PlanThenExecute],
+            vec![
+                ExecutionStrategy::InspectFirst,
+                ExecutionStrategy::PlanThenExecute,
+            ],
         );
-        
+
         assert_eq!(chain.primary, ExecutionStrategy::Direct);
         assert_eq!(chain.fallbacks.len(), 2);
         assert_eq!(chain.total_strategies(), 3);
@@ -396,17 +399,17 @@ mod tests {
             ExecutionStrategy::Direct,
             vec![ExecutionStrategy::InspectFirst],
         );
-        
+
         // First call returns primary
         let strategy = chain.next_strategy();
         assert_eq!(strategy, Some(ExecutionStrategy::Direct));
         assert_eq!(chain.attempt(), 1);
-        
+
         // Second call returns first fallback
         let strategy = chain.next_strategy();
         assert_eq!(strategy, Some(ExecutionStrategy::InspectFirst));
         assert_eq!(chain.attempt(), 2);
-        
+
         // Third call returns None (exhausted)
         let strategy = chain.next_strategy();
         assert_eq!(strategy, None);
@@ -416,10 +419,10 @@ mod tests {
     #[test]
     fn test_strategy_chain_failure_recording() {
         let mut chain = StrategyChain::new(ExecutionStrategy::Direct, vec![]);
-        
+
         chain.record_failure("command not found");
         chain.record_failure("permission denied");
-        
+
         assert_eq!(chain.failures.len(), 2);
     }
 
@@ -431,7 +434,7 @@ mod tests {
             ..ComplexityAssessment::default()
         };
         let route_decision = create_test_route_decision();
-        
+
         let primary = select_primary_strategy(&complexity, &route_decision);
         assert_eq!(primary, ExecutionStrategy::SafeMode);
     }
@@ -444,7 +447,7 @@ mod tests {
             ..ComplexityAssessment::default()
         };
         let route_decision = create_test_route_decision();
-        
+
         let primary = select_primary_strategy(&complexity, &route_decision);
         assert_eq!(primary, ExecutionStrategy::PlanThenExecute);
     }
@@ -457,8 +460,8 @@ mod tests {
             ..ComplexityAssessment::default()
         };
         let mut route_decision = create_test_route_decision();
-        route_decision.entropy = 0.9;  // High uncertainty
-        
+        route_decision.entropy = 0.9; // High uncertainty
+
         let primary = select_primary_strategy(&complexity, &route_decision);
         assert_eq!(primary, ExecutionStrategy::InspectFirst);
     }

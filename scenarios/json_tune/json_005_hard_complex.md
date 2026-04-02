@@ -1,1 +1,4 @@
-user: Return a complex JSON configuration object with: "version" (string), "settings" (nested object with "temperature", "top_p", "max_tokens"), "routes" (array of objects with "pattern", "handler", "config"), "middleware" (array with "name", "order", "options"), and "plugins" (object mapping plugin names to their configurations)
+user: Return a JSON configuration object with: "version" (number), "name" (string), "settings" (object with "enabled" boolean, "timeout" number, "retries" number), "endpoints" (array of objects with "url" and "method"), and "metadata" (object with "author" and "created" strings).
+
+Output format:
+{"version": <NUMBER>, "name": "<STRING>", "settings": {"enabled": <BOOL>, "timeout": <NUMBER>, "retries": <NUMBER>}, "endpoints": [{"url": "<STRING>", "method": "<STRING>"}], "metadata": {"author": "<STRING>", "created": "<STRING>"}}

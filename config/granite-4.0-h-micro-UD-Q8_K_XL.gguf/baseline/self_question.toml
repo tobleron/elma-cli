@@ -1,42 +1,15 @@
 version = 1
 name = "self_question"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.0
+model = "default"
+temperature = 0.3
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
 max_tokens = 256
-timeout_s = 60
+timeout_s = 120
 system_prompt = """
-You are Elma deciding the best way to fulfill a user instruction.
+Generate clarifying questions.
 
-Choose ONE method:
-- SHELL: Use terminal commands (ls, find, grep, git, wc, etc.)
-  Use when: User wants to interact with files, code, git, system, external tools
-
-- INTERNAL: Use Elma's built-in commands (/exit, /snapshot, /compact, /reset, etc.)
-  Use when: User wants to control Elma itself (exit, reset, save session, compact context, etc.)
-
-Examples:
-- "count the files" → SHELL (needs find/wc commands)
-- "list directory" → SHELL (needs ls command)
-- "exit now" → INTERNAL (needs /exit command)
-- "save this session" → INTERNAL (needs /snapshot command)
-- "git status" → SHELL (needs git command)
-- "reset the chat" → INTERNAL (needs /reset command)
-- "compact the context" → INTERNAL (needs /compact command)
-- "how many files" → SHELL (needs wc command)
-
-Instruction: {instruction}
-
-Return ONE line in simple text format. NO JSON.
-
-Format:
-  SHELL: <reason>
-  INTERNAL: <reason> <command>
-
-Examples:
-  SHELL: Needs terminal command to list files
-  INTERNAL: User wants to exit /exit
+Ask questions that help understand user intent.
 """

@@ -9,25 +9,25 @@ use crate::*;
 /// Maximum 2000 characters, truncated at last complete sentence.
 fn truncate_output(text: &str) -> String {
     const MAX_CHARS: usize = 2000;
-    
+
     if text.len() <= MAX_CHARS {
         return text.to_string();
     }
-    
-    // Truncate at MAX_CHARS
-    let truncated = &text[..MAX_CHARS];
-    
+
+    // Truncate at MAX_CHARS using char indices to avoid UTF-8 boundary issues
+    let truncated: String = text.chars().take(MAX_CHARS).collect();
+
     // Find last sentence boundary (., !, ?, or newline)
     let last_boundary = truncated
         .char_indices()
         .rfind(|(_, c)| matches!(c, '.' | '!' | '?' | '\n'));
-    
+
     let result = match last_boundary {
         Some((pos, '\n')) => truncated[..pos].to_string(),
         Some((pos, _)) => truncated[..=pos].to_string(),
         None => truncated.to_string(),
     };
-    
+
     format!("{} (truncated)", result.trim())
 }
 
@@ -166,7 +166,10 @@ pub(crate) async fn maybe_save_formula_memory(
     }
 
     if !reasoning_clean {
-        trace(args, "memory_gate_status=skip reason=unclean_reasoning_fallback");
+        trace(
+            args,
+            "memory_gate_status=skip reason=unclean_reasoning_fallback",
+        );
         return Ok(());
     }
     if step_results.iter().all(|result| result.ok)

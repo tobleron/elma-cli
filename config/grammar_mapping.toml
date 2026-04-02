@@ -1,0 +1,38 @@
+# Grammar Mapping Configuration
+# Maps profile names to GBNF grammar files
+#
+# Usage: Add entries here to enable grammar enforcement for a profile.
+# Grammar files are loaded from config/grammars/ directory.
+
+[router]
+grammar_path = "grammars/router_choice_1of5.json.gbnf"
+
+[speech_act]
+grammar_path = "grammars/speech_act_choice_1of3.json.gbnf"
+
+[mode_router]
+grammar_path = "grammars/mode_router_choice_1of4.json.gbnf"
+
+[complexity_assessor]
+grammar_path = "grammars/complexity_choice_1of4.json.gbnf"
+
+[workflow_planner]
+grammar_path = "grammars/workflow_planner.json.gbnf"
+
+[formula_selector]
+grammar_path = "grammars/formula_selector.json.gbnf"
+
+[scope_builder]
+grammar_path = "grammars/scope_builder.json.gbnf"
+
+[critic]
+grammar_path = "grammars/critic_verdict.json.gbnf"
+
+[logical_reviewer]
+grammar_path = "grammars/critic_verdict.json.gbnf"
+
+[efficiency_reviewer]
+grammar_path = "grammars/critic_verdict.json.gbnf"
+
+[risk_reviewer]
+grammar_path = "grammars/risk_review_verdict.json.gbnf"

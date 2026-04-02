@@ -25,19 +25,19 @@ impl WorkspaceTree {
 
     pub fn build(&self) -> Result<String> {
         let mut tree = BTreeMap::new();
-        
+
         let walker = WalkBuilder::new(&self.root)
             .max_depth(Some(self.max_depth))
             .hidden(true)
             .filter_entry(|entry| {
                 let path = entry.path();
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                
+
                 // Skip ignored directories
                 if path.is_dir() {
                     return !is_ignored_dir(name);
                 }
-                
+
                 // Skip ignored files
                 !is_ignored_file(name)
             })
@@ -59,33 +59,43 @@ impl WorkspaceTree {
 }
 
 fn is_ignored_dir(name: &str) -> bool {
-    matches!(name, 
-        "target" | "node_modules" | ".git" | ".cargo" |
-        "dist" | "build" | "__pycache__" | ".venv" |
-        ".qwen" | "sessions" | "trace"
+    matches!(
+        name,
+        "target"
+            | "node_modules"
+            | ".git"
+            | ".cargo"
+            | "dist"
+            | "build"
+            | "__pycache__"
+            | ".venv"
+            | ".qwen"
+            | "sessions"
+            | "trace"
     )
 }
 
 fn is_ignored_file(name: &str) -> bool {
-    matches!(name,
+    matches!(
+        name,
         ".DS_Store" | "Thumbs.db" | "*.lock" | "*.pyc" | "*.pyo"
     )
 }
 
 fn format_tree(entries: &BTreeMap<PathBuf, (usize, bool)>) -> String {
     let mut output = String::new();
-    
+
     for (path, (depth, is_dir)) in entries {
         // Add indentation
         for _ in 0..(depth - 1) {
             output.push_str("│   ");
         }
-        
+
         // Add tree character
         if *depth > 1 {
             output.push_str("├── ");
         }
-        
+
         // Add file/dir name
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             output.push_str(name);
@@ -95,11 +105,11 @@ fn format_tree(entries: &BTreeMap<PathBuf, (usize, bool)>) -> String {
             output.push('\n');
         }
     }
-    
+
     if output.is_empty() {
         output.push_str("(empty)\n");
     }
-    
+
     output
 }
 

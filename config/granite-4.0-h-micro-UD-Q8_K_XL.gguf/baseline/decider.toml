@@ -1,11 +1,15 @@
 version = 1
 name = "decider"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.0
+model = "default"
+temperature = 0.4
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 16
+max_tokens = 512
 timeout_s = 120
-system_prompt = "Return one word only. No punctuation. No explanation."
+system_prompt = """
+Make decisions based on workspace evidence.
+
+Output concise decision with reasoning.
+"""

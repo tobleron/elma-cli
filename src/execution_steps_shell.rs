@@ -40,7 +40,10 @@ pub(crate) async fn handle_shell_step(
     let cmd = match resolve_command_placeholders(&normalize_shell_cmd(&cmd), &state.artifacts) {
         Ok(cmd) => cmd,
         Err(error) => {
-            trace(args, &format!("shell_template_error id={sid} error={error}"));
+            trace(
+                args,
+                &format!("shell_template_error id={sid} error={error}"),
+            );
             state.halt = true;
             state.step_results.push(StepResult {
                 id: sid.clone(),
@@ -144,26 +147,27 @@ pub(crate) async fn handle_shell_step(
         show_status_message(args, &status);
     }
 
-    let (cmd, execution_mode, artifact_kind, _ask_hint, should_halt, _halt_summary) = preflight_shell_command(
-        args,
-        client,
-        chat_url,
-        session,
-        workdir,
-        command_repair_cfg,
-        command_preflight_cfg,
-        task_semantics_guard_cfg,
-        scope,
-        complexity,
-        formula,
-        objective,
-        &purpose,
-        readonly_only,
-        &sid,
-        cmd,
-        state,
-    )
-    .await?;
+    let (cmd, execution_mode, artifact_kind, _ask_hint, should_halt, _halt_summary) =
+        preflight_shell_command(
+            args,
+            client,
+            chat_url,
+            session,
+            workdir,
+            command_repair_cfg,
+            command_preflight_cfg,
+            task_semantics_guard_cfg,
+            scope,
+            complexity,
+            formula,
+            objective,
+            &purpose,
+            readonly_only,
+            &sid,
+            cmd,
+            state,
+        )
+        .await?;
 
     if should_halt {
         return Ok(());

@@ -29,10 +29,12 @@ pub(crate) fn resolve_workspace_edit_path(workdir: &Path, raw_path: &str) -> Res
     if relative.is_absolute() {
         anyhow::bail!("absolute edit paths are not allowed");
     }
-    if relative
-        .components()
-        .any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
-    {
+    if relative.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
         anyhow::bail!("edit path must stay inside the workspace");
     }
     Ok(workdir.join(relative))
@@ -119,28 +121,27 @@ pub(crate) fn run_shell_one_liner(
     const MAX_ARTIFACT_BYTES: u64 = 8 * 1024 * 1024;
     const MAX_WALL_SECS: u64 = 20;
 
-    let (target_path, capture_limit, artifact_path, artifact_kind) = if let Some((path, kind)) =
-        artifact_target
-    {
-        (
-            path.clone(),
-            MAX_ARTIFACT_BYTES,
-            Some(path.clone()),
-            Some(kind.to_string()),
-        )
-    } else {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let out_path = std::env::temp_dir().join(format!(
-            "elma_shell_{}_{}_{}.out",
-            std::process::id(),
-            stamp,
-            hash_short(cmd)
-        ));
-        (out_path, MAX_INLINE_CAPTURE_BYTES, None, None)
-    };
+    let (target_path, capture_limit, artifact_path, artifact_kind) =
+        if let Some((path, kind)) = artifact_target {
+            (
+                path.clone(),
+                MAX_ARTIFACT_BYTES,
+                Some(path.clone()),
+                Some(kind.to_string()),
+            )
+        } else {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let out_path = std::env::temp_dir().join(format!(
+                "elma_shell_{}_{}_{}.out",
+                std::process::id(),
+                stamp,
+                hash_short(cmd)
+            ));
+            (out_path, MAX_INLINE_CAPTURE_BYTES, None, None)
+        };
 
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -208,7 +209,11 @@ pub(crate) fn run_shell_one_liner(
     }
 
     Ok(ShellExecutionResult {
-        exit_code: if timed_out { 124 } else { status.code().unwrap_or(1) },
+        exit_code: if timed_out {
+            124
+        } else {
+            status.code().unwrap_or(1)
+        },
         inline_text,
         bytes_written,
         truncated,

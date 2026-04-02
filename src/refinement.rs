@@ -42,11 +42,11 @@ pub fn check_objective_achievement(
 ) -> ObjectiveAchievement {
     let mut evidence = Vec::new();
     let mut gaps = Vec::new();
-    
+
     // Check if any steps failed
     let failed_steps: Vec<&StepResult> = step_results.iter().filter(|s| !s.ok).collect();
     let successful_steps: Vec<&StepResult> = step_results.iter().filter(|s| s.ok).collect();
-    
+
     if failed_steps.is_empty() && successful_steps.is_empty() {
         // No execution yet
         return ObjectiveAchievement {
@@ -56,25 +56,22 @@ pub fn check_objective_achievement(
             gaps: vec!["No execution results to evaluate".to_string()],
         };
     }
-    
+
     // Check for successful non-reply steps (actual work done)
     let work_steps: Vec<&StepResult> = successful_steps
         .iter()
         .filter(|s| !s.kind.eq_ignore_ascii_case("reply"))
         .copied()
         .collect();
-    
+
     if work_steps.is_empty() {
         gaps.push("No substantive work steps completed".to_string());
     } else {
         for step in &work_steps {
-            evidence.push(format!(
-                "Completed: {} ({})",
-                step.id, step.kind
-            ));
+            evidence.push(format!("Completed: {} ({})", step.id, step.kind));
         }
     }
-    
+
     // Check for failures
     for step in &failed_steps {
         gaps.push(format!(
@@ -84,18 +81,18 @@ pub fn check_objective_achievement(
             step.outcome_reason.as_deref().unwrap_or("unknown reason")
         ));
     }
-    
+
     // Check if there's a final reply with content
-    let has_final_reply = step_results.iter().any(|s| {
-        s.kind.eq_ignore_ascii_case("reply") && !s.summary.trim().is_empty()
-    });
-    
+    let has_final_reply = step_results
+        .iter()
+        .any(|s| s.kind.eq_ignore_ascii_case("reply") && !s.summary.trim().is_empty());
+
     if has_final_reply {
         evidence.push("Final reply generated".to_string());
     } else {
         gaps.push("No final reply generated".to_string());
     }
-    
+
     // Calculate confidence based on success rate and completion
     let total_work_steps = work_steps.len() + failed_steps.len();
     let success_rate = if total_work_steps > 0 {
@@ -103,24 +100,22 @@ pub fn check_objective_achievement(
     } else {
         0.0
     };
-    
+
     let confidence = if failed_steps.is_empty() && has_final_reply {
-        0.8 + (success_rate * 0.2)  // High confidence if no failures
+        0.8 + (success_rate * 0.2) // High confidence if no failures
     } else if success_rate > 0.5 {
-        0.5 + (success_rate * 0.3)  // Medium confidence
+        0.5 + (success_rate * 0.3) // Medium confidence
     } else {
-        success_rate * 0.5  // Low confidence
+        success_rate * 0.5 // Low confidence
     };
-    
+
     // Objective is achieved if:
     // 1. No failures
     // 2. At least one work step completed
     // 3. Final reply exists
-    let is_achieved = failed_steps.is_empty() 
-        && !work_steps.is_empty() 
-        && has_final_reply
-        && confidence >= 0.7;
-    
+    let is_achieved =
+        failed_steps.is_empty() && !work_steps.is_empty() && has_final_reply && confidence >= 0.7;
+
     ObjectiveAchievement {
         is_achieved,
         confidence,
@@ -135,18 +130,25 @@ pub fn build_refinement_prompt(
     achievement: &ObjectiveAchievement,
 ) -> String {
     let mut prompt = String::new();
-    
+
     prompt.push_str("## Program Refinement Request\n\n");
     prompt.push_str(&format!("**Iteration:** {}\n\n", context.iteration + 1));
-    prompt.push_str(&format!("**Original Objective:** {}\n\n", context.original_objective));
-    
+    prompt.push_str(&format!(
+        "**Original Objective:** {}\n\n",
+        context.original_objective
+    ));
+
     prompt.push_str("## Current Status\n\n");
     prompt.push_str(&format!(
         "**Objective Achievement:** {} (confidence: {:.1}%)\n\n",
-        if achievement.is_achieved { "ACHIEVED" } else { "NOT ACHIEVED" },
+        if achievement.is_achieved {
+            "ACHIEVED"
+        } else {
+            "NOT ACHIEVED"
+        },
         achievement.confidence * 100.0
     ));
-    
+
     if !achievement.evidence.is_empty() {
         prompt.push_str("**Completed:**\n");
         for item in &achievement.evidence {
@@ -154,7 +156,7 @@ pub fn build_refinement_prompt(
         }
         prompt.push('\n');
     }
-    
+
     if !achievement.gaps.is_empty() {
         prompt.push_str("**Issues/Gaps:**\n");
         for item in &achievement.gaps {
@@ -162,12 +164,15 @@ pub fn build_refinement_prompt(
         }
         prompt.push('\n');
     }
-    
+
     prompt.push_str("## Refinement Reason\n\n");
     prompt.push_str(&format!("{}\n\n", context.refinement_reason));
-    
+
     prompt.push_str("## Current Program Structure\n\n");
-    prompt.push_str(&format!("**Objective:** {}\n\n", context.current_program.objective));
+    prompt.push_str(&format!(
+        "**Objective:** {}\n\n",
+        context.current_program.objective
+    ));
     prompt.push_str("**Current Steps:**\n");
     for (i, step) in context.current_program.steps.iter().enumerate() {
         prompt.push_str(&format!(
@@ -179,7 +184,7 @@ pub fn build_refinement_prompt(
         ));
     }
     prompt.push('\n');
-    
+
     prompt.push_str("## Step Execution Results\n\n");
     for (i, result) in context.step_results.iter().enumerate() {
         prompt.push_str(&format!(
@@ -188,16 +193,22 @@ pub fn build_refinement_prompt(
             result.id,
             result.kind
         ));
-        prompt.push_str(&format!("- Status: {}\n", if result.ok { "OK" } else { "FAILED" }));
+        prompt.push_str(&format!(
+            "- Status: {}\n",
+            if result.ok { "OK" } else { "FAILED" }
+        ));
         if !result.summary.is_empty() {
-            prompt.push_str(&format!("- Summary: {}\n", truncate_text(&result.summary, 200)));
+            prompt.push_str(&format!(
+                "- Summary: {}\n",
+                truncate_text(&result.summary, 200)
+            ));
         }
         if let Some(ref reason) = result.outcome_reason {
             prompt.push_str(&format!("- Reason: {}\n", truncate_text(reason, 200)));
         }
         prompt.push('\n');
     }
-    
+
     prompt.push_str("## Instructions\n\n");
     prompt.push_str("Your task is to revise the program to better achieve the objective.\n\n");
     prompt.push_str("**Consider:**\n");
@@ -205,11 +216,11 @@ pub fn build_refinement_prompt(
     prompt.push_str("2. What steps need to be added, removed, or modified?\n");
     prompt.push_str("3. Are there missing verification or follow-up steps?\n");
     prompt.push_str("4. Is the objective still appropriate, or does it need refinement?\n\n");
-    
+
     prompt.push_str("**Output:**\n");
     prompt.push_str("Return ONLY one valid JSON object representing the revised program.\n");
     prompt.push_str("The program must have the same structure as the original.\n\n");
-    
+
     prompt
 }
 
@@ -222,7 +233,7 @@ pub async fn refine_program(
     achievement: &ObjectiveAchievement,
 ) -> Result<Program> {
     let prompt = build_refinement_prompt(context, achievement);
-    
+
     let messages = vec![
         ChatMessage {
             role: "system".to_string(),
@@ -233,7 +244,7 @@ pub async fn refine_program(
             content: prompt,
         },
     ];
-    
+
     let request = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages,
@@ -246,16 +257,15 @@ pub async fn refine_program(
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
     };
-    
+
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);
 
     // Parse the response as a Program
     // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
-    let json_str = crate::routing::extract_first_json_object(&response_text)
-        .unwrap_or(&response_text);
-    parse_json_loose(json_str)
-        .context("Failed to parse refined program from model response")
+    let json_str =
+        crate::routing::extract_first_json_object(&response_text).unwrap_or(&response_text);
+    parse_json_loose(json_str).context("Failed to parse refined program from model response")
 }
 
 /// Truncate text to maximum length
@@ -289,7 +299,7 @@ mod tests {
                 ..StepResult::default()
             },
         ];
-        
+
         let achievement = check_objective_achievement("test objective", &step_results);
         assert!(achievement.is_achieved);
         assert!(achievement.confidence > 0.7);
@@ -297,17 +307,15 @@ mod tests {
 
     #[test]
     fn detects_failed_objective() {
-        let step_results = vec![
-            StepResult {
-                id: "s1".to_string(),
-                kind: "shell".to_string(),
-                ok: false,
-                summary: "".to_string(),
-                outcome_reason: Some("Command failed".to_string()),
-                ..StepResult::default()
-            },
-        ];
-        
+        let step_results = vec![StepResult {
+            id: "s1".to_string(),
+            kind: "shell".to_string(),
+            ok: false,
+            summary: "".to_string(),
+            outcome_reason: Some("Command failed".to_string()),
+            ..StepResult::default()
+        }];
+
         let achievement = check_objective_achievement("test objective", &step_results);
         assert!(!achievement.is_achieved);
         assert!(achievement.gaps.iter().any(|g| g.contains("Failed")));
@@ -315,16 +323,14 @@ mod tests {
 
     #[test]
     fn detects_incomplete_objective() {
-        let step_results = vec![
-            StepResult {
-                id: "s1".to_string(),
-                kind: "shell".to_string(),
-                ok: true,
-                summary: "Partial work done".to_string(),
-                ..StepResult::default()
-            },
-        ];
-        
+        let step_results = vec![StepResult {
+            id: "s1".to_string(),
+            kind: "shell".to_string(),
+            ok: true,
+            summary: "Partial work done".to_string(),
+            ..StepResult::default()
+        }];
+
         let achievement = check_objective_achievement("test objective", &step_results);
         assert!(!achievement.is_achieved);
         assert!(achievement.gaps.iter().any(|g| g.contains("reply")));

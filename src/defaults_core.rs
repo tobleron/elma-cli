@@ -16,8 +16,7 @@ pub(crate) fn default_elma_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "auto".to_string(),
         max_tokens: 4096,
         timeout_s: 120,
-        system_prompt: "You are Elma, a helpful and faithful assistant."
-            .to_string(),
+        system_prompt: "You are Elma, a helpful and faithful assistant.".to_string(),
     }
 }
 
@@ -157,7 +156,7 @@ Rules:
 - Keep reason concise (one sentence)
 - If uncertain, return status="ok" with conservative reason
 "#
-            .to_string(),
+        .to_string(),
     }
 }
 
@@ -241,7 +240,7 @@ Rules:
 - Keep reason concise (one sentence)
 - If uncertain, return status="ok" with conservative reason
 "#
-            .to_string(),
+        .to_string(),
     }
 }
 
@@ -257,8 +256,9 @@ pub(crate) fn default_logical_program_repair_config(base_url: &str, model: &str)
         reasoning_format: "none".to_string(),
         max_tokens: 2048,
         timeout_s: 120,
-        system_prompt: "Repair a program with logical flaws. Output a complete Program JSON object."
-            .to_string(),
+        system_prompt:
+            "Repair a program with logical flaws. Output a complete Program JSON object."
+                .to_string(),
     }
 }
 
@@ -291,7 +291,7 @@ Rules:
 - Keep reason concise (one sentence)
 - If uncertain, return status="ok" with conservative reason
 "#
-            .to_string(),
+        .to_string(),
     }
 }
 
@@ -307,8 +307,9 @@ pub(crate) fn default_efficiency_program_repair_config(base_url: &str, model: &s
         reasoning_format: "none".to_string(),
         max_tokens: 2048,
         timeout_s: 120,
-        system_prompt: "Repair a program to improve efficiency. Output a complete Program JSON object."
-            .to_string(),
+        system_prompt:
+            "Repair a program to improve efficiency. Output a complete Program JSON object."
+                .to_string(),
     }
 }
 
@@ -341,7 +342,7 @@ Rules:
 - Keep reason concise (one sentence)
 - If uncertain, return status="ok" with conservative reason
 "#
-            .to_string(),
+        .to_string(),
     }
 }
 

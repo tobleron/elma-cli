@@ -36,14 +36,9 @@ pub(crate) async fn run_runtime_calibration(
                 ),
             );
         }
-        let outcome = tune_scenario::evaluate_runtime_scenario(
-            args,
-            client,
-            chat_url,
-            resources,
-            scenario,
-        )
-        .await?;
+        let outcome =
+            tune_scenario::evaluate_runtime_scenario(args, client, chat_url, resources, scenario)
+                .await?;
         aggregation.push(outcome);
     }
 

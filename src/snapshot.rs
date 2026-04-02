@@ -74,11 +74,7 @@ pub(crate) fn rollback_workspace_snapshot(
     }
     let manifest = load_snapshot_manifest(&manifest_path)?;
     let files_dir = snapshot_dir.join("files");
-    let expected_set = manifest
-        .files
-        .iter()
-        .cloned()
-        .collect::<HashSet<String>>();
+    let expected_set = manifest.files.iter().cloned().collect::<HashSet<String>>();
 
     let mut restored_files = 0u64;
     let mut verified_files = 0u64;
@@ -107,8 +103,7 @@ pub(crate) fn rollback_workspace_snapshot(
         }
         let path = repo_root.join(&rel);
         if path.exists() {
-            std::fs::remove_file(&path)
-                .with_context(|| format!("remove {}", path.display()))?;
+            std::fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
             removed_files += 1;
             cleanup_empty_parents(repo_root, path.parent());
         }
@@ -176,7 +171,13 @@ fn is_git_workspace(repo_root: &Path) -> bool {
 
 fn collect_git_snapshot_files(repo_root: &Path) -> Result<Vec<PathBuf>> {
     let output = Command::new("git")
-        .args(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
         .current_dir(repo_root)
         .output()
         .with_context(|| format!("git ls-files in {}", repo_root.display()))?;
@@ -240,7 +241,8 @@ fn snapshot_path_excluded(rel: &Path) -> bool {
     if components.is_empty() {
         return false;
     }
-    if components[0].starts_with(".git") || components[0] == "target" || components[0] == "sessions" {
+    if components[0].starts_with(".git") || components[0] == "target" || components[0] == "sessions"
+    {
         return true;
     }
     if components.len() >= 3
@@ -252,7 +254,10 @@ fn snapshot_path_excluded(rel: &Path) -> bool {
     {
         return true;
     }
-    components.last().map(|name| name == ".DS_Store").unwrap_or(false)
+    components
+        .last()
+        .map(|name| name == ".DS_Store")
+        .unwrap_or(false)
 }
 
 fn file_bytes_equal(a: &Path, b: &Path) -> Result<bool> {

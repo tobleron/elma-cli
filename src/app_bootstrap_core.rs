@@ -14,7 +14,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
 
     let cfg_root = config_root_path(&args.config_root)?;
     let (base_url, base_url_source) =
-        resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref());
+        resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref())?;
     save_global_config(
         &global_config_path(&cfg_root),
         &GlobalConfig {
@@ -38,14 +38,16 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         fetch_first_model_id(&client, &base).await?
     };
     let model_cfg_dir = ensure_model_config_folder(&cfg_root, &base_url, &model_id)?;
-    let behavior = ensure_model_behavior_profile(
-        &client,
-        &chat_url,
-        &base_url,
-        &model_cfg_dir,
-        &model_id,
-    )
-    .await?;
+
+    // Set config root for grammar injection
+    crate::ui_chat::set_config_root(cfg_root.clone());
+
+    // Ensure default configs exist (create if missing)
+    // ensure_default_configs(&model_cfg_dir, &base_url, &model_id)?;  // Deprecated
+
+    let behavior =
+        ensure_model_behavior_profile(&client, &chat_url, &base_url, &model_cfg_dir, &model_id)
+            .await?;
     set_model_behavior_profile(Some(behavior.clone()));
 
     if handle_special_modes(
@@ -64,10 +66,14 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
     }
 
     let is_tuned = !should_auto_tune_on_startup(&args, &model_cfg_dir);
-    
+
     if !is_tuned {
         // Need to tune
-        let tune_mode = if args.tune_mode == "quick" { "quick (5 scenarios)" } else { "full" };
+        let tune_mode = if args.tune_mode == "quick" {
+            "quick (5 scenarios)"
+        } else {
+            "full"
+        };
         if args.no_color {
             eprintln!("First-time model setup");
             eprintln!("  model    {}", model_id);
@@ -77,9 +83,14 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
             eprintln!("{}", ansi_orange("First-time model setup"));
             eprintln!("{} {}", ansi_grey("  model   "), model_id);
             eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
-            eprintln!("{} {} {}", ansi_grey("  action  "), tune_mode, "tuning before chat startup");
+            eprintln!(
+                "{} {} {}",
+                ansi_grey("  action  "),
+                tune_mode,
+                "tuning before chat startup"
+            );
         }
-        
+
         let mut auto_tune_args = args.clone();
         auto_tune_args.tune = true;
         match optimize_model(
@@ -90,7 +101,8 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
             &model_cfg_dir,
             &model_id,
         )
-        .await {
+        .await
+        {
             Ok(winner) => {
                 eprintln!(
                     "  tuned    score {:.3}  certified {}",
@@ -108,9 +120,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
     let mut profiles = load_profiles(&model_cfg_dir)?;
     sync_and_upgrade_profiles(&args, &model_cfg_dir, &base_url, &model_id, &mut profiles)?;
     set_json_outputter_profile(Some(profiles.json_outputter_cfg.clone()));
-    set_final_answer_extractor_profile(Some(
-        profiles.final_answer_extractor_cfg.clone(),
-    ));
+    set_final_answer_extractor_profile(Some(profiles.final_answer_extractor_cfg.clone()));
 
     // Task 046: Check if intel unit prompts have changed since last tuning
     // TEMPORARILY DISABLED for stress testing - causes issues
@@ -130,7 +140,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
                         eprintln!("{} {}", ansi_grey("  changed units:"), units.join(", "));
                         eprintln!("{} auto-tuning to update profiles", ansi_grey("  action: "));
                     }
-                    
+
                     // Trigger auto-tune
                     let mut auto_tune_args = args.clone();
                     auto_tune_args.tune = true;
@@ -199,10 +209,23 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
 
     let goal_state = load_goal_state(&session.root).unwrap_or_default();
     if goal_state.has_active_goal() {
-        trace(&args, &format!("loaded_goal_state objective={:?}", goal_state.active_objective));
+        trace(
+            &args,
+            &format!(
+                "loaded_goal_state objective={:?}",
+                goal_state.active_objective
+            ),
+        );
     }
 
-    emit_startup_banner(&args, &chat_url, &model_id, &model_cfg_dir, &session, is_tuned);
+    emit_startup_banner(
+        &args,
+        &chat_url,
+        &model_id,
+        &model_cfg_dir,
+        &session,
+        is_tuned,
+    );
 
     Ok(Some(AppRuntime {
         args,

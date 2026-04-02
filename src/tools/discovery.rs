@@ -1,6 +1,8 @@
 //! Tool Discovery - Scans for available tools and capabilities
 
-use crate::tools::cache::{CachedTool, ToolCache, compute_path_hash, get_cache_path, verify_tool_exists};
+use crate::tools::cache::{
+    compute_path_hash, get_cache_path, verify_tool_exists, CachedTool, ToolCache,
+};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use which::which;
@@ -104,7 +106,11 @@ fn discover_cli_tools() -> Vec<ToolCapability> {
         ("git", "Version control operations", "git <args>"),
         ("rg", "Fast text search with ripgrep", "rg <pattern> <path>"),
         ("grep", "Text search", "grep <pattern> <file>"),
-        ("find", "Find files and directories", "find <path> <expression>"),
+        (
+            "find",
+            "Find files and directories",
+            "find <path> <expression>",
+        ),
         ("jq", "JSON processing", "jq <filter> <json>"),
         ("curl", "HTTP requests", "curl <url>"),
         ("cat", "Display file contents", "cat <file>"),
@@ -120,7 +126,11 @@ fn discover_cli_tools() -> Vec<ToolCapability> {
         ("sort", "Sort lines", "sort <file>"),
         ("uniq", "Filter duplicate lines", "uniq <file>"),
         ("sed", "Stream editor", "sed <expression> <file>"),
-        ("awk", "Pattern scanning and processing", "awk <program> <file>"),
+        (
+            "awk",
+            "Pattern scanning and processing",
+            "awk <program> <file>",
+        ),
         // Additional tools
         ("python3", "Python 3 interpreter", "python3 <script>"),
         ("python", "Python interpreter", "python <script>"),
@@ -129,7 +139,11 @@ fn discover_cli_tools() -> Vec<ToolCapability> {
         ("yarn", "Yarn package manager", "yarn <command>"),
         ("docker", "Container platform", "docker <command>"),
         ("ssh", "SSH client", "ssh <user@host>"),
-        ("rsync", "Fast file copying", "rsync <options> <source> <dest>"),
+        (
+            "rsync",
+            "Fast file copying",
+            "rsync <options> <source> <dest>",
+        ),
         ("wget", "Network downloader", "wget <url>"),
         ("make", "Build automation", "make <target>"),
         ("cmake", "Cross-platform build", "cmake <options>"),
@@ -242,10 +256,18 @@ fn is_executable(path: &Path) -> bool {
 
 fn should_skip_tool(name: &str) -> bool {
     let skip = [
-        ".", "..", ".DS_Store", "Thumbs.db",
-        "python3-config", "python-config",
-        "nodejs", "npm.cmd", "yarn.cmd",
-        "cargo-clippy", "cargo-fmt", "cargo-miri",
+        ".",
+        "..",
+        ".DS_Store",
+        "Thumbs.db",
+        "python3-config",
+        "python-config",
+        "nodejs",
+        "npm.cmd",
+        "yarn.cmd",
+        "cargo-clippy",
+        "cargo-fmt",
+        "cargo-miri",
     ];
     skip.contains(&name) || name.ends_with(".d")
 }
@@ -271,7 +293,9 @@ fn discover_project_tools(workspace: &Path) -> Vec<ToolCapability> {
                 name: "npm".to_string(),
                 description: "Node.js package manager".to_string(),
                 command_template: "npm <command>".to_string(),
-                availability: ToolAvailability::ContextDependent("Node.js project detected".to_string()),
+                availability: ToolAvailability::ContextDependent(
+                    "Node.js project detected".to_string(),
+                ),
                 category: ToolCategory::ProjectSpecific,
             });
         }
@@ -280,7 +304,9 @@ fn discover_project_tools(workspace: &Path) -> Vec<ToolCapability> {
                 name: "yarn".to_string(),
                 description: "Fast Node.js package manager".to_string(),
                 command_template: "yarn <command>".to_string(),
-                availability: ToolAvailability::ContextDependent("Node.js project detected".to_string()),
+                availability: ToolAvailability::ContextDependent(
+                    "Node.js project detected".to_string(),
+                ),
                 category: ToolCategory::ProjectSpecific,
             });
         }
@@ -289,7 +315,9 @@ fn discover_project_tools(workspace: &Path) -> Vec<ToolCapability> {
                 name: "pnpm".to_string(),
                 description: "Fast, disk space efficient package manager".to_string(),
                 command_template: "pnpm <command>".to_string(),
-                availability: ToolAvailability::ContextDependent("Node.js project detected".to_string()),
+                availability: ToolAvailability::ContextDependent(
+                    "Node.js project detected".to_string(),
+                ),
                 category: ToolCategory::ProjectSpecific,
             });
         }
@@ -305,7 +333,9 @@ fn discover_project_tools(workspace: &Path) -> Vec<ToolCapability> {
                 name: "pip".to_string(),
                 description: "Python package installer".to_string(),
                 command_template: "pip <command>".to_string(),
-                availability: ToolAvailability::ContextDependent("Python project detected".to_string()),
+                availability: ToolAvailability::ContextDependent(
+                    "Python project detected".to_string(),
+                ),
                 category: ToolCategory::ProjectSpecific,
             });
         }
@@ -314,7 +344,9 @@ fn discover_project_tools(workspace: &Path) -> Vec<ToolCapability> {
                 name: "python".to_string(),
                 description: "Python interpreter".to_string(),
                 command_template: "python <script>".to_string(),
-                availability: ToolAvailability::ContextDependent("Python project detected".to_string()),
+                availability: ToolAvailability::ContextDependent(
+                    "Python project detected".to_string(),
+                ),
                 category: ToolCategory::ProjectSpecific,
             });
         }

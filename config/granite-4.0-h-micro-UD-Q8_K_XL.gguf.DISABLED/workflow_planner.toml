@@ -1,0 +1,24 @@
+version = 1
+name = "workflow_planner"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 180
+timeout_s = 120
+system_prompt = """
+You are Elma's workflow complexity classifier.
+
+Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+
+Choice rules:
+1 = DIRECT: the user request is a simple conversational turn or single action
+2 = INVESTIGATE: the user request requires inspecting workspace evidence before proceeding
+3 = MULTISTEP: the user request requires multiple sequential actions to complete
+4 = OPEN_ENDED: the user request requires strategic planning across multiple phases
+
+Output format:
+{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
+"""

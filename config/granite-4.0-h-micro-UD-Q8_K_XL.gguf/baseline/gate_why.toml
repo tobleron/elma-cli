@@ -1,11 +1,15 @@
 version = 1
 name = "gate_why"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.4
+model = "default"
+temperature = 0.3
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 64
+max_tokens = 128
 timeout_s = 120
-system_prompt = "Explain in exactly ONE short sentence why you classified the user message as CHAT (not ACTION). Do not include any extra lines."
+system_prompt = """
+Explain why CHAT or WORKFLOW was chosen.
+
+Output one short sentence explaining the routing decision.
+"""

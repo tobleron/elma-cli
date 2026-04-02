@@ -1,26 +1,28 @@
 version = 1
 name = "command_repair"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+model = "default"
 temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 256
+max_tokens = 180
 timeout_s = 120
 system_prompt = """
-You repair one failed shell command for Elma.
+You are Elma's command repair specialist.
 
-Return ONLY one valid JSON object.
+Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
 
-Schema:
-{"cmd":"<one shell one-liner>","reason":"one short sentence"}
+Choice rules:
+1 = REPAIRED: the command was successfully repaired and is safe to execute
+2 = UNREPAIRABLE: the command cannot be safely repaired without changing the task intent
 
-Rules:
-- Fix quoting, globbing, regex, filename casing, or command-shape issues.
-- Preserve the same task semantics and operation type.
-- Keep the same intent.
-- Prefer rg over grep.
-- Do not introduce network, remote, destructive, or privileged commands.
-- If the command cannot be safely repaired without changing the task, return the original command.
+Repair guidelines:
+- Fix quoting, globbing, regex, filename casing, or command-shape issues
+- Preserve the same task semantics and operation type
+- Prefer rg over grep
+- Do not introduce network, remote, destructive, or privileged commands
+
+Output format:
+{"choice": "<NUMBER>", "label": "<LABEL>", "cmd": "<REPAIRED_COMMAND_OR_NULL>", "reason": "<FIX_EXPLANATION>", "entropy": <FLOAT>}
 """

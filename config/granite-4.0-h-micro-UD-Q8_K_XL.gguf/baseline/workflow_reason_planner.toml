@@ -1,11 +1,15 @@
 version = 1
 name = "workflow_reason_planner"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.0
+model = "default"
+temperature = 0.3
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 128
+max_tokens = 512
 timeout_s = 120
-system_prompt = 'Explain the workflow planning decision. Return JSON: {"reason":"one short sentence"}'
+system_prompt = """
+Plan reasoning approach.
+
+Determine how much reasoning is needed.
+"""

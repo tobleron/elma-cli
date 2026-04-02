@@ -8,8 +8,7 @@ use crate::*;
 fn save_json<T: Serialize + ?Sized>(path: &PathBuf, data: &T) -> Result<()> {
     let json = serde_json::to_string_pretty(data)
         .with_context(|| format!("serialize {}", path.display()))?;
-    std::fs::write(path, json)
-        .with_context(|| format!("write {}", path.display()))?;
+    std::fs::write(path, json).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 
@@ -71,41 +70,31 @@ pub(crate) fn save_hierarchy_progress(
 }
 
 /// Load hierarchy progress for resumption
-pub(crate) fn load_hierarchy_progress(
-    session_root: &PathBuf,
-) -> Option<HierarchyProgress> {
+pub(crate) fn load_hierarchy_progress(session_root: &PathBuf) -> Option<HierarchyProgress> {
     let path = session_root.join("hierarchy").join("progress.json");
     load_json(&path)
 }
 
 /// Load goal from session
-pub(crate) fn load_hierarchy_goal(
-    session_root: &PathBuf,
-) -> Option<Goal> {
+pub(crate) fn load_hierarchy_goal(session_root: &PathBuf) -> Option<Goal> {
     let path = session_root.join("hierarchy").join("goal.json");
     load_json(&path)
 }
 
 /// Load subgoals from session
-pub(crate) fn load_hierarchy_subgoals(
-    session_root: &PathBuf,
-) -> Option<Vec<Subgoal>> {
+pub(crate) fn load_hierarchy_subgoals(session_root: &PathBuf) -> Option<Vec<Subgoal>> {
     let path = session_root.join("hierarchy").join("subgoals.json");
     load_json(&path)
 }
 
 /// Load tasks from session
-pub(crate) fn load_hierarchy_tasks(
-    session_root: &PathBuf,
-) -> Option<Vec<Task>> {
+pub(crate) fn load_hierarchy_tasks(session_root: &PathBuf) -> Option<Vec<Task>> {
     let path = session_root.join("hierarchy").join("tasks.json");
     load_json(&path)
 }
 
 /// Load methods from session
-pub(crate) fn load_hierarchy_methods(
-    session_root: &PathBuf,
-) -> Option<Vec<Method>> {
+pub(crate) fn load_hierarchy_methods(session_root: &PathBuf) -> Option<Vec<Method>> {
     let path = session_root.join("hierarchy").join("methods.json");
     load_json(&path)
 }

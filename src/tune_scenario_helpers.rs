@@ -190,24 +190,60 @@ pub(crate) async fn execute_and_evaluate_program(
     conversation_messages: &[ChatMessage],
     program: Program,
     mut actual_step_count: usize,
-) -> Result<(bool, Option<bool>, Option<bool>, Option<String>, Option<bool>, Option<String>,
-              Option<bool>, Option<bool>, Option<String>, Option<bool>, Option<String>,
-              Option<bool>, Option<String>, Option<bool>, Option<String>)> {
+) -> Result<(
+    bool,
+    Option<bool>,
+    Option<bool>,
+    Option<String>,
+    Option<bool>,
+    Option<String>,
+    Option<bool>,
+    Option<bool>,
+    Option<String>,
+    Option<bool>,
+    Option<String>,
+    Option<bool>,
+    Option<String>,
+    Option<bool>,
+    Option<String>,
+)> {
     let session = ensure_session_layout(&resources.tune_sessions_root)?;
     let mut loop_outcome = run_autonomous_loop(
-        args, client, chat_url, &session, &resources.repo, program, decision,
-        workflow_plan, complexity, scope, formula, &resources.ws, &resources.ws_brief,
-        conversation_messages, &resources.orchestrator_cfg, &resources.planner_cfg,
-        &resources.planner_master_cfg, &resources.decider_cfg, &resources.selector_cfg,
-        &resources.summarizer_cfg, &resources.command_repair_cfg, &resources.command_preflight_cfg,
-        &resources.task_semantics_guard_cfg, &resources.evidence_compactor_cfg,
-        &resources.artifact_classifier_cfg, &resources.outcome_verifier_cfg,
-        &resources.execution_sufficiency_cfg, &resources.critic_cfg,
-        &resources.logical_reviewer_cfg, &resources.efficiency_reviewer_cfg,
-        &resources.risk_reviewer_cfg, &resources.refinement_cfg,
+        args,
+        client,
+        chat_url,
+        &session,
+        &resources.repo,
+        program,
+        decision,
+        workflow_plan,
+        complexity,
+        scope,
+        formula,
+        &resources.ws,
+        &resources.ws_brief,
+        conversation_messages,
+        &resources.orchestrator_cfg,
+        &resources.planner_cfg,
+        &resources.planner_master_cfg,
+        &resources.decider_cfg,
+        &resources.selector_cfg,
+        &resources.summarizer_cfg,
+        &resources.command_repair_cfg,
+        &resources.command_preflight_cfg,
+        &resources.task_semantics_guard_cfg,
+        &resources.evidence_compactor_cfg,
+        &resources.artifact_classifier_cfg,
+        &resources.outcome_verifier_cfg,
+        &resources.execution_sufficiency_cfg,
+        &resources.critic_cfg,
+        &resources.logical_reviewer_cfg,
+        &resources.efficiency_reviewer_cfg,
+        &resources.risk_reviewer_cfg,
+        &resources.refinement_cfg,
     )
     .await?;
-    
+
     actual_step_count = loop_outcome.program.steps.len();
     let step_results = loop_outcome.step_results;
     let mut final_reply = loop_outcome.final_reply;
@@ -218,41 +254,70 @@ pub(crate) async fn execute_and_evaluate_program(
 
     let merged_program = loop_outcome.program;
     let sufficiency = check_execution_sufficiency_once(
-        client, chat_url, &resources.execution_sufficiency_cfg, user_message,
-        decision, &merged_program, &step_results,
-    ).await.ok();
+        client,
+        chat_url,
+        &resources.execution_sufficiency_cfg,
+        user_message,
+        decision,
+        &merged_program,
+        &step_results,
+    )
+    .await
+    .ok();
 
     let (critic_ok, critic_reason) = if let Some(ref verdict) = sufficiency {
-        (Some(verdict.status.eq_ignore_ascii_case(if step_exec_ok { "ok" } else { "retry" })),
-         Some(verdict.reason.clone()))
+        (
+            Some(
+                verdict
+                    .status
+                    .eq_ignore_ascii_case(if step_exec_ok { "ok" } else { "retry" }),
+            ),
+            Some(verdict.reason.clone()),
+        )
     } else {
         (None, Some("sufficiency error".to_string()))
     };
 
-    let shell_summaries: Vec<_> = step_results.iter()
+    let shell_summaries: Vec<_> = step_results
+        .iter()
         .filter(|r| r.kind == "shell")
         .map(|r| r.summary.clone())
         .collect();
     let (compaction_ok, compaction_reason) = if !shell_summaries.is_empty() {
-        let compact_good = shell_summaries.iter()
+        let compact_good = shell_summaries
+            .iter()
             .all(|s| !s.trim().is_empty() && s.lines().count() <= 24);
-        (Some(compact_good), Some(if compact_good {
-            "shell evidence was compacted to a focused summary".to_string()
-        } else {
-            "shell evidence remained too noisy or empty".to_string()
-        }))
+        (
+            Some(compact_good),
+            Some(if compact_good {
+                "shell evidence was compacted to a focused summary".to_string()
+            } else {
+                "shell evidence remained too noisy or empty".to_string()
+            }),
+        )
     } else {
         (None, None)
     };
 
     let (classification_ok, classification_reason) = if !scenario.expected_categories.is_empty() {
-        let classification_text = step_results.iter().map(|r| r.summary.as_str()).collect::<Vec<_>>().join("\n");
-        let classification_good = text_contains_keywords(&classification_text, &scenario.expected_categories);
-        (Some(classification_good), Some(if classification_good {
-            "artifact categories were present in the evidence summary".to_string()
-        } else {
-            format!("missing expected categories {:?}", scenario.expected_categories)
-        }))
+        let classification_text = step_results
+            .iter()
+            .map(|r| r.summary.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let classification_good =
+            text_contains_keywords(&classification_text, &scenario.expected_categories);
+        (
+            Some(classification_good),
+            Some(if classification_good {
+                "artifact categories were present in the evidence summary".to_string()
+            } else {
+                format!(
+                    "missing expected categories {:?}",
+                    scenario.expected_categories
+                )
+            }),
+        )
     } else {
         (None, None)
     };
@@ -262,28 +327,85 @@ pub(crate) async fn execute_and_evaluate_program(
     });
 
     let evidence_mode = decide_evidence_mode_once(
-        client, chat_url, &resources.evidence_mode_cfg, user_message, decision,
-        &reply_instructions, &step_results,
-    ).await.unwrap_or_else(|_| EvidenceModeDecision { mode: "COMPACT".to_string(), reason: "fallback".to_string() });
+        client,
+        chat_url,
+        &resources.evidence_mode_cfg,
+        user_message,
+        decision,
+        &reply_instructions,
+        &step_results,
+    )
+    .await
+    .unwrap_or_else(|_| EvidenceModeDecision {
+        mode: "COMPACT".to_string(),
+        reason: "fallback".to_string(),
+    });
 
-    let (response_ok, response_reason, response_plain_text, presentation_ok, presentation_reason,
-         claim_check_ok, claim_check_reason) = match generate_final_answer_once(
-        client, chat_url, &resources.elma_cfg, &resources.evidence_mode_cfg,
-        &resources.result_presenter_cfg, &resources.claim_checker_cfg, &resources.formatter_cfg,
-        &resources.system_content, user_message, decision, &step_results, &reply_instructions,
-    ).await {
-        Ok((final_text, _)) => evaluate_final_answer(
-            client, chat_url, resources, scenario, user_message, &evidence_mode,
-            &step_results, &final_text,
-        ).await,
-        Err(error) => (Some(false), Some(format!("reply error: {error}")), Some(false),
-                       Some(false), Some("no final answer was produced".to_string()),
-                       Some(false), Some("claim checker skipped because reply generation failed".to_string())),
+    let (
+        response_ok,
+        response_reason,
+        response_plain_text,
+        presentation_ok,
+        presentation_reason,
+        claim_check_ok,
+        claim_check_reason,
+    ) = match generate_final_answer_once(
+        client,
+        chat_url,
+        &resources.elma_cfg,
+        &resources.evidence_mode_cfg,
+        &resources.result_presenter_cfg,
+        &resources.claim_checker_cfg,
+        &resources.formatter_cfg,
+        &resources.system_content,
+        user_message,
+        decision,
+        &step_results,
+        &reply_instructions,
+    )
+    .await
+    {
+        Ok((final_text, _)) => {
+            evaluate_final_answer(
+                client,
+                chat_url,
+                resources,
+                scenario,
+                user_message,
+                &evidence_mode,
+                &step_results,
+                &final_text,
+            )
+            .await
+        }
+        Err(error) => (
+            Some(false),
+            Some(format!("reply error: {error}")),
+            Some(false),
+            Some(false),
+            Some("no final answer was produced".to_string()),
+            Some(false),
+            Some("claim checker skipped because reply generation failed".to_string()),
+        ),
     };
 
-    Ok((true, execution_ok, critic_ok, critic_reason, response_ok, response_reason,
-        response_plain_text, compaction_ok, compaction_reason, classification_ok, classification_reason,
-        claim_check_ok, claim_check_reason, presentation_ok, presentation_reason))
+    Ok((
+        true,
+        execution_ok,
+        critic_ok,
+        critic_reason,
+        response_ok,
+        response_reason,
+        response_plain_text,
+        compaction_ok,
+        compaction_reason,
+        classification_ok,
+        classification_reason,
+        claim_check_ok,
+        claim_check_reason,
+        presentation_ok,
+        presentation_reason,
+    ))
 }
 
 /// Evaluate final answer through claim checker and judge
@@ -296,34 +418,88 @@ async fn evaluate_final_answer(
     evidence_mode: &EvidenceModeDecision,
     step_results: &[StepResult],
     final_text: &str,
-) -> (Option<bool>, Option<String>, Option<bool>, Option<bool>, Option<String>, Option<bool>, Option<String>) {
+) -> (
+    Option<bool>,
+    Option<String>,
+    Option<bool>,
+    Option<bool>,
+    Option<String>,
+    Option<bool>,
+    Option<String>,
+) {
     let (claim_check_ok, claim_check_reason) = match claim_check_once(
-        client, chat_url, &resources.claim_checker_cfg, user_message,
-        evidence_mode, step_results, final_text,
-    ).await {
-        Ok(verdict) => (Some(verdict.status.eq_ignore_ascii_case("ok")), Some(verdict.reason)),
+        client,
+        chat_url,
+        &resources.claim_checker_cfg,
+        user_message,
+        evidence_mode,
+        step_results,
+        final_text,
+    )
+    .await
+    {
+        Ok(verdict) => (
+            Some(verdict.status.eq_ignore_ascii_case("ok")),
+            Some(verdict.reason),
+        ),
         Err(_) => (Some(false), Some("claim checker error".to_string())),
     };
 
     let (response_ok, response_reason, response_plain_text, presentation_ok, presentation_reason) =
         match judge_final_answer_once(
-            client, chat_url, &resources.calibration_judge_cfg, scenario,
-            user_message, step_results, final_text,
-        ).await {
+            client,
+            chat_url,
+            &resources.calibration_judge_cfg,
+            scenario,
+            user_message,
+            step_results,
+            final_text,
+        )
+        .await
+        {
             Ok(verdict) => {
-                let keyword_ok = text_contains_keywords(final_text, &scenario.expected_answer_keywords)
-                    && text_avoids_keywords(final_text, &scenario.avoid_answer_keywords);
-                let ok = verdict.status.eq_ignore_ascii_case("pass") && verdict.answered_request
-                    && verdict.faithful_to_evidence && verdict.plain_text && keyword_ok;
+                let keyword_ok =
+                    text_contains_keywords(final_text, &scenario.expected_answer_keywords)
+                        && text_avoids_keywords(final_text, &scenario.avoid_answer_keywords);
+                let ok = verdict.status.eq_ignore_ascii_case("pass")
+                    && verdict.answered_request
+                    && verdict.faithful_to_evidence
+                    && verdict.plain_text
+                    && keyword_ok;
                 let present_ok = verdict.plain_text && keyword_ok;
-                (Some(ok), Some(if keyword_ok { verdict.reason } else { "answer keywords did not match scenario expectations".to_string() }),
-                 Some(verdict.plain_text), Some(present_ok),
-                 Some(if present_ok { "final answer was concise plain text and matched expected content".to_string() }
-                      else { "final answer formatting or content did not match expectations".to_string() }))
+                (
+                    Some(ok),
+                    Some(if keyword_ok {
+                        verdict.reason
+                    } else {
+                        "answer keywords did not match scenario expectations".to_string()
+                    }),
+                    Some(verdict.plain_text),
+                    Some(present_ok),
+                    Some(if present_ok {
+                        "final answer was concise plain text and matched expected content"
+                            .to_string()
+                    } else {
+                        "final answer formatting or content did not match expectations".to_string()
+                    }),
+                )
             }
-            Err(error) => (Some(false), Some(format!("judge error: {error}")),
-                           Some(!looks_like_markdown(final_text)), Some(false), Some("presentation judge failed".to_string())),
+            Err(error) => (
+                Some(false),
+                Some(format!("judge error: {error}")),
+                Some(!looks_like_markdown(final_text)),
+                Some(false),
+                Some("presentation judge failed".to_string()),
+            ),
         };
 
-    (response_ok, response_reason, response_plain_text, presentation_ok, presentation_reason, claim_check_ok, claim_check_reason)
+    (
+        response_ok,
+        response_reason,
+        response_plain_text,
+        presentation_ok,
+        presentation_reason,
+        claim_check_ok,
+        claim_check_reason,
+    )
 }

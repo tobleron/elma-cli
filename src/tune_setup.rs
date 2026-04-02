@@ -44,8 +44,7 @@ pub(crate) async fn prepare_tune_resources(
     let execution_sufficiency_cfg =
         load_agent_config(&model_cfg_dir.join("execution_sufficiency.toml"))?;
     let scope_builder_cfg = load_agent_config(&model_cfg_dir.join("scope_builder.toml"))?;
-    let evidence_compactor_cfg =
-        load_agent_config(&model_cfg_dir.join("evidence_compactor.toml"))?;
+    let evidence_compactor_cfg = load_agent_config(&model_cfg_dir.join("evidence_compactor.toml"))?;
     let artifact_classifier_cfg =
         load_agent_config(&model_cfg_dir.join("artifact_classifier.toml"))?;
     let evidence_mode_cfg = load_agent_config(&model_cfg_dir.join("evidence_mode.toml"))?;
@@ -60,8 +59,7 @@ pub(crate) async fn prepare_tune_resources(
         load_agent_config(&model_cfg_dir.join("efficiency_reviewer.toml"))?;
     let risk_reviewer_cfg = load_agent_config(&model_cfg_dir.join("risk_reviewer.toml"))?;
     let refinement_cfg = load_agent_config(&model_cfg_dir.join("refinement.toml"))?;
-    let calibration_judge_cfg =
-        load_agent_config(&model_cfg_dir.join("calibration_judge.toml"))?;
+    let calibration_judge_cfg = load_agent_config(&model_cfg_dir.join("calibration_judge.toml"))?;
 
     let n_probs = 64u32;
     let supports_logprobs = probe_router_support(client, chat_url, model_id, n_probs).await?;
@@ -210,7 +208,8 @@ async fn write_intention_mapping(
     let mut lines = Vec::new();
 
     for (index, path) in scenario_paths.into_iter().enumerate() {
-        let txt = std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let txt =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
         let Some(expected) = read_expected_line(&txt) else {
             continue;
         };

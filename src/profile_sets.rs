@@ -84,7 +84,11 @@ pub(crate) fn snapshot_active_profile_set(model_cfg_dir: &Path, snapshot_dir: &P
     Ok(())
 }
 
-pub(crate) fn sync_profile_dir_base_url_and_model(dir: &Path, base_url: &str, model: &str) -> Result<()> {
+pub(crate) fn sync_profile_dir_base_url_and_model(
+    dir: &Path,
+    base_url: &str,
+    model: &str,
+) -> Result<()> {
     for filename in managed_profile_file_names() {
         let path = dir.join(filename);
         if !path.exists() {
@@ -165,7 +169,10 @@ pub(crate) fn load_recent_formula_memories(
     Ok(out)
 }
 
-pub(crate) fn save_formula_memory(model_cfg_dir: &Path, record: &FormulaMemoryRecord) -> Result<PathBuf> {
+pub(crate) fn save_formula_memory(
+    model_cfg_dir: &Path,
+    record: &FormulaMemoryRecord,
+) -> Result<PathBuf> {
     let dir = model_formula_memory_dir(model_cfg_dir);
     std::fs::create_dir_all(&dir).with_context(|| format!("mkdir {}", dir.display()))?;
     let path = dir.join(format!("{}.json", record.id));
@@ -267,7 +274,11 @@ pub(crate) fn ensure_model_config_folder(
     Ok(dir)
 }
 
-pub(crate) fn maybe_upgrade_system_prompt(profile: &mut Profile, expected_name: &str, patch: &str) -> bool {
+pub(crate) fn maybe_upgrade_system_prompt(
+    profile: &mut Profile,
+    expected_name: &str,
+    patch: &str,
+) -> bool {
     if profile.name != expected_name {
         return false;
     }

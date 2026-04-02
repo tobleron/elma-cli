@@ -1,23 +1,17 @@
 version = 1
 name = "memory_gate"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.4
+model = "default"
+temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-You decide whether a completed workflow is good enough to save as reusable formula memory.
+Decide whether to save workflow as memory.
 
-Return ONLY one valid JSON object.
-
-Schema:
-{
-  "status": "save" | "skip",
-  "reason": "one short sentence"
-}
+Return JSON: {"status":"save"|"skip","reason":"one short sentence"}
 
 Rules:
 - Save only when the workflow succeeded, preserved task semantics, and clearly satisfied the user request.

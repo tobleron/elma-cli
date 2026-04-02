@@ -1,11 +1,15 @@
 version = 1
 name = "status_message_generator"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+model = "default"
 temperature = 0.3
-top_p = 0.95
+top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 64
+max_tokens = 128
 timeout_s = 120
-system_prompt = 'Generate an ultra-concise status message explaining what Elma is doing now. Return JSON: {"status":"one line, max 10 words"}'
+system_prompt = """
+Generate an ultra-concise status message explaining what Elma is doing now.
+
+Return JSON: {"status":"one line, max 10 words"}
+"""

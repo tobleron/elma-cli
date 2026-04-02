@@ -21,7 +21,7 @@ mod app_chat_core;
 mod app_chat_handlers;
 mod app_chat_helpers;
 mod app_chat_trace;
-mod decomposition;  // Task 023: Hierarchical decomposition
+mod decomposition; // Task 023: Hierarchical decomposition
 mod defaults;
 mod defaults_core;
 mod defaults_evidence;
@@ -31,6 +31,7 @@ mod evaluation_response;
 mod evaluation_routing;
 mod evaluation_workflow;
 mod execution;
+mod execution_ladder; // Execution ladder for minimum-sufficient orchestration
 mod execution_steps;
 mod execution_steps_compat;
 mod execution_steps_edit;
@@ -39,15 +40,16 @@ mod execution_steps_search;
 mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
-mod execution_ladder;  // Execution ladder for minimum-sufficient orchestration
-mod strategy;  // Multi-strategy planning with fallback chains (Task 010)
-mod guardrails;  // State-aware guardrails for context drift (Task 011)
+mod formulas;
+mod guardrails; // State-aware guardrails for context drift (Task 011)
 mod intel;
-mod intel_trait;  // Intel unit trait and interfaces
-mod intel_units;  // Migrated intel units (complexity, evidence, action, workflow)
-mod intel_narrative;  // Narrative transformation for intel units
-mod json_error_handler;  // JSON error handling with circuit breaker
-mod json_tuning;  // JSON temperature tuning
+mod intel_narrative; // Narrative transformation for intel units
+mod intel_trait; // Intel unit trait and interfaces
+mod intel_units; // Migrated intel units (complexity, evidence, action, workflow)
+mod json_error_handler; // JSON error handling with circuit breaker
+mod json_grammar; // GBNF grammar loading and injection
+mod json_parser; // Robust JSON parsing for intel unit outputs
+mod json_tuning; // JSON temperature tuning
 mod metrics;
 mod models_api;
 mod optimization;
@@ -67,8 +69,8 @@ mod program;
 mod program_policy;
 mod program_steps;
 mod program_utils;
-mod reflection;
 mod refinement;
+mod reflection;
 mod routing;
 mod routing_calc;
 mod routing_infer;
@@ -82,9 +84,11 @@ mod session_seq;
 mod session_write;
 mod snapshot;
 mod storage;
+mod strategy; // Multi-strategy planning with fallback chains (Task 010)
 mod text_utils;
 mod thinking_content;
 mod tool_discovery;
+mod tools;
 mod tune;
 mod tune_runtime;
 mod tune_scenario;
@@ -104,37 +108,36 @@ mod ui_trace;
 mod verification;
 mod workspace;
 mod workspace_tree;
-mod tools;
-mod formulas;
 
-pub(crate) use defaults_evidence::*;  // JSON pipeline intel functions
+pub(crate) use decomposition::*; // Task 023
 pub(crate) use defaults::*;
+pub(crate) use defaults_evidence::*; // JSON pipeline intel functions
 pub(crate) use evaluation::*;
 pub(crate) use execution::*;
-pub(crate) use execution_ladder::*;  // Execution ladder types and functions
-pub(crate) use strategy::*;  // Multi-strategy planning (Task 010)
-pub(crate) use guardrails::*;  // State-aware guardrails (Task 011)
+pub(crate) use execution_ladder::*; // Execution ladder types and functions
+pub(crate) use guardrails::*; // State-aware guardrails (Task 011)
 pub(crate) use intel::*;
-pub(crate) use intel_trait::*;  // Intel unit trait and interfaces
-pub(crate) use intel_units::*;  // Migrated intel units
-pub(crate) use json_error_handler::*;  // JSON error handling
-pub(crate) use json_tuning::*;  // JSON temperature tuning
+pub(crate) use intel_trait::*; // Intel unit trait and interfaces
+pub(crate) use intel_units::*; // Migrated intel units
+pub(crate) use json_error_handler::*; // JSON error handling
+pub(crate) use json_grammar::*; // GBNF grammar loading and injection
+pub(crate) use json_tuning::*; // JSON temperature tuning
 pub(crate) use metrics::*;
 pub(crate) use models_api::*;
 pub(crate) use optimization::*;
-pub(crate) use orchestration_helpers::*;  // should_skip_intel
-pub(crate) use decomposition::*;  // Task 023
 pub(crate) use orchestration::*;
+pub(crate) use orchestration_helpers::*;
 pub(crate) use paths::*;
 pub(crate) use profile_sets::*;
 pub(crate) use program::*;
-pub(crate) use reflection::*;
 pub(crate) use refinement::*;
+pub(crate) use reflection::*;
 pub(crate) use routing::*;
 pub(crate) use scenarios::*;
 pub(crate) use session::*;
 pub(crate) use snapshot::*;
 pub(crate) use storage::*;
+pub(crate) use strategy::*; // Multi-strategy planning (Task 010)
 pub(crate) use text_utils::*;
 pub(crate) use thinking_content::*;
 pub(crate) use tune::*;

@@ -5,9 +5,9 @@
 //! Provides core orchestration function for program generation,
 //! recovery, criticism, and final answer generation.
 
-use crate::*;
-use crate::formulas::{FormulaPattern, FormulaScores, select_optimal_formula};
+use crate::formulas::{select_optimal_formula, FormulaPattern, FormulaScores};
 use crate::tools::ToolRegistry;
+use crate::*;
 
 pub(crate) async fn orchestrate_program_once(
     client: &reqwest::Client,
@@ -31,7 +31,7 @@ pub(crate) async fn orchestrate_program_once(
     let formula_selection = select_optimal_formula(
         &complexity.complexity,
         &complexity.risk,
-        0.5,  // Balanced efficiency priority (can be tuned)
+        0.5, // Balanced efficiency priority (can be tuned)
     );
 
     let prompt = build_orchestrator_user_content(
@@ -52,8 +52,14 @@ pub(crate) async fn orchestrate_program_once(
     let use_grammar = route_decision.route.eq_ignore_ascii_case("SHELL")
         || route_decision.route.eq_ignore_ascii_case("WORKFLOW");
 
-    orchestration_helpers::request_program_or_repair(client, chat_url, orchestrator_cfg, &prompt, use_grammar)
-        .await
+    orchestration_helpers::request_program_or_repair(
+        client,
+        chat_url,
+        orchestrator_cfg,
+        &prompt,
+        use_grammar,
+    )
+    .await
 }
 
 pub(crate) async fn recover_program_once(
@@ -87,8 +93,14 @@ pub(crate) async fn recover_program_once(
         current_program,
         step_results,
     );
-    orchestration_helpers::request_recovery_program(client, chat_url, orchestrator_cfg, &prompt, step_results)
-        .await
+    orchestration_helpers::request_recovery_program(
+        client,
+        chat_url,
+        orchestrator_cfg,
+        &prompt,
+        step_results,
+    )
+    .await
 }
 
 pub(crate) async fn run_critic_once(

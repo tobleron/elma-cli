@@ -20,7 +20,10 @@ pub(crate) fn next_program_is_stale(plan: &AgentPlan, next_program: &Program) ->
 }
 
 pub(crate) fn program_has_shell_or_edit(program: &Program) -> bool {
-    program.steps.iter().any(|step| matches!(step, Step::Shell { .. } | Step::Edit { .. }))
+    program
+        .steps
+        .iter()
+        .any(|step| matches!(step, Step::Shell { .. } | Step::Edit { .. }))
 }
 
 pub(crate) fn step_results_have_shell_or_edit(step_results: &[StepResult]) -> bool {

@@ -13,14 +13,8 @@ pub(crate) async fn evaluate_routing_suite(
     if let Ok(cfg) = load_agent_config(&candidate_dir.join("final_answer_extractor.toml")) {
         set_final_answer_extractor_profile(Some(cfg));
     }
-    evaluation_routing::evaluate_routing_suite_impl(
-        args,
-        client,
-        chat_url,
-        candidate_dir,
-        model_id,
-    )
-    .await
+    evaluation_routing::evaluate_routing_suite_impl(args, client, chat_url, candidate_dir, model_id)
+        .await
 }
 
 pub(crate) async fn evaluate_workflow_suite(
@@ -115,10 +109,10 @@ pub(crate) async fn evaluate_candidate_dir(
         report: report.clone(),
         score,
         hard_rejected,
-        variance: 0.0,  // Task 009: Will be calculated in repeated evaluations
+        variance: 0.0, // Task 009: Will be calculated in repeated evaluations
         std_dev: 0.0,
         parse_failure_count: report.summary.all_ok.total - report.summary.all_ok.correct,
-        latency_avg_ms: 0.0,  // Task 009: Will be measured in repeated evaluations
+        latency_avg_ms: 0.0, // Task 009: Will be measured in repeated evaluations
     })
 }
 
@@ -138,7 +132,10 @@ pub(crate) fn make_candidate_dir(run_root: &Path, name: &str) -> Result<PathBuf>
     Ok(dir)
 }
 
-pub(crate) fn select_top_beam(candidates: Vec<CandidateScore>, beam_width: usize) -> Vec<CandidateScore> {
+pub(crate) fn select_top_beam(
+    candidates: Vec<CandidateScore>,
+    beam_width: usize,
+) -> Vec<CandidateScore> {
     let mut sorted = candidates;
     sorted.sort_by(|a, b| {
         b.score

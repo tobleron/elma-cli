@@ -1,0 +1,7 @@
+root ::= "{" ws "\"objective\":" ws string ws "," ws "\"focus_paths\":" ws string_list ws "," ws "\"include_globs\":" ws string_list ws "," ws "\"exclude_globs\":" ws string_list ws "," ws "\"query_terms\":" ws string_list ws "," ws "\"expected_artifacts\":" ws string_list ws "," ws "\"reason\":" ws string ws "}"
+string_list ::= "[" ws "]" | "[" ws string_items ws "]"
+string_items ::= string | string "," ws string_items
+string ::= "\"" chars "\""
+chars ::= "" | char chars
+char ::= [a-zA-Z0-9_./:*?&%+#,;!(){}[\]<>='" -]
+ws ::= [ \t\n]*

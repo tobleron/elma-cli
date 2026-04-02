@@ -13,6 +13,13 @@ pub(crate) async fn claim_check_once(
     step_results: &[StepResult],
     draft: &str,
 ) -> Result<ClaimCheckVerdict> {
+    let narrative = crate::intel_narrative::build_claim_check_narrative(
+        user_message,
+        &evidence_mode.mode,
+        draft,
+        step_results,
+    );
+
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
@@ -22,13 +29,7 @@ pub(crate) async fn claim_check_once(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "evidence_mode": evidence_mode,
-                    "draft": draft,
-                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
-                })
-                .to_string(),
+                content: narrative,
             },
         ],
         temperature: cfg.temperature,
@@ -53,6 +54,14 @@ pub(crate) async fn guard_repair_semantics_once(
     repaired_cmd: &str,
     failed_output: &str,
 ) -> Result<RepairSemanticsVerdict> {
+    let narrative = crate::intel_narrative::build_repair_semantics_narrative(
+        objective,
+        purpose,
+        original_cmd,
+        repaired_cmd,
+        &summarize_shell_output(failed_output),
+    );
+
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
@@ -62,14 +71,7 @@ pub(crate) async fn guard_repair_semantics_once(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: serde_json::json!({
-                    "objective": objective,
-                    "purpose": purpose,
-                    "original_cmd": original_cmd,
-                    "repaired_cmd": repaired_cmd,
-                    "failed_output": summarize_shell_output(failed_output),
-                })
-                .to_string(),
+                content: narrative,
             },
         ],
         temperature: cfg.temperature,
@@ -88,11 +90,17 @@ pub(crate) async fn check_execution_sufficiency_once(
     client: &reqwest::Client,
     chat_url: &Url,
     cfg: &Profile,
-    user_message: &str,
-    route_decision: &RouteDecision,
+    _user_message: &str,
+    _route_decision: &RouteDecision,
     program: &Program,
     step_results: &[StepResult],
 ) -> Result<ExecutionSufficiencyVerdict> {
+    let narrative = crate::intel_narrative::build_sufficiency_narrative(
+        &program.objective,
+        program,
+        step_results,
+    );
+
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
@@ -102,14 +110,7 @@ pub(crate) async fn check_execution_sufficiency_once(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "route": route_decision.route,
-                    "objective": program.objective,
-                    "program_steps": program.steps.iter().map(program_step_json).collect::<Vec<_>>(),
-                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
-                })
-                .to_string(),
+                content: narrative,
             },
         ],
         temperature: cfg.temperature,
@@ -128,7 +129,7 @@ pub(crate) async fn verify_outcome_match_intent(
     args: &Args,
     client: &reqwest::Client,
     chat_url: &Url,
-    outcome_verifier_cfg: &Profile,  // Use this to get base_url and model
+    outcome_verifier_cfg: &Profile, // Use this to get base_url and model
     user_message: &str,
     _route_decision: &RouteDecision,
     _objective: &str,
@@ -142,38 +143,37 @@ pub(crate) async fn verify_outcome_match_intent(
     // 4. Repair if needed (json_repair config)
     // 5. Schema validate
     // 6. Deterministic fix if schema fails
-    
+
     let reasoning = format!(
         "User request: {}\nStep purpose: {}\nStep result: exit_code={:?}, output={:?}",
         user_message,
         step.purpose(),
         step_result.exit_code,
-        step_result.raw_output.as_ref().map(|s| &s[..s.len().min(200)])
+        step_result
+            .raw_output
+            .as_ref()
+            .map(|s| &s[..s.len().min(200)])
     );
-    
+
     // Get pipeline configs from defaults using actual base_url and model
     let base_url = outcome_verifier_cfg.base_url.clone();
     let model = outcome_verifier_cfg.model.clone();
-    
+
     let text_gen_cfg = default_text_generator_config(&base_url, &model);
     let json_conv_cfg = default_json_converter_config(&base_url, &model);
     let verify_cfg = default_verify_checker_config(&base_url, &model);
     let repair_cfg = default_json_repair_config(&base_url, &model);
-    
+
     // Step 1: Generate text from reasoning
-    let text = match generate_text_from_reasoning(
-        client,
-        chat_url,
-        &text_gen_cfg,
-        &reasoning,
-    ).await {
+    let text = match generate_text_from_reasoning(client, chat_url, &text_gen_cfg, &reasoning).await
+    {
         Ok(t) => t,
         Err(e) => {
             trace(args, &format!("text_generator_failed error={}", e));
-            reasoning  // Fallback to original reasoning
+            reasoning // Fallback to original reasoning
         }
     };
-    
+
     // Step 2: Convert text to JSON
     let schema_desc = r#"{
   "type": "object",
@@ -183,28 +183,18 @@ pub(crate) async fn verify_outcome_match_intent(
     "reason": {"type": "string", "minLength": 1}
   }
 }"#;
-    
-    let json_str = match convert_text_to_json(
-        client,
-        chat_url,
-        &json_conv_cfg,
-        &text,
-        schema_desc,
-    ).await {
-        Ok(j) => j,
-        Err(e) => {
-            trace(args, &format!("json_converter_failed error={}", e));
-            return Ok(default_outcome_verdict(step_result.exit_code.unwrap_or(0)));
-        }
-    };
-    
+
+    let json_str =
+        match convert_text_to_json(client, chat_url, &json_conv_cfg, &text, schema_desc).await {
+            Ok(j) => j,
+            Err(e) => {
+                trace(args, &format!("json_converter_failed error={}", e));
+                return Ok(default_outcome_verdict(step_result.exit_code.unwrap_or(0)));
+            }
+        };
+
     // Step 3: Verify JSON
-    let verify_result = match verify_json(
-        client,
-        chat_url,
-        &verify_cfg,
-        &json_str,
-    ).await {
+    let verify_result = match verify_json(client, chat_url, &verify_cfg, &json_str).await {
         Ok(r) => r,
         Err(e) => {
             trace(args, &format!("verify_checker_failed error={}", e));
@@ -212,7 +202,7 @@ pub(crate) async fn verify_outcome_match_intent(
             return parse_verdict_from_json(&json_str, step_result);
         }
     };
-    
+
     // Step 4: Repair if problems found
     let final_json = if verify_result.status == "problems" && !verify_result.problems.is_empty() {
         match repair_json(
@@ -221,21 +211,23 @@ pub(crate) async fn verify_outcome_match_intent(
             &repair_cfg,
             &json_str,
             &verify_result.problems,
-        ).await {
+        )
+        .await
+        {
             Ok(repaired) => {
                 trace(args, "json_repaired successfully");
                 repaired
             }
             Err(e) => {
                 trace(args, &format!("json_repair_failed error={}", e));
-                json_str  // Use original
+                json_str // Use original
             }
         }
     } else {
         trace(args, "json_verification_passed");
         json_str
     };
-    
+
     // Step 5 & 6: Parse and schema validate (existing flow)
     parse_verdict_from_json(&final_json, step_result)
 }
@@ -253,7 +245,7 @@ fn parse_verdict_from_json(
             return Ok(default_outcome_verdict(step_result.exit_code.unwrap_or(0)));
         }
     };
-    
+
     // Schema validation happens in the caller (verify_nontrivial_step_outcomes)
     Ok(verdict)
 }
@@ -305,52 +297,50 @@ pub(crate) async fn verify_nontrivial_step_outcomes(
                     Err(schema_err) => {
                         // Schema invalid, try deterministic fix
                         record_json_failure(args, "outcome_schema");
-                        
+
                         if let Ok(json) = serde_json::to_value(&verdict) {
                             let error_messages: Vec<String> = match &schema_err {
                                 SchemaValidationError::ValidationErrors(errs) => errs.clone(),
                                 _ => vec![schema_err.to_string()],
                             };
-                            
-                            if let Some(fixed) = deterministic_fix_outcome_verdict(
-                                args,
-                                &verdict,
-                                &error_messages,
-                            ) {
+
+                            if let Some(fixed) =
+                                deterministic_fix_outcome_verdict(args, &verdict, &error_messages)
+                            {
                                 log_fallback_usage(
                                     args,
                                     "outcome_verifier",
                                     &schema_err.to_string(),
-                                    "schema_deterministic_fix"
+                                    "schema_deterministic_fix",
                                 );
-                                trace(
-                                    args,
-                                    &format!("outcome_schema_fixed id={}", result.id),
-                                );
+                                trace(args, &format!("outcome_schema_fixed id={}", result.id));
                                 result.outcome_status = Some(fixed.status.clone());
                                 result.outcome_reason = Some(fixed.reason.clone());
-                                
+
                                 if fixed.status.eq_ignore_ascii_case("ok") {
                                     result.ok = true;
                                 }
-                                return true;  // Exit early after fix (success)
+                                return true; // Exit early after fix (success)
                             }
                         }
-                        
+
                         // Fix failed, use exit code fallback
                         log_fallback_usage(
                             args,
                             "outcome_verifier",
                             &schema_err.to_string(),
-                            "schema_validation_fallback"
+                            "schema_validation_fallback",
                         );
                         trace(
                             args,
-                            &format!("outcome_schema_invalid id={} error={}", result.id, schema_err),
+                            &format!(
+                                "outcome_schema_invalid id={} error={}",
+                                result.id, schema_err
+                            ),
                         );
                     }
                 }
-                
+
                 result.outcome_status = Some(verdict.status.clone());
                 result.outcome_reason = Some(verdict.reason.clone());
                 if verdict.status.eq_ignore_ascii_case("retry") {
@@ -363,7 +353,10 @@ pub(crate) async fn verify_nontrivial_step_outcomes(
                     result.summary = format!("outcome_mismatch: {reason}\n{}", result.summary);
                     trace(
                         args,
-                        &format!("outcome_verification id={} status=retry reason={reason}", result.id),
+                        &format!(
+                            "outcome_verification id={} status=retry reason={reason}",
+                            result.id
+                        ),
                     );
                 } else {
                     trace(
@@ -380,21 +373,24 @@ pub(crate) async fn verify_nontrivial_step_outcomes(
                 record_json_failure(args, "outcome_verifier");
                 reasoning_clean = false;
                 let error_text = error.to_string();
-                
+
                 // FALLBACK: Use exit code as ground truth
                 let fallback_verdict = default_outcome_verdict(result.exit_code.unwrap_or(0));
                 log_fallback_usage(args, "outcome_verifier", &error_text, "exit_code_fallback");
-                
+
                 result.outcome_status = Some(fallback_verdict.status.clone());
                 result.outcome_reason = Some(fallback_verdict.reason.clone());
-                
+
                 trace(
                     args,
-                    &format!("outcome_verifier_fallback id={} exit_code={:?}", result.id, result.exit_code),
+                    &format!(
+                        "outcome_verifier_fallback id={} exit_code={:?}",
+                        result.id, result.exit_code
+                    ),
                 );
             }
         }
-        
+
         // PHASE 2: Ground outcome verdict in actual output
         if let Some(ref outcome_status) = result.outcome_status {
             if outcome_status.eq_ignore_ascii_case("retry") {
@@ -407,24 +403,28 @@ pub(crate) async fn verify_nontrivial_step_outcomes(
                         Err(grounding_err) => {
                             // Hallucinated criticism - override with exit code verdict
                             record_json_failure(args, "outcome_grounding");
-                            let grounded_verdict = default_outcome_verdict(result.exit_code.unwrap_or(0));
+                            let grounded_verdict =
+                                default_outcome_verdict(result.exit_code.unwrap_or(0));
                             log_fallback_usage(
                                 args,
                                 "outcome_verifier",
                                 &grounding_err.to_string(),
-                                "grounding_override"
+                                "grounding_override",
                             );
-                            
+
                             result.outcome_status = Some(grounded_verdict.status.clone());
                             result.outcome_reason = Some(grounded_verdict.reason.clone());
-                            
+
                             if grounded_verdict.status.eq_ignore_ascii_case("ok") {
                                 result.ok = true;
                             }
-                            
+
                             trace(
                                 args,
-                                &format!("outcome_reason_hallucinated_overridden id={} exit_code={:?}", result.id, result.exit_code),
+                                &format!(
+                                    "outcome_reason_hallucinated_overridden id={} exit_code={:?}",
+                                    result.id, result.exit_code
+                                ),
                             );
                         }
                     }

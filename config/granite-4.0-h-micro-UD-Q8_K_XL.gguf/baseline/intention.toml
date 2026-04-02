@@ -1,9 +1,9 @@
 version = 1
 name = "intention"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+model = "default"
 temperature = 0.7
-top_p = 0.95
+top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
 max_tokens = 256

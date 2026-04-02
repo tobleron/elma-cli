@@ -112,8 +112,8 @@ pub(crate) fn handle_edit_step(
             format!("appended {}", path.display())
         }
         "replace_text" => {
-            let original =
-                std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+            let original = std::fs::read_to_string(&path)
+                .with_context(|| format!("read {}", path.display()))?;
             if spec.find.is_empty() {
                 anyhow::bail!("replace_text requires non-empty find");
             }
@@ -135,11 +135,7 @@ pub(crate) fn handle_edit_step(
 
     trace(
         args,
-        &format!(
-            "edit_saved path={} operation={}",
-            path.display(),
-            operation
-        ),
+        &format!("edit_saved path={} operation={}", path.display(), operation),
     );
     state.artifacts.insert(
         sid.clone(),

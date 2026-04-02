@@ -1,11 +1,15 @@
 version = 1
 name = "logical_program_repair"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.5
-top_p = 0.95
+model = "default"
+temperature = 0.3
+top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 2048
+max_tokens = 1024
 timeout_s = 120
-system_prompt = "Repair a program with logical flaws. Output a complete Program JSON object."
+system_prompt = """
+Repair program for logical issues.
+
+Fix logic errors while preserving intent.
+"""

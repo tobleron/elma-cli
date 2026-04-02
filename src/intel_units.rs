@@ -11,8 +11,8 @@
 //! - ActionNeedsUnit
 //! - WorkflowPlannerUnit
 
-use crate::*;
 use crate::intel_trait::*;
+use crate::*;
 
 // ============================================================================
 // Complexity Assessment Unit
@@ -49,8 +49,12 @@ impl IntelUnit for ComplexityAssessmentUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        append_trace_log_line(&format!("[INTEL_EXECUTE] unit={} model={}", self.name(), self.profile.model));
-        
+        append_trace_log_line(&format!(
+            "[INTEL_EXECUTE] unit={} model={}",
+            self.name(),
+            self.profile.model
+        ));
+
         let req = ChatCompletionRequest {
             model: self.profile.model.clone(),
             messages: vec![
@@ -85,25 +89,52 @@ impl IntelUnit for ComplexityAssessmentUnit {
             grammar: None,
         };
 
-        append_trace_log_line(&format!("[INTEL_HTTP_START] url={} timeout={}s", self.profile.base_url, self.profile.timeout_s));
-        
+        append_trace_log_line(&format!(
+            "[INTEL_HTTP_START] url={} timeout={}s",
+            self.profile.base_url, self.profile.timeout_s
+        ));
+
         let chat_url = Url::parse(&self.profile.base_url)
             .map_err(|e| anyhow::anyhow!("Invalid base_url '{}': {}", self.profile.base_url, e))?
             .join("/v1/chat/completions")
             .map_err(|e| anyhow::anyhow!("Failed to build chat URL: {}", e))?;
-        
+
         append_trace_log_line(&format!("[INTEL_HTTP_URL] final_url={}", chat_url));
 
         // Use shared client from context instead of creating new one
+        // Inject grammar if profile has grammar mapping
+        let mut req_with_grammar = req;
+        if let Some(config_root) = crate::ui_chat::get_config_root_for_intel() {
+            if let Ok(grammar) =
+                crate::json_grammar::get_grammar_for_profile(&self.profile.name, config_root)
+            {
+                if let Some(grammar_content) = grammar {
+                    if let Ok(grammar_str) =
+                        crate::json_grammar::load_grammar(&grammar_content, config_root)
+                    {
+                        req_with_grammar.grammar = Some(grammar_str);
+                        append_trace_log_line(&format!(
+                            "[INTEL_GRAMMAR] injected grammar for unit={}",
+                            self.name()
+                        ));
+                    }
+                }
+            }
+        }
+
         let result: serde_json::Value = chat_json_with_repair_timeout(
             &context.client,
             &chat_url,
-            &req,
+            &req_with_grammar,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
-        append_trace_log_line(&format!("[INTEL_HTTP_DONE] unit={} received response", self.name()));
-        
+        append_trace_log_line(&format!(
+            "[INTEL_HTTP_DONE] unit={} received response",
+            self.name()
+        ));
+
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
 
@@ -230,7 +261,8 @@ impl IntelUnit for EvidenceNeedsUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -330,7 +362,8 @@ impl IntelUnit for ActionNeedsUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -437,7 +470,8 @@ impl IntelUnit for WorkflowPlannerUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -540,7 +574,8 @@ impl IntelUnit for PatternSuggestionUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -634,7 +669,8 @@ impl IntelUnit for ScopeBuilderUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -731,7 +767,8 @@ impl IntelUnit for FormulaSelectorUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -775,6 +812,163 @@ pub(crate) struct SelectorUnit {
 impl SelectorUnit {
     pub fn new(profile: Profile) -> Self {
         Self { profile }
+    }
+}
+
+// ============================================================================
+// JSON Repair Unit
+// ============================================================================
+
+/// JSON Repair Intel Unit
+///
+/// Repairs malformed JSON using a dedicated profile.
+pub(crate) struct JsonRepairUnit {
+    profile: Profile,
+}
+
+impl JsonRepairUnit {
+    pub fn new(profile: Profile) -> Self {
+        Self { profile }
+    }
+
+    pub async fn repair_with_fallback(
+        &self,
+        client: &reqwest::Client,
+        chat_url: &Url,
+        original_json: &str,
+        problems: &[String],
+    ) -> Result<String> {
+        let route_decision = RouteDecision {
+            route: "DECIDE".to_string(),
+            source: "json_repair".to_string(),
+            distribution: vec![("DECIDE".to_string(), 1.0)],
+            margin: 1.0,
+            entropy: 0.0,
+            speech_act: ProbabilityDecision {
+                choice: "INSTRUCT".to_string(),
+                source: "json_repair".to_string(),
+                distribution: vec![("INSTRUCT".to_string(), 1.0)],
+                margin: 1.0,
+                entropy: 0.0,
+            },
+            workflow: ProbabilityDecision {
+                choice: "WORKFLOW".to_string(),
+                source: "json_repair".to_string(),
+                distribution: vec![("WORKFLOW".to_string(), 1.0)],
+                margin: 1.0,
+                entropy: 0.0,
+            },
+            mode: ProbabilityDecision {
+                choice: "DECIDE".to_string(),
+                source: "json_repair".to_string(),
+                distribution: vec![("DECIDE".to_string(), 1.0)],
+                margin: 1.0,
+                entropy: 0.0,
+            },
+        };
+
+        let context = IntelContext::new(
+            original_json.to_string(),
+            route_decision,
+            problems.join("\n"),
+            String::new(),
+            Vec::new(),
+            client.clone(),
+        );
+
+        let output = self.execute_with_fallback(&context).await?;
+        Ok(output
+            .get_str("repaired_json")
+            .unwrap_or(original_json)
+            .to_string())
+    }
+}
+
+impl IntelUnit for JsonRepairUnit {
+    fn name(&self) -> &'static str {
+        "json_repair"
+    }
+
+    fn profile(&self) -> &Profile {
+        &self.profile
+    }
+
+    fn pre_flight(&self, context: &IntelContext) -> Result<()> {
+        if context.user_message.trim().is_empty() {
+            return Err(anyhow::anyhow!("Empty JSON input"));
+        }
+        Ok(())
+    }
+
+    async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let problems_text = if context.workspace_facts.trim().is_empty() {
+            "No problems found".to_string()
+        } else {
+            context.workspace_facts.trim().to_string()
+        };
+
+        let req = ChatCompletionRequest {
+            model: self.profile.model.clone(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: self.profile.system_prompt.clone(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: format!(
+                        "Original JSON:\n{}\n\nProblems to fix:\n{}",
+                        context.user_message, problems_text
+                    ),
+                },
+            ],
+            temperature: self.profile.temperature,
+            top_p: self.profile.top_p,
+            stream: false,
+            max_tokens: self.profile.max_tokens,
+            n_probs: None,
+            repeat_penalty: Some(self.profile.repeat_penalty),
+            reasoning_format: Some(self.profile.reasoning_format.clone()),
+            grammar: None,
+        };
+
+        let chat_url = Url::parse(&self.profile.base_url)
+            .map_err(|e| anyhow::anyhow!("Invalid base_url '{}': {}", self.profile.base_url, e))?
+            .join("/v1/chat/completions")
+            .map_err(|e| anyhow::anyhow!("Failed to build chat URL: {}", e))?;
+        let response =
+            chat_once_with_timeout(&context.client, &chat_url, &req, self.profile.timeout_s)
+                .await?;
+        let repaired_json = extract_response_text(&response);
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::json!({
+                "repaired_json": repaired_json,
+            }),
+            0.8,
+        ))
+    }
+
+    fn post_flight(&self, output: &IntelOutput) -> Result<()> {
+        if output
+            .get_str("repaired_json")
+            .is_none_or(|value| value.trim().is_empty())
+        {
+            return Err(anyhow::anyhow!("Missing repaired_json output"));
+        }
+        Ok(())
+    }
+
+    fn fallback(&self, context: &IntelContext, error: &str) -> Result<IntelOutput> {
+        trace_fallback(self.name(), error);
+        Ok(IntelOutput::fallback(
+            self.name(),
+            serde_json::json!({
+                "repaired_json": context.user_message,
+            }),
+            &format!("json repair failed: {}", error),
+        ))
     }
 }
 
@@ -826,7 +1020,8 @@ impl IntelUnit for SelectorUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -920,7 +1115,8 @@ impl IntelUnit for EvidenceModeUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1009,14 +1205,17 @@ impl IntelUnit for EvidenceCompactorUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("compacted_evidence").is_none() && output.get("summary").is_none() {
-            return Err(anyhow::anyhow!("Missing 'compacted_evidence' or 'summary' field"));
+            return Err(anyhow::anyhow!(
+                "Missing 'compacted_evidence' or 'summary' field"
+            ));
         }
         Ok(())
     }
@@ -1098,7 +1297,8 @@ impl IntelUnit for ArtifactClassifierUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1190,14 +1390,17 @@ impl IntelUnit for ResultPresenterUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("presentation").is_none() && output.get("final_text").is_none() {
-            return Err(anyhow::anyhow!("Missing 'presentation' or 'final_text' field"));
+            return Err(anyhow::anyhow!(
+                "Missing 'presentation' or 'final_text' field"
+            ));
         }
         Ok(())
     }
@@ -1281,7 +1484,8 @@ impl IntelUnit for StatusMessageUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1371,7 +1575,8 @@ impl IntelUnit for CommandRepairUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1462,7 +1667,8 @@ impl IntelUnit for ComplexityClassifierUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1542,7 +1748,8 @@ impl IntelUnit for RiskClassifierUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1622,7 +1829,8 @@ impl IntelUnit for EvidenceNeedsClassifierUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1702,7 +1910,8 @@ impl IntelUnit for ActionNeedsClassifierUnit {
             &Url::parse(&self.profile.base_url).unwrap(),
             &req,
             self.profile.timeout_s,
-        ).await?;
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }

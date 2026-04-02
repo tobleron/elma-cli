@@ -37,7 +37,7 @@ pub(crate) struct IntelContext {
 
     /// Complexity assessment (may be set by prior unit)
     pub complexity: Option<ComplexityAssessment>,
-    
+
     /// Shared HTTP client for all intel units (prevents connection pool exhaustion)
     pub client: reqwest::Client,
 }
@@ -75,22 +75,22 @@ impl IntelContext {
 // ============================================================================
 
 /// Generic output from intel units
-/// 
+///
 /// Contains raw data that specialized units can wrap with typed accessors.
 #[derive(Debug, Clone)]
 pub(crate) struct IntelOutput {
     /// Unit name for tracing/logging
     pub unit_name: String,
-    
+
     /// Raw output data (JSON value)
     pub data: serde_json::Value,
-    
+
     /// Confidence score (0.0 to 1.0)
     pub confidence: f64,
-    
+
     /// Whether fallback was used instead of model output
     pub fallback_used: bool,
-    
+
     /// Error message if fallback was used
     pub fallback_reason: Option<String>,
 }
@@ -106,36 +106,41 @@ impl IntelOutput {
             fallback_reason: None,
         }
     }
-    
+
     /// Create fallback output when model fails
     pub fn fallback(unit_name: &str, data: serde_json::Value, reason: &str) -> Self {
         Self {
             unit_name: unit_name.to_string(),
             data,
-            confidence: 0.5,  // Neutral confidence for fallback
+            confidence: 0.5, // Neutral confidence for fallback
             fallback_used: true,
             fallback_reason: Some(reason.to_string()),
         }
     }
-    
+
     /// Get a field from the output data
     pub fn get(&self, key: &str) -> Option<&serde_json::Value> {
         self.data.get(key)
     }
-    
+
     /// Get a string field from the output data
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.data.get(key).and_then(|v| v.as_str())
     }
-    
+
     /// Get a bool field from the output data
     pub fn get_bool(&self, key: &str) -> Option<bool> {
         self.data.get(key).and_then(|v| v.as_bool())
     }
-    
+
     /// Get a f64 field from the output data
     pub fn get_f64(&self, key: &str) -> Option<f64> {
         self.data.get(key).and_then(|v| v.as_f64())
+    }
+
+    /// Check if output contains standard fields (label or choice)
+    pub fn is_standard_format(&self) -> bool {
+        self.get("label").is_some() || self.get("choice").is_some()
     }
 }
 
@@ -156,19 +161,19 @@ impl Default for IntelOutput {
 // ============================================================================
 
 /// Common interface for all intel units
-/// 
+///
 /// Each intel unit implements this trait to provide:
 /// - Consistent input/output structure
 /// - Pre-flight validation
 /// - Post-flight verification
 /// - Fallback handling
-/// 
+///
 /// # Example
 /// ```rust,ignore
 /// pub struct ComplexityAssessmentUnit {
 ///     profile: Profile,
 /// }
-/// 
+///
 /// impl IntelUnit for ComplexityAssessmentUnit {
 ///     fn name(&self) -> &'static str { "complexity_assessment" }
 ///     fn profile(&self) -> &Profile { &self.profile }
@@ -183,44 +188,44 @@ impl Default for IntelOutput {
 pub(crate) trait IntelUnit: Send + Sync {
     /// Unit name for tracing/logging
     fn name(&self) -> &'static str;
-    
+
     /// Profile configuration for this unit
     fn profile(&self) -> &Profile;
-    
+
     /// Pre-flight validation (context, inputs)
-    /// 
+    ///
     /// Called before execute() to validate inputs.
     /// Return Err if unit cannot proceed (missing required context, etc.)
-    /// 
+    ///
     /// Default implementation always succeeds (units can override).
     fn pre_flight(&self, _context: &IntelContext) -> Result<()> {
         Ok(())
     }
-    
+
     /// Execute the intel unit (model call)
-    /// 
+    ///
     /// Main execution logic. Should:
     /// 1. Build chat request using self.profile()
     /// 2. Call model via chat_json_with_repair_timeout()
     /// 3. Parse and validate output
     /// 4. Return IntelOutput with structured data
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput>;
-    
+
     /// Post-flight verification (output validation)
-    /// 
+    ///
     /// Called after execute() to validate output.
     /// Return Err if output is unusable (missing required fields, invalid values, etc.)
-    /// 
+    ///
     /// Default implementation always succeeds (units can override).
     fn post_flight(&self, _output: &IntelOutput) -> Result<()> {
         Ok(())
     }
-    
+
     /// Fallback when execute() or post_flight() fails
-    /// 
+    ///
     /// Provides safe default output when model fails.
     /// Should return conservative but usable values.
-    /// 
+    ///
     /// Default implementation returns generic fallback (units SHOULD override).
     fn fallback(&self, context: &IntelContext, error: &str) -> Result<IntelOutput> {
         // Generic fallback - units should override with domain-specific defaults
@@ -231,26 +236,26 @@ pub(crate) trait IntelUnit: Send + Sync {
             &format!("generic fallback: {}", error),
         ))
     }
-    
+
     /// Execute with automatic fallback handling
-    /// 
+    ///
     /// Convenience method that:
     /// 1. Runs pre_flight()
     /// 2. Runs execute()
     /// 3. Runs post_flight()
     /// 4. On any failure, runs fallback()
-    /// 
+    ///
     /// Returns Ok(output) in all cases (fallback ensures success).
     async fn execute_with_fallback(&self, context: &IntelContext) -> Result<IntelOutput> {
         // Pre-flight validation
         if let Err(error) = self.pre_flight(context) {
             trace_verbose(
-                true,  // verbose
+                true, // verbose
                 &format!("intel_{}_preflight_failed error={}", self.name(), error),
             );
             return self.fallback(context, &format!("pre-flight: {}", error));
         }
-        
+
         // Execute model call
         match self.execute(context).await {
             Ok(output) => {
@@ -297,7 +302,7 @@ impl ComplexityOutput {
         // Parse ComplexityAssessment from IntelOutput data
         let assessment: ComplexityAssessment = serde_json::from_value(output.data.clone())
             .map_err(|e| anyhow::anyhow!("Failed to parse complexity assessment: {}", e))?;
-        
+
         Ok(Self {
             assessment,
             confidence: output.confidence,
@@ -319,7 +324,7 @@ impl EvidenceNeedsOutput {
     pub fn from_intel_output(output: &IntelOutput) -> Result<Self> {
         let needs_evidence = output.get_bool("needs_evidence").unwrap_or(false);
         let needs_tools = output.get_bool("needs_tools").unwrap_or(false);
-        
+
         Ok(Self {
             needs_evidence,
             needs_tools,
@@ -342,7 +347,7 @@ impl ActionNeedsOutput {
     pub fn from_intel_output(output: &IntelOutput) -> Result<Self> {
         let needs_decision = output.get_bool("needs_decision").unwrap_or(false);
         let needs_plan = output.get_bool("needs_plan").unwrap_or(false);
-        
+
         Ok(Self {
             needs_decision,
             needs_plan,
@@ -362,10 +367,11 @@ pub(crate) struct PatternSuggestionOutput {
 
 impl PatternSuggestionOutput {
     pub fn from_intel_output(output: &IntelOutput) -> Result<Self> {
-        let suggested_pattern = output.get_str("suggested_pattern")
+        let suggested_pattern = output
+            .get_str("suggested_pattern")
             .unwrap_or("reply_only")
             .to_string();
-        
+
         Ok(Self {
             suggested_pattern,
             confidence: output.confidence,
@@ -399,29 +405,29 @@ fn trace_verbose(verbose: bool, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_intel_output_success() {
         let data = serde_json::json!({"complexity": "DIRECT", "risk": "LOW"});
         let output = IntelOutput::success("test_unit", data.clone(), 0.9);
-        
+
         assert_eq!(output.unit_name, "test_unit");
         assert_eq!(output.confidence, 0.9);
         assert!(!output.fallback_used);
         assert_eq!(output.get_str("complexity"), Some("DIRECT"));
     }
-    
+
     #[test]
     fn test_intel_output_fallback() {
         let data = serde_json::json!({"complexity": "INVESTIGATE", "risk": "LOW"});
         let output = IntelOutput::fallback("test_unit", data.clone(), "model timeout");
-        
+
         assert_eq!(output.unit_name, "test_unit");
         assert_eq!(output.confidence, 0.5);
         assert!(output.fallback_used);
         assert_eq!(output.fallback_reason, Some("model timeout".to_string()));
     }
-    
+
     #[test]
     fn test_intel_output_field_accessors() {
         let data = serde_json::json!({
@@ -431,14 +437,14 @@ mod tests {
             "confidence": 0.95
         });
         let output = IntelOutput::success("test_unit", data, 0.9);
-        
+
         assert_eq!(output.get_str("complexity"), Some("DIRECT"));
         assert_eq!(output.get_str("risk"), Some("LOW"));
         assert_eq!(output.get_bool("needs_evidence"), Some(false));
         assert_eq!(output.get_f64("confidence"), Some(0.95));
         assert_eq!(output.get_str("nonexistent"), None);
     }
-    
+
     #[test]
     fn test_intel_context_builder() {
         let route_decision = RouteDecision {

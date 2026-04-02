@@ -1,20 +1,15 @@
 version = 1
 name = "planner"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.6
-top_p = 0.95
+model = "default"
+temperature = 0.4
+top_p = 1.0
 repeat_penalty = 1.0
-reasoning_format = "auto"
-max_tokens = 4096
+reasoning_format = "none"
+max_tokens = 2048
 timeout_s = 120
 system_prompt = """
-You create a detailed plan for the user's request.
+Create step-by-step implementation plan.
 
-Output Markdown only.
-Use a title, then a checklist of numbered actions, each as a checkbox.
-Example:
-# Plan
-- [ ] 1. Do X
-- [ ] 2. Do Y
-Do not include analysis."""
+Break objective into actionable steps.
+"""

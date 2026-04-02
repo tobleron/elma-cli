@@ -83,14 +83,7 @@ pub(crate) async fn preflight_shell_command(
                     let mut accepted = true;
                     if let Some(guard_cfg) = task_semantics_guard_cfg {
                         if let Ok(guard) = guard_repair_semantics_once(
-                            client,
-                            chat_url,
-                            guard_cfg,
-                            objective,
-                            purpose,
-                            &cmd,
-                            &revised,
-                            "",
+                            client, chat_url, guard_cfg, objective, purpose, &cmd, &revised, "",
                         )
                         .await
                         {
@@ -122,7 +115,9 @@ pub(crate) async fn preflight_shell_command(
                     ),
                 );
                 state.halt = true;
-                state.artifacts.insert(sid.to_string(), user_reason.to_string());
+                state
+                    .artifacts
+                    .insert(sid.to_string(), user_reason.to_string());
                 state.step_results.push(StepResult {
                     id: sid.to_string(),
                     kind: "shell".to_string(),
@@ -142,7 +137,14 @@ pub(crate) async fn preflight_shell_command(
                     outcome_status: None,
                     outcome_reason: None,
                 });
-                return Ok((cmd, execution_mode, artifact_kind, ask_hint, true, Some(format!("preflight_rejected: {}", user_reason))));
+                return Ok((
+                    cmd,
+                    execution_mode,
+                    artifact_kind,
+                    ask_hint,
+                    true,
+                    Some(format!("preflight_rejected: {}", user_reason)),
+                ));
             }
         }
     }
@@ -180,7 +182,14 @@ pub(crate) async fn preflight_shell_command(
             outcome_status: None,
             outcome_reason: None,
         });
-        return Ok((cmd, execution_mode, artifact_kind, ask_hint, true, Some(format!("preflight_requires_clarification: {ask_reason}"))));
+        return Ok((
+            cmd,
+            execution_mode,
+            artifact_kind,
+            ask_hint,
+            true,
+            Some(format!("preflight_requires_clarification: {ask_reason}")),
+        ));
     }
 
     Ok((cmd, execution_mode, artifact_kind, ask_hint, false, None))

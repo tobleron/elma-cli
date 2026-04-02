@@ -24,8 +24,13 @@ pub(crate) fn make_baseline_report(
     }
 }
 
-pub(crate) fn choose_preferred_baseline(baselines: &[BaselineAnchorReport]) -> Result<BaselineAnchorReport> {
-    let runtime = baselines.iter().find(|b| b.source == "runtime_default").cloned();
+pub(crate) fn choose_preferred_baseline(
+    baselines: &[BaselineAnchorReport],
+) -> Result<BaselineAnchorReport> {
+    let runtime = baselines
+        .iter()
+        .find(|b| b.source == "runtime_default")
+        .cloned();
     let best = baselines
         .iter()
         .cloned()

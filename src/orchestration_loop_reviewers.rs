@@ -13,25 +13,27 @@ pub(crate) async fn run_staged_reviewers_once(
     logical_reviewer_cfg: &Profile,
     efficiency_reviewer_cfg: &Profile,
     risk_reviewer_cfg: &Profile,
-    line: &str,
-    route_decision: &RouteDecision,
+    _line: &str,
+    _route_decision: &RouteDecision,
     program: &Program,
     step_results: &[StepResult],
-    sufficiency: Option<&ExecutionSufficiencyVerdict>,
-    attempt: u32,
-) -> (Option<CriticVerdict>, Option<CriticVerdict>, Option<RiskReviewVerdict>, bool) {
+    _sufficiency: Option<&ExecutionSufficiencyVerdict>,
+    _attempt: u32,
+) -> (
+    Option<CriticVerdict>,
+    Option<CriticVerdict>,
+    Option<RiskReviewVerdict>,
+    bool,
+) {
     let mut reasoning_clean = true;
 
-    let logical = match run_critic_once(
+    let logical = match orchestration_helpers::request_reviewer_verdict(
         client,
         chat_url,
         logical_reviewer_cfg,
-        line,
-        route_decision,
         program,
         step_results,
-        sufficiency,
-        attempt,
+        "logical",
     )
     .await
     {
@@ -57,16 +59,13 @@ pub(crate) async fn run_staged_reviewers_once(
         }
     };
 
-    let efficiency = match run_critic_once(
+    let efficiency = match orchestration_helpers::request_reviewer_verdict(
         client,
         chat_url,
         efficiency_reviewer_cfg,
-        line,
-        route_decision,
         program,
         step_results,
-        sufficiency,
-        attempt,
+        "efficiency",
     )
     .await
     {
@@ -87,21 +86,28 @@ pub(crate) async fn run_staged_reviewers_once(
             trace(args, &format!("efficiency_review_parse_error={error}"));
             // FALLBACK: Assume ok rather than block execution
             let fallback = default_critic_verdict();
-            log_fallback_usage(args, "efficiency_reviewer", &error.to_string(), "default_ok");
+            log_fallback_usage(
+                args,
+                "efficiency_reviewer",
+                &error.to_string(),
+                "default_ok",
+            );
             Some(fallback)
         }
     };
 
-    let risk = if program_has_shell_or_edit(program) || step_results_have_shell_or_edit(step_results) {
+    let risk = if program_has_shell_or_edit(program)
+        || step_results_have_shell_or_edit(step_results)
+    {
         match orchestration_helpers::request_risk_review(
             client,
             chat_url,
             risk_reviewer_cfg,
-            line,
-            route_decision,
+            _line,
+            _route_decision,
             program,
             step_results,
-            attempt,
+            _attempt,
         )
         .await
         {

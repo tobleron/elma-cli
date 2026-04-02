@@ -8,11 +8,11 @@ use crate::*;
 /// Unit types in the hierarchy
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnitType {
-    Goal,       // Level 1: Final state
-    Subgoal,    // Level 2: Intermediate milestone
-    Task,       // Level 3: Work unit
-    Method,     // Level 4: Decomposition strategy
-    Action,     // Level 5: Primitive executable
+    Goal,    // Level 1: Final state
+    Subgoal, // Level 2: Intermediate milestone
+    Task,    // Level 3: Work unit
+    Method,  // Level 4: Decomposition strategy
+    Action,  // Level 5: Primitive executable
 }
 
 impl UnitType {
@@ -41,15 +41,15 @@ impl UnitType {
 /// Get required decomposition depth based on complexity and risk
 pub fn get_required_depth(complexity: &str, risk: &str) -> u8 {
     match (complexity, risk) {
-        ("DIRECT", _) => 1,            // Action only
-        ("INVESTIGATE", "LOW") => 2,   // Task → Action
+        ("DIRECT", _) => 1,             // Action only
+        ("INVESTIGATE", "LOW") => 2,    // Task → Action
         ("INVESTIGATE", "MEDIUM") => 3, // Subgoal → Task → Action
         ("INVESTIGATE", "HIGH") => 3,
-        ("MULTISTEP", "LOW") => 3,     // Subgoal → Task → Action
+        ("MULTISTEP", "LOW") => 3, // Subgoal → Task → Action
         ("MULTISTEP", "MEDIUM") => 3,
-        ("MULTISTEP", "HIGH") => 4,    // Task → Method → Action
-        ("OPEN_ENDED", _) => 5,        // Full hierarchy
-        (_, "HIGH") => 4,              // At least Method level
+        ("MULTISTEP", "HIGH") => 4, // Task → Method → Action
+        ("OPEN_ENDED", _) => 5,     // Full hierarchy
+        (_, "HIGH") => 4,           // At least Method level
         _ => 2,
     }
 }
@@ -169,7 +169,9 @@ Each subgoal should be:
 
 Output as JSON array of subgoal descriptions."#,
         masterplan.goal,
-        masterplan.phases.iter()
+        masterplan
+            .phases
+            .iter()
             .map(|p| format!("- {}: {}", p.name, p.objective))
             .collect::<Vec<_>>()
             .join("\n")

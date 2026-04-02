@@ -51,6 +51,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             handle_discover_tools(runtime)?;
             continue;
         }
+        if let Some(api_args) = line.strip_prefix("/api") {
+            handle_api_config(runtime, api_args)?;
+            continue;
+        }
         if line == "/verbose" {
             runtime.verbose = !runtime.verbose;
             eprintln!("(verbose {})", if runtime.verbose { "on" } else { "off" });
@@ -68,16 +72,26 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.chat_url,
             &runtime.profiles.intent_helper_cfg,
             line,
-            &runtime.messages,  // Pass full conversation history
-        ).await.unwrap_or_else(|e| {
-            trace_verbose(runtime.verbose, &format!("intent_helper_failed error={}", e));
-            "unknown intent".to_string()  // Fallback
+            &runtime.messages, // Pass full conversation history
+        )
+        .await
+        .unwrap_or_else(|e| {
+            trace_verbose(
+                runtime.verbose,
+                &format!("intent_helper_failed error={}", e),
+            );
+            "unknown intent".to_string() // Fallback
         });
-        
+
         // Extract just the intent sentence (model may include original message)
         // Take the last line which should be the intent
-        let intent_only = intent_annotation.lines().last().unwrap_or(&intent_annotation).trim().to_string();
-        
+        let intent_only = intent_annotation
+            .lines()
+            .last()
+            .unwrap_or(&intent_annotation)
+            .trim()
+            .to_string();
+
         // Format: user message + intent annotation (programmatic, not from model)
         let rephrased_objective = format!("{}\n[intent: {}]", line, intent_only);
 
@@ -95,37 +109,40 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &runtime.profiles.router_cfg,
             &runtime.profiles.mode_router_cfg,
             &runtime.profiles.router_cal,
-            &rephrased_objective,  // Use intent-annotated message directly
+            &rephrased_objective, // Use intent-annotated message directly
             &runtime.ws,
             &runtime.ws_brief,
             &runtime.messages,
         )
         .await?;
-        show_process_step_verbose(runtime.verbose, "CLASSIFY", &format!(
-            "speech={} route={} (entropy={:.2})",
-            route_decision.speech_act.choice,
-            route_decision.route,
-            route_decision.entropy
-        ));
+        show_process_step_verbose(
+            runtime.verbose,
+            "CLASSIFY",
+            &format!(
+                "speech={} route={} (entropy={:.2})",
+                route_decision.speech_act.choice, route_decision.route, route_decision.entropy
+            ),
+        );
         trace_route_decision(&runtime.args, &route_decision);
 
         let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
         // Task 014: Use new function with confidence fallback
-        let (ladder, complexity, scope, formula, planner_fallback_used) = derive_planning_prior_with_ladder(
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.profiles.workflow_planner_cfg,
-            &runtime.profiles.complexity_cfg,
-            &runtime.profiles.scope_builder_cfg,
-            &runtime.profiles.formula_cfg,
-            line,
-            &route_decision,
-            &runtime.ws,
-            &runtime.ws_brief,
-            &memories,
-            &runtime.messages,
-        )
-        .await;
+        let (ladder, complexity, scope, formula, planner_fallback_used) =
+            derive_planning_prior_with_ladder(
+                &runtime.client,
+                &runtime.chat_url,
+                &runtime.profiles.workflow_planner_cfg,
+                &runtime.profiles.complexity_cfg,
+                &runtime.profiles.scope_builder_cfg,
+                &runtime.profiles.formula_cfg,
+                line,
+                &route_decision,
+                &runtime.ws,
+                &runtime.ws_brief,
+                &memories,
+                &runtime.messages,
+            )
+            .await;
         // New function doesn't return workflow_plan, set to None
         let workflow_plan: Option<WorkflowPlannerOutput> = None;
         trace(
@@ -145,13 +162,21 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 &runtime.args,
                 &format!(
                     "workflow_planner objective={} complexity={} risk={} reason={}",
-                    if plan.objective.trim().is_empty() { "-" } else { plan.objective.trim() },
+                    if plan.objective.trim().is_empty() {
+                        "-"
+                    } else {
+                        plan.objective.trim()
+                    },
                     if plan.complexity.trim().is_empty() {
                         "-"
                     } else {
                         plan.complexity.trim()
                     },
-                    if plan.risk.trim().is_empty() { "-" } else { plan.risk.trim() },
+                    if plan.risk.trim().is_empty() {
+                        "-"
+                    } else {
+                        plan.risk.trim()
+                    },
                     plan.reason.trim()
                 ),
             );
@@ -160,10 +185,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         trace_scope(&runtime.args, &scope);
         trace_formula(&runtime.args, &formula);
         let intent = describe_operator_intent(&route_decision, &complexity, &formula);
-        operator_trace(
-            &runtime.args,
-            &intent,
-        );
+        operator_trace(&runtime.args, &intent);
 
         let hierarchy_goal = try_hierarchical_decomposition(
             &runtime.client,
@@ -193,7 +215,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &formula,
         )
         .await;
-        show_process_step_verbose(runtime.verbose, "PLAN", &format!("{} → {} steps", complexity.complexity, program.steps.len()));
+        show_process_step_verbose(
+            runtime.verbose,
+            "PLAN",
+            &format!("{} → {} steps", complexity.complexity, program.steps.len()),
+        );
         let guards_enabled = !runtime.args.disable_guards;
         if apply_capability_guard(&mut program, &route_decision, guards_enabled) {
             trace_verbose(runtime.verbose, "guard=capability_reply_only");
@@ -201,101 +227,112 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         let features = ClassificationFeatures::from(&route_decision);
 
-        // Task 001 (Modified): Level-aware reflection
-        // Skip reflection for Action-level (DIRECT complexity) requests
-        // Run reflection for Task/Plan/MasterPlan level (INVESTIGATE/MULTISTEP/OPEN_ENDED)
-        // This saves ~200ms latency and ~300-500 tokens on simple requests
-        let needs_reflection = !complexity.complexity.eq_ignore_ascii_case("DIRECT");
+        // Task 001: reflection is a universal safety check and should run for every route.
+        // If confidence < 51%, escalate orchestrator temperature and regenerate program.
+        let mut orchestrator_temp = runtime.profiles.orchestrator_cfg.temperature;
+        let max_program_attempts = 3;
+        let mut program_attempts = 0;
 
-        if needs_reflection {
-            // If confidence < 51%, escalate orchestrator temperature and regenerate program
-            let mut orchestrator_temp = runtime.profiles.orchestrator_cfg.temperature;
-            let max_program_attempts = 3;
-            let mut program_attempts = 0;
-            
-            while program_attempts < max_program_attempts {
-                // Run reflection on current program
-                match reflect_on_program(
-                    &runtime.client,
-                    &runtime.chat_url,
-                    &runtime.profiles.reflection_cfg,
-                    &program,
-                    &features,
-                    &runtime.ws,
-                    &rephrased_objective,  // Pass rephrased objective
-                ).await {
-                    Ok(reflection) => {
+        while program_attempts < max_program_attempts {
+            // Run reflection on current program
+            match reflect_on_program(
+                &runtime.client,
+                &runtime.chat_url,
+                &runtime.profiles.reflection_cfg,
+                &program,
+                &features,
+                &runtime.ws,
+                &rephrased_objective, // Pass rephrased objective
+            )
+            .await
+            {
+                Ok(reflection) => {
+                    trace(
+                        &runtime.args,
+                        &format!(
+                            "reflection_confidence={:.2} concerns={} missing={} attempt={}",
+                            reflection.confidence_score,
+                            reflection.concerns.len(),
+                            reflection.missing_points.len(),
+                            program_attempts + 1
+                        ),
+                    );
+                    show_process_step_verbose(
+                        runtime.verbose,
+                        "REFLECT",
+                        &format!(
+                            "confidence={:.0}%{}",
+                            reflection.confidence_score * 100.0,
+                            if !reflection.is_confident {
+                                " ⚠️"
+                            } else {
+                                ""
+                            }
+                        ),
+                    );
+                    if !reflection.is_confident || reflection.confidence_score < 0.6 {
+                        trace_verbose(
+                            runtime.verbose,
+                            &format!("reflection_warnings={:?}", reflection.concerns),
+                        );
+                    }
+
+                    // If confidence >= 51%, accept and proceed
+                    if reflection.confidence_score >= 0.51 {
+                        break; // Proceed with execution
+                    }
+
+                    // Confidence < 51%, escalate orchestrator temperature and regenerate program
+                    program_attempts += 1;
+                    if program_attempts < max_program_attempts {
+                        orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
                         trace(
                             &runtime.args,
                             &format!(
-                                "reflection_confidence={:.2} concerns={} missing={} attempt={}",
-                                reflection.confidence_score,
-                                reflection.concerns.len(),
-                                reflection.missing_points.len(),
-                                program_attempts + 1
+                                "program_regenerating orchestrator_temp={} reason=reflection_confidence_below_51_percent",
+                                orchestrator_temp
                             ),
                         );
-                        show_process_step_verbose(runtime.verbose, "REFLECT", &format!(
-                            "confidence={:.0}%{}",
-                            reflection.confidence_score * 100.0,
-                            if !reflection.is_confident { " ⚠️" } else { "" }
-                        ));
-                        if !reflection.is_confident || reflection.confidence_score < 0.6 {
-                            trace_verbose(runtime.verbose, &format!("reflection_warnings={:?}", reflection.concerns));
-                        }
 
-                        // If confidence >= 51%, accept and proceed
-                        if reflection.confidence_score >= 0.51 {
-                            break;  // Proceed with execution
-                        }
-
-                        // Confidence < 51%, escalate orchestrator temperature and regenerate program
-                        program_attempts += 1;
-                        if program_attempts < max_program_attempts {
-                            orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
-                            trace(
-                                &runtime.args,
-                                &format!(
-                                    "program_regenerating orchestrator_temp={} reason=reflection_confidence_below_51_percent",
-                                    orchestrator_temp
-                                ),
-                            );
-
-                            // Regenerate program with higher temperature
-                            program = build_program_with_temp(
-                                runtime,
-                                line,
-                                &route_decision,
-                                workflow_plan.as_ref(),
-                                &complexity,
-                                &scope,
-                                &formula,
-                                orchestrator_temp,
-                            ).await;
-                        } else {
-                            // Max attempts reached, proceed with low confidence program
-                            trace(
-                                &runtime.args,
-                                "reflection_max_attempts_reached proceeding_with_low_confidence_program",
-                            );
-                        }
+                        // Regenerate program with higher temperature
+                        program = build_program_with_temp(
+                            runtime,
+                            line,
+                            &route_decision,
+                            workflow_plan.as_ref(),
+                            &complexity,
+                            &scope,
+                            &formula,
+                            orchestrator_temp,
+                        )
+                        .await;
+                    } else {
+                        // Max attempts reached, proceed with low confidence program
+                        trace(
+                            &runtime.args,
+                            "reflection_max_attempts_reached proceeding_with_low_confidence_program",
+                        );
                     }
-                    Err(error) => {
-                        trace_verbose(runtime.verbose, &format!("reflection_failed error={}", error));
-                        program_attempts += 1;
-                        if program_attempts < max_program_attempts {
-                            orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
-                            program = build_program_with_temp(
-                                runtime,
-                                line,
-                                &route_decision,
-                                workflow_plan.as_ref(),
-                                &complexity,
-                                &scope,
-                                &formula,
-                                orchestrator_temp,
-                            ).await;
-                        }
+                }
+                Err(error) => {
+                    trace_verbose(
+                        runtime.verbose,
+                        &format!("reflection_failed error={}", error),
+                    );
+                    program_attempts += 1;
+                    if program_attempts < max_program_attempts {
+                        orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
+                        program = build_program_with_temp(
+                            runtime,
+                            line,
+                            &route_decision,
+                            workflow_plan.as_ref(),
+                            &complexity,
+                            &scope,
+                            &formula,
+                            orchestrator_temp,
+                        )
+                        .await;
                     }
                 }
             }
@@ -349,7 +386,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         )
         .await?;
 
-        print_final_output(&runtime.args, runtime.ctx_max, final_usage_total, &final_text);
+        print_final_output(
+            &runtime.args,
+            runtime.ctx_max,
+            final_usage_total,
+            &final_text,
+        );
         maybe_save_formula_memory(
             &runtime.args,
             &runtime.client,
@@ -404,7 +446,8 @@ async fn build_program(
         scope,
         formula,
         runtime.profiles.orchestrator_cfg.temperature,
-    ).await
+    )
+    .await
 }
 
 async fn build_program_with_temp(
@@ -422,7 +465,13 @@ async fn build_program_with_temp(
     if route_decision.route.eq_ignore_ascii_case("CHAT")
         && formula.primary.eq_ignore_ascii_case("reply_only")
     {
-        trace(&runtime.args, &format!("chat_reply_only_fast_path route={} formula={}", route_decision.route, formula.primary));
+        trace(
+            &runtime.args,
+            &format!(
+                "chat_reply_only_fast_path route={} formula={}",
+                route_decision.route, formula.primary
+            ),
+        );
         return Program {
             objective: line.to_string(),
             steps: vec![Step::Reply {
@@ -509,11 +558,17 @@ async fn build_program_with_temp(
             )
             .await
             {
-                trace_verbose(runtime.verbose, "workflow_recovery=ok source=orchestrator_parse_error");
+                trace_verbose(
+                    runtime.verbose,
+                    "workflow_recovery=ok source=orchestrator_parse_error",
+                );
                 return program;
             }
-            trace_verbose(runtime.verbose, "workflow_recovery=failed source=orchestrator_parse_error");
-            
+            trace_verbose(
+                runtime.verbose,
+                "workflow_recovery=failed source=orchestrator_parse_error",
+            );
+
             Program {
                 objective: "fallback_clarification".to_string(),
                 steps: vec![Step::Reply {
@@ -541,8 +596,7 @@ async fn resolve_final_text(
     final_reply: &mut Option<String>,
 ) -> Result<(String, Option<u64>)> {
     let reply_instructions = final_reply.clone().unwrap_or_else(|| {
-        "Respond to the user in plain terminal text. Use any step outputs as evidence."
-            .to_string()
+        "Respond to the user in plain terminal text. Use any step outputs as evidence.".to_string()
     });
     generate_final_answer_once(
         &runtime.client,

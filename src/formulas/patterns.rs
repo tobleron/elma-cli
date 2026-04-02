@@ -136,8 +136,10 @@ impl FormulaPattern {
     fn inspect_decide_reply() -> Self {
         FormulaPattern {
             name: "inspect_decide_reply",
-            description: "Inspect workspace, make decision/evaluation, then reply with recommendation",
-            intent: "Gather evidence, evaluate options or make judgment, then provide recommendation",
+            description:
+                "Inspect workspace, make decision/evaluation, then reply with recommendation",
+            intent:
+                "Gather evidence, evaluate options or make judgment, then provide recommendation",
             expected_step_types: vec!["inspect", "decide", "reply"],
             expected_steps: 3,
             use_cases: vec![
@@ -259,40 +261,65 @@ pub fn match_formula_to_request(
     let (formula, confidence, reason) = match (complexity, risk) {
         ("DIRECT", "LOW") => {
             if user_intent.contains("greet") || user_intent.contains("who are you") {
-                (FormulaPattern::reply_only(), 0.95, "Simple conversational turn")
+                (
+                    FormulaPattern::reply_only(),
+                    0.95,
+                    "Simple conversational turn",
+                )
             } else {
-                (FormulaPattern::inspect_reply(), 0.85, "Direct request needing evidence")
+                (
+                    FormulaPattern::inspect_reply(),
+                    0.85,
+                    "Direct request needing evidence",
+                )
             }
         }
         ("INVESTIGATE", _) => {
             if user_intent.contains("summarize") || user_intent.contains("overview") {
-                (FormulaPattern::inspect_summarize_reply(), 0.90, "Summary/overview request")
+                (
+                    FormulaPattern::inspect_summarize_reply(),
+                    0.90,
+                    "Summary/overview request",
+                )
             } else {
-                (FormulaPattern::inspect_reply(), 0.80, "Investigation request")
+                (
+                    FormulaPattern::inspect_reply(),
+                    0.80,
+                    "Investigation request",
+                )
             }
         }
-        ("MULTISTEP", "HIGH") => {
-            (FormulaPattern::inspect_edit_verify_reply(), 0.90, "Complex task with high risk")
-        }
+        ("MULTISTEP", "HIGH") => (
+            FormulaPattern::inspect_edit_verify_reply(),
+            0.90,
+            "Complex task with high risk",
+        ),
         ("MULTISTEP", _) => {
             if user_intent.contains("plan") || user_intent.contains("how to") {
                 (FormulaPattern::plan_reply(), 0.85, "Planning request")
             } else {
-                (FormulaPattern::inspect_edit_verify_reply(), 0.80, "Multi-step task")
+                (
+                    FormulaPattern::inspect_edit_verify_reply(),
+                    0.80,
+                    "Multi-step task",
+                )
             }
         }
-        ("OPEN_ENDED", _) => {
-            (FormulaPattern::masterplan_reply(), 0.90, "Complex strategic request")
-        }
-        _ => {
-            (FormulaPattern::inspect_reply(), 0.70, "Default formula")
-        }
+        ("OPEN_ENDED", _) => (
+            FormulaPattern::masterplan_reply(),
+            0.90,
+            "Complex strategic request",
+        ),
+        _ => (FormulaPattern::inspect_reply(), 0.70, "Default formula"),
     };
 
     FormulaSelection {
         formula,
         confidence,
         reason: reason.to_string(),
-        alternatives: vec!["inspect_reply".to_string(), "inspect_summarize_reply".to_string()],
+        alternatives: vec![
+            "inspect_reply".to_string(),
+            "inspect_summarize_reply".to_string(),
+        ],
     }
 }

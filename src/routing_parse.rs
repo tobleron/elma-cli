@@ -75,7 +75,7 @@ fn fix_orphaned_keys_in_arrays(text: &str) -> String {
     let mut chars = text.chars().peekable();
     let mut in_array = 0usize;
     let mut last_obj_end = None; // Position after last } in array
-    
+
     while let Some(c) = chars.next() {
         result.push(c);
         match c {
@@ -94,7 +94,10 @@ fn fix_orphaned_keys_in_arrays(text: &str) -> String {
                     // Check if we're right after }, and this is a known step field
                     let check_start = pos.saturating_sub(2);
                     let recent = &result[check_start..];
-                    if recent.ends_with("}, ") || recent.ends_with("},\n") || recent.ends_with("},\r\n") {
+                    if recent.ends_with("}, ")
+                        || recent.ends_with("},\n")
+                        || recent.ends_with("},\r\n")
+                    {
                         // This might be an orphaned key - collect it
                         let key_start = result.len() - 1; // Position of the "
                         let mut key_chars = vec!['"'];
@@ -109,9 +112,12 @@ fn fix_orphaned_keys_in_arrays(text: &str) -> String {
                         }
                         // Check if it's a known step field
                         let key_str: String = key_chars.iter().collect();
-                        if key_str.starts_with("\"purpose\"") || key_str.starts_with("\"depends_on\"") 
-                            || key_str.starts_with("\"success_condition\"") || key_str.starts_with("\"parent_id\"")
-                            || key_str.starts_with("\"depth\"") || key_str.starts_with("\"unit_type\"")
+                        if key_str.starts_with("\"purpose\"")
+                            || key_str.starts_with("\"depends_on\"")
+                            || key_str.starts_with("\"success_condition\"")
+                            || key_str.starts_with("\"parent_id\"")
+                            || key_str.starts_with("\"depth\"")
+                            || key_str.starts_with("\"unit_type\"")
                             || key_str.starts_with("\"common\"")
                         {
                             // Remove the }, and insert the key inside the object
@@ -174,60 +180,74 @@ fn fix_orphaned_keys_in_arrays(text: &str) -> String {
 fn detect_repetition_loop(text: &str) -> Option<String> {
     // Look for patterns that repeat more than 20 times
     let min_repeat_len = 8; // Minimum pattern length to check
-    let min_repeats = 20;   // Minimum repetitions to flag as loop
-    
+    let min_repeats = 20; // Minimum repetitions to flag as loop
+
     let bytes = text.as_bytes();
     if bytes.len() < min_repeat_len * min_repeats {
         return None;
     }
-    
+
     // Check for repeated substrings
     for pattern_len in min_repeat_len..=50 {
         if bytes.len() < pattern_len * min_repeats {
             break;
         }
-        
+
         // Sample a pattern from the middle of the text (where repetition often starts)
         let sample_start = bytes.len() / 3;
         if sample_start + pattern_len > bytes.len() {
             continue;
         }
-        
-        let pattern = &text[sample_start..sample_start + pattern_len];
+
+        // Use char-based slicing to avoid UTF-8 boundary issues
+        let pattern: String = text.chars().skip(sample_start).take(pattern_len).collect();
         if pattern.is_empty() || pattern.chars().all(|c| c.is_whitespace()) {
             continue;
         }
-        
+
         // Count repetitions
         let mut count = 0;
         let mut pos = 0;
-        while let Some(found) = text[pos..].find(pattern) {
+        while let Some(found) = text[pos..].find(&pattern) {
             count += 1;
             pos += found + pattern.len();
             if count >= min_repeats {
-                return Some(format!("Pattern '{}' repeated {}+ times", 
-                    if pattern.len() > 20 { &pattern[..20] } else { pattern }, count));
+                let pattern_preview = if pattern.len() > 20 {
+                    pattern.chars().take(20).collect::<String>()
+                } else {
+                    pattern.clone()
+                };
+                return Some(format!(
+                    "Pattern '{}' repeated {}+ times",
+                    pattern_preview, count
+                ));
             }
         }
     }
-    
+
     None
 }
 
-pub(crate) fn parse_json_loose<T: DeserializeOwned>(text: &str) -> Result<T> {
+pub(crate) fn parse_json_loose<T: DeserializeOwned + 'static>(text: &str) -> Result<T> {
     let trimmed = text.trim();
 
     // Check for model repetition loops
     if let Some(loop_info) = detect_repetition_loop(trimmed) {
-        anyhow::bail!("Model repetition loop detected: {}. JSON parsing aborted.", loop_info);
+        anyhow::bail!(
+            "Model repetition loop detected: {}. JSON parsing aborted.",
+            loop_info
+        );
     }
 
     // Check for model repetition loops (absurdly long output)
     if trimmed.len() > MAX_JSON_LENGTH {
-        anyhow::bail!("JSON response too long ({} chars) - model may be in repetition loop", trimmed.len());
+        anyhow::bail!(
+            "JSON response too long ({} chars) - model may be in repetition loop",
+            trimmed.len()
+        );
     }
 
-    if let Ok(v) = serde_json::from_str::<T>(trimmed) {
+    if let Ok(v) = crate::json_parser::parse_with_repair::<T>(trimmed) {
         return Ok(v);
     }
 
@@ -237,22 +257,25 @@ pub(crate) fn parse_json_loose<T: DeserializeOwned>(text: &str) -> Result<T> {
 
         // Also check extracted JSON length
         if obj_trimmed.len() > MAX_JSON_LENGTH {
-            anyhow::bail!("Extracted JSON too long ({} chars) - model may be in repetition loop", obj_trimmed.len());
+            anyhow::bail!(
+                "Extracted JSON too long ({} chars) - model may be in repetition loop",
+                obj_trimmed.len()
+            );
         }
 
-        if let Ok(v) = serde_json::from_str::<T>(obj_trimmed) {
+        if let Ok(v) = crate::json_parser::parse_with_repair::<T>(obj_trimmed) {
             return Ok(v);
         }
 
         // Fallback 1b: Fix orphaned keys in arrays (common LLM error)
         let fixed = fix_orphaned_keys_in_arrays(obj_trimmed);
-        if let Ok(v) = serde_json::from_str::<T>(&fixed) {
+        if let Ok(v) = crate::json_parser::parse_with_repair::<T>(&fixed) {
             return Ok(v);
         }
 
         // Fallback 2: Attempt structural repair on the extracted object
         if let Ok(repaired) = jsonrepair_rs::jsonrepair(obj_trimmed) {
-            if let Ok(v) = serde_json::from_str::<T>(&repaired) {
+            if let Ok(v) = crate::json_parser::parse_with_repair::<T>(&repaired) {
                 return Ok(v);
             }
         }
@@ -260,7 +283,7 @@ pub(crate) fn parse_json_loose<T: DeserializeOwned>(text: &str) -> Result<T> {
 
     // Fallback 3: Attempt structural repair on the entire text
     if let Ok(repaired) = jsonrepair_rs::jsonrepair(trimmed) {
-        if let Ok(v) = serde_json::from_str::<T>(&repaired) {
+        if let Ok(v) = crate::json_parser::parse_with_repair::<T>(&repaired) {
             return Ok(v);
         }
     }
@@ -271,7 +294,10 @@ pub(crate) fn parse_json_loose<T: DeserializeOwned>(text: &str) -> Result<T> {
     } else {
         trimmed.to_string()
     };
-    anyhow::bail!("No valid or repairable JSON object found. Preview: {}", preview)
+    anyhow::bail!(
+        "No valid or repairable JSON object found. Preview: {}",
+        preview
+    )
 }
 
 #[cfg(test)]
@@ -379,7 +405,11 @@ This JSON object has the following properties:
         }
 
         let result: Result<MockProgram> = parse_json_loose(input);
-        assert!(result.is_ok(), "Should be able to repair and parse the malformed JSON. Error: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should be able to repair and parse the malformed JSON. Error: {:?}",
+            result.err()
+        );
         let program = result.unwrap();
         assert_eq!(program.objective, "list files");
         // json-repair might fix it by either dropping the orphaned keys or wrapping them.
@@ -391,11 +421,15 @@ This JSON object has the following properties:
     fn test_detect_repetition_loop() {
         // Simulate the model repetition loop from session s_1774899901_489608000
         let repetitive = r#"{"objective":"test","steps":[{"cmd":"fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\(|fn main\\("|}]}"#;
-        
+
         let result: Result<serde_json::Value> = parse_json_loose(repetitive);
         assert!(result.is_err(), "Should detect repetition loop");
         let err_msg = result.err().unwrap().to_string();
-        assert!(err_msg.contains("repetition loop"), "Error should mention repetition loop: {}", err_msg);
+        assert!(
+            err_msg.contains("repetition loop"),
+            "Error should mention repetition loop: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -404,21 +438,30 @@ This JSON object has the following properties:
         let normal = r#"{"objective":"test","steps":[{"cmd":"echo hello"},{"cmd":"echo world"}]}"#;
 
         let result: Result<serde_json::Value> = parse_json_loose(normal);
-        assert!(result.is_ok(), "Normal JSON should parse successfully. Error: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Normal JSON should parse successfully. Error: {:?}",
+            result.err()
+        );
     }
 
     #[test]
     fn test_fix_orphaned_keys_in_steps() {
         // Test the specific malformed JSON from session s_1774904245_340673000
         let malformed = r#"{"objective":"list files","steps":[{"id":"s1","type":"shell","cmd":"ls -1"}, "purpose":"inspect","success_condition":"ok","depends_on":[]}]}"#;
-        
+
         let fixed = fix_orphaned_keys_in_arrays(malformed);
         // The fix should move the orphaned keys inside the step object
         assert!(fixed.contains(r#"{"id":"s1","type":"shell","cmd":"ls -1","purpose":"inspect","success_condition":"ok","depends_on":[]}"#) 
             || fixed.contains(r#""purpose":"inspect""#), "Fixed JSON should contain purpose inside step. Got: {}", fixed);
-        
+
         // Try to parse as Value to verify it's valid JSON
         let result: Result<serde_json::Value> = parse_json_loose(malformed);
-        assert!(result.is_ok(), "Should repair orphaned keys. Error: {:?}, Fixed: {}", result.err(), fixed);
+        assert!(
+            result.is_ok(),
+            "Should repair orphaned keys. Error: {:?}, Fixed: {}",
+            result.err(),
+            fixed
+        );
     }
 }

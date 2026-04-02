@@ -25,7 +25,7 @@ pub struct DriftVerdict {
 }
 
 /// Check if current execution is drifting from original goal
-/// 
+///
 /// Analyzes:
 /// 1. Step types vs. goal type mismatch
 /// 2. No progress toward success criteria
@@ -37,27 +37,27 @@ pub fn check_goal_drift(
     step_results: &[StepResult],
 ) -> DriftVerdict {
     let mut drift_signals = Vec::new();
-    
+
     // Check 1: Step types don't match goal type
     if let Some(mismatch) = check_step_goal_mismatch(original_objective, current_program) {
         drift_signals.push(mismatch);
     }
-    
+
     // Check 2: No progress toward success criteria
     if let Some(no_progress) = check_no_progress(original_objective, step_results) {
         drift_signals.push(no_progress);
     }
-    
+
     // Check 3: Self-referential steps (planning about planning)
     if let Some(meta_planning) = check_meta_planning(current_program) {
         drift_signals.push(meta_planning);
     }
-    
+
     // Check 4: Topic drift (keyword mismatch)
     if let Some(topic_drift) = check_topic_drift(original_objective, current_program) {
         drift_signals.push(topic_drift);
     }
-    
+
     // Determine verdict based on signals
     if drift_signals.is_empty() {
         DriftVerdict {
@@ -73,7 +73,7 @@ pub fn check_goal_drift(
             "Refocus on original goal: \"{}\". Remove tangential steps.",
             truncate_objective(original_objective, 50)
         ));
-        
+
         DriftVerdict {
             drift_detected: true,
             confidence,
@@ -86,20 +86,28 @@ pub fn check_goal_drift(
 /// Check if step types match goal type
 fn check_step_goal_mismatch(objective: &str, program: &Program) -> Option<String> {
     let objective_lower = objective.to_lowercase();
-    
+
     // Goal is action-oriented but steps are all read-only
-    let action_keywords = ["delete", "remove", "add", "create", "update", "fix", "run", "execute"];
-    let is_action_goal = action_keywords.iter().any(|kw| objective_lower.contains(kw));
-    
+    let action_keywords = [
+        "delete", "remove", "add", "create", "update", "fix", "run", "execute",
+    ];
+    let is_action_goal = action_keywords
+        .iter()
+        .any(|kw| objective_lower.contains(kw));
+
     if is_action_goal {
-        let has_action_step = program.steps.iter().any(|s| {
-            matches!(s, Step::Shell { .. } | Step::Edit { .. })
-        });
-        
+        let has_action_step = program
+            .steps
+            .iter()
+            .any(|s| matches!(s, Step::Shell { .. } | Step::Edit { .. }));
+
         let all_readonly = program.steps.iter().all(|s| {
-            matches!(s, Step::Read { .. } | Step::Search { .. } | Step::Plan { .. })
+            matches!(
+                s,
+                Step::Read { .. } | Step::Search { .. } | Step::Plan { .. }
+            )
         });
-        
+
         if all_readonly && !has_action_step && program.steps.len() >= 3 {
             return Some(format!(
                 "Goal requires action but {} steps are read-only (no Shell/Edit steps)",
@@ -107,11 +115,13 @@ fn check_step_goal_mismatch(objective: &str, program: &Program) -> Option<String
             ));
         }
     }
-    
+
     // Goal is research but steps are destructive
     let research_keywords = ["research", "analyze", "understand", "learn", "compare"];
-    let is_research_goal = research_keywords.iter().any(|kw| objective_lower.contains(kw));
-    
+    let is_research_goal = research_keywords
+        .iter()
+        .any(|kw| objective_lower.contains(kw));
+
     if is_research_goal {
         let has_destructive = program.steps.iter().any(|s| {
             if let Step::Shell { cmd, .. } = s {
@@ -120,32 +130,32 @@ fn check_step_goal_mismatch(objective: &str, program: &Program) -> Option<String
                 false
             }
         });
-        
+
         if has_destructive {
             return Some("Research goal but steps include destructive operations".to_string());
         }
     }
-    
+
     None
 }
 
 /// Check if there's no progress toward success
 fn check_no_progress(objective: &str, step_results: &[StepResult]) -> Option<String> {
     // If we've executed 5+ steps with no successful modifications
-    let executed_steps = step_results.iter()
+    let executed_steps = step_results
+        .iter()
         .filter(|s| !s.kind.eq_ignore_ascii_case("reply"))
         .count();
-    
+
     if executed_steps >= 5 {
-        let successful_modifications = step_results.iter()
+        let successful_modifications = step_results
+            .iter()
             .filter(|s| {
-                s.ok && (
-                    s.kind.eq_ignore_ascii_case("edit") ||
-                    s.kind.eq_ignore_ascii_case("shell") && s.exit_code == Some(0)
-                )
+                s.ok && (s.kind.eq_ignore_ascii_case("edit")
+                    || s.kind.eq_ignore_ascii_case("shell") && s.exit_code == Some(0))
             })
             .count();
-        
+
         if successful_modifications == 0 {
             return Some(format!(
                 "{} steps executed with 0 successful modifications",
@@ -153,18 +163,20 @@ fn check_no_progress(objective: &str, step_results: &[StepResult]) -> Option<Str
             ));
         }
     }
-    
+
     None
 }
 
 /// Check for self-referential planning (planning about planning)
 fn check_meta_planning(program: &Program) -> Option<String> {
-    let plan_count = program.steps.iter()
+    let plan_count = program
+        .steps
+        .iter()
         .filter(|s| matches!(s, Step::Plan { .. } | Step::MasterPlan { .. }))
         .count();
-    
+
     let total_steps = program.steps.len();
-    
+
     // If more than half the steps are planning steps, we're planning about planning
     if plan_count >= 2 && plan_count * 2 >= total_steps && total_steps >= 3 {
         return Some(format!(
@@ -172,7 +184,7 @@ fn check_meta_planning(program: &Program) -> Option<String> {
             plan_count, total_steps
         ));
     }
-    
+
     None
 }
 
@@ -183,26 +195,29 @@ fn check_topic_drift(objective: &str, program: &Program) -> Option<String> {
         .split_whitespace()
         .filter(|w| w.len() > 3)
         .collect();
-    
+
     if objective_terms.is_empty() {
         return None;
     }
-    
+
     // Extract terms from step purposes
-    let step_terms: Vec<&str> = program.steps.iter()
+    let step_terms: Vec<&str> = program
+        .steps
+        .iter()
         .flat_map(|s| s.purpose().split_whitespace())
         .filter(|w| w.len() > 3)
         .collect();
-    
+
     // Check for term overlap
-    let overlap: Vec<_> = objective_terms.iter()
+    let overlap: Vec<_> = objective_terms
+        .iter()
         .filter(|obj_term| {
-            step_terms.iter().any(|step_term| {
-                obj_term.to_lowercase() == step_term.to_lowercase()
-            })
+            step_terms
+                .iter()
+                .any(|step_term| obj_term.to_lowercase() == step_term.to_lowercase())
         })
         .collect();
-    
+
     // If less than 30% overlap, likely topic drift
     if !objective_terms.is_empty() && !step_terms.is_empty() {
         let overlap_ratio = overlap.len() as f64 / objective_terms.len() as f64;
@@ -213,7 +228,7 @@ fn check_topic_drift(objective: &str, program: &Program) -> Option<String> {
             ));
         }
     }
-    
+
     None
 }
 
@@ -233,14 +248,9 @@ pub async fn run_refinement_phase(
     ws_brief: &str,
 ) -> Result<Program> {
     // Build refinement prompt
-    let prompt = build_refinement_prompt(
-        original_objective,
-        step_results,
-        drift_reason,
-        ws,
-        ws_brief,
-    );
-    
+    let prompt =
+        build_refinement_prompt(original_objective, step_results, drift_reason, ws, ws_brief);
+
     let req = ChatCompletionRequest {
         model: refinement_cfg.model.clone(),
         messages: vec![
@@ -262,7 +272,7 @@ pub async fn run_refinement_phase(
         reasoning_format: Some(refinement_cfg.reasoning_format.clone()),
         grammar: Some(crate::json_program_grammar()),
     };
-    
+
     let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;
     Ok(program)
 }
@@ -276,14 +286,14 @@ fn build_refinement_prompt(
     ws_brief: &str,
 ) -> String {
     let mut prompt = String::new();
-    
+
     prompt.push_str("=== CONTEXT DRIFT DETECTED ===\n\n");
-    
+
     prompt.push_str(&format!("**Original Goal:** {}\n\n", original_objective));
-    
+
     prompt.push_str("**Why We're Off-Track:**\n");
     prompt.push_str(&format!("{}\n\n", drift_reason));
-    
+
     prompt.push_str("**What We've Done So Far:**\n");
     for (i, result) in step_results.iter().enumerate() {
         let status = if result.ok { "✅" } else { "❌" };
@@ -293,17 +303,24 @@ fn build_refinement_prompt(
             result.kind,
             status,
             truncate_text(&result.summary, 60),
-            if !result.ok { format!(" (Error: {})", truncate_text(&result.outcome_reason.as_deref().unwrap_or("failed"), 30)) } else { String::new() }
+            if !result.ok {
+                format!(
+                    " (Error: {})",
+                    truncate_text(&result.outcome_reason.as_deref().unwrap_or("failed"), 30)
+                )
+            } else {
+                String::new()
+            }
         ));
     }
     prompt.push('\n');
-    
+
     prompt.push_str("**Workspace Context:**\n");
     prompt.push_str(ws.trim());
     prompt.push_str("\n\n");
     prompt.push_str(ws_brief.trim());
     prompt.push_str("\n\n");
-    
+
     prompt.push_str("**YOUR TASK:**\n");
     prompt.push_str("1. Acknowledge the original goal\n");
     prompt.push_str("2. Identify what went off-track\n");
@@ -312,9 +329,9 @@ fn build_refinement_prompt(
     prompt.push_str("   - Avoids the tangents that caused drift\n");
     prompt.push_str("   - Uses the minimum steps necessary\n");
     prompt.push_str("   - Has clear success criteria\n\n");
-    
+
     prompt.push_str("Output ONLY valid Program JSON.\n");
-    
+
     prompt
 }
 
@@ -361,7 +378,7 @@ mod tests {
             ],
         };
         let results = vec![];
-        
+
         let verdict = check_goal_drift(objective, &program, &results);
         assert!(!verdict.drift_detected);
     }
@@ -390,7 +407,7 @@ mod tests {
             ],
         };
         let results = vec![];
-        
+
         let verdict = check_goal_drift(objective, &program, &results);
         assert!(verdict.drift_detected);
         assert!(verdict.reason.as_ref().unwrap().contains("read-only"));
@@ -420,7 +437,7 @@ mod tests {
             ],
         };
         let results = vec![];
-        
+
         let verdict = check_goal_drift(objective, &program, &results);
         assert!(verdict.drift_detected);
         assert!(verdict.reason.as_ref().unwrap().contains("meta-planning"));
@@ -431,13 +448,11 @@ mod tests {
         let objective = "Add feature X";
         let program = Program {
             objective: objective.to_string(),
-            steps: vec![
-                Step::Read {
-                    id: "r1".to_string(),
-                    path: "file.txt".to_string(),
-                    common: StepCommon::default(),
-                },
-            ],
+            steps: vec![Step::Read {
+                id: "r1".to_string(),
+                path: "file.txt".to_string(),
+                common: StepCommon::default(),
+            }],
         };
         // 5+ steps executed but all are read-only (no modifications)
         let results = vec![
@@ -537,9 +552,13 @@ mod tests {
                 outcome_reason: None,
             },
         ];
-        
+
         let verdict = check_goal_drift(objective, &program, &results);
         assert!(verdict.drift_detected);
-        assert!(verdict.reason.as_ref().unwrap().contains("0 successful modifications"));
+        assert!(verdict
+            .reason
+            .as_ref()
+            .unwrap()
+            .contains("0 successful modifications"));
     }
 }

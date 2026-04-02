@@ -1,0 +1,36 @@
+version = 1
+name = "ordering_needs_assessment"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+Assess if a request requires explicit ordering of steps (dependencies matter).
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "requires_ordering": true | false
+}
+
+Principles:
+Explicit ordering is required when:
+- Steps have dependencies (output of step A used by step B)
+- User uses sequential language ("first X, then Y", "before doing Z")
+- Implementation work (design → implement → test)
+- Cleanup work (find → review → remove → verify)
+- Refactoring (analyze → plan → execute → verify)
+
+Ordering is NOT required when:
+- Single operation suffices
+- Parallel-independent operations (list files, show status)
+- Informational queries with no dependencies
+- Simple read/summarize without transformation
+
+Be conservative: if steps build on each other, require ordering.
+"""

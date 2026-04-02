@@ -22,29 +22,10 @@ pub(crate) fn should_auto_tune_on_startup(args: &Args, model_cfg_dir: &Path) -> 
     if args.tune || args.calibrate || args.restore_base || args.restore_last {
         return false;
     }
-    
-    // Check if JSON tuning is complete (has cached results)
-    let json_tune_dir = model_cfg_dir.join("tune").join("json");
-    if !json_tune_dir.exists() {
-        return true; // No JSON tuning directory, need to tune
-    }
-    
-    // Check if there are any JSON tuning cache files
-    let has_json_cache = std::fs::read_dir(&json_tune_dir)
-        .map(|mut entries| entries.any(|e| {
-            e.ok().map(|entry| {
-                entry.path().extension()
-                    .and_then(|ext| ext.to_str()) == Some("toml")
-            }).unwrap_or(false)
-        }))
-        .unwrap_or(false);
-    
-    if !has_json_cache {
-        return true; // No cache files, need to tune
-    }
-    
-    // Has JSON cache - skip full tuning, use cached results
-    // The model has been tuned before, no need to re-tune
+
+    // DISABLED: Auto-tuning on startup
+    // Elma now uses global defaults from config/defaults/ without per-model tuning
+    // To enable tuning, use --tune flag explicitly
     false
 }
 
@@ -129,7 +110,10 @@ pub(crate) async fn handle_special_modes(
         )?));
         if args.calibrate {
             let tune_cfg = load_agent_config(&dir.join("intention_tune.toml"))?;
-            tune_model(args, client, chat_url, base_url, &dir, &mid, &tune_cfg, true).await?;
+            tune_model(
+                args, client, chat_url, base_url, &dir, &mid, &tune_cfg, true,
+            )
+            .await?;
         } else {
             let winner = optimize_model(args, client, chat_url, base_url, &dir, &mid).await?;
             eprintln!(
@@ -183,7 +167,14 @@ pub(crate) fn emit_startup_banner(
     eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
     eprintln!("{} {session_name}", ansi_grey("  session "));
     if tuned {
-        eprintln!("{} {}", ansi_soft_green("  status  "), "✓ tuned (using cached results)");
+        eprintln!(
+            "{} {}",
+            ansi_soft_green("  status  "),
+            "✓ tuned (using cached results)"
+        );
     }
-    eprintln!("{} /exit  /reset  /snapshot  /rollback <id>  /tune\n", ansi_grey("  commands"));
+    eprintln!(
+        "{} /exit  /reset  /snapshot  /rollback <id>  /tune\n",
+        ansi_grey("  commands")
+    );
 }

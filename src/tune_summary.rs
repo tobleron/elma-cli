@@ -121,7 +121,11 @@ pub(crate) fn write_tune_reports(
     let classification_sum = aggregation
         .efficiency_scenarios
         .iter()
-        .filter_map(|scenario| scenario.classification_ok.map(|ok| if ok { 1.0 } else { 0.0 }))
+        .filter_map(|scenario| {
+            scenario
+                .classification_ok
+                .map(|ok| if ok { 1.0 } else { 0.0 })
+        })
         .sum::<f64>();
     let classification_metric_total = aggregation
         .efficiency_scenarios
@@ -141,7 +145,11 @@ pub(crate) fn write_tune_reports(
     let presentation_sum = aggregation
         .efficiency_scenarios
         .iter()
-        .filter_map(|scenario| scenario.presentation_ok.map(|ok| if ok { 1.0 } else { 0.0 }))
+        .filter_map(|scenario| {
+            scenario
+                .presentation_ok
+                .map(|ok| if ok { 1.0 } else { 0.0 })
+        })
         .sum::<f64>();
     let presentation_metric_total = aggregation
         .efficiency_scenarios
@@ -176,11 +184,8 @@ pub(crate) fn write_tune_reports(
             + (0.15 * efficiency_metric_from_score(scope_sum, scope_metric_total).score)
             + (0.05 * efficiency_metric_from_score(compaction_sum, compaction_metric_total).score)
             + (0.05
-                * efficiency_metric_from_score(
-                    classification_sum,
-                    classification_metric_total,
-                )
-                .score)
+                * efficiency_metric_from_score(classification_sum, classification_metric_total)
+                    .score)
             + (0.10
                 * efficiency_metric_from_score(claim_check_sum, claim_check_metric_total).score)
             + (0.05

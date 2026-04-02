@@ -86,13 +86,9 @@ impl SessionError {
 }
 
 /// Write error.json to session directory for crash reporting
-pub(crate) fn write_session_error(
-    session_root: &PathBuf,
-    error: &SessionError,
-) -> Result<PathBuf> {
+pub(crate) fn write_session_error(session_root: &PathBuf, error: &SessionError) -> Result<PathBuf> {
     let path = session_root.join("error.json");
-    let json = serde_json::to_string_pretty(error)
-        .context("serialize session error")?;
+    let json = serde_json::to_string_pretty(error).context("serialize session error")?;
     std::fs::write(&path, json)
         .with_context(|| format!("write error report {}", path.display()))?;
     Ok(path)
@@ -117,8 +113,7 @@ pub(crate) fn write_session_status(
             .unwrap_or_default()
             .as_secs(),
     });
-    let json = serde_json::to_string_pretty(&status_obj)
-        .context("serialize session status")?;
+    let json = serde_json::to_string_pretty(&status_obj).context("serialize session status")?;
     std::fs::write(&path, json)
         .with_context(|| format!("write session status {}", path.display()))?;
     Ok(path)

@@ -5,12 +5,12 @@
 //! Handles retry logic with temperature escalation and meta-review synthesis.
 //! Task 010: Integrated strategy chains for fallback-based retries.
 
-use crate::*;
 use crate::app::LoadedProfiles;
+use crate::*;
 
 /// Retry orchestration with strategy chains and temperature escalation.
 /// Returns the best program from all attempts, or a meta-review synthesized program.
-/// 
+///
 /// Task 010: Now uses strategy fallback chains instead of just temperature escalation.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn orchestrate_with_retries(
@@ -37,11 +37,16 @@ pub(crate) async fn orchestrate_with_retries(
 
     // Task 010: Create strategy chain based on task characteristics
     let mut strategy_chain = select_strategy_chain(
-        messages.iter().rev().find(|m| m.role == "user").map(|m| m.content.as_str()).unwrap_or(""),
+        messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.as_str())
+            .unwrap_or(""),
         complexity,
         route_decision,
     );
-    
+
     trace(
         args,
         &format!(
@@ -62,7 +67,7 @@ pub(crate) async fn orchestrate_with_retries(
             // Strategy chain exhausted, fall back to temperature escalation
             ExecutionStrategy::Direct
         };
-        
+
         // Calculate temperature for this attempt (adjusted by strategy)
         let base_temperature = profiles.orchestrator_cfg.temperature;
         let temp_adjustment = match strategy {
@@ -72,7 +77,8 @@ pub(crate) async fn orchestrate_with_retries(
             ExecutionStrategy::SafeMode => -0.2,
             ExecutionStrategy::Incremental => 0.0,
         };
-        let temperature = (base_temperature + (attempt as f64 * temp_step) + temp_adjustment).min(max_temp);
+        let temperature =
+            (base_temperature + (attempt as f64 * temp_step) + temp_adjustment).min(max_temp);
 
         // Show retry intel summary with strategy
         show_intel_summary(
@@ -143,7 +149,10 @@ pub(crate) async fn orchestrate_with_retries(
 
         // Check if outcome is successful (has final reply and no critical failures)
         let is_successful = outcome.final_reply.is_some()
-            && outcome.step_results.iter().all(|r| r.ok || r.kind.eq_ignore_ascii_case("reply"));
+            && outcome
+                .step_results
+                .iter()
+                .all(|r| r.ok || r.kind.eq_ignore_ascii_case("reply"));
 
         if is_successful {
             show_intel_summary(
@@ -154,10 +163,17 @@ pub(crate) async fn orchestrate_with_retries(
         }
 
         // Record failure for meta-review
-        let error_summary = outcome.step_results
+        let error_summary = outcome
+            .step_results
             .iter()
             .filter(|r| !r.ok)
-            .map(|r| format!("{}: {}", r.id, r.outcome_reason.as_deref().unwrap_or("failed")))
+            .map(|r| {
+                format!(
+                    "{}: {}",
+                    r.id,
+                    r.outcome_reason.as_deref().unwrap_or("failed")
+                )
+            })
             .collect::<Vec<_>>()
             .join("; ");
 
@@ -168,7 +184,10 @@ pub(crate) async fn orchestrate_with_retries(
     // All attempts failed - trigger meta-review
     show_intel_summary(
         args.show_process,
-        &format!("All {} retries failed - triggering meta-review", max_retries),
+        &format!(
+            "All {} retries failed - triggering meta-review",
+            max_retries
+        ),
     );
 
     let meta_program = synthesize_meta_review(
@@ -246,12 +265,15 @@ async fn build_program_with_retry(
     let formula_selection = crate::formulas::select_optimal_formula(
         &complexity.complexity,
         &complexity.risk,
-        0.6,  // Slightly more efficiency-focused on retry
+        0.6, // Slightly more efficiency-focused on retry
     );
 
     // Build enhanced prompt with failure history
     let mut prompt = build_orchestrator_user_content(
-        &messages.last().map(|m| m.content.clone()).unwrap_or_default(),
+        &messages
+            .last()
+            .map(|m| m.content.clone())
+            .unwrap_or_default(),
         route_decision,
         workflow_plan,
         complexity,
@@ -299,8 +321,8 @@ async fn build_program_with_retry(
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);
     // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
-    let json_str = crate::routing::extract_first_json_object(&response_text)
-        .unwrap_or(&response_text);
+    let json_str =
+        crate::routing::extract_first_json_object(&response_text).unwrap_or(&response_text);
     parse_json_loose(json_str)
 }
 
@@ -329,14 +351,17 @@ async fn build_program_with_strategy(
     let formula_selection = crate::formulas::select_optimal_formula(
         &complexity.complexity,
         &complexity.risk,
-        0.6,  // Slightly more efficiency-focused
+        0.6, // Slightly more efficiency-focused
     );
 
     // Build enhanced prompt with strategy context
     let mut prompt = build_orchestrator_user_content(
-        &messages.last().map(|m| m.content.clone()).unwrap_or_default(),
+        &messages
+            .last()
+            .map(|m| m.content.clone())
+            .unwrap_or_default(),
         route_decision,
-        None,  // workflow_plan
+        None, // workflow_plan
         complexity,
         scope,
         formula,
@@ -390,8 +415,8 @@ async fn build_program_with_strategy(
     let response_text = extract_response_text(&response);
 
     // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
-    let json_str = crate::routing::extract_first_json_object(&response_text)
-        .unwrap_or(&response_text);
+    let json_str =
+        crate::routing::extract_first_json_object(&response_text).unwrap_or(&response_text);
     parse_json_loose(json_str)
 }
 
@@ -408,7 +433,13 @@ async fn synthesize_meta_review(
 ) -> Result<Program> {
     let mut prompt = String::new();
     prompt.push_str("=== TASK ===\n");
-    prompt.push_str(&format!("User request: {}\n\n", messages.last().map(|m| m.content.clone()).unwrap_or_default()));
+    prompt.push_str(&format!(
+        "User request: {}\n\n",
+        messages
+            .last()
+            .map(|m| m.content.clone())
+            .unwrap_or_default()
+    ));
 
     prompt.push_str("=== FAILED ATTEMPTS ===\n");
     for (attempt, program, error) in attempt_history {
@@ -416,7 +447,12 @@ async fn synthesize_meta_review(
             "\nAttempt {}:\n- Error: {}\n- Steps: {}\n",
             attempt + 1,
             error,
-            program.steps.iter().map(|s| format!("{} ({})", s.id(), s.kind())).collect::<Vec<_>>().join(", ")
+            program
+                .steps
+                .iter()
+                .map(|s| format!("{} ({})", s.id(), s.kind()))
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
 
@@ -461,7 +497,7 @@ async fn synthesize_meta_review(
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);
     // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
-    let json_str = crate::routing::extract_first_json_object(&response_text)
-        .unwrap_or(&response_text);
+    let json_str =
+        crate::routing::extract_first_json_object(&response_text).unwrap_or(&response_text);
     parse_json_loose(json_str)
 }

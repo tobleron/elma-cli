@@ -243,7 +243,7 @@ pub struct FormulaSelectionResult {
 pub fn select_optimal_formula(
     complexity: &str,
     risk: &str,
-    efficiency_priority: f32,  // 0.0 = quality focused, 1.0 = speed focused
+    efficiency_priority: f32, // 0.0 = quality focused, 1.0 = speed focused
 ) -> FormulaSelectionResult {
     let all_scores = FormulaScores::defaults();
 
@@ -252,32 +252,42 @@ pub fn select_optimal_formula(
         "DIRECT" => {
             if efficiency_priority > 0.7 {
                 // Speed priority - use cheapest
-                all_scores.into_iter().filter(|f| f.cost_score <= 2).collect()
+                all_scores
+                    .into_iter()
+                    .filter(|f| f.cost_score <= 2)
+                    .collect()
             } else {
                 // Balanced
-                all_scores.into_iter().filter(|f| f.cost_score <= 4).collect()
+                all_scores
+                    .into_iter()
+                    .filter(|f| f.cost_score <= 4)
+                    .collect()
             }
         }
-        "INVESTIGATE" => {
-            all_scores.into_iter().filter(|f| {
-                f.cost_score >= 3 && f.cost_score <= 5
-            }).collect()
-        }
+        "INVESTIGATE" => all_scores
+            .into_iter()
+            .filter(|f| f.cost_score >= 3 && f.cost_score <= 5)
+            .collect(),
         "MULTISTEP" => {
             if risk == "HIGH" {
                 // High risk - use thorough formula
-                all_scores.into_iter().filter(|f| {
-                    f.value_score >= 8 && f.verification_level >= 2
-                }).collect()
+                all_scores
+                    .into_iter()
+                    .filter(|f| f.value_score >= 8 && f.verification_level >= 2)
+                    .collect()
             } else {
-                all_scores.into_iter().filter(|f| {
-                    f.cost_score >= 4 && f.cost_score <= 7
-                }).collect()
+                all_scores
+                    .into_iter()
+                    .filter(|f| f.cost_score >= 4 && f.cost_score <= 7)
+                    .collect()
             }
         }
         "OPEN_ENDED" => {
             // Complex - use most thorough
-            all_scores.into_iter().filter(|f| f.value_score >= 9).collect()
+            all_scores
+                .into_iter()
+                .filter(|f| f.value_score >= 9)
+                .collect()
         }
         _ => all_scores,
     };
@@ -285,12 +295,14 @@ pub fn select_optimal_formula(
     // Select best by efficiency priority
     let selected = if efficiency_priority > 0.5 {
         // Speed priority - lowest cost
-        candidates.into_iter()
+        candidates
+            .into_iter()
             .min_by(|a, b| a.cost_score.cmp(&b.cost_score))
             .unwrap_or_else(FormulaScores::reply_only)
     } else {
         // Quality priority - highest value
-        candidates.into_iter()
+        candidates
+            .into_iter()
             .max_by(|a, b| a.value_score.cmp(&b.value_score))
             .unwrap_or_else(FormulaScores::inspect_reply)
     };
@@ -356,19 +368,23 @@ pub fn calculate_efficiency(
     actual: &ExecutionMetrics,
 ) -> EfficiencyReport {
     let expected_cost = expected.cost_score as f32;
-    let actual_cost = (actual.actual_steps as f32
-                      + actual.execution_time_ms as f32 / 1000.0)
-                      / expected_cost.max(1.0);
+    let actual_cost = (actual.actual_steps as f32 + actual.execution_time_ms as f32 / 1000.0)
+        / expected_cost.max(1.0);
 
-    let value_achieved = expected.value_score as f32
-                        * actual.user_satisfaction.unwrap_or(1.0);
+    let value_achieved = expected.value_score as f32 * actual.user_satisfaction.unwrap_or(1.0);
 
     let efficiency_score = value_achieved / actual_cost.max(0.1);
 
     let recommendation = if actual_cost > expected_cost * 1.5 {
-        format!("Consider simpler formula for similar {} tasks", actual.task_type)
+        format!(
+            "Consider simpler formula for similar {} tasks",
+            actual.task_type
+        )
     } else if value_achieved < expected.value_score as f32 * 0.7 {
-        format!("Consider more thorough formula for similar {} tasks", actual.task_type)
+        format!(
+            "Consider more thorough formula for similar {} tasks",
+            actual.task_type
+        )
     } else {
         "Formula choice was appropriate".to_string()
     };

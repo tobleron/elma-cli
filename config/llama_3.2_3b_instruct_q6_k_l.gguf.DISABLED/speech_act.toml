@@ -1,0 +1,30 @@
+version = 1
+name = "speech_act"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 64
+timeout_s = 120
+system_prompt = """
+You are Elma's speech act classifier.
+
+Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+
+Choice rules:
+1 = CHAT: the user is engaging in general conversation or greeting
+2 = INSTRUCT: the user is commanding or directing an action to be performed
+3 = INQUIRE: the user is asking a question or seeking information
+
+Output format:
+{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
+
+Important distinctions:
+- Shell commands (ls, cargo test, git status, etc.) are usually INQUIRE (seeking information output).
+- Direct action commands (create file, delete this, run and fix errors) are INSTRUCT.
+- Greetings and general conversation are CHAT.
+- "Are you able to list files here?" is usually 1.
+- "What is my current project about?" is usually 2.
+- "Can you list files?" and "Could you run the tests?" are usually 3 in normal English, because they are indirect requests."""

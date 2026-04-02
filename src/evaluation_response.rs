@@ -37,8 +37,7 @@ pub(crate) async fn evaluate_response_suite_impl(
         load_agent_config(&candidate_dir.join("execution_sufficiency.toml"))?;
     let outcome_verifier_cfg = load_agent_config(&candidate_dir.join("outcome_verifier.toml"))?;
     let scope_builder_cfg = load_agent_config(&candidate_dir.join("scope_builder.toml"))?;
-    let evidence_compactor_cfg =
-        load_agent_config(&candidate_dir.join("evidence_compactor.toml"))?;
+    let evidence_compactor_cfg = load_agent_config(&candidate_dir.join("evidence_compactor.toml"))?;
     let artifact_classifier_cfg =
         load_agent_config(&candidate_dir.join("artifact_classifier.toml"))?;
     let critic_cfg = load_agent_config(&candidate_dir.join("critic.toml"))?;

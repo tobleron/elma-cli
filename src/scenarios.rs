@@ -36,7 +36,9 @@ pub(crate) fn parse_three_tags(s: &str) -> [String; 3] {
     [out[0].clone(), out[1].clone(), out[2].clone()]
 }
 
-pub(crate) fn load_intention_mapping(model_cfg_dir: &PathBuf) -> Option<Vec<(String, [String; 3])>> {
+pub(crate) fn load_intention_mapping(
+    model_cfg_dir: &PathBuf,
+) -> Option<Vec<(String, [String; 3])>> {
     let path = model_cfg_dir.join("intention_mapping.txt");
     let txt = std::fs::read_to_string(path).ok()?;
     let mut out = Vec::new();
@@ -64,7 +66,10 @@ pub(crate) fn load_intention_mapping(model_cfg_dir: &PathBuf) -> Option<Vec<(Str
     Some(out)
 }
 
-pub(crate) fn scenario_helper(intent_word: &str, mapping: &[(String, [String; 3])]) -> (Option<String>, f64) {
+pub(crate) fn scenario_helper(
+    intent_word: &str,
+    mapping: &[(String, [String; 3])],
+) -> (Option<String>, f64) {
     let w = intent_word.trim();
     if w.is_empty() {
         return (None, 0.0);
@@ -157,7 +162,10 @@ fn load_manifest_at(path: &Path, default_suite: &str) -> Result<CalibrationManif
     Ok(manifest)
 }
 
-pub(crate) fn load_tuning_manifest(tune_mode: &str, runtime_safe_only: bool) -> Result<CalibrationManifest> {
+pub(crate) fn load_tuning_manifest(
+    tune_mode: &str,
+    runtime_safe_only: bool,
+) -> Result<CalibrationManifest> {
     if tune_mode == "quick" {
         let root = repo_root()?.join("scenarios").join("tune");
         let path = root.join("quick_manifest.toml");

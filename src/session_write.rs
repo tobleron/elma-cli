@@ -12,7 +12,11 @@ pub(crate) fn write_shell_action(shell_dir: &PathBuf, cmd_line: &str) -> Result<
     Ok(path)
 }
 
-pub(crate) fn write_shell_output(shell_dir: &PathBuf, seq_path: &PathBuf, output: &str) -> Result<PathBuf> {
+pub(crate) fn write_shell_output(
+    shell_dir: &PathBuf,
+    seq_path: &PathBuf,
+    output: &str,
+) -> Result<PathBuf> {
     let stem = seq_path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -29,7 +33,11 @@ pub(crate) fn write_plan_file(plans_dir: &PathBuf, content: &str) -> Result<Path
     Ok(path)
 }
 
-pub(crate) fn append_master_link(plans_dir: &PathBuf, plan_path: &PathBuf, title: &str) -> Result<()> {
+pub(crate) fn append_master_link(
+    plans_dir: &PathBuf,
+    plan_path: &PathBuf,
+    title: &str,
+) -> Result<()> {
     let master = plans_dir.join("_master.md");
     let rel = plan_path
         .file_name()
@@ -74,22 +82,15 @@ pub(crate) fn write_thinking_log(
 }
 
 /// Save goal state to session file (Task 014)
-pub(crate) fn save_goal_state(
-    session_root: &PathBuf,
-    goal_state: &GoalState,
-) -> Result<PathBuf> {
+pub(crate) fn save_goal_state(session_root: &PathBuf, goal_state: &GoalState) -> Result<PathBuf> {
     let path = session_root.join("goal_state.json");
-    let json = serde_json::to_string_pretty(goal_state)
-        .context("serialize goal state")?;
-    std::fs::write(&path, json)
-        .with_context(|| format!("write goal state {}", path.display()))?;
+    let json = serde_json::to_string_pretty(goal_state).context("serialize goal state")?;
+    std::fs::write(&path, json).with_context(|| format!("write goal state {}", path.display()))?;
     Ok(path)
 }
 
 /// Load goal state from session file (Task 014)
-pub(crate) fn load_goal_state(
-    session_root: &PathBuf,
-) -> Option<GoalState> {
+pub(crate) fn load_goal_state(session_root: &PathBuf) -> Option<GoalState> {
     let path = session_root.join("goal_state.json");
     if !path.exists() {
         return None;

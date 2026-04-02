@@ -34,7 +34,9 @@ pub(crate) fn step_id(s: &Step) -> &str {
 
 pub(crate) fn step_common(s: &Step) -> &StepCommon {
     match s {
-        Step::Shell { common, .. } | Step::Read { common, .. } | Step::Search { common, .. } => common,
+        Step::Shell { common, .. } | Step::Read { common, .. } | Step::Search { common, .. } => {
+            common
+        }
         Step::Select { common, .. } => common,
         Step::Plan { common, .. } => common,
         Step::MasterPlan { common, .. } => common,
@@ -109,9 +111,7 @@ pub(crate) fn program_step_json(step: &Step) -> serde_json::Value {
             obj.insert("prompt".to_string(), serde_json::json!(prompt.trim()));
         }
         Step::Summarize {
-            text,
-            instructions,
-            ..
+            text, instructions, ..
         } => {
             obj.insert(
                 "instructions".to_string(),

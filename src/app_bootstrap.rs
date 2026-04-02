@@ -8,5 +8,5 @@
 //! - app_bootstrap_modes: Mode handling and banners
 
 pub(crate) use crate::app_bootstrap_core::*;
-pub(crate) use crate::app_bootstrap_profiles::*;
 pub(crate) use crate::app_bootstrap_modes::*;
+pub(crate) use crate::app_bootstrap_profiles::*;

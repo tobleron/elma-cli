@@ -15,7 +15,10 @@ pub(crate) async fn handle_read_step(
     path: &str,
     state: &mut ExecutionState,
 ) -> Result<()> {
-    trace(args, &format!("step id={} type=read purpose={}", sid, purpose));
+    trace(
+        args,
+        &format!("step id={} type=read purpose={}", sid, purpose),
+    );
     trace(args, &format!("read path={}", path));
 
     let full_path = if path.starts_with('/') {

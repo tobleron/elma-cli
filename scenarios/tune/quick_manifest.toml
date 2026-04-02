@@ -11,7 +11,7 @@ notes = "Capability questions without execution request are casual chat."
 [[scenarios]]
 suite = "tune"
 file = "quick_002_execute_list_files.md"
-speech_act = "SHELL"
+speech_act = "INSTRUCT"
 workflow = "WORKFLOW"
 mode = "EXECUTE"
 route = "SHELL"
@@ -23,7 +23,7 @@ maximum_step_count = 2
 [[scenarios]]
 suite = "tune"
 file = "quick_003_inspect_project.md"
-speech_act = "INFO"
+speech_act = "INQUIRE"
 workflow = "WORKFLOW"
 mode = "INSPECT"
 route = "SHELL"
@@ -38,7 +38,7 @@ maximum_step_count = 3
 [[scenarios]]
 suite = "tune"
 file = "quick_004_plan_request.md"
-speech_act = "SHELL"
+speech_act = "INSTRUCT"
 workflow = "WORKFLOW"
 mode = "PLAN"
 route = "PLAN"
@@ -51,7 +51,7 @@ maximum_step_count = 2
 [[scenarios]]
 suite = "tune"
 file = "quick_005_decide_request.md"
-speech_act = "SHELL"
+speech_act = "INSTRUCT"
 workflow = "WORKFLOW"
 mode = "DECIDE"
 route = "DECIDE"

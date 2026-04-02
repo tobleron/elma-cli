@@ -16,7 +16,10 @@ pub(crate) fn global_config_path(config_root: &Path) -> PathBuf {
     config_root.join("global.toml")
 }
 
-pub(crate) fn discover_saved_base_url(config_root: &Path, model_hint: Option<&str>) -> Option<String> {
+pub(crate) fn discover_saved_base_url(
+    config_root: &Path,
+    model_hint: Option<&str>,
+) -> Option<String> {
     let global_path = global_config_path(config_root);
     if global_path.exists() {
         if let Ok(cfg) = load_global_config(&global_path) {
@@ -78,14 +81,14 @@ pub(crate) fn resolve_base_url(
     config_root: &Path,
     explicit: Option<&str>,
     model_hint: Option<&str>,
-) -> (String, &'static str) {
+) -> Result<(String, &'static str)> {
     if let Some(url) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
-        return (url.to_string(), "cli_or_env");
+        return Ok((url.to_string(), "cli_or_env"));
     }
     if let Some(url) = discover_saved_base_url(config_root, model_hint) {
-        return (url, "saved_config");
+        return Ok((url, "saved_config"));
     }
-    ("http://localhost:8080".to_string(), "fallback_default")
+    anyhow::bail!("No API base URL configured. Please specify in config/global.toml or via ELMA_BASE_URL environment variable.")
 }
 
 pub(crate) fn sanitize_model_folder_name(s: &str) -> String {

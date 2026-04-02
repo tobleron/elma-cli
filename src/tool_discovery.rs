@@ -69,12 +69,12 @@ impl ToolRegistry {
             discovery_attempted: false,
         }
     }
-    
+
     /// Check if registry needs discovery
     pub fn needs_discovery(&self) -> bool {
         !self.discovery_attempted
     }
-    
+
     /// Add a tool to the registry
     pub fn add_tool(&mut self, tool: ToolCapability) {
         self.tools.insert(tool.name.clone(), tool);
@@ -82,29 +82,29 @@ impl ToolRegistry {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs()
+                .as_secs(),
         );
     }
-    
+
     /// Get a tool by name
     pub fn get_tool(&self, name: &str) -> Option<&ToolCapability> {
         self.tools.get(name)
     }
-    
+
     /// Format registry for display
     pub fn format_for_display(&self) -> String {
         if self.tools.is_empty() {
             return "No workspace-specific tools discovered.".to_string();
         }
-        
+
         let mut output = String::from("=== Discovered Tools ===\n\n");
-        
+
         // Group by source
         let mut scripts: Vec<&ToolCapability> = Vec::new();
         let mut makefile: Vec<&ToolCapability> = Vec::new();
         let mut npm: Vec<&ToolCapability> = Vec::new();
         let mut system: Vec<&ToolCapability> = Vec::new();
-        
+
         for tool in self.tools.values() {
             match tool.source {
                 ToolSource::Script(_) => scripts.push(tool),
@@ -114,7 +114,7 @@ impl ToolRegistry {
                 ToolSource::SystemTool => system.push(tool),
             }
         }
-        
+
         if !scripts.is_empty() {
             output.push_str("**Scripts:**\n");
             for tool in &scripts {
@@ -125,18 +125,15 @@ impl ToolRegistry {
             }
             output.push('\n');
         }
-        
+
         if !makefile.is_empty() {
             output.push_str("**Makefile Targets:**\n");
             for tool in &makefile {
-                output.push_str(&format!(
-                    "- `make {}`: {}\n",
-                    tool.name, tool.description
-                ));
+                output.push_str(&format!("- `make {}`: {}\n", tool.name, tool.description));
             }
             output.push('\n');
         }
-        
+
         if !npm.is_empty() {
             output.push_str("**npm Scripts:**\n");
             for tool in &npm {
@@ -147,7 +144,7 @@ impl ToolRegistry {
             }
             output.push('\n');
         }
-        
+
         if !system.is_empty() {
             output.push_str("**Verified System Tools:**\n");
             for tool in &system {
@@ -155,7 +152,7 @@ impl ToolRegistry {
             }
             output.push('\n');
         }
-        
+
         output
     }
 }
@@ -163,58 +160,62 @@ impl ToolRegistry {
 /// Discover tools in the workspace (lazy trigger)
 pub fn discover_workspace_tools(workspace_root: &Path) -> Result<ToolRegistry> {
     let mut registry = ToolRegistry::new();
-    
+
     // Discover custom scripts
     discover_scripts(workspace_root, &mut registry)?;
-    
+
     // Discover Makefile targets
     discover_makefile_targets(workspace_root, &mut registry)?;
-    
+
     // Discover npm scripts
     discover_npm_scripts(workspace_root, &mut registry)?;
-    
+
     // Verify common project tools
     verify_project_tools(workspace_root, &mut registry)?;
-    
+
     registry.discovery_attempted = true;
-    
+
     Ok(registry)
 }
 
 /// Discover custom scripts in common locations
 fn discover_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> Result<()> {
     let script_dirs = ["scripts", "bin", "tools", ".scripts"];
-    
+
     for dir_name in &script_dirs {
         let script_dir = workspace_root.join(dir_name);
         if !script_dir.exists() {
             continue;
         }
-        
+
         if let Ok(entries) = std::fs::read_dir(&script_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_file() {
                     continue;
                 }
-                
+
                 // Check if executable or has script extension
-                let is_executable = path.metadata()
+                let is_executable = path
+                    .metadata()
                     .map(|m| m.permissions().mode() & 0o111 != 0)
                     .unwrap_or(false);
-                let has_script_ext = path.extension()
+                let has_script_ext = path
+                    .extension()
                     .map(|e| e == "sh" || e == "py" || e == "rb" || e == "js" || e == "ts")
                     .unwrap_or(false);
-                
+
                 if is_executable || has_script_ext {
-                    let name = path.file_stem()
+                    let name = path
+                        .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default();
-                    
-                    let rel_path = path.strip_prefix(workspace_root)
+
+                    let rel_path = path
+                        .strip_prefix(workspace_root)
                         .unwrap_or(&path)
                         .to_string_lossy();
-                    
+
                     registry.add_tool(ToolCapability {
                         name: name.clone(),
                         description: format!("Custom script at {}", rel_path),
@@ -226,7 +227,7 @@ fn discover_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> Resul
             }
         }
     }
-    
+
     // Also check for root-level scripts
     let root_scripts = ["Makefile", "justfile", "Justfile"];
     for script in &root_scripts {
@@ -234,7 +235,7 @@ fn discover_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> Resul
             // Handled by other discovery functions
         }
     }
-    
+
     Ok(())
 }
 
@@ -244,21 +245,31 @@ fn discover_makefile_targets(workspace_root: &Path, registry: &mut ToolRegistry)
     if !makefile_path.exists() {
         return Ok(());
     }
-    
+
     let content = std::fs::read_to_string(&makefile_path)?;
-    
+
     // Simple regex to find targets (lines starting with word followed by colon)
     for line in content.lines() {
         let line = line.trim();
         if line.starts_with('#') || line.starts_with('.') || line.starts_with('\t') {
             continue;
         }
-        
+
         if let Some(colon_pos) = line.find(':') {
             let target = line[..colon_pos].trim();
             if !target.is_empty() && !target.contains('$') {
                 // Skip common internal targets
-                if !["all", "clean", "test", "build", "install", "uninstall", "help"].contains(&target) {
+                if ![
+                    "all",
+                    "clean",
+                    "test",
+                    "build",
+                    "install",
+                    "uninstall",
+                    "help",
+                ]
+                .contains(&target)
+                {
                     registry.add_tool(ToolCapability {
                         name: target.to_string(),
                         description: format!("Makefile target"),
@@ -270,7 +281,7 @@ fn discover_makefile_targets(workspace_root: &Path, registry: &mut ToolRegistry)
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -280,10 +291,10 @@ fn discover_npm_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> R
     if !package_json_path.exists() {
         return Ok(());
     }
-    
+
     let content = std::fs::read_to_string(&package_json_path)?;
     let package_json: serde_json::Value = serde_json::from_str(&content)?;
-    
+
     if let Some(scripts) = package_json.get("scripts").and_then(|v| v.as_object()) {
         for (name, command) in scripts {
             registry.add_tool(ToolCapability {
@@ -295,7 +306,7 @@ fn discover_npm_scripts(workspace_root: &Path, registry: &mut ToolRegistry) -> R
             });
         }
     }
-    
+
     Ok(())
 }
 
@@ -308,7 +319,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
-        
+
         registry.add_tool(ToolCapability {
             name: "cargo".to_string(),
             description: "Rust build tool and package manager".to_string(),
@@ -317,7 +328,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
             available,
         });
     }
-    
+
     // Check for package.json → npm is relevant
     if workspace_root.join("package.json").exists() {
         let available = Command::new("npm")
@@ -325,7 +336,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
-        
+
         registry.add_tool(ToolCapability {
             name: "npm".to_string(),
             description: "Node.js package manager".to_string(),
@@ -334,7 +345,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
             available,
         });
     }
-    
+
     // Check for git repo
     if workspace_root.join(".git").exists() {
         let available = Command::new("git")
@@ -342,7 +353,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
-        
+
         registry.add_tool(ToolCapability {
             name: "git".to_string(),
             description: "Version control".to_string(),
@@ -351,7 +362,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
             available,
         });
     }
-    
+
     Ok(())
 }
 
@@ -372,7 +383,7 @@ mod tests {
     fn test_registry_needs_discovery() {
         let registry = ToolRegistry::new();
         assert!(registry.needs_discovery());
-        
+
         let mut registry = ToolRegistry::new();
         registry.discovery_attempted = true;
         assert!(!registry.needs_discovery());
@@ -388,7 +399,7 @@ mod tests {
             source: ToolSource::SystemTool,
             available: true,
         });
-        
+
         assert!(registry.get_tool("test").is_some());
         assert!(registry.last_updated.is_some());
     }

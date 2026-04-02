@@ -14,9 +14,9 @@ use crate::*;
 
 pub(crate) use execution_steps_compat::*;
 pub(crate) use execution_steps_edit::*;
-pub(crate) use execution_steps_shell::*;
 pub(crate) use execution_steps_read::*;
 pub(crate) use execution_steps_search::*;
+pub(crate) use execution_steps_shell::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_program_step(
@@ -67,10 +67,40 @@ pub(crate) async fn handle_program_step(
 
     match step {
         Step::Read { id: _, path, .. } => {
-            handle_read_step(args, session, workdir, sid, &kind, purpose, depends_on, success_condition, &path, state).await?;
+            handle_read_step(
+                args,
+                session,
+                workdir,
+                sid,
+                &kind,
+                purpose,
+                depends_on,
+                success_condition,
+                &path,
+                state,
+            )
+            .await?;
         }
-        Step::Search { id: _, query, paths, .. } => {
-            handle_search_step(args, session, workdir, sid, &kind, purpose, depends_on, success_condition, &query, paths, state).await?;
+        Step::Search {
+            id: _,
+            query,
+            paths,
+            ..
+        } => {
+            handle_search_step(
+                args,
+                session,
+                workdir,
+                sid,
+                &kind,
+                purpose,
+                depends_on,
+                success_condition,
+                &query,
+                paths,
+                state,
+            )
+            .await?;
         }
         Step::Shell { id: _, cmd, .. } => {
             handle_shell_step(
@@ -193,7 +223,11 @@ pub(crate) async fn handle_program_step(
                     },
                     ChatMessage {
                         role: "user".to_string(),
-                        content: format!("Instructions:\n{}\n\nText:\n{}", instructions.trim(), text),
+                        content: format!(
+                            "Instructions:\n{}\n\nText:\n{}",
+                            instructions.trim(),
+                            text
+                        ),
                     },
                 ],
                 temperature: summarizer_cfg.temperature,
@@ -291,7 +325,11 @@ pub(crate) async fn handle_program_step(
                 depends_on,
                 success_condition,
                 ok: true,
-                summary: format!("saved {}\n{}", plan_path.display(), preview_text(text.trim(), 8)),
+                summary: format!(
+                    "saved {}\n{}",
+                    plan_path.display(),
+                    preview_text(text.trim(), 8)
+                ),
                 command: None,
                 raw_output: None,
                 exit_code: None,
@@ -333,8 +371,11 @@ pub(crate) async fn handle_program_step(
                 .and_then(|c| c.message.content.clone())
                 .unwrap_or_default();
             let path = session.plans_dir.join("_master.md");
-            std::fs::write(&path, squash_blank_lines(text.trim()).trim().to_string() + "\n")
-                .with_context(|| format!("write {}", path.display()))?;
+            std::fs::write(
+                &path,
+                squash_blank_lines(text.trim()).trim().to_string() + "\n",
+            )
+            .with_context(|| format!("write {}", path.display()))?;
             trace(args, &format!("masterplan_saved={}", path.display()));
             state.artifacts.insert(sid.clone(), text.trim().to_string());
             state.step_results.push(StepResult {

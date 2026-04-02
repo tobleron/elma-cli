@@ -19,30 +19,21 @@ pub(crate) fn mode_code_pairs() -> &'static [(&'static str, &'static str)] {
 }
 
 pub(crate) fn speech_act_code_pairs() -> &'static [(&'static str, &'static str)] {
-    &[
-        ("1", "SHELL"),
-        ("2", "INFO"),
-        ("3", "CHAT"),
-    ]
+    &[("1", "CHAT"), ("2", "INSTRUCT"), ("3", "INQUIRE")]
 }
 
+// Re-export JSON parsing functions from json_parser module
+pub(crate) use crate::json_parser::{
+    extract_entropy, extract_label, extract_reason, parse_intel_output, IntelParseResult,
+    ParseMethod,
+};
+
+/// Backward-compatible wrapper for route_label_from_router_output
 pub(crate) fn route_label_from_router_output(
     raw: &str,
     pairs: &'static [(&'static str, &'static str)],
 ) -> Option<&'static str> {
-    let token = raw
-        .trim()
-        .trim_matches(|c: char| c == '"' || c == '\'')
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .trim();
-    for (code, label) in pairs {
-        if token == *code || token.eq_ignore_ascii_case(label) {
-            return Some(label);
-        }
-    }
-    None
+    extract_label(raw, pairs)
 }
 
 pub(crate) fn logsumexp(values: &[f64]) -> f64 {
@@ -148,8 +139,8 @@ pub(crate) fn inject_classification_noise(
     entropy: f64,
 ) -> Vec<(String, f64)> {
     // Inject noise when entropy is low (over-confident) to prevent deterministic lock-in
-    const ENTROPY_THRESHOLD: f64 = 0.3;  // Increased from 0.1 to catch more over-confidence
-    const NOISE_SCALE: f64 = 0.08;  // Increased from 0.05 for more meaningful perturbation
+    const ENTROPY_THRESHOLD: f64 = 0.3; // Increased from 0.1 to catch more over-confidence
+    const NOISE_SCALE: f64 = 0.08; // Increased from 0.05 for more meaningful perturbation
 
     if entropy >= ENTROPY_THRESHOLD {
         return distribution.to_vec();
@@ -169,7 +160,7 @@ pub(crate) fn inject_classification_noise(
     if sum > 0.0 {
         for (_, p) in &mut noisy {
             *p /= sum;
-            *p = (*p).max(0.001);  // Ensure minimum probability
+            *p = (*p).max(0.001); // Ensure minimum probability
         }
         // Re-normalize after applying minimum
         let sum2: f64 = noisy.iter().map(|(_, p)| *p).sum();
@@ -185,7 +176,10 @@ pub(crate) fn inject_classification_noise(
 }
 
 /// Inject stronger noise for router outputs specifically (when entropy < 0.2)
-pub(crate) fn inject_router_noise(distribution: &[(String, f64)], entropy: f64) -> Vec<(String, f64)> {
+pub(crate) fn inject_router_noise(
+    distribution: &[(String, f64)],
+    entropy: f64,
+) -> Vec<(String, f64)> {
     const ROUTER_ENTROPY_THRESHOLD: f64 = 0.2;
     const ROUTER_NOISE_SCALE: f64 = 0.12;
 

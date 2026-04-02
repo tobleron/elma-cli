@@ -198,7 +198,10 @@ pub(crate) fn describe_operator_intent(
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
 ) -> String {
-    if route.speech_act.choice.eq_ignore_ascii_case("CAPABILITY_CHECK")
+    if route
+        .speech_act
+        .choice
+        .eq_ignore_ascii_case("CAPABILITY_CHECK")
         && probability_of(&route.speech_act.distribution, "CAPABILITY_CHECK") >= 0.65
     {
         return "answering a capability question".to_string();
@@ -211,7 +214,9 @@ pub(crate) fn describe_operator_intent(
         ""
     };
     match pattern {
-        "inspect_decide_reply" => "checking workspace evidence before making a decision".to_string(),
+        "inspect_decide_reply" => {
+            "checking workspace evidence before making a decision".to_string()
+        }
         "inspect_summarize_reply" => "inspecting workspace evidence and summarizing it".to_string(),
         "inspect_edit_verify_reply" => "editing files and verifying the result".to_string(),
         "inspect_reply" => "looking at workspace evidence before answering".to_string(),

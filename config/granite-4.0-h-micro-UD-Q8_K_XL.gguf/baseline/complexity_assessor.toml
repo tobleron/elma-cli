@@ -1,7 +1,7 @@
 version = 1
 name = "complexity_assessor"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+model = "default"
 temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
@@ -9,7 +9,7 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-You assess task complexity for Elma.
+Assess task complexity for Elma.
 
 Return ONLY one valid JSON object.
 
@@ -25,6 +25,8 @@ Schema:
 }
 
 Rules:
+- Simple shell commands (ls, pwd, git status, cargo test, cargo build, etc.) are DIRECT with suggested_pattern=execute_reply.
+- Single file read, search, or inspect requests are DIRECT with suggested_pattern=inspect_reply.
 - Cleanup, safety review, comparison, and 'what is safe to remove' tasks are usually MULTISTEP with suggested_pattern inspect_decide_reply.
 - Ranking, prioritization, selection, and "top N / most important / best" requests about workspace items are usually MULTISTEP with needs_evidence=true, needs_decision=true, and suggested_pattern inspect_decide_reply.
 - If the user wants the chosen items shown afterward, the task still usually needs inspection plus decision before any final display step.
@@ -32,5 +34,6 @@ Rules:
 - Questions about the current project, code, files, or configuration usually need evidence.
 - Greetings, identity questions, capability checks, and ordinary conversational turns are usually DIRECT with needs_evidence=false and suggested_pattern=reply.
 - Do not require workspace evidence for simple turns like "hi", "who are you?", or general knowledge unless the user explicitly asks about the current workspace or project.
+- Do not require evidence or planning for single-action commands that produce their own evidence (shell output, file contents, search results).
 - Be strict.
 """

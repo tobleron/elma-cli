@@ -43,33 +43,32 @@ pub(crate) async fn infer_digit_router(
         .first()
         .map(|(_, label)| (*label).to_string())
         .unwrap_or_else(|| "CHAT".to_string());
-    let chosen = route_label_from_router_output(&raw, pairs)
+
+    // Parse JSON output to get choice, label, and entropy
+    let json_entropy = extract_entropy(&raw);
+    let chosen = extract_label(&raw, pairs)
         .unwrap_or(fallback_choice.as_str())
         .to_string();
 
-    let logprob_distribution = resp
-        .choices
-        .get(0)
-        .and_then(|c| c.logprobs.as_ref())
-        .and_then(|v| parse_router_distribution(v, pairs));
-    let used_logprobs = logprob_distribution.is_some();
-    let mut distribution = logprob_distribution.unwrap_or_else(|| {
-        pairs
-            .iter()
-            .map(|(_, label)| {
-                (
-                    (*label).to_string(),
-                    if *label == chosen { 1.0 } else { 0.0 },
-                )
-            })
-            .collect()
-    });
+    // Build distribution from JSON choice (not logprobs)
+    let mut distribution: Vec<(String, f64)> = pairs
+        .iter()
+        .map(|(_, label)| {
+            let p = if *label == chosen {
+                1.0 - json_entropy.unwrap_or(0.0)
+            } else {
+                0.0
+            };
+            ((*label).to_string(), p)
+        })
+        .collect();
+
     distribution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let source = if used_logprobs { "logprobs" } else { "token_only" };
+    let source = "json_output";
 
-    // Apply stronger noise injection for router outputs to prevent over-confidence
-    let raw_entropy = route_entropy(&distribution);
+    // Use JSON entropy
+    let raw_entropy = json_entropy.unwrap_or_else(|| route_entropy(&distribution));
     let distribution = inject_router_noise(&distribution, raw_entropy);
 
     let route = distribution
@@ -145,8 +144,21 @@ pub(crate) async fn infer_route_prior(
     .await?;
 
     let speech_prompt = format!(
-        "User message:\n{user_message}\n\nConversation so far (most recent last):\n{}",
-        conversation
+        r#"User message:
+{user_message}
+
+Workspace facts:
+{facts}
+
+Workspace brief:
+{brief}
+
+Conversation so far (most recent last):
+{conversation}"#,
+        user_message = user_message,
+        facts = workspace_facts.trim(),
+        brief = workspace_brief.trim(),
+        conversation = conversation,
     );
     let speech_act = infer_digit_router(
         client,
@@ -173,15 +185,15 @@ pub(crate) async fn infer_route_prior(
         ("MASTERPLAN".to_string(), masterplan_p),
         ("DECIDE".to_string(), decide_p),
     ];
-    
-    // Map new speech act labels to route adjustments
-    // "general chat" → boost CHAT route
-    // "inquiry" → neutral (user wants information)
-    // "instruction" → boost non-CHAT routes (user wants action)
-    let chat_p = probability_of(&speech_act.distribution, "general chat");
-    let instruction_p = probability_of(&speech_act.distribution, "instruction");
-    
-    // If "general chat" is high, boost CHAT route
+
+    // Map speech act labels to route adjustments
+    // "CHAT" → boost CHAT route (user wants conversation)
+    // "INQUIRE" → neutral (user wants information)
+    // "INSTRUCT" → boost non-CHAT routes (user wants action)
+    let chat_p = probability_of(&speech_act.distribution, "CHAT");
+    let instruct_p = probability_of(&speech_act.distribution, "INSTRUCT");
+
+    // If "CHAT" is high, boost CHAT route
     if chat_p > 0.5 {
         for (label, p) in &mut distribution {
             if label == "CHAT" {
@@ -191,12 +203,16 @@ pub(crate) async fn infer_route_prior(
             }
         }
     }
-    
-    // If "instruction" is high, boost non-CHAT routes (user wants action)
-    if instruction_p > 0.5 {
+
+    // If "INSTRUCT" is high, boost non-CHAT routes (user wants action)
+    if instruct_p > 0.5 {
         let current_chat_p = probability_of(&distribution, "CHAT");
-        let workflow_boost = (instruction_p - 0.5) * 0.4;  // Up to 40% boost
-        let non_chat_total: f64 = distribution.iter().filter(|(l, _)| l != "CHAT").map(|(_, p)| *p).sum();
+        let workflow_boost = (instruct_p - 0.5) * 0.4; // Up to 40% boost
+        let non_chat_total: f64 = distribution
+            .iter()
+            .filter(|(l, _)| l != "CHAT")
+            .map(|(_, p)| *p)
+            .sum();
 
         for (label, p) in &mut distribution {
             if label != "CHAT" && non_chat_total > 0.0 {
@@ -206,7 +222,7 @@ pub(crate) async fn infer_route_prior(
             }
         }
     }
-    
+
     distribution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let route = distribution
         .first()

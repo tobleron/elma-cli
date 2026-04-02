@@ -84,7 +84,7 @@ pub fn extract_llama_sentinel_reasoning(content: &str) -> (String, Option<String
             break;
         };
         let start_idx = cursor + start_idx_rel;
-        
+
         // Content before marker is plain
         plain_parts.push(&content[cursor..start_idx]);
 
@@ -123,9 +123,9 @@ fn extract_xml_thinking(content: &str, open: &str, close: &str) -> (String, Opti
     while let Some(open_idx) = rest.find(open) {
         // Content before tag is final answer
         final_parts.push(&rest[..open_idx]);
-        
+
         let after_open = &rest[open_idx + open.len()..];
-        
+
         // Find closing tag
         if let Some(close_idx) = after_open.find(close) {
             // Complete tag - extract thinking
@@ -144,17 +144,17 @@ fn extract_xml_thinking(content: &str, open: &str, close: &str) -> (String, Opti
             break;
         }
     }
-    
+
     // Remaining content is final answer
     final_parts.push(rest);
-    
+
     let final_answer = final_parts.join("");
     let thinking = if thinking_parts.is_empty() {
         None
     } else {
         Some(thinking_parts.join("\n\n"))
     };
-    
+
     (final_answer, thinking)
 }
 
@@ -181,7 +181,7 @@ pub fn extract_thinking(
 ) -> ThinkingExtraction {
     let content_str = content.unwrap_or("");
     let reasoning_field = extract_from_field(reasoning_content);
-    
+
     // Check for llama.cpp sentinel markers first
     let (content_no_sentinel, sentinel_thinking) = if content_str.contains(LLAMA_REASONING_START) {
         let (plain, thinking) = extract_llama_sentinel_reasoning(content_str);
@@ -189,22 +189,22 @@ pub fn extract_thinking(
     } else {
         (content_str.to_string(), None)
     };
-    
+
     // Check for <think></think> tags
     let (content_no_think, think_tag_thinking) = if content_no_sentinel.contains(THINK_OPEN) {
         extract_xml_thinking(&content_no_sentinel, THINK_OPEN, THINK_CLOSE)
     } else {
         (content_no_sentinel, None)
     };
-    
+
     // Check for alternative thinking tags
     let (content_final, alt_thinking) = check_alternative_tags(&content_no_think);
-    
+
     // Combine all thinking sources
     let mut all_thinking_parts: Vec<String> = Vec::new();
     let mut source = ThinkingSource::None;
     let mut has_markers = false;
-    
+
     if let Some(t) = reasoning_field {
         all_thinking_parts.push(t);
         source = ThinkingSource::ReasoningField;
@@ -240,15 +240,15 @@ pub fn extract_thinking(
         }
         has_markers = true;
     }
-    
+
     let thinking = if all_thinking_parts.is_empty() {
         None
     } else {
         Some(all_thinking_parts.join("\n\n"))
     };
-    
+
     let final_answer = strip_think_tags(&content_final);
-    
+
     ThinkingExtraction {
         thinking,
         final_answer,
@@ -277,22 +277,22 @@ fn check_alternative_tags(content: &str) -> (String, Option<String>) {
 /// Strip think tags and their content from text
 pub fn strip_think_tags(content: &str) -> String {
     let mut result = content.to_string();
-    
+
     // Strip <think></think> tags
     result = strip_xml_tags(&result, THINK_OPEN, THINK_CLOSE);
-    
+
     // Strip <thinking> tags
     result = strip_xml_tags(&result, THINKING_OPEN, THINKING_CLOSE);
-    
+
     // Strip <thought> tags
     result = strip_xml_tags(&result, THOUGHT_OPEN, THOUGHT_CLOSE);
-    
+
     // Strip <reasoning> tags
     result = strip_xml_tags(&result, REASONING_OPEN, REASONING_CLOSE);
-    
+
     // Strip llama.cpp sentinels
     result = strip_llama_sentinels(&result);
-    
+
     result.trim().to_string()
 }
 
@@ -300,11 +300,11 @@ pub fn strip_think_tags(content: &str) -> String {
 fn strip_xml_tags(content: &str, open: &str, close: &str) -> String {
     let mut result = String::new();
     let mut rest = content;
-    
+
     while let Some(open_idx) = rest.find(open) {
         result.push_str(&rest[..open_idx]);
         let after_open = &rest[open_idx + open.len()..];
-        
+
         if let Some(close_idx) = after_open.find(close) {
             rest = &after_open[close_idx + close.len()..];
         } else {
@@ -324,17 +324,14 @@ fn strip_llama_sentinels(content: &str) -> String {
 }
 
 /// Detect if a model is a thinking model based on response characteristics
-pub fn is_thinking_model(
-    content: Option<&str>,
-    reasoning_content: Option<&str>,
-) -> bool {
+pub fn is_thinking_model(content: Option<&str>, reasoning_content: Option<&str>) -> bool {
     // Check reasoning_content field
     if let Some(rc) = reasoning_content {
         if !rc.trim().is_empty() {
             return true;
         }
     }
-    
+
     // Check content for thinking markers
     if let Some(c) = content {
         if c.contains(LLAMA_REASONING_START) {
@@ -353,7 +350,7 @@ pub fn is_thinking_model(
             return true;
         }
     }
-    
+
     false
 }
 
@@ -387,7 +384,10 @@ mod tests {
     fn extracts_think_tag_reasoning() {
         let content = "<think>let me think about this</think>The answer is 42";
         let extraction = extract_thinking(Some(content), None);
-        assert_eq!(extraction.thinking, Some("let me think about this".to_string()));
+        assert_eq!(
+            extraction.thinking,
+            Some("let me think about this".to_string())
+        );
         assert_eq!(extraction.final_answer, "The answer is 42");
         assert!(extraction.has_thinking_markers);
     }
@@ -413,7 +413,10 @@ mod tests {
     fn handles_unterminated_think_tag() {
         let content = "<think>this is unclosed thinking";
         let extraction = extract_thinking(Some(content), None);
-        assert_eq!(extraction.thinking, Some("this is unclosed thinking".to_string()));
+        assert_eq!(
+            extraction.thinking,
+            Some("this is unclosed thinking".to_string())
+        );
         assert_eq!(extraction.final_answer, "");
     }
 
@@ -428,7 +431,10 @@ mod tests {
     fn detects_thinking_model() {
         assert!(is_thinking_model(Some("<think>think</think>answer"), None));
         assert!(is_thinking_model(Some("answer"), Some("thinking")));
-        assert!(is_thinking_model(Some("<<<reasoning_content_start>>>think<<<reasoning_content_end>>>"), None));
+        assert!(is_thinking_model(
+            Some("<<<reasoning_content_start>>>think<<<reasoning_content_end>>>"),
+            None
+        ));
         assert!(!is_thinking_model(Some("plain answer"), None));
     }
 
@@ -436,7 +442,10 @@ mod tests {
     fn handles_multiple_thinking_blocks() {
         let content = "<think>first thought</think>middle<think>second thought</think>end";
         let extraction = extract_thinking(Some(content), None);
-        assert_eq!(extraction.thinking, Some("first thought\n\nsecond thought".to_string()));
+        assert_eq!(
+            extraction.thinking,
+            Some("first thought\n\nsecond thought".to_string())
+        );
         assert_eq!(extraction.final_answer, "middleend");
     }
 }

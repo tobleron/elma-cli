@@ -1,7 +1,7 @@
 version = 1
 name = "text_generator"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+model = "default"
 temperature = 0.2
 top_p = 1.0
 repeat_penalty = 1.0
@@ -19,4 +19,7 @@ Rules:
 - Describe the action, purpose, and expected outcome.
 - Do not include technical details or implementation specifics.
 - Focus on WHAT needs to be done, not HOW.
+
+Example output:
+"List all pending task files in the _tasks/pending/ directory and summarize their objectives."
 """

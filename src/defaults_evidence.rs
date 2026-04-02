@@ -238,8 +238,9 @@ pub(crate) fn default_scope_objective_builder_config(base_url: &str, model: &str
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Define the scope objective for the task. Return JSON: {\"objective\":\"...\"}"
-            .to_string(),
+        system_prompt:
+            "Define the scope objective for the task. Return JSON: {\"objective\":\"...\"}"
+                .to_string(),
     }
 }
 
@@ -289,8 +290,7 @@ pub(crate) fn default_result_presenter_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 1024,
         timeout_s: 120,
-        system_prompt: "Present the final answer to the user in plain terminal text."
-            .to_string(),
+        system_prompt: "Present the final answer to the user in plain terminal text.".to_string(),
     }
 }
 
@@ -367,7 +367,7 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(String,
     // This ensures system prompts come from config files, not hardcoded strings
     let defaults_dir = std::path::PathBuf::from("config/defaults");
     let mut specs = Vec::new();
-    
+
     for entry in std::fs::read_dir(&defaults_dir).ok().into_iter().flatten() {
         if let Ok(entry) = entry {
             let path = entry.path();
@@ -380,12 +380,15 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(String,
             }
         }
     }
-    
+
     specs
 }
 
 pub(crate) fn managed_profile_file_names() -> Vec<String> {
-    managed_profile_specs("", "").into_iter().map(|(name, _)| name).collect()
+    managed_profile_specs("", "")
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
 }
 
 // ============================================================================
@@ -548,7 +551,10 @@ pub(crate) async fn generate_text_from_reasoning(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: format!("Convert this reasoning into simple action text:\n\n{}", reasoning),
+                content: format!(
+                    "Convert this reasoning into simple action text:\n\n{}",
+                    reasoning
+                ),
             },
         ],
         temperature: cfg.temperature,
@@ -560,7 +566,7 @@ pub(crate) async fn generate_text_from_reasoning(
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
     };
-    
+
     let resp = chat_once(client, chat_url, &req).await?;
     Ok(extract_response_text(&resp).trim().to_string())
 }
@@ -597,7 +603,7 @@ pub(crate) async fn convert_text_to_json(
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
     };
-    
+
     let resp = chat_once(client, chat_url, &req).await?;
     Ok(extract_response_text(&resp).trim().to_string())
 }
@@ -630,7 +636,7 @@ pub(crate) async fn verify_json(
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
     };
-    
+
     chat_json_with_repair(client, chat_url, &req).await
 }
 
@@ -645,9 +651,13 @@ pub(crate) async fn repair_json(
     let problems_text = if problems.is_empty() {
         "No problems found".to_string()
     } else {
-        problems.iter().map(|p| format!("- {}", p)).collect::<Vec<_>>().join("\n")
+        problems
+            .iter()
+            .map(|p| format!("- {}", p))
+            .collect::<Vec<_>>()
+            .join("\n")
     };
-    
+
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
@@ -672,7 +682,7 @@ pub(crate) async fn repair_json(
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
     };
-    
+
     let resp = chat_once(client, chat_url, &req).await?;
     Ok(extract_response_text(&resp).trim().to_string())
 }
@@ -680,7 +690,7 @@ pub(crate) async fn repair_json(
 /// Result of JSON verification check
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct VerifyCheckResult {
-    pub status: String,  // "ok" or "problems"
+    pub status: String, // "ok" or "problems"
     pub problems: Vec<String>,
 }
 
@@ -700,7 +710,8 @@ pub(crate) fn default_angel_helper_config(base_url: &str, model: &str) -> Profil
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: r#"Determine user intention and express what is the most appropriate way to respond.
+        system_prompt:
+            r#"Determine user intention and express what is the most appropriate way to respond.
 "#
             .to_string(),
     }
@@ -711,7 +722,7 @@ pub(crate) async fn angel_helper_intention(
     client: &reqwest::Client,
     chat_url: &Url,
     cfg: &Profile,
-    rephrased_objective: &str,  // Takes rephrased intention as input
+    rephrased_objective: &str, // Takes rephrased intention as input
 ) -> Result<String> {
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
@@ -722,7 +733,7 @@ pub(crate) async fn angel_helper_intention(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: rephrased_objective.to_string(),  // Use rephrased objective
+                content: rephrased_objective.to_string(), // Use rephrased objective
             },
         ],
         temperature: cfg.temperature,
@@ -785,7 +796,7 @@ Output format:
 {user_message}
 [intent: {intent_annotation}]
 "#
-            .to_string(),
+        .to_string(),
     }
 }
 
@@ -815,7 +826,7 @@ pub(crate) async fn annotate_user_intent(
         input.push_str(&format!("{}: {}\n", role, content));
     }
     input.push_str(&format!("\nUser: {}\n", user_message));
-    
+
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
@@ -847,6 +858,6 @@ pub(crate) fn get_retry_prompt_variant(attempt: u32) -> &'static str {
         0 => "standard",
         1 => "step-by-step",
         2 => "challenge",
-        _ => "simplify"
+        _ => "simplify",
     }
 }

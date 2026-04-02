@@ -63,19 +63,45 @@ pub(crate) async fn execute_and_process_shell(
     if code != 0 {
         if command_is_unavailable(&compatibility, &output) {
             return handle_command_unavailable(
-                args, session, &sid, &kind, &purpose_str, &depends_on, &success_condition,
-                &cmd, &output, &output_path_base, &shell_result, &compatibility,
-                emit_shell_output, state,
+                args,
+                session,
+                &sid,
+                &kind,
+                &purpose_str,
+                &depends_on,
+                &success_condition,
+                &cmd,
+                &output,
+                &output_path_base,
+                &shell_result,
+                &compatibility,
+                emit_shell_output,
+                state,
             );
         }
 
         if let Some(repair_result) = try_command_repair(
-            args, client, chat_url, session, workdir,
-            command_repair_cfg, task_semantics_guard_cfg,
-            objective, purpose, &cmd, &output, &output_path_base,
-            &shell_result, readonly_only, &artifact_reservation, &artifact_kind,
-            emit_shell_output, state,
-        ).await? {
+            args,
+            client,
+            chat_url,
+            session,
+            workdir,
+            command_repair_cfg,
+            task_semantics_guard_cfg,
+            objective,
+            purpose,
+            &cmd,
+            &output,
+            &output_path_base,
+            &shell_result,
+            readonly_only,
+            &artifact_reservation,
+            &artifact_kind,
+            emit_shell_output,
+            state,
+        )
+        .await?
+        {
             code = repair_result.code;
             output = repair_result.output;
             output_path_base = repair_result.output_path_base;
@@ -83,7 +109,14 @@ pub(crate) async fn execute_and_process_shell(
         }
     }
 
-    handle_artifact_recording(session, &artifact_reservation, &shell_result, &artifact_kind, &sid, args)?;
+    handle_artifact_recording(
+        session,
+        &artifact_reservation,
+        &shell_result,
+        &artifact_kind,
+        &sid,
+        args,
+    )?;
 
     let shell_preview = if let Some(path) = shell_result.artifact_path.as_ref() {
         format!("{}\n[artifact: {}]", output.trim_end(), path.display())
@@ -137,7 +170,11 @@ pub(crate) async fn execute_and_process_shell(
                 classifier_cfg,
                 objective,
                 scope,
-                state.artifacts.get(&sid).map(String::as_str).unwrap_or(&output),
+                state
+                    .artifacts
+                    .get(&sid)
+                    .map(String::as_str)
+                    .unwrap_or(&output),
             )
             .await
             {
@@ -222,11 +259,16 @@ fn handle_command_unavailable(
     );
     trace(args, &format!("exec_exit_code={}", shell_result.exit_code));
     if emit_shell_output || shell_result.exit_code != 0 {
-        println!("elma> exit_code={}\n{shell_preview}", shell_result.exit_code);
+        println!(
+            "elma> exit_code={}\n{shell_preview}",
+            shell_result.exit_code
+        );
     }
     state.final_reply = Some(unavailable_reply_instructions(compatibility));
     state.halt = true;
-    state.artifacts.insert(format!("{sid}:raw"), output.to_string());
+    state
+        .artifacts
+        .insert(format!("{sid}:raw"), output.to_string());
     state.artifacts.insert(sid.to_string(), output.to_string());
     state.step_results.push(StepResult {
         id: sid.to_string(),
@@ -273,28 +315,27 @@ async fn try_command_repair(
     emit_shell_output: bool,
     state: &mut ExecutionState,
 ) -> Result<Option<RepairResult>> {
-    let Some(repair_cfg) = command_repair_cfg else { return Ok(None); };
-    
+    let Some(repair_cfg) = command_repair_cfg else {
+        return Ok(None);
+    };
+
     let repair = repair_command_once(
         client, chat_url, repair_cfg, objective, purpose, cmd, output,
     )
     .await?;
-    
+
     let repaired = normalize_shell_cmd(repair.cmd.trim());
-    if repaired.is_empty() || repaired == cmd || !program_safety_check(&repaired) || (readonly_only && !command_is_readonly(&repaired)) {
+    if repaired.is_empty()
+        || repaired == cmd
+        || !program_safety_check(&repaired)
+        || (readonly_only && !command_is_readonly(&repaired))
+    {
         return Ok(None);
     }
 
     if let Some(guard_cfg) = task_semantics_guard_cfg {
         if let Ok(guard) = guard_repair_semantics_once(
-            client,
-            chat_url,
-            guard_cfg,
-            objective,
-            purpose,
-            cmd,
-            &repaired,
-            output,
+            client, chat_url, guard_cfg, objective, purpose, cmd, &repaired, output,
         )
         .await
         {
@@ -318,8 +359,12 @@ async fn try_command_repair(
                 if emit_shell_output || shell_result.exit_code != 0 {
                     println!("elma> exit_code={}\n{output}", shell_result.exit_code);
                 }
-                state.artifacts.insert(format!("shell:raw"), output.to_string());
-                state.artifacts.insert("shell".to_string(), output.to_string());
+                state
+                    .artifacts
+                    .insert(format!("shell:raw"), output.to_string());
+                state
+                    .artifacts
+                    .insert("shell".to_string(), output.to_string());
                 state.step_results.push(StepResult {
                     id: "shell".to_string(),
                     kind: "shell".to_string(),
@@ -327,14 +372,21 @@ async fn try_command_repair(
                     depends_on: vec![],
                     success_condition: String::new(),
                     ok: false,
-                    summary: format!("repair_rejected: {}\n{}", repaired, summarize_shell_output(output)),
+                    summary: format!(
+                        "repair_rejected: {}\n{}",
+                        repaired,
+                        summarize_shell_output(output)
+                    ),
                     command: Some(cmd.to_string()),
                     raw_output: Some(output.to_string()),
                     exit_code: Some(shell_result.exit_code),
                     output_bytes: Some(shell_result.bytes_written),
                     truncated: shell_result.truncated,
                     timed_out: shell_result.timed_out,
-                    artifact_path: shell_result.artifact_path.as_ref().map(|p| p.display().to_string()),
+                    artifact_path: shell_result
+                        .artifact_path
+                        .as_ref()
+                        .map(|p| p.display().to_string()),
                     artifact_kind: shell_result.artifact_kind.clone(),
                     outcome_status: None,
                     outcome_reason: None,
@@ -356,15 +408,17 @@ async fn try_command_repair(
     let repair_path = write_shell_action(&session.shell_dir, &repaired)?;
     trace(args, &format!("shell_saved={}", repair_path.display()));
     shell_command_trace(args, &repaired);
-    
+
     let shell_result = run_shell_one_liner(
         &repaired,
         workdir,
-        artifact_reservation.as_ref().map(|(_, path)| (path, artifact_kind)),
+        artifact_reservation
+            .as_ref()
+            .map(|(_, path)| (path, artifact_kind)),
     )?;
     let code = shell_result.exit_code;
     let output = shell_result.inline_text.clone();
-    
+
     let repaired_compatibility = probe_command_compatibility(&repaired, workdir);
     if code != 0 && command_is_unavailable(&repaired_compatibility, &output) {
         return Err(anyhow::anyhow!("repaired_command_unavailable"));
@@ -391,7 +445,10 @@ fn handle_artifact_recording(
             let record = ArtifactRecord {
                 artifact_id: artifact_id.clone(),
                 source_step_id: sid.to_string(),
-                kind: shell_result.artifact_kind.clone().unwrap_or_else(|| artifact_kind.to_string()),
+                kind: shell_result
+                    .artifact_kind
+                    .clone()
+                    .unwrap_or_else(|| artifact_kind.to_string()),
                 path: actual_path.display().to_string(),
                 bytes_written: shell_result.bytes_written,
                 truncated: shell_result.truncated,

@@ -1,0 +1,36 @@
+version = 1
+name = "phases_needs_assessment"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+Assess if a request requires strategic phased decomposition (multi-session work).
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "requires_phases": true | false
+}
+
+Principles:
+Phased decomposition is required when:
+- User explicitly requests "phased approach", "migration strategy", "roadmap"
+- Work spans multiple sessions or milestones
+- Strategic architectural changes (redesign, major refactoring)
+- Multi-module or multi-component work with dependencies
+- Open-ended objectives without clear end state
+
+Phases are NOT required when:
+- Work completes in single session
+- Tactical implementation (not strategic)
+- Bounded scope (single file, single feature)
+- User asks for "step-by-step plan" (tactical, not strategic)
+
+Distinguish plan (tactical, ordered steps) from phases (strategic, milestones).
+"""

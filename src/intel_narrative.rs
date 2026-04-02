@@ -10,7 +10,180 @@
 //! - Single point of change for narrative format updates
 //! - Future-proof: can swap to model-based narrative without changing callers
 
-use crate::{Program, Step, StepResult};
+use crate::{ChatMessage, Program, RouteDecision, Step, StepResult};
+
+// ============================================================================
+// Classification Intel Narratives (Task 047)
+// ============================================================================
+
+/// Build complexity assessor input narrative
+///
+/// Transforms classification context into plain-text narrative format.
+pub(crate) fn build_complexity_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    conversation: &[ChatMessage],
+) -> String {
+    let conversation_text = format_conversation_excerpt(conversation, 12);
+
+    format!(
+        r#"User message:
+{user_message}
+
+Route prior:
+- route: {route}
+- distribution: {dist}
+- margin: {margin:.2}
+- entropy: {entropy:.2}
+
+Workspace facts:
+{facts}
+
+Workspace brief:
+{brief}
+
+Conversation so far (most recent last):
+{conversation}"#,
+        user_message = user_message,
+        route = route_decision.route,
+        dist = crate::routing_calc::format_route_distribution(&route_decision.distribution),
+        margin = route_decision.margin,
+        entropy = route_decision.entropy,
+        facts = workspace_facts.trim(),
+        brief = workspace_brief.trim(),
+        conversation = conversation_text,
+    )
+}
+
+/// Build evidence needs assessor input narrative
+///
+/// Transforms classification context into plain-text narrative format.
+pub(crate) fn build_evidence_needs_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    conversation: &[ChatMessage],
+) -> String {
+    let conversation_text = format_conversation_excerpt(conversation, 12);
+
+    format!(
+        r#"User message:
+{user_message}
+
+Route: {route}
+
+Workspace facts:
+{facts}
+
+Workspace brief:
+{brief}
+
+Conversation so far (most recent last):
+{conversation}"#,
+        user_message = user_message,
+        route = route_decision.route,
+        facts = workspace_facts.trim(),
+        brief = workspace_brief.trim(),
+        conversation = conversation_text,
+    )
+}
+
+/// Build action needs assessor input narrative
+///
+/// Transforms classification context into plain-text narrative format.
+pub(crate) fn build_action_needs_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    conversation: &[ChatMessage],
+) -> String {
+    let conversation_text = format_conversation_excerpt(conversation, 12);
+
+    format!(
+        r#"User message:
+{user_message}
+
+Route: {route}
+
+Workspace facts:
+{facts}
+
+Workspace brief:
+{brief}
+
+Conversation so far (most recent last):
+{conversation}"#,
+        user_message = user_message,
+        route = route_decision.route,
+        facts = workspace_facts.trim(),
+        brief = workspace_brief.trim(),
+        conversation = conversation_text,
+    )
+}
+
+/// Build workflow planner input narrative
+///
+/// Transforms classification context into plain-text narrative format.
+pub(crate) fn build_workflow_planner_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    conversation: &[ChatMessage],
+) -> String {
+    let conversation_text = format_conversation_excerpt(conversation, 12);
+
+    format!(
+        r#"User message:
+{user_message}
+
+Classification priors:
+- speech_act: {speech_act}
+- workflow: {workflow}
+- mode: {mode}
+- route: {route}
+
+Workspace facts:
+{facts}
+
+Workspace brief:
+{brief}
+
+Conversation so far (most recent last):
+{conversation}"#,
+        user_message = user_message,
+        speech_act = route_decision.speech_act.choice,
+        workflow = route_decision.workflow.choice,
+        mode = route_decision.mode.choice,
+        route = route_decision.route,
+        facts = workspace_facts.trim(),
+        brief = workspace_brief.trim(),
+        conversation = conversation_text,
+    )
+}
+
+/// Format conversation excerpt into plain text
+///
+/// Converts conversation messages into readable narrative format.
+fn format_conversation_excerpt(messages: &[ChatMessage], max_items: usize) -> String {
+    messages
+        .iter()
+        .skip(1) // Skip first system message
+        .rev()
+        .take(max_items)
+        .rev()
+        .map(|m| format!("{}: {}", m.role, m.content.replace('\n', " ")))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// ============================================================================
+// Workflow Execution Narratives (Original)
+// ============================================================================
 
 /// Build critic input narrative
 ///
@@ -24,7 +197,7 @@ pub(crate) fn build_critic_narrative(
     max_retries: u32,
 ) -> String {
     let steps_narrative = build_steps_narrative(program, step_results);
-    
+
     format!(
         r#"OBJECTIVE:
 {objective}
@@ -53,7 +226,7 @@ pub(crate) fn build_sufficiency_narrative(
     step_results: &[StepResult],
 ) -> String {
     let steps_narrative = build_steps_narrative(program, step_results);
-    
+
     format!(
         r#"OBJECTIVE:
 {objective}
@@ -79,14 +252,18 @@ pub(crate) fn build_reviewer_narrative(
     review_type: &str,
 ) -> String {
     let steps_narrative = build_steps_narrative(program, step_results);
-    
+
     let task_description = match review_type {
-        "logical" => "Is this workflow logically coherent with no contradictory steps or broken dataflow?",
-        "efficiency" => "Is this workflow reasonably efficient with no avoidable waste or redundant steps?",
+        "logical" => {
+            "Is this workflow logically coherent with no contradictory steps or broken dataflow?"
+        }
+        "efficiency" => {
+            "Is this workflow reasonably efficient with no avoidable waste or redundant steps?"
+        }
         "risk" => "Does this workflow have any safety concerns or risky operations?",
         _ => "Review this workflow for issues.",
     };
-    
+
     format!(
         r#"OBJECTIVE:
 {objective}
@@ -103,13 +280,110 @@ Answer with ONLY: {{"status": "ok" or "retry", "reason": "one short sentence"}}"
     )
 }
 
+/// Build evidence mode classifier narrative.
+pub(crate) fn build_evidence_mode_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    reply_instructions: &str,
+    step_results: &[StepResult],
+    has_command_request: bool,
+    has_command_execution: bool,
+    has_artifact: bool,
+) -> String {
+    let step_results_narrative = build_step_results_narrative(step_results);
+
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+ROUTE CONTEXT:
+- route: {route}
+- speech_act_choice: {speech_act}
+
+REPLY INSTRUCTIONS:
+{reply_instructions}
+
+EXECUTION SIGNALS:
+- explicit_command_request: {has_command_request}
+- observed_command_execution: {has_command_execution}
+- artifact_captured: {has_artifact}
+
+STEP RESULTS:
+{step_results_narrative}"#,
+        user_message = user_message.trim(),
+        route = route_decision.route,
+        speech_act = route_decision.speech_act.choice,
+        reply_instructions = reply_instructions.trim(),
+        has_command_request = has_command_request,
+        has_command_execution = has_command_execution,
+        has_artifact = has_artifact,
+        step_results_narrative = step_results_narrative,
+    )
+}
+
+/// Build claim checker narrative.
+pub(crate) fn build_claim_check_narrative(
+    user_message: &str,
+    evidence_mode: &str,
+    draft: &str,
+    step_results: &[StepResult],
+) -> String {
+    let step_results_narrative = build_step_results_narrative(step_results);
+
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+EVIDENCE PRESENTATION MODE:
+{evidence_mode}
+
+DRAFT RESPONSE TO CHECK:
+{draft}
+
+OBSERVED STEP RESULTS:
+{step_results_narrative}"#,
+        user_message = user_message.trim(),
+        evidence_mode = evidence_mode.trim(),
+        draft = draft.trim(),
+        step_results_narrative = step_results_narrative,
+    )
+}
+
+/// Build repair semantics guard narrative.
+pub(crate) fn build_repair_semantics_narrative(
+    objective: &str,
+    purpose: &str,
+    original_cmd: &str,
+    repaired_cmd: &str,
+    failed_output_summary: &str,
+) -> String {
+    format!(
+        r#"OBJECTIVE:
+{objective}
+
+STEP PURPOSE:
+{purpose}
+
+ORIGINAL COMMAND:
+{original_cmd}
+
+REPAIRED COMMAND:
+{repaired_cmd}
+
+FAILED OUTPUT SUMMARY:
+{failed_output_summary}"#,
+        objective = objective.trim(),
+        purpose = purpose.trim(),
+        original_cmd = original_cmd.trim(),
+        repaired_cmd = repaired_cmd.trim(),
+        failed_output_summary = failed_output_summary.trim(),
+    )
+}
+
 /// Shared helper: build steps narrative
 ///
 /// Converts program steps and their results into readable narrative format.
-fn build_steps_narrative(
-    program: &Program,
-    step_results: &[StepResult],
-) -> String {
+fn build_steps_narrative(program: &Program, step_results: &[StepResult]) -> String {
     program
         .steps
         .iter()
@@ -120,7 +394,7 @@ fn build_steps_narrative(
             let step_detail = step_detail(step);
             let purpose = step_purpose(step);
             let result = step_result_text(step, step_results);
-            
+
             format!(
                 "Step {step_num} ({step_type}): {step_detail}\n  To: {purpose}\n  Result: {result}",
                 step_num = step_num,
@@ -132,6 +406,56 @@ fn build_steps_narrative(
         })
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+fn build_step_results_narrative(step_results: &[StepResult]) -> String {
+    if step_results.is_empty() {
+        return "No step results available.".to_string();
+    }
+
+    step_results
+        .iter()
+        .enumerate()
+        .map(|(idx, step_result)| {
+            let output_excerpt = step_result
+                .raw_output
+                .as_deref()
+                .map(snippet)
+                .unwrap_or_else(|| "none".to_string());
+
+            format!(
+                "Result {step_num} ({kind}) id={id}\n  Purpose: {purpose}\n  Status: ok={ok}, exit_code={exit_code:?}, outcome={outcome}\n  Summary: {summary}\n  Output: {output}",
+                step_num = idx + 1,
+                kind = fallback_text(&step_result.kind, "unknown"),
+                id = fallback_text(&step_result.id, "unknown"),
+                purpose = fallback_text(&step_result.purpose, "unspecified"),
+                ok = step_result.ok,
+                exit_code = step_result.exit_code,
+                outcome = step_result.outcome_status.as_deref().unwrap_or("unknown"),
+                summary = fallback_text(&step_result.summary, "none"),
+                output = output_excerpt,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn fallback_text<'a>(value: &'a str, fallback: &'a str) -> &'a str {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        fallback
+    } else {
+        trimmed
+    }
+}
+
+fn snippet(text: &str) -> String {
+    let compact = text.replace('\n', " ");
+    if compact.len() <= 240 {
+        compact
+    } else {
+        format!("{}...", &compact[..240])
+    }
 }
 
 /// Extract step kind (shell, reply, plan, etc.)
@@ -171,7 +495,12 @@ fn step_detail(step: &Step) -> String {
             format!("Summarize: \"{}\"", instructions.trim())
         }
         Step::Edit { spec, .. } => {
-            format!("Edit {}: {} \"{}\"", spec.path.trim(), spec.operation, spec.content.trim())
+            format!(
+                "Edit {}: {} \"{}\"",
+                spec.path.trim(),
+                spec.operation,
+                spec.content.trim()
+            )
         }
         Step::Reply { instructions, .. } => {
             format!("Reply: \"{}\"", instructions.trim())
@@ -193,7 +522,7 @@ fn step_purpose(step: &Step) -> String {
         | Step::Edit { common, .. }
         | Step::Reply { common, .. } => common,
     };
-    
+
     if !common.purpose.trim().is_empty() {
         common.purpose.trim().to_string()
     } else {
@@ -204,10 +533,10 @@ fn step_purpose(step: &Step) -> String {
 /// Extract step result text
 fn step_result_text(step: &Step, step_results: &[StepResult]) -> String {
     let step_id = step_id(step);
-    
+
     // Find matching result
     let result = step_results.iter().find(|r| r.id == step_id);
-    
+
     match result {
         Some(r) => {
             // Check if step was successful
@@ -218,7 +547,7 @@ fn step_result_text(step: &Step, step_results: &[StepResult]) -> String {
                     format!("with error (exit_code={})", code)
                 }
             });
-            
+
             // Get output preview
             let output_preview = r.raw_output.as_ref().map(|o: &String| {
                 if o.len() > 200 {
@@ -227,9 +556,11 @@ fn step_result_text(step: &Step, step_results: &[StepResult]) -> String {
                     o.clone()
                 }
             });
-            
+
             match (exit_code_text, output_preview) {
-                (Some(exit), Some(output)) => format!("Command executed {} (output: {})", exit, output),
+                (Some(exit), Some(output)) => {
+                    format!("Command executed {} (output: {})", exit, output)
+                }
                 (Some(exit), None) => format!("Command executed {}", exit),
                 (None, Some(output)) => format!("Output: {}", output),
                 (None, None) => "Completed".to_string(),
@@ -311,13 +642,7 @@ mod tests {
             },
         ];
 
-        let narrative = build_critic_narrative(
-            &program.objective,
-            &program,
-            &step_results,
-            1,
-            2,
-        );
+        let narrative = build_critic_narrative(&program.objective, &program, &step_results, 1, 2);
 
         assert!(narrative.contains("OBJECTIVE:"));
         assert!(narrative.contains("WORKFLOW GENERATED:"));
@@ -355,5 +680,85 @@ mod tests {
         let result = step_result_text(&step, &step_results);
         assert!(result.contains("error"));
         assert!(result.contains("exit_code=2"));
+    }
+
+    #[test]
+    fn test_build_sufficiency_narrative_format() {
+        let program = Program {
+            objective: "List files in test directory".to_string(),
+            steps: vec![make_shell_step(
+                "s1",
+                "find test/ -type f",
+                "List all files",
+            )],
+        };
+        let step_results = vec![StepResult {
+            id: "s1".to_string(),
+            kind: "shell".to_string(),
+            purpose: "List all files".to_string(),
+            ok: true,
+            exit_code: Some(0),
+            raw_output: Some("file1.txt\nfile2.txt".to_string()),
+            ..Default::default()
+        }];
+
+        let narrative = build_sufficiency_narrative(&program.objective, &program, &step_results);
+
+        assert!(narrative.contains("OBJECTIVE:"));
+        assert!(narrative.contains("WORKFLOW GENERATED:"));
+        assert!(narrative.contains("Does the workflow output satisfy the objective?"));
+    }
+
+    #[test]
+    fn test_build_reviewer_narrative_format() {
+        let program = Program {
+            objective: "List files in test directory".to_string(),
+            steps: vec![make_shell_step(
+                "s1",
+                "find test/ -type f",
+                "List all files",
+            )],
+        };
+        let step_results = vec![StepResult {
+            id: "s1".to_string(),
+            kind: "shell".to_string(),
+            purpose: "List all files".to_string(),
+            ok: true,
+            exit_code: Some(0),
+            raw_output: Some("file1.txt\nfile2.txt".to_string()),
+            ..Default::default()
+        }];
+
+        let narrative =
+            build_reviewer_narrative(&program.objective, &program, &step_results, "logical");
+
+        assert!(narrative.contains("OBJECTIVE:"));
+        assert!(narrative.contains("WORKFLOW GENERATED:"));
+        assert!(narrative.contains("logically coherent"));
+    }
+
+    #[test]
+    fn test_build_claim_check_narrative_includes_step_results() {
+        let step_results = vec![StepResult {
+            id: "s1".to_string(),
+            kind: "shell".to_string(),
+            purpose: "List all files".to_string(),
+            ok: true,
+            summary: "Command succeeded".to_string(),
+            raw_output: Some("file1.txt\nfile2.txt".to_string()),
+            exit_code: Some(0),
+            ..Default::default()
+        }];
+
+        let narrative = build_claim_check_narrative(
+            "Show me the files",
+            "RAW",
+            "The files are file1.txt and file2.txt",
+            &step_results,
+        );
+
+        assert!(narrative.contains("DRAFT RESPONSE TO CHECK:"));
+        assert!(narrative.contains("OBSERVED STEP RESULTS:"));
+        assert!(narrative.contains("Result 1 (shell)"));
     }
 }

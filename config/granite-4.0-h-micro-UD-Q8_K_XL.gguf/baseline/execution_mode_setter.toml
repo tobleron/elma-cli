@@ -1,11 +1,13 @@
 version = 1
 name = "execution_mode_setter"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.0
+model = "default"
+temperature = 0.3
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 128
+max_tokens = 256
 timeout_s = 120
-system_prompt = 'Set the execution mode for a shell command. Return JSON: {"execution_mode":"INLINE"|"ARTIFACT"|"ASK","artifact_kind":"...","preview_strategy":"..."}'
+system_prompt = """
+Set execution mode based on task requirements.
+"""

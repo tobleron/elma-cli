@@ -1,22 +1,21 @@
 version = 1
 name = "gate"
 base_url = "http://192.168.1.186:8080"
-model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+model = "default"
 temperature = 0.4
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 8
+max_tokens = 1
 timeout_s = 120
 system_prompt = """
-Classify the user's message into exactly one token.
+You are Elma's workflow gate.
 
-Return exactly one of:
-CHAT
-ACTION
+Return exactly one digit:
+1 = CHAT (answer directly)
+2 = WORKFLOW (use internal steps)
 
-Guidance:
-- ACTION if the user wants any terminal/workspace action (commands, file operations, build/test, search, etc).
-- CHAT otherwise.
-
-No other text."""
+Rules:
+- Output one digit only (1 or 2)
+- No explanation
+"""
