@@ -32,4 +32,7 @@ As the project has evolved (especially with the `_dev-system` guidance), several
 ## Progress Notes
 - Managed `status_message_generator` is now loaded and synchronized like other canonical intel-unit profiles.
 - Removed the inline shell-step prompt/profile construction so runtime execution no longer bypasses the canonical prompt registry for status messages.
+- Removed the now-unused `default_status_message_generator_config` fallback constructor after migrating status-message loading to managed profile seeding and startup sync.
+- Migrated the active `src/intel.rs` compatibility layer so its production calls now execute through trait-based intel units instead of raw ad hoc model-call helpers.
+- Expanded `IntelContext` with structured extras and shared profile-request helpers so trait units can preserve legacy payload richness while converging on one execution model.
 - Verified after this slice with `cargo build`, `cargo test`, and `./run_intention_scenarios.sh`.

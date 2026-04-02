@@ -345,23 +345,6 @@ pub(crate) fn default_intention_tune_config(base_url: &str, model: &str) -> Prof
     }
 }
 
-pub(crate) fn default_status_message_generator_config(base_url: &str, model: &str) -> Profile {
-    Profile {
-        version: 1,
-        name: "status_message_generator".to_string(),
-        base_url: base_url.to_string(),
-        model: model.to_string(),
-        temperature: 0.3,
-        top_p: 0.95,
-        repeat_penalty: 1.0,
-        reasoning_format: "none".to_string(),
-        max_tokens: 64,
-        timeout_s: 120,
-        system_prompt: "Generate an ultra-concise status message explaining what Elma is doing now. Return JSON: {\"status\":\"one line, max 10 words\"}"
-            .to_string(),
-    }
-}
-
 pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(String, Profile)> {
     // Load all seed profiles from config/defaults/.
     // Canonical system prompts for managed intel units are enforced later

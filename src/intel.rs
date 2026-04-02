@@ -1,51 +1,73 @@
 use crate::*;
 
+fn neutral_route_decision() -> RouteDecision {
+    let base = ProbabilityDecision {
+        choice: String::new(),
+        source: "compat_wrapper".to_string(),
+        distribution: Vec::new(),
+        margin: 0.0,
+        entropy: 1.0,
+    };
+    RouteDecision {
+        route: String::new(),
+        source: "compat_wrapper".to_string(),
+        distribution: Vec::new(),
+        margin: 0.0,
+        entropy: 1.0,
+        speech_act: base.clone(),
+        workflow: base.clone(),
+        mode: base,
+    }
+}
+
+fn base_intel_context(
+    client: &reqwest::Client,
+    user_message: &str,
+    route_decision: &RouteDecision,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    messages: &[ChatMessage],
+) -> IntelContext {
+    IntelContext::new(
+        user_message.to_string(),
+        route_decision.clone(),
+        workspace_facts.to_string(),
+        workspace_brief.to_string(),
+        messages.to_vec(),
+        client.clone(),
+    )
+}
+
 pub(crate) async fn generate_status_message_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     current_action: &str,
     step_type: &str,
     step_purpose: &str,
 ) -> Result<String> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "current_action": current_action,
-                    "step_type": step_type,
-                    "step_purpose": step_purpose,
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    let result: serde_json::Value =
-        chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
-    Ok(result
-        .get("status")
-        .and_then(|v| v.as_str())
+    let unit = StatusMessageUnit::new(cfg.clone());
+    let context = IntelContext::new(
+        current_action.to_string(),
+        neutral_route_decision(),
+        String::new(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("current_action", current_action)?
+    .with_extra("step_type", step_type)?
+    .with_extra("step_purpose", step_purpose)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    Ok(output
+        .get_str("status")
         .unwrap_or(current_action)
         .to_string())
 }
 
 pub(crate) async fn assess_complexity_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
@@ -53,43 +75,22 @@ pub(crate) async fn assess_complexity_once(
     workspace_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<ComplexityAssessment> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "route_prior": {
-                        "route": route_decision.route,
-                        "distribution": route_decision.distribution.iter().map(|(route, p)| serde_json::json!({"route": route, "p": p})).collect::<Vec<_>>(),
-                    },
-                    "workspace_facts": workspace_facts,
-                    "workspace_brief": workspace_brief,
-                    "conversation": conversation_excerpt(messages, 12),
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
+    let unit = ComplexityAssessmentUnit::new(cfg.clone());
+    let context = base_intel_context(
+        client,
+        user_message,
+        route_decision,
+        workspace_facts,
+        workspace_brief,
+        messages,
+    );
+    let output = unit.execute_with_fallback(&context).await?;
+    Ok(ComplexityOutput::from_intel_output(&output)?.assessment)
 }
 
 pub(crate) async fn assess_evidence_needs_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
@@ -97,50 +98,23 @@ pub(crate) async fn assess_evidence_needs_once(
     workspace_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<(bool, bool)> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "route": route_decision.route,
-                    "workspace_facts": workspace_facts,
-                    "workspace_brief": workspace_brief,
-                    "conversation": conversation_excerpt(messages, 12),
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    let result: serde_json::Value =
-        chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
-    let needs_evidence = result
-        .get("needs_evidence")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let needs_tools = result
-        .get("needs_tools")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    Ok((needs_evidence, needs_tools))
+    let unit = EvidenceNeedsUnit::new(cfg.clone());
+    let context = base_intel_context(
+        client,
+        user_message,
+        route_decision,
+        workspace_facts,
+        workspace_brief,
+        messages,
+    );
+    let output = unit.execute_with_fallback(&context).await?;
+    let parsed = EvidenceNeedsOutput::from_intel_output(&output)?;
+    Ok((parsed.needs_evidence, parsed.needs_tools))
 }
 
 pub(crate) async fn assess_action_needs_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
@@ -148,93 +122,44 @@ pub(crate) async fn assess_action_needs_once(
     workspace_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<(bool, bool)> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "route": route_decision.route,
-                    "workspace_facts": workspace_facts,
-                    "workspace_brief": workspace_brief,
-                    "conversation": conversation_excerpt(messages, 12),
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    let result: serde_json::Value =
-        chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
-    let needs_decision = result
-        .get("needs_decision")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let needs_plan = result
-        .get("needs_plan")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    Ok((needs_decision, needs_plan))
+    let unit = ActionNeedsUnit::new(cfg.clone());
+    let context = base_intel_context(
+        client,
+        user_message,
+        route_decision,
+        workspace_facts,
+        workspace_brief,
+        messages,
+    );
+    let output = unit.execute_with_fallback(&context).await?;
+    let parsed = ActionNeedsOutput::from_intel_output(&output)?;
+    Ok((parsed.needs_decision, parsed.needs_plan))
 }
 
 pub(crate) async fn suggest_pattern_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
     messages: &[ChatMessage],
 ) -> Result<String> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "route": route_decision.route,
-                    "conversation": conversation_excerpt(messages, 12),
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    let result: serde_json::Value =
-        chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await?;
-    Ok(result
-        .get("suggested_pattern")
-        .and_then(|v| v.as_str())
-        .unwrap_or("reply_only")
-        .to_string())
+    let unit = PatternSuggestionUnit::new(cfg.clone());
+    let context = base_intel_context(
+        client,
+        user_message,
+        route_decision,
+        "",
+        "",
+        messages,
+    );
+    let output = unit.execute_with_fallback(&context).await?;
+    Ok(PatternSuggestionOutput::from_intel_output(&output)?.suggested_pattern)
 }
 
 pub(crate) async fn build_scope_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
@@ -243,51 +168,23 @@ pub(crate) async fn build_scope_once(
     workspace_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<ScopePlan> {
-    let scope_req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "route": route_decision.route,
-                    "speech_act": route_decision.speech_act.choice,
-                    "complexity": complexity,
-                    "workspace_facts": workspace_facts,
-                    "workspace_brief": workspace_brief,
-                    "conversation": conversation_excerpt(messages, 12),
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    let scope_result: ScopePlan = chat_json_with_repair_for_profile_timeout(
+    let unit = ScopeBuilderUnit::new(cfg.clone());
+    let context = base_intel_context(
         client,
-        chat_url,
-        &scope_req,
-        &cfg.name,
-        cfg.timeout_s,
+        user_message,
+        route_decision,
+        workspace_facts,
+        workspace_brief,
+        messages,
     )
-    .await?;
-
-    Ok(scope_result)
+    .with_complexity(complexity.clone());
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data).map_err(|e| anyhow::anyhow!("Failed to parse scope plan: {}", e))
 }
 
 pub(crate) async fn select_formula_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
@@ -296,56 +193,38 @@ pub(crate) async fn select_formula_once(
     memories: &[FormulaMemoryRecord],
     messages: &[ChatMessage],
 ) -> Result<FormulaSelection> {
-    let selector_req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "speech_act": route_decision.speech_act.choice,
-                    "route": route_decision.route,
-                    "complexity": complexity,
-                    "scope": scope,
-                    "memory_candidates": memories.iter().map(|m| {
-                        serde_json::json!({
-                            "id": m.id, "title": m.title, "route": m.route, "complexity": m.complexity,
-                            "formula": m.formula, "objective": m.objective, "example_user_message": m.user_message,
-                            "program_signature": m.program_signature, "success_count": m.success_count,
-                            "failure_count": m.failure_count, "last_success_unix_s": m.last_success_unix_s,
-                            "artifact_mode_capable": m.artifact_mode_capable, "active_run_id": m.active_run_id,
-                        })
-                    }).collect::<Vec<_>>(),
-                    "conversation": conversation_excerpt(messages, 12),
-                }).to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    chat_json_with_repair_for_profile_timeout(
+    let memory_candidates = memories
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id, "title": m.title, "route": m.route, "complexity": m.complexity,
+                "formula": m.formula, "objective": m.objective, "example_user_message": m.user_message,
+                "program_signature": m.program_signature, "success_count": m.success_count,
+                "failure_count": m.failure_count, "last_success_unix_s": m.last_success_unix_s,
+                "artifact_mode_capable": m.artifact_mode_capable, "active_run_id": m.active_run_id,
+            })
+        })
+        .collect::<Vec<_>>();
+    let unit = FormulaSelectorUnit::new(cfg.clone());
+    let context = base_intel_context(
         client,
-        chat_url,
-        &selector_req,
-        &cfg.name,
-        cfg.timeout_s,
+        user_message,
+        route_decision,
+        "",
+        "",
+        messages,
     )
-    .await
+    .with_complexity(complexity.clone())
+    .with_extra("scope", scope)?
+    .with_extra("memory_candidates", memory_candidates)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse formula selection: {}", e))
 }
 
 pub(crate) async fn plan_workflow_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
@@ -354,74 +233,44 @@ pub(crate) async fn plan_workflow_once(
     _memories: &[FormulaMemoryRecord],
     messages: &[ChatMessage],
 ) -> Result<WorkflowPlannerOutput> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage { role: "system".to_string(), content: cfg.system_prompt.clone() },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "speech_act": {"choice": route_decision.speech_act.choice, "distribution": route_decision.speech_act.distribution.iter().map(|(label, p)| serde_json::json!({"label": label, "p": p})).collect::<Vec<_>>()},
-                    "workflow": {"choice": route_decision.workflow.choice, "distribution": route_decision.workflow.distribution.iter().map(|(label, p)| serde_json::json!({"label": label, "p": p})).collect::<Vec<_>>()},
-                    "mode": {"choice": route_decision.mode.choice, "distribution": route_decision.mode.distribution.iter().map(|(label, p)| serde_json::json!({"label": label, "p": p})).collect::<Vec<_>>()},
-                    "route": route_decision.route,
-                    "workspace_facts": workspace_facts,
-                    "workspace_brief": workspace_brief,
-                    "conversation": conversation_excerpt(messages, 12),
-                }).to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    chat_json_with_repair_for_profile_timeout(client, chat_url, &req, &cfg.name, cfg.timeout_s)
-        .await
+    let unit = WorkflowPlannerUnit::new(cfg.clone());
+    let context = base_intel_context(
+        client,
+        user_message,
+        route_decision,
+        workspace_facts,
+        workspace_brief,
+        messages,
+    );
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse workflow planner output: {}", e))
 }
 
 pub(crate) async fn select_items_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     objective: &str,
     purpose: &str,
     instructions: &str,
     evidence: &str,
 ) -> Result<SelectionOutput> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "objective": objective,
-                    "purpose": purpose,
-                    "instructions": instructions,
-                    "evidence": evidence,
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
+    let unit = SelectorUnit::new(cfg.clone());
+    let context = IntelContext::new(
+        objective.to_string(),
+        neutral_route_decision(),
+        evidence.to_string(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("purpose", purpose)?
+    .with_extra("instructions", instructions)?
+    .with_extra("evidence", evidence)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse selector output: {}", e))
 }
 
 pub(crate) async fn decide_evidence_mode_once(
@@ -483,33 +332,17 @@ pub(crate) async fn decide_evidence_mode_once(
         has_artifact,
     );
 
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: narrative,
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
+    let unit = EvidenceModeUnit::new(cfg.clone());
+    let context = base_intel_context(client, user_message, route_decision, "", "", &[])
+        .with_extra("narrative", narrative)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse evidence mode decision: {}", e))
 }
 
 pub(crate) async fn compact_evidence_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     objective: &str,
     purpose: &str,
@@ -517,77 +350,53 @@ pub(crate) async fn compact_evidence_once(
     cmd: &str,
     output: &str,
 ) -> Result<EvidenceCompact> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "objective": objective,
-                    "purpose": purpose,
-                    "scope": scope,
-                    "cmd": cmd,
-                    "output": output,
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
+    let unit = EvidenceCompactorUnit::new(cfg.clone());
+    let context = IntelContext::new(
+        objective.to_string(),
+        neutral_route_decision(),
+        output.to_string(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("objective", objective)?
+    .with_extra("purpose", purpose)?
+    .with_extra("scope", scope)?
+    .with_extra("cmd", cmd)?
+    .with_extra("output", output)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse evidence compact output: {}", e))
 }
 
 pub(crate) async fn classify_artifacts_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     objective: &str,
     scope: &ScopePlan,
     evidence: &str,
 ) -> Result<ArtifactClassification> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "objective": objective,
-                    "scope": scope,
-                    "evidence": evidence,
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
+    let unit = ArtifactClassifierUnit::new(cfg.clone());
+    let context = IntelContext::new(
+        objective.to_string(),
+        neutral_route_decision(),
+        evidence.to_string(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("objective", objective)?
+    .with_extra("scope", scope)?
+    .with_extra("evidence", evidence)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse artifact classification: {}", e))
 }
 
 pub(crate) async fn present_result_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
@@ -595,81 +404,40 @@ pub(crate) async fn present_result_once(
     step_results: &[StepResult],
     reply_instructions: &str,
 ) -> Result<String> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": user_message,
-                    "route": route_decision.route,
-                    "speech_act": route_decision.speech_act.choice,
-                    "evidence_mode": evidence_mode,
-                    "instructions": reply_instructions,
-                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    let resp = chat_once_with_timeout(client, chat_url, &req, cfg.timeout_s).await?;
-    let text = resp
-        .choices
-        .get(0)
-        .and_then(|c| c.message.content.clone())
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    Ok(text)
+    let unit = ResultPresenterUnit::new(cfg.clone());
+    let context = base_intel_context(client, user_message, route_decision, "", "", &[])
+        .with_extra("evidence_mode", evidence_mode)?
+        .with_extra(
+            "step_results",
+            step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+        )?
+        .with_extra("reply_instructions", reply_instructions)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    Ok(output.get_str("final_text").unwrap_or_default().to_string())
 }
 
 pub(crate) async fn repair_command_once(
     client: &reqwest::Client,
-    chat_url: &Url,
+    _chat_url: &Url,
     cfg: &Profile,
     objective: &str,
     purpose: &str,
     failed_cmd: &str,
     output: &str,
 ) -> Result<CommandRepair> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: serde_json::json!({
-                    "objective": objective,
-                    "purpose": purpose,
-                    "failed_cmd": failed_cmd,
-                    "stderr_or_output": summarize_shell_output(output),
-                })
-                .to_string(),
-            },
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    chat_json_with_repair_timeout(client, chat_url, &req, cfg.timeout_s).await
+    let unit = CommandRepairUnit::new(cfg.clone());
+    let context = IntelContext::new(
+        failed_cmd.to_string(),
+        neutral_route_decision(),
+        summarize_shell_output(output),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("objective", objective)?
+    .with_extra("purpose", purpose)?
+    .with_extra("output", output)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse command repair output: {}", e))
 }

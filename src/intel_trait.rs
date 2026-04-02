@@ -40,6 +40,9 @@ pub(crate) struct IntelContext {
 
     /// Shared HTTP client for all intel units (prevents connection pool exhaustion)
     pub client: reqwest::Client,
+
+    /// Optional structured inputs for units that need more than the base context
+    pub extras: serde_json::Map<String, serde_json::Value>,
 }
 
 impl IntelContext {
@@ -60,6 +63,7 @@ impl IntelContext {
             conversation_excerpt,
             complexity: None,
             client,
+            extras: serde_json::Map::new(),
         }
     }
 
@@ -67,6 +71,18 @@ impl IntelContext {
     pub fn with_complexity(mut self, complexity: ComplexityAssessment) -> Self {
         self.complexity = Some(complexity);
         self
+    }
+
+    /// Attach extra serialized context for richer intel-unit execution.
+    pub fn with_extra<T: Serialize>(mut self, key: &str, value: T) -> Result<Self> {
+        self.extras
+            .insert(key.to_string(), serde_json::to_value(value)?);
+        Ok(self)
+    }
+
+    /// Read an extra JSON field by key.
+    pub fn extra(&self, key: &str) -> Option<&serde_json::Value> {
+        self.extras.get(key)
     }
 }
 
@@ -396,6 +412,62 @@ fn trace_verbose(verbose: bool, message: &str) {
     if verbose {
         eprintln!("[INTEL_VERBOSE] {}", message);
     }
+}
+
+pub(crate) fn intel_chat_url(profile: &Profile) -> Result<Url> {
+    Url::parse(&profile.base_url)
+        .map_err(|e| anyhow::anyhow!("Invalid base_url '{}': {}", profile.base_url, e))?
+        .join("/v1/chat/completions")
+        .map_err(|e| anyhow::anyhow!("Failed to build chat URL: {}", e))
+}
+
+pub(crate) fn apply_profile_grammar(
+    profile: &Profile,
+    req: &mut ChatCompletionRequest,
+) -> Result<()> {
+    if let Some(config_root) = crate::ui_chat::get_config_root_for_intel() {
+        if let Some(grammar_content) =
+            crate::json_grammar::get_grammar_for_profile(&profile.name, config_root)?
+        {
+            let grammar_str = crate::json_grammar::load_grammar(&grammar_content, config_root)?;
+            req.grammar = Some(grammar_str);
+        }
+    }
+    Ok(())
+}
+
+pub(crate) async fn execute_intel_json_for_profile<T: DeserializeOwned + 'static>(
+    client: &reqwest::Client,
+    profile: &Profile,
+    mut req: ChatCompletionRequest,
+) -> Result<T> {
+    apply_profile_grammar(profile, &mut req)?;
+    let chat_url = intel_chat_url(profile)?;
+    chat_json_with_repair_for_profile_timeout(
+        client,
+        &chat_url,
+        &req,
+        &profile.name,
+        profile.timeout_s,
+    )
+    .await
+}
+
+pub(crate) async fn execute_intel_text_for_profile(
+    client: &reqwest::Client,
+    profile: &Profile,
+    mut req: ChatCompletionRequest,
+) -> Result<String> {
+    apply_profile_grammar(profile, &mut req)?;
+    let chat_url = intel_chat_url(profile)?;
+    let resp = chat_once_with_timeout(client, &chat_url, &req, profile.timeout_s).await?;
+    Ok(resp
+        .choices
+        .first()
+        .and_then(|choice| choice.message.content.clone())
+        .unwrap_or_default()
+        .trim()
+        .to_string())
 }
 
 // ============================================================================

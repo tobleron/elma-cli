@@ -256,13 +256,8 @@ impl IntelUnit for EvidenceNeedsUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: serde_json::Value =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -357,13 +352,8 @@ impl IntelUnit for ActionNeedsUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: serde_json::Value =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -429,11 +419,6 @@ impl IntelUnit for WorkflowPlannerUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        // Workflow planner uses multiple sub-calls, so we'll keep the existing logic
-        // but wrap it in the trait pattern
-
-        // For now, return a simplified output
-        // Full migration would replicate the multi-call logic from plan_workflow_once()
         let req = ChatCompletionRequest {
             model: self.profile.model.clone(),
             messages: vec![
@@ -445,12 +430,28 @@ impl IntelUnit for WorkflowPlannerUnit {
                     role: "user".to_string(),
                     content: serde_json::json!({
                         "user_message": context.user_message,
-                        "speech_act": {"choice": context.route_decision.speech_act.choice},
-                        "workflow": {"choice": context.route_decision.workflow.choice},
-                        "mode": {"choice": context.route_decision.mode.choice},
+                        "speech_act": {
+                            "choice": context.route_decision.speech_act.choice,
+                            "distribution": context.route_decision.speech_act.distribution.iter()
+                                .map(|(label, p)| serde_json::json!({"label": label, "p": p}))
+                                .collect::<Vec<_>>()
+                        },
+                        "workflow": {
+                            "choice": context.route_decision.workflow.choice,
+                            "distribution": context.route_decision.workflow.distribution.iter()
+                                .map(|(label, p)| serde_json::json!({"label": label, "p": p}))
+                                .collect::<Vec<_>>()
+                        },
+                        "mode": {
+                            "choice": context.route_decision.mode.choice,
+                            "distribution": context.route_decision.mode.distribution.iter()
+                                .map(|(label, p)| serde_json::json!({"label": label, "p": p}))
+                                .collect::<Vec<_>>()
+                        },
                         "route": context.route_decision.route,
                         "workspace_facts": context.workspace_facts,
                         "workspace_brief": context.workspace_brief,
+                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
                     })
                     .to_string(),
                 },
@@ -465,15 +466,14 @@ impl IntelUnit for WorkflowPlannerUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: WorkflowPlannerOutput =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -499,6 +499,19 @@ impl IntelUnit for WorkflowPlannerUnit {
                 "complexity": "DIRECT",
                 "risk": "LOW",
                 "needs_evidence": false,
+                "scope": {
+                    "objective": "Complete the user's request",
+                    "focus_paths": [],
+                    "include_globs": [],
+                    "exclude_globs": [],
+                    "query_terms": [],
+                    "expected_artifacts": [],
+                    "reason": "fallback scope"
+                },
+                "preferred_formula": "reply_only",
+                "alternatives": [],
+                "memory_id": "",
+                "reason": "fallback workflow",
             }),
             &format!("workflow planner failed: {}", error),
         ))
@@ -569,13 +582,8 @@ impl IntelUnit for PatternSuggestionUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: serde_json::Value =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -650,6 +658,7 @@ impl IntelUnit for ScopeBuilderUnit {
                         "complexity": context.complexity,
                         "workspace_facts": context.workspace_facts,
                         "workspace_brief": context.workspace_brief,
+                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
                     })
                     .to_string(),
                 },
@@ -664,15 +673,14 @@ impl IntelUnit for ScopeBuilderUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: ScopePlan =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -734,6 +742,14 @@ impl IntelUnit for FormulaSelectorUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let scope = context
+            .extra("scope")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!(ScopePlan::default()));
+        let memory_candidates = context
+            .extra("memory_candidates")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([]));
         let req = ChatCompletionRequest {
             model: self.profile.model.clone(),
             messages: vec![
@@ -748,6 +764,9 @@ impl IntelUnit for FormulaSelectorUnit {
                         "speech_act": context.route_decision.speech_act.choice,
                         "route": context.route_decision.route,
                         "complexity": context.complexity,
+                        "scope": scope,
+                        "memory_candidates": memory_candidates,
+                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
                     })
                     .to_string(),
                 },
@@ -762,15 +781,14 @@ impl IntelUnit for FormulaSelectorUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: FormulaSelection =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -789,6 +807,7 @@ impl IntelUnit for FormulaSelectorUnit {
                 "primary": "reply_only",
                 "alternatives": Vec::<String>::new(),
                 "reason": "fallback selection".to_string(),
+                "memory_id": "",
             }),
             &format!("formula selector failed: {}", error),
         ))
@@ -987,8 +1006,6 @@ impl IntelUnit for SelectorUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        // Selector needs objective, purpose, instructions, and evidence
-        // These would typically be passed in a custom context or extracted from conversation
         let req = ChatCompletionRequest {
             model: self.profile.model.clone(),
             messages: vec![
@@ -1000,7 +1017,9 @@ impl IntelUnit for SelectorUnit {
                     role: "user".to_string(),
                     content: serde_json::json!({
                         "objective": context.user_message,
-                        "evidence": context.workspace_facts,
+                        "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
+                        "instructions": context.extra("instructions").cloned().unwrap_or(serde_json::Value::Null),
+                        "evidence": context.extra("evidence").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
                     })
                     .to_string(),
                 },
@@ -1015,15 +1034,14 @@ impl IntelUnit for SelectorUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: SelectionOutput =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -1084,6 +1102,17 @@ impl IntelUnit for EvidenceModeUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let user_content = context
+            .extra("narrative")
+            .and_then(|value| value.as_str())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| {
+                serde_json::json!({
+                    "user_message": context.user_message,
+                    "route": context.route_decision.route,
+                })
+                .to_string()
+            });
         let req = ChatCompletionRequest {
             model: self.profile.model.clone(),
             messages: vec![
@@ -1093,11 +1122,7 @@ impl IntelUnit for EvidenceModeUnit {
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "route": context.route_decision.route,
-                    })
-                    .to_string(),
+                    content: user_content,
                 },
             ],
             temperature: self.profile.temperature,
@@ -1110,15 +1135,14 @@ impl IntelUnit for EvidenceModeUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: EvidenceModeDecision =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -1184,8 +1208,11 @@ impl IntelUnit for EvidenceCompactorUnit {
                 ChatMessage {
                     role: "user".to_string(),
                     content: serde_json::json!({
-                        "evidence": context.workspace_facts,
-                        "instructions": "Compact this evidence while preserving key information",
+                        "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
+                        "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
+                        "scope": context.extra("scope").cloned().unwrap_or(serde_json::Value::Null),
+                        "cmd": context.extra("cmd").cloned().unwrap_or(serde_json::Value::Null),
+                        "output": context.extra("output").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
                     })
                     .to_string(),
                 },
@@ -1200,15 +1227,14 @@ impl IntelUnit for EvidenceCompactorUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: EvidenceCompact =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -1276,8 +1302,9 @@ impl IntelUnit for ArtifactClassifierUnit {
                 ChatMessage {
                     role: "user".to_string(),
                     content: serde_json::json!({
-                        "artifacts": context.workspace_facts,
-                        "instructions": "Classify these artifacts by type and importance",
+                        "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
+                        "scope": context.extra("scope").cloned().unwrap_or(serde_json::Value::Null),
+                        "evidence": context.extra("evidence").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
                     })
                     .to_string(),
                 },
@@ -1292,20 +1319,19 @@ impl IntelUnit for ArtifactClassifierUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: ArtifactClassification =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
-        if output.get("classifications").is_none() {
-            return Err(anyhow::anyhow!("Missing 'classifications' field"));
+        if output.get("safe").is_none() {
+            return Err(anyhow::anyhow!("Missing 'safe' field"));
         }
         Ok(())
     }
@@ -1316,7 +1342,10 @@ impl IntelUnit for ArtifactClassifierUnit {
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
-                "classifications": Vec::<serde_json::Value>::new(),
+                "safe": Vec::<String>::new(),
+                "maybe": Vec::<String>::new(),
+                "keep": Vec::<String>::new(),
+                "ignore": Vec::<String>::new(),
                 "reason": "fallback: no classifications".to_string(),
             }),
             &format!("artifact classifier failed: {}", error),
@@ -1369,8 +1398,11 @@ impl IntelUnit for ResultPresenterUnit {
                     role: "user".to_string(),
                     content: serde_json::json!({
                         "user_message": context.user_message,
-                        "step_results": "Results from execution",
-                        "instructions": "Present results clearly to the user",
+                        "route": context.route_decision.route,
+                        "speech_act": context.route_decision.speech_act.choice,
+                        "evidence_mode": context.extra("evidence_mode").cloned().unwrap_or(serde_json::Value::Null),
+                        "instructions": context.extra("reply_instructions").cloned().unwrap_or_else(|| serde_json::json!("Present results clearly to the user")),
+                        "step_results": context.extra("step_results").cloned().unwrap_or_else(|| serde_json::json!([])),
                     })
                     .to_string(),
                 },
@@ -1385,15 +1417,13 @@ impl IntelUnit for ResultPresenterUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result = execute_intel_text_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::json!({ "final_text": result }),
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -1464,7 +1494,9 @@ impl IntelUnit for StatusMessageUnit {
                 ChatMessage {
                     role: "user".to_string(),
                     content: serde_json::json!({
-                        "current_action": context.user_message,
+                        "current_action": context.extra("current_action").cloned().unwrap_or_else(|| serde_json::json!(context.user_message)),
+                        "step_type": context.extra("step_type").cloned().unwrap_or(serde_json::Value::Null),
+                        "step_purpose": context.extra("step_purpose").cloned().unwrap_or(serde_json::Value::Null),
                     })
                     .to_string(),
                 },
@@ -1479,13 +1511,8 @@ impl IntelUnit for StatusMessageUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: serde_json::Value =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1553,9 +1580,10 @@ impl IntelUnit for CommandRepairUnit {
                 ChatMessage {
                     role: "user".to_string(),
                     content: serde_json::json!({
-                        "failed_command": context.user_message,
-                        "error": context.workspace_facts,
-                        "instructions": "Repair this command to fix the error",
+                        "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
+                        "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
+                        "cmd": context.user_message,
+                        "output": context.extra("output").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
                     })
                     .to_string(),
                 },
@@ -1570,15 +1598,14 @@ impl IntelUnit for CommandRepairUnit {
             grammar: None,
         };
 
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
-        )
-        .await?;
+        let result: CommandRepair =
+            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -1594,7 +1621,7 @@ impl IntelUnit for CommandRepairUnit {
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
-                "repaired_command": "".to_string(),
+                "cmd": "".to_string(),
                 "reason": "fallback: could not repair command".to_string(),
             }),
             &format!("command repair failed: {}", error),
