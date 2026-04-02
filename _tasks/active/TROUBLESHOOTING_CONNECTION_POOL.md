@@ -115,10 +115,19 @@ S000A: ❌ TIMEOUT
 
 ### After Fix
 ```
-HTTP calls: 11+ successful (no hangs)
-S000A: ✅ PASSED
+HTTP calls: 200+ successful (no hangs!)
+S000A: ⚠️ Reviewer loops (separate issue)
 Unit tests: 109 ✅
 ```
+
+### Current Status
+- ✅ Connection pool exhaustion: FIXED
+- ⚠️ Reviewer retry loops: NEW ISSUE
+  - outcome_verification: status=ok (passing)
+  - sufficiency_review: retry (failing)
+  - efficiency_review: retry (failing)
+  - logical_review: retry (failing)
+  - Causes hundreds of retries, tests timeout
 
 ## Files Modified
 
