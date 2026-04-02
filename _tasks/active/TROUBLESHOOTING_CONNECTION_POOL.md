@@ -120,14 +120,30 @@ S000A: ⚠️ Reviewer loops (separate issue)
 Unit tests: 109 ✅
 ```
 
-### Current Status
-- ✅ Connection pool exhaustion: FIXED
-- ⚠️ Reviewer retry loops: NEW ISSUE
-  - outcome_verification: status=ok (passing)
-  - sufficiency_review: retry (failing)
-  - efficiency_review: retry (failing)
-  - logical_review: retry (failing)
-  - Causes hundreds of retries, tests timeout
+## Current Status (Latest Update)
+
+### ✅ Connection pool exhaustion: FIXED
+- Shared client through IntelContext
+- 200+ HTTP calls complete successfully
+
+### ✅ Retry limit: IMPLEMENTED
+- Reduced max_retries from 4 to 2
+- Prevents infinite loops
+
+### ✅ Critic prompt: IMPROVED (but model still hallucinates)
+- Added explicit examples of plan vs non-plan requests
+- Model still says "user asked for plan" incorrectly
+- Root cause: 3B model too small for complex critic logic
+
+### ⚠️ Remaining Issues
+- Critic hallucination (3B model limitation)
+- Vague rejections ("one short sentence")
+- False positives ("missing workspace evidence")
+
+### Recommendations
+1. Use larger model for critics (7B+)
+2. Or simplify critic to binary pass/fail
+3. Or disable strict reviewers for stress testing
 
 ## Files Modified
 
