@@ -97,6 +97,8 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 - [x] `status_message_generator` moved onto the managed canonical profile path
 - [x] Inline shell-step prompt bypass removed from execution runtime
 - [x] First trait-migration slice completed for the active `intel.rs` production path
+- [x] Live runtime callers migrated off `intel.rs` compatibility helpers
+- [x] Duplicate `src/intel.rs` module retired
 - [x] Stress-testing prompts S001-S008 rewritten for safer incremental escalation
 - [x] Stress-testing prompts sandboxed to `_stress_testing/` targets
 - [x] Stress-test runners now reject prompts that do not anchor to `_stress_testing/`
@@ -106,7 +108,7 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 - [x] Archive finished active task `006_Extend_Narrative_To_All_Intel_Units`
 - [x] Move this master plan into `_tasks/active/`
 - [x] Start **Task 056** as the first implementation task under this master plan
-- [ ] Continue **Task 056** by removing direct duplicate logic from `src/intel.rs` after trait wrappers prove stable
+- [ ] Continue **Task 056** by simplifying remaining trait-unit duplication and stale compatibility comments
 - [x] Verify stress-suite runner behavior against the rewritten `_stress_testing` prompts
 - [x] Add explicit sandbox expectations to the stress-test runner and/or docs if needed
 - [ ] Run the CLI stress ladder incrementally against the sandbox-anchored prompts

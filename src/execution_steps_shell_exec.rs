@@ -5,6 +5,83 @@
 use crate::execution_steps_compat::*;
 use crate::*;
 
+async fn compact_evidence_via_unit(
+    client: &reqwest::Client,
+    compactor_cfg: &Profile,
+    objective: &str,
+    purpose: &str,
+    scope: &ScopePlan,
+    cmd: &str,
+    output: &str,
+) -> Result<EvidenceCompact> {
+    let unit = EvidenceCompactorUnit::new(compactor_cfg.clone());
+    let context = IntelContext::new(
+        objective.to_string(),
+        neutral_route_decision(),
+        output.to_string(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("objective", objective)?
+    .with_extra("purpose", purpose)?
+    .with_extra("scope", scope)?
+    .with_extra("cmd", cmd)?
+    .with_extra("output", output)?;
+    let intel_output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(intel_output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse evidence compact output: {}", e))
+}
+
+async fn classify_artifacts_via_unit(
+    client: &reqwest::Client,
+    classifier_cfg: &Profile,
+    objective: &str,
+    scope: &ScopePlan,
+    evidence: &str,
+) -> Result<ArtifactClassification> {
+    let unit = ArtifactClassifierUnit::new(classifier_cfg.clone());
+    let context = IntelContext::new(
+        objective.to_string(),
+        neutral_route_decision(),
+        evidence.to_string(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("objective", objective)?
+    .with_extra("scope", scope)?
+    .with_extra("evidence", evidence)?;
+    let intel_output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(intel_output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse artifact classification: {}", e))
+}
+
+async fn repair_command_via_unit(
+    client: &reqwest::Client,
+    repair_cfg: &Profile,
+    objective: &str,
+    purpose: &str,
+    cmd: &str,
+    output: &str,
+) -> Result<CommandRepair> {
+    let unit = CommandRepairUnit::new(repair_cfg.clone());
+    let context = IntelContext::new(
+        cmd.to_string(),
+        neutral_route_decision(),
+        summarize_shell_output(output),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("objective", objective)?
+    .with_extra("purpose", purpose)?
+    .with_extra("output", output)?;
+    let intel_output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(intel_output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse command repair output: {}", e))
+}
+
 /// Execute shell command and handle results
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn execute_and_process_shell(
@@ -133,9 +210,8 @@ pub(crate) async fn execute_and_process_shell(
 
     let mut compact_summary = summarize_shell_output(&output);
     if let Some(compactor_cfg) = evidence_compactor_cfg {
-        if let Ok(compact) = compact_evidence_once(
+        if let Ok(compact) = compact_evidence_via_unit(
             client,
-            chat_url,
             compactor_cfg,
             objective,
             purpose,
@@ -164,9 +240,8 @@ pub(crate) async fn execute_and_process_shell(
     }
     if let Some(classifier_cfg) = artifact_classifier_cfg {
         if should_classify_artifacts(complexity, formula) {
-            if let Ok(classification) = classify_artifacts_once(
+            if let Ok(classification) = classify_artifacts_via_unit(
                 client,
-                chat_url,
                 classifier_cfg,
                 objective,
                 scope,
@@ -319,10 +394,7 @@ async fn try_command_repair(
         return Ok(None);
     };
 
-    let repair = repair_command_once(
-        client, chat_url, repair_cfg, objective, purpose, cmd, output,
-    )
-    .await?;
+    let repair = repair_command_via_unit(client, repair_cfg, objective, purpose, cmd, output).await?;
 
     let repaired = normalize_shell_cmd(repair.cmd.trim());
     if repaired.is_empty()

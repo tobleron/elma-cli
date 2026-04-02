@@ -13,6 +13,105 @@ use crate::execution_ladder::{
 };
 use crate::*;
 
+fn planning_intel_context(
+    client: &reqwest::Client,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> IntelContext {
+    IntelContext::new(
+        line.to_string(),
+        route_decision.clone(),
+        ws.to_string(),
+        ws_brief.to_string(),
+        messages.to_vec(),
+        client.clone(),
+    )
+}
+
+async fn trait_plan_workflow(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<WorkflowPlannerOutput> {
+    let unit = WorkflowPlannerUnit::new(cfg.clone());
+    let context = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse workflow planner output: {}", e))
+}
+
+async fn trait_assess_complexity(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<ComplexityAssessment> {
+    let unit = ComplexityAssessmentUnit::new(cfg.clone());
+    let context = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = unit.execute_with_fallback(&context).await?;
+    Ok(ComplexityOutput::from_intel_output(&output)?.assessment)
+}
+
+async fn trait_build_scope(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    complexity: &ComplexityAssessment,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<ScopePlan> {
+    let unit = ScopeBuilderUnit::new(cfg.clone());
+    let context = planning_intel_context(client, line, route_decision, ws, ws_brief, messages)
+        .with_complexity(complexity.clone());
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse scope plan: {}", e))
+}
+
+async fn trait_select_formula(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    complexity: &ComplexityAssessment,
+    scope: &ScopePlan,
+    memories: &[FormulaMemoryRecord],
+    messages: &[ChatMessage],
+) -> Result<FormulaSelection> {
+    let memory_candidates = memories
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id, "title": m.title, "route": m.route, "complexity": m.complexity,
+                "formula": m.formula, "objective": m.objective, "example_user_message": m.user_message,
+                "program_signature": m.program_signature, "success_count": m.success_count,
+                "failure_count": m.failure_count, "last_success_unix_s": m.last_success_unix_s,
+                "artifact_mode_capable": m.artifact_mode_capable, "active_run_id": m.active_run_id,
+            })
+        })
+        .collect::<Vec<_>>();
+    let unit = FormulaSelectorUnit::new(cfg.clone());
+    let context = planning_intel_context(client, line, route_decision, "", "", messages)
+        .with_complexity(complexity.clone())
+        .with_extra("scope", scope)?
+        .with_extra("memory_candidates", memory_candidates)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse formula selection: {}", e))
+}
+
 fn fallback_formula_for_route(route: &str, needs_evidence: bool) -> String {
     if route.eq_ignore_ascii_case("CHAT") {
         "reply_only".to_string()
@@ -119,24 +218,21 @@ pub(crate) async fn derive_planning_prior(
         return (None, complexity, scope, formula, false);
     }
 
-    if let Ok(workflow_plan) = plan_workflow_once(
+    if let Ok(workflow_plan) = trait_plan_workflow(
         client,
-        chat_url,
         workflow_planner_cfg,
         line,
         route_decision,
         ws,
         ws_brief,
-        memories,
         messages,
     )
     .await
     {
         let (complexity, scope) =
             planning_prior_from_workflow_plan(line, route_decision, &workflow_plan);
-        let formula = select_formula_once(
+        let formula = trait_select_formula(
             client,
-            chat_url,
             formula_cfg,
             line,
             route_decision,
@@ -155,9 +251,8 @@ pub(crate) async fn derive_planning_prior(
         return (Some(workflow_plan), complexity, scope, formula, false);
     }
 
-    let complexity = assess_complexity_once(
+    let complexity = trait_assess_complexity(
         client,
-        chat_url,
         complexity_cfg,
         line,
         route_decision,
@@ -167,9 +262,8 @@ pub(crate) async fn derive_planning_prior(
     )
     .await
     .unwrap_or_default();
-    let scope = build_scope_once(
+    let scope = trait_build_scope(
         client,
-        chat_url,
         scope_builder_cfg,
         line,
         route_decision,
@@ -180,9 +274,8 @@ pub(crate) async fn derive_planning_prior(
     )
     .await
     .unwrap_or_default();
-    let formula = select_formula_once(
+    let formula = trait_select_formula(
         client,
-        chat_url,
         formula_cfg,
         line,
         route_decision,
@@ -406,9 +499,8 @@ pub async fn derive_planning_prior_with_ladder(
     };
 
     // Build scope (use ladder's objective if available, otherwise build from scratch)
-    let scope = build_scope_once(
+    let scope = trait_build_scope(
         client,
-        chat_url,
         scope_builder_cfg,
         line,
         route_decision,
@@ -424,9 +516,8 @@ pub async fn derive_planning_prior_with_ladder(
     });
 
     // Select formula based on ladder assessment
-    let mut formula = select_formula_once(
+    let mut formula = trait_select_formula(
         client,
-        chat_url,
         formula_cfg,
         line,
         route_decision,

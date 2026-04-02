@@ -125,15 +125,24 @@ pub(crate) async fn handle_shell_step(
     }
 
     // Display status message before execution
-    if let Ok(status) = generate_status_message_once(
-        client,
-        chat_url,
-        status_message_cfg,
-        "executing",
-        &kind,
-        &purpose,
-    ).await {
-        show_status_message(args, &status);
+    let status_unit = StatusMessageUnit::new(status_message_cfg.clone());
+    if let Ok(context) = IntelContext::new(
+        "executing".to_string(),
+        neutral_route_decision(),
+        String::new(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("current_action", "executing")
+    .and_then(|ctx| ctx.with_extra("step_type", &kind))
+    .and_then(|ctx| ctx.with_extra("step_purpose", &purpose))
+    {
+        if let Ok(output) = status_unit.execute_with_fallback(&context).await {
+            if let Some(status) = output.get_str("status") {
+                show_status_message(args, status);
+            }
+        }
     }
 
     let (cmd, execution_mode, artifact_kind, _ask_hint, should_halt, _halt_summary) =

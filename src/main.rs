@@ -42,7 +42,6 @@ mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
 mod formulas;
 mod guardrails; // State-aware guardrails for context drift (Task 011)
-mod intel;
 mod intel_narrative; // Narrative transformation for intel units
 mod intel_trait; // Intel unit trait and interfaces
 mod intel_units; // Migrated intel units (complexity, evidence, action, workflow)
@@ -117,7 +116,6 @@ pub(crate) use evaluation::*;
 pub(crate) use execution::*;
 pub(crate) use execution_ladder::*; // Execution ladder types and functions
 pub(crate) use guardrails::*; // State-aware guardrails (Task 011)
-pub(crate) use intel::*;
 pub(crate) use intel_trait::*; // Intel unit trait and interfaces
 pub(crate) use intel_units::*; // Migrated intel units
 pub(crate) use json_error_handler::*; // JSON error handling

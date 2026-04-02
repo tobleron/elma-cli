@@ -421,6 +421,26 @@ pub(crate) fn intel_chat_url(profile: &Profile) -> Result<Url> {
         .map_err(|e| anyhow::anyhow!("Failed to build chat URL: {}", e))
 }
 
+pub(crate) fn neutral_route_decision() -> RouteDecision {
+    let base = ProbabilityDecision {
+        choice: String::new(),
+        source: "compat_wrapper".to_string(),
+        distribution: Vec::new(),
+        margin: 0.0,
+        entropy: 1.0,
+    };
+    RouteDecision {
+        route: String::new(),
+        source: "compat_wrapper".to_string(),
+        distribution: Vec::new(),
+        margin: 0.0,
+        entropy: 1.0,
+        speech_act: base.clone(),
+        workflow: base.clone(),
+        mode: base,
+    }
+}
+
 pub(crate) fn apply_profile_grammar(
     profile: &Profile,
     req: &mut ChatCompletionRequest,

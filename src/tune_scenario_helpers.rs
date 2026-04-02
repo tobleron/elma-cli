@@ -327,9 +327,8 @@ pub(crate) async fn execute_and_evaluate_program(
         "Respond to the user in plain terminal text. Use any step outputs as evidence.".to_string()
     });
 
-    let evidence_mode = decide_evidence_mode_once(
+    let evidence_mode = orchestration_helpers::decide_evidence_mode_via_unit(
         client,
-        chat_url,
         &resources.evidence_mode_cfg,
         user_message,
         decision,

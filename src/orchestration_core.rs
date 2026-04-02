@@ -142,9 +142,8 @@ pub(crate) async fn generate_final_answer_once(
     step_results: &[StepResult],
     reply_instructions: &str,
 ) -> Result<(String, Option<u64>)> {
-    let evidence_mode = decide_evidence_mode_once(
+    let evidence_mode = orchestration_helpers::decide_evidence_mode_via_unit(
         client,
-        chat_url,
         evidence_mode_cfg,
         line,
         route_decision,
@@ -170,9 +169,8 @@ pub(crate) async fn generate_final_answer_once(
         .await?
     } else {
         (
-            present_result_once(
+            orchestration_helpers::present_result_via_unit(
                 client,
-                chat_url,
                 presenter_cfg,
                 line,
                 route_decision,

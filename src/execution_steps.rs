@@ -18,6 +18,31 @@ pub(crate) use execution_steps_read::*;
 pub(crate) use execution_steps_search::*;
 pub(crate) use execution_steps_shell::*;
 
+async fn select_items_via_unit(
+    client: &reqwest::Client,
+    selector_cfg: &Profile,
+    objective: &str,
+    purpose: &str,
+    instructions: &str,
+    evidence: &str,
+) -> Result<SelectionOutput> {
+    let unit = SelectorUnit::new(selector_cfg.clone());
+    let context = IntelContext::new(
+        objective.to_string(),
+        neutral_route_decision(),
+        evidence.to_string(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("purpose", purpose)?
+    .with_extra("instructions", instructions)?
+    .with_extra("evidence", evidence)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse selector output: {}", e))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_program_step(
     args: &Args,
@@ -144,16 +169,9 @@ pub(crate) async fn handle_program_step(
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
                 .join("\n\n");
-            let selection = select_items_once(
-                client,
-                chat_url,
-                selector_cfg,
-                objective,
-                &purpose,
-                &instructions,
-                &evidence,
-            )
-            .await?;
+            let selection =
+                select_items_via_unit(client, selector_cfg, objective, &purpose, &instructions, &evidence)
+                    .await?;
             let items = selection
                 .items
                 .into_iter()

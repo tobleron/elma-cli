@@ -296,9 +296,8 @@ pub(crate) async fn maybe_revise_presented_result(
     .await
     {
         if verdict.status.eq_ignore_ascii_case("revise") {
-            let revised = present_result_once(
+            let revised = present_result_via_unit(
                 client,
-                chat_url,
                 presenter_cfg,
                 line,
                 route_decision,
@@ -322,6 +321,96 @@ pub(crate) async fn maybe_revise_presented_result(
         }
     }
     final_text
+}
+
+pub(crate) async fn decide_evidence_mode_via_unit(
+    client: &reqwest::Client,
+    evidence_mode_cfg: &Profile,
+    user_message: &str,
+    route_decision: &RouteDecision,
+    reply_instructions: &str,
+    step_results: &[StepResult],
+) -> Result<EvidenceModeDecision> {
+    let has_command_request = user_message
+        .to_lowercase()
+        .split_whitespace()
+        .any(|w| ["run", "execute", "show", "display", "print"].contains(&w));
+    let has_command_execution = step_results
+        .iter()
+        .any(|s| s.command.as_ref().is_some_and(|c| !c.is_empty()));
+    let has_artifact = step_results
+        .iter()
+        .any(|s| s.artifact_path.as_ref().is_some_and(|p| !p.is_empty()));
+
+    if has_command_request || has_command_execution {
+        let output_is_short = step_results
+            .iter()
+            .filter_map(|s| s.raw_output.as_ref())
+            .all(|out| out.lines().count() < 100);
+        let mode = if has_artifact {
+            "RAW_PLUS_COMPACT".to_string()
+        } else if output_is_short {
+            "RAW".to_string()
+        } else {
+            "RAW_PLUS_COMPACT".to_string()
+        };
+        return Ok(EvidenceModeDecision {
+            mode,
+            reason: "Command execution detected - showing raw output".to_string(),
+        });
+    }
+
+    let narrative = crate::intel_narrative::build_evidence_mode_narrative(
+        user_message,
+        route_decision,
+        reply_instructions,
+        step_results,
+        has_command_request,
+        has_command_execution,
+        has_artifact,
+    );
+
+    let unit = EvidenceModeUnit::new(evidence_mode_cfg.clone());
+    let context = IntelContext::new(
+        user_message.to_string(),
+        route_decision.clone(),
+        String::new(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("narrative", narrative)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse evidence mode decision: {}", e))
+}
+
+pub(crate) async fn present_result_via_unit(
+    client: &reqwest::Client,
+    presenter_cfg: &Profile,
+    user_message: &str,
+    route_decision: &RouteDecision,
+    evidence_mode: &EvidenceModeDecision,
+    step_results: &[StepResult],
+    reply_instructions: &str,
+) -> Result<String> {
+    let unit = ResultPresenterUnit::new(presenter_cfg.clone());
+    let context = IntelContext::new(
+        user_message.to_string(),
+        route_decision.clone(),
+        String::new(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("evidence_mode", evidence_mode)?
+    .with_extra(
+        "step_results",
+        step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+    )?
+    .with_extra("reply_instructions", reply_instructions)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    Ok(output.get_str("final_text").unwrap_or_default().to_string())
 }
 
 pub(crate) async fn maybe_format_final_text(

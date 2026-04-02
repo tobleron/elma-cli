@@ -35,4 +35,6 @@ As the project has evolved (especially with the `_dev-system` guidance), several
 - Removed the now-unused `default_status_message_generator_config` fallback constructor after migrating status-message loading to managed profile seeding and startup sync.
 - Migrated the active `src/intel.rs` compatibility layer so its production calls now execute through trait-based intel units instead of raw ad hoc model-call helpers.
 - Expanded `IntelContext` with structured extras and shared profile-request helpers so trait units can preserve legacy payload richness while converging on one execution model.
+- Migrated direct runtime callers in planning, result presentation, selection, compaction, artifact classification, command repair, evidence-mode selection, and shell status generation onto trait units.
+- Deleted `src/intel.rs` after confirming it was no longer on the live call graph; neutral compatibility context now lives in `src/intel_trait.rs`.
 - Verified after this slice with `cargo build`, `cargo test`, and `./run_intention_scenarios.sh`.
