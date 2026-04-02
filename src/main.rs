@@ -45,6 +45,7 @@ mod guardrails;  // State-aware guardrails for context drift (Task 011)
 mod intel;
 mod intel_trait;  // Intel unit trait and interfaces
 mod intel_units;  // Migrated intel units (complexity, evidence, action, workflow)
+mod intel_narrative;  // Narrative transformation for intel units
 mod json_error_handler;  // JSON error handling with circuit breaker
 mod json_tuning;  // JSON temperature tuning
 mod metrics;

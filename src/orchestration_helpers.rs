@@ -122,6 +122,15 @@ pub(crate) async fn request_critic_verdict(
     sufficiency: Option<&ExecutionSufficiencyVerdict>,
     attempt: u32,
 ) -> Result<CriticVerdict> {
+    // Task: Use narrative format instead of JSON noise
+    let narrative = crate::intel_narrative::build_critic_narrative(
+        &program.objective,
+        program,
+        step_results,
+        attempt,
+        2,  // max_retries
+    );
+    
     let critic_req = ChatCompletionRequest {
         model: critic_cfg.model.clone(),
         messages: vec![
@@ -131,56 +140,7 @@ pub(crate) async fn request_critic_verdict(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": line,
-                    "objective": program.objective,
-                    "speech_act_prior": {
-                        "choice": route_decision.speech_act.choice,
-                        "source": route_decision.speech_act.source,
-                        "distribution": route_decision.speech_act.distribution.iter().map(|(route, p)| {
-                            serde_json::json!({"route": route, "p": p})
-                        }).collect::<Vec<_>>(),
-                        "margin": route_decision.speech_act.margin,
-                        "entropy": route_decision.speech_act.entropy,
-                    },
-                    "workflow_prior": {
-                        "choice": route_decision.workflow.choice,
-                        "source": route_decision.workflow.source,
-                        "distribution": route_decision.workflow.distribution.iter().map(|(route, p)| {
-                            serde_json::json!({"route": route, "p": p})
-                        }).collect::<Vec<_>>(),
-                        "margin": route_decision.workflow.margin,
-                        "entropy": route_decision.workflow.entropy,
-                    },
-                    "mode_prior": {
-                        "choice": route_decision.mode.choice,
-                        "source": route_decision.mode.source,
-                        "distribution": route_decision.mode.distribution.iter().map(|(route, p)| {
-                            serde_json::json!({"route": route, "p": p})
-                        }).collect::<Vec<_>>(),
-                        "margin": route_decision.mode.margin,
-                        "entropy": route_decision.mode.entropy,
-                    },
-                    "route_prior": {
-                        "route": route_decision.route,
-                        "source": route_decision.source,
-                        "distribution": route_decision.distribution.iter().map(|(route, p)| {
-                            serde_json::json!({"route": route, "p": p})
-                        }).collect::<Vec<_>>(),
-                        "margin": route_decision.margin,
-                        "entropy": route_decision.entropy,
-                    },
-                    "attempt": attempt,
-                    "sufficiency_verdict": sufficiency.map(|verdict| {
-                        serde_json::json!({
-                            "status": verdict.status,
-                            "reason": verdict.reason,
-                        })
-                    }),
-                    "program_steps": program.steps.iter().map(program_step_json).collect::<Vec<_>>(),
-                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
-                })
-                .to_string(),
+                content: narrative,  // Plain text narrative, not JSON
             },
         ],
         temperature: critic_cfg.temperature,
