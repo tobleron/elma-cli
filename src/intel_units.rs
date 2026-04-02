@@ -49,6 +49,8 @@ impl IntelUnit for ComplexityAssessmentUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        append_trace_log_line(&format!("[INTEL_EXECUTE] unit={} model={}", self.name(), self.profile.model));
+        
         let req = ChatCompletionRequest {
             model: self.profile.model.clone(),
             messages: vec![
@@ -83,13 +85,25 @@ impl IntelUnit for ComplexityAssessmentUnit {
             grammar: None,
         };
 
+        append_trace_log_line(&format!("[INTEL_HTTP_START] url={} timeout={}s", self.profile.base_url, self.profile.timeout_s));
+        
+        let chat_url = Url::parse(&self.profile.base_url)
+            .map_err(|e| anyhow::anyhow!("Invalid base_url '{}': {}", self.profile.base_url, e))?
+            .join("/v1/chat/completions")
+            .map_err(|e| anyhow::anyhow!("Failed to build chat URL: {}", e))?;
+        
+        append_trace_log_line(&format!("[INTEL_HTTP_URL] final_url={}", chat_url));
+
+        // Use shared client from context instead of creating new one
         let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),  // Note: client should be passed in context or stored
-            &Url::parse(&self.profile.base_url).unwrap(),
+            &context.client,
+            &chat_url,
             &req,
             self.profile.timeout_s,
         ).await?;
 
+        append_trace_log_line(&format!("[INTEL_HTTP_DONE] unit={} received response", self.name()));
+        
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
 

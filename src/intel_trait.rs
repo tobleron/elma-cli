@@ -16,27 +16,30 @@ use crate::*;
 // ============================================================================
 
 /// Context passed to all intel units
-/// 
+///
 /// Provides standardized input structure for reasoning units.
 #[derive(Debug, Clone)]
 pub(crate) struct IntelContext {
     /// Original user message
     pub user_message: String,
-    
+
     /// Route decision with probability distributions
     pub route_decision: RouteDecision,
-    
+
     /// Workspace facts (file tree, recent files, etc.)
     pub workspace_facts: String,
-    
+
     /// Workspace brief (project summary, key files)
     pub workspace_brief: String,
-    
+
     /// Conversation excerpt (last N messages)
     pub conversation_excerpt: Vec<ChatMessage>,
-    
+
     /// Complexity assessment (may be set by prior unit)
     pub complexity: Option<ComplexityAssessment>,
+    
+    /// Shared HTTP client for all intel units (prevents connection pool exhaustion)
+    pub client: reqwest::Client,
 }
 
 impl IntelContext {
@@ -47,6 +50,7 @@ impl IntelContext {
         workspace_facts: String,
         workspace_brief: String,
         conversation_excerpt: Vec<ChatMessage>,
+        client: reqwest::Client,
     ) -> Self {
         Self {
             user_message,
@@ -55,9 +59,10 @@ impl IntelContext {
             workspace_brief,
             conversation_excerpt,
             complexity: None,
+            client,
         }
     }
-    
+
     /// Set complexity assessment (for units that depend on it)
     pub fn with_complexity(mut self, complexity: ComplexityAssessment) -> Self {
         self.complexity = Some(complexity);
@@ -464,25 +469,27 @@ mod tests {
                 entropy: 0.0,
             },
         };
-        
+
+        let client = reqwest::Client::new();
         let context = IntelContext::new(
             "test message".to_string(),
             route_decision.clone(),
             "workspace facts".to_string(),
             "workspace brief".to_string(),
             vec![],
+            client.clone(),
         );
-        
+
         assert_eq!(context.user_message, "test message");
         assert_eq!(context.route_decision.route, "CHAT");
         assert!(context.complexity.is_none());
-        
+
         let context_with_complexity = context.with_complexity(ComplexityAssessment {
             complexity: "DIRECT".to_string(),
             risk: "LOW".to_string(),
             ..ComplexityAssessment::default()
         });
-        
+
         assert!(context_with_complexity.complexity.is_some());
     }
 }

@@ -13,6 +13,13 @@ async fn chat_once_base(
     let mut effective_req = req.clone();
     let original_reasoning = req.reasoning_format.clone();
     effective_req.reasoning_format = effective_reasoning_format(req);
+    
+    // VERBOSE LOGGING for troubleshooting
+    append_trace_log_line(&format!(
+        "[HTTP_START] model={} url={} timeout={:?}s",
+        effective_req.model, chat_url, timeout_s
+    ));
+    
     if effective_req.reasoning_format != original_reasoning {
         append_trace_log_line(&format!(
             "trace: reasoning_format_override requested={} effective={} model={}",
@@ -27,17 +34,32 @@ async fn chat_once_base(
     let mut is_timeout = false;
 
     for attempt in 0..3u32 {
+        append_trace_log_line(&format!("[HTTP_ATTEMPT] attempt={}/3", attempt + 1));
+        
         let request_builder = client
             .post(chat_url.clone())
             .json(&effective_req)
             .timeout(Duration::from_secs(timeout_secs));
 
-        match request_builder.send().await {
-            Ok(resp) => {
+        append_trace_log_line(&format!("[HTTP_SEND] sending POST request..."));
+        
+        // Add explicit timeout wrapper for debugging
+        let send_future = request_builder.send();
+        let resp_result = tokio::time::timeout(
+            Duration::from_secs(timeout_secs + 10),
+            send_future
+        ).await;
+        
+        match resp_result {
+            Ok(Ok(resp)) => {
+                append_trace_log_line(&format!("[HTTP_RESPONSE] status={}", resp.status()));
                 let status = resp.status();
                 let text = resp.text().await.context("Failed to read response body")?;
+                append_trace_log_line(&format!("[HTTP_BODY] received {} bytes", text.len()));
+                
                 if !status.is_success() {
                     if status.is_server_error() && attempt < 2 {
+                        append_trace_log_line(&format!("[HTTP_RETRY] server error, retrying..."));
                         tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
                         last_error = format!("Server returned HTTP {status}: {text}");
                         continue;
@@ -50,9 +72,12 @@ async fn chat_once_base(
                 isolate_reasoning_fields(&mut parsed);
                 append_reasoning_audit_record(&effective_req, &parsed);
                 maybe_display_reasoning_trace(&parsed);
+                append_trace_log_line(&format!("[HTTP_SUCCESS] parsed response successfully"));
                 return Ok(parsed);
             }
-            Err(e) => {
+            Ok(Err(e)) => {
+                // HTTP request failed
+                append_trace_log_line(&format!("[HTTP_ERROR] {}", e));
                 if e.is_timeout() || e.to_string().contains("timeout") {
                     is_timeout = true;
                     last_error = format!("Model API timeout after {}s (attempt {}/{})", timeout_secs, attempt + 1, 3);
@@ -61,6 +86,19 @@ async fn chat_once_base(
                 }
 
                 if attempt < 2 {
+                    append_trace_log_line(&format!("[HTTP_RETRY] sleeping before retry..."));
+                    tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
+                    continue;
+                }
+            }
+            Err(_elapsed) => {
+                // tokio timeout elapsed
+                append_trace_log_line(&format!("[HTTP_TIMEOUT] tokio timeout after {}s", timeout_secs + 10));
+                is_timeout = true;
+                last_error = format!("Model API tokio timeout after {}s (attempt {}/{})", timeout_secs + 10, attempt + 1, 3);
+                
+                if attempt < 2 {
+                    append_trace_log_line(&format!("[HTTP_RETRY] sleeping before retry..."));
                     tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
                     continue;
                 }

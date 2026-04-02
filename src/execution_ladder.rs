@@ -217,13 +217,14 @@ pub async fn assess_execution_level(
     workspace_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<ExecutionLadderAssessment> {
-    // Build context for all units
+    // Build context for all units - pass shared client to prevent connection pool exhaustion
     let context = IntelContext::new(
         user_message.to_string(),
         route_decision.clone(),
         workspace_facts.to_string(),
         workspace_brief.to_string(),
         messages.to_vec(),
+        client.clone(),
     );
     
     // Run all 4 assessment units in parallel where possible
