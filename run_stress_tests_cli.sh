@@ -68,14 +68,14 @@ run_test() {
   echo "------------------------------------------"
   
   # Run through elma-cli (send prompt via echo pipe)
-  # Timeout set to 1800s (30 minutes) per test for complex tasks
-  # But Elma must verify progress - endless loops not allowed
-  echo "Starting test with 30-minute timeout (progress monitored)..."
+  # Timeout set to 180s (3 minutes) per test for normal tasks
+  # Complex tasks may need more time
+  echo "Starting test with 3-minute timeout (progress monitored)..."
   
   if command -v timeout &> /dev/null; then
-    timeout 1800 bash -c "echo '$prompt' | cargo run --quiet 2>&1" | head -300 || {
+    timeout 180 bash -c "echo '$prompt' | cargo run --quiet 2>&1" | head -300 || {
       echo ""
-      echo "⚠️ TIMEOUT (30-minute limit) - Elma may be stuck in a loop"
+      echo "⚠️ TIMEOUT (3-minute limit)"
     }
   else
     # macOS fallback: use background process with progress monitoring
@@ -89,11 +89,12 @@ run_test() {
     ELAPSED=0
     LAST_SIZE=0
     NO_PROGRESS_COUNT=0
-    MAX_NO_PROGRESS=10  # 10 checks with no progress = stuck
+    MAX_NO_PROGRESS=6  # 6 checks with no progress = stuck (6 minutes max)
+    MAX_ELAPSED=180  # Hard limit 3 minutes
     
     while kill -0 $PID 2>/dev/null; do
-      sleep 60  # Check every minute
-      ELAPSED=$((ELAPSED + 60))
+      sleep 30  # Check every 30 seconds
+      ELAPSED=$((ELAPSED + 30))
       
       # Check if test is still producing output (progress check)
       if [[ -f "$OUTPUT_FILE" ]]; then
@@ -103,7 +104,7 @@ run_test() {
           echo "⚠️ No progress detected ($NO_PROGRESS_COUNT/$MAX_NO_PROGRESS checks)"
           
           if [[ $NO_PROGRESS_COUNT -ge $MAX_NO_PROGRESS ]]; then
-            echo "❌ Elma appears stuck - no progress for 10 minutes"
+            echo "❌ Elma appears stuck - no progress for 3 minutes"
             echo "Terminating test..."
             kill $PID 2>/dev/null
             break
@@ -115,9 +116,9 @@ run_test() {
         fi
       fi
       
-      # Hard timeout at 30 minutes
-      if [[ $ELAPSED -ge 1800 ]]; then
-        echo "⚠️ 30-minute timeout reached"
+      # Hard timeout at 3 minutes
+      if [[ $ELAPSED -ge $MAX_ELAPSED ]]; then
+        echo "⚠️ 3-minute timeout reached"
         kill $PID 2>/dev/null
         break
       fi
