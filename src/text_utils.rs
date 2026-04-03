@@ -24,6 +24,26 @@ pub(crate) fn looks_like_path_token(s: &str) -> bool {
         || lower == "dockerfile"
 }
 
+fn existing_workspace_token(s: &str) -> Option<String> {
+    let t = s.trim_matches(|c: char| {
+        matches!(
+            c,
+            '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}'
+        )
+    });
+    if t.is_empty() || t.starts_with('-') {
+        return None;
+    }
+    if t.contains('/') || t.contains('\\') {
+        return None;
+    }
+    let candidate = std::path::Path::new(t);
+    if candidate.exists() {
+        return Some(t.to_string());
+    }
+    None
+}
+
 pub(crate) fn extract_first_path_from_user_text(line: &str) -> Option<String> {
     let trimmed_tokens = line
         .split_whitespace()
@@ -49,6 +69,11 @@ pub(crate) fn extract_first_path_from_user_text(line: &str) -> Option<String> {
                 .copied()
                 .find(|tok| looks_like_path_token(tok))
                 .map(str::to_string)
+        })
+        .or_else(|| {
+            trimmed_tokens
+                .iter()
+                .find_map(|tok| existing_workspace_token(tok))
         })
 }
 
@@ -196,6 +221,15 @@ mod tests {
         assert_eq!(
             normalized,
             "rg -i '^main' _stress_testing/_opencode_for_testing --glob '*.rs'"
+        );
+    }
+
+    #[test]
+    fn extract_first_path_detects_existing_workspace_directory_token() {
+        let line = "umm can u pls list src and dont overdo it";
+        assert_eq!(
+            extract_first_path_from_user_text(line).as_deref(),
+            Some("src")
         );
     }
 }

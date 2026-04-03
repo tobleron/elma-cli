@@ -22,6 +22,14 @@ fn should_apply_speech_chat_boost(workflow: &ProbabilityDecision) -> bool {
         || workflow.entropy > 0.50
 }
 
+fn top_non_chat_route(distribution: &[(String, f64)]) -> Option<String> {
+    distribution
+        .iter()
+        .filter(|(label, _)| label != "CHAT")
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(label, _)| label.clone())
+}
+
 fn fallback_probability_decision(
     choice: &str,
     pairs: &'static [(&'static str, &'static str)],
@@ -87,13 +95,16 @@ pub(crate) async fn infer_digit_router(
         .to_string();
 
     // Build distribution from JSON choice (not logprobs)
+    let other_count = (pairs.len() as f64 - 1.0).max(1.0);
+    let entropy_val = json_entropy.unwrap_or(0.0);
     let mut distribution: Vec<(String, f64)> = pairs
         .iter()
         .map(|(_, label)| {
             let p = if *label == chosen {
-                1.0 - json_entropy.unwrap_or(0.0)
+                1.0 - entropy_val
             } else {
-                0.0
+                // Distribute entropy among other choices
+                entropy_val / other_count
             };
             ((*label).to_string(), p)
         })
@@ -322,7 +333,29 @@ Conversation so far (most recent last):
     distribution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let margin = route_margin(&distribution);
     let entropy = route_entropy(&distribution);
-    let route = if speech_act.choice.eq_ignore_ascii_case("CHAT") && margin < 0.15 {
+    let path_scoped_request = extract_first_path_from_user_text(user_message).is_some();
+    let workflow_confident = workflow.choice.eq_ignore_ascii_case("WORKFLOW")
+        && workflow.margin >= 0.50
+        && workflow.entropy <= 0.40;
+    let speech_confident_chat = speech_act.choice.eq_ignore_ascii_case("CHAT")
+        && speech_act.margin >= 0.50
+        && speech_act.entropy <= 0.40;
+    let speech_confident_instruct = speech_act.choice.eq_ignore_ascii_case("INSTRUCT")
+        && speech_act.margin >= 0.50
+        && speech_act.entropy <= 0.40;
+
+    // PRINCIPLE: Under-execute when uncertain.
+    // If entropy is high (> 0.6) or margin is low (< 0.2), fallback to CHAT if speech act is CHAT.
+    let fallback_to_chat = (speech_act.choice.eq_ignore_ascii_case("CHAT")
+        && (margin < 0.20 || entropy > 0.60))
+        || (margin < 0.12); // Hard fallback for any case where we are absolutely guessing
+    let preserve_workflow_route = path_scoped_request
+        && (workflow_confident || speech_confident_instruct)
+        && !speech_confident_chat;
+
+    let route = if preserve_workflow_route {
+        top_non_chat_route(&distribution).unwrap_or_else(|| "SHELL".to_string())
+    } else if fallback_to_chat {
         "CHAT".to_string()
     } else {
         distribution
@@ -330,7 +363,12 @@ Conversation so far (most recent last):
             .map(|(label, _)| label.clone())
             .unwrap_or_else(|| "CHAT".to_string())
     };
-    let source = if speech_act.choice.eq_ignore_ascii_case("CHAT") && margin < 0.15 {
+    let source = if preserve_workflow_route {
+        format!(
+            "preserve_workflow_route speech:{} workflow:{} mode:{}",
+            speech_act.source, workflow.source, mode.source
+        )
+    } else if fallback_to_chat {
         format!(
             "conservative_chat_fallback speech:{} workflow:{} mode:{}",
             speech_act.source, workflow.source, mode.source
@@ -392,5 +430,15 @@ mod tests {
     fn speech_chat_boost_is_allowed_when_workflow_is_confident_chat() {
         let workflow = decision("CHAT", 0.0, 1.0);
         assert!(should_apply_speech_chat_boost(&workflow));
+    }
+
+    #[test]
+    fn top_non_chat_route_prefers_highest_non_chat_candidate() {
+        let distribution = vec![
+            ("CHAT".to_string(), 0.60),
+            ("SHELL".to_string(), 0.25),
+            ("DECIDE".to_string(), 0.15),
+        ];
+        assert_eq!(top_non_chat_route(&distribution).as_deref(), Some("SHELL"));
     }
 }

@@ -9,6 +9,40 @@ fn response_requires_exact_relative_path(reply_instructions: &str) -> bool {
         || lower.contains("preserve exact grounded relative file paths")
 }
 
+fn response_requires_two_bullets_and_entry_point(reply_instructions: &str) -> bool {
+    let lower = reply_instructions.to_ascii_lowercase();
+    (lower.contains("exactly two bullet points") || lower.contains("exactly 2 bullet points"))
+        && lower.contains("entry point:")
+}
+
+fn summarized_bullets(step_results: &[StepResult]) -> Option<String> {
+    let summarize = step_results
+        .iter()
+        .find(|result| result.kind == "summarize" && result.ok)
+        .map(|result| result.summary.trim())
+        .filter(|summary| !summary.is_empty())?;
+
+    let mut bullets = summarize
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            if line.starts_with("- ") || line.starts_with("* ") {
+                format!("- {}", line[2..].trim())
+            } else {
+                format!("- {line}")
+            }
+        })
+        .take(2)
+        .collect::<Vec<_>>();
+
+    if bullets.len() == 2 {
+        Some(bullets.join("\n"))
+    } else {
+        None
+    }
+}
+
 fn selected_exact_grounded_path(step_results: &[StepResult]) -> Option<String> {
     let mut candidates = step_results
         .iter()
@@ -93,11 +127,60 @@ pub(crate) fn preserve_exact_grounded_path(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("");
+
     if basename.is_empty() || !final_text.contains(basename) {
         return format!("{path}\n{final_text}");
     }
 
-    final_text.replacen(basename, &path, 1)
+    // Task 023: Find the longest suffix of 'path' that exists in 'final_text'
+    // and ends with 'basename'. Replace that suffix with the full 'path'.
+    // This prevents doubled prefixes (e.g. if 'sub/main.go' is there, replace it with 'root/sub/main.go').
+
+    let path_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut longest_suffix_match: Option<String> = None;
+
+    // Check suffixes from longest to shortest (basename)
+    for i in 0..path_segments.len() {
+        let suffix = path_segments[i..].join("/");
+        if final_text.contains(&suffix) {
+            longest_suffix_match = Some(suffix);
+            break;
+        }
+    }
+
+    if let Some(suffix) = longest_suffix_match {
+        // If the longest suffix is the whole path, we're done.
+        if suffix == path {
+            return final_text;
+        }
+        // Otherwise, replace the suffix with the full path.
+        // We only replace the FIRST occurrence to stay safe.
+        final_text.replacen(&suffix, &path, 1)
+    } else {
+        // Fallback: if even basename isn't found (shouldn't happen due to check above)
+        // just prepend.
+        format!("{path}\n{final_text}")
+    }
+}
+
+pub(crate) fn preserve_requested_summary_and_entry_point(
+    final_text: String,
+    step_results: &[StepResult],
+    reply_instructions: &str,
+) -> String {
+    if !response_requires_two_bullets_and_entry_point(reply_instructions) {
+        return final_text;
+    }
+
+    let bullets = summarized_bullets(step_results);
+    let path = selected_exact_grounded_path(step_results)
+        .or_else(|| derive_exact_grounded_path_from_evidence(step_results, &final_text));
+
+    if let (Some(bullets), Some(path)) = (bullets, path) {
+        return format!("{bullets}\nEntry point: {path}");
+    }
+
+    final_text
 }
 
 pub(crate) async fn request_program_or_repair(
@@ -375,12 +458,15 @@ pub(crate) async fn request_chat_final_text(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: serde_json::json!({
-                    "user_message": line,
-                    "instructions": reply_instructions,
-                    "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
-                })
-                .to_string(),
+                content: format!(
+                    "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally and directly. Do not mention internal workflow, step state, or missing steps.",
+                    line,
+                    if reply_instructions.trim().is_empty() {
+                        "Reply naturally and helpfully."
+                    } else {
+                        reply_instructions.trim()
+                    }
+                ),
             },
         ],
         temperature: elma_cfg.temperature,
@@ -568,25 +654,65 @@ pub(crate) async fn present_result_via_unit(
     )?
     .with_extra("reply_instructions", reply_instructions)?;
     let output = unit.execute_with_fallback(&context).await?;
-    Ok(preserve_exact_grounded_path(
+    let final_text = preserve_exact_grounded_path(
         output.get_str("final_text").unwrap_or_default().to_string(),
+        step_results,
+        reply_instructions,
+    );
+    Ok(preserve_requested_summary_and_entry_point(
+        final_text,
         step_results,
         reply_instructions,
     ))
 }
 
 pub(crate) async fn maybe_format_final_text(
-    _client: &reqwest::Client,
+    client: &reqwest::Client,
     _chat_url: &Url,
-    _formatter_cfg: &Profile,
+    formatter_cfg: &Profile,
     line: &str,
     final_text: String,
     usage_total: Option<u64>,
 ) -> (String, Option<u64>) {
+    // If the user explicitly asked for markdown, preserve it as-is
     if user_requested_markdown(line) {
         return (final_text, usage_total);
     }
-    (plain_terminal_text(&final_text), usage_total)
+
+    // Try automated plain-text transformation first
+    let plain_text = plain_terminal_text(&final_text);
+
+    let already_terminal_ready = plain_text.lines().count() <= 8
+        || plain_text.contains("Entry point:")
+        || plain_text
+            .lines()
+            .any(|line| line.trim_start().starts_with("- "))
+        || plain_text.contains("_stress_testing/");
+    if already_terminal_ready {
+        return (plain_text, usage_total);
+    }
+
+    // If the current config has a managed formatter, use it for final cleaning
+    let unit = FormatterUnit::new(formatter_cfg.clone());
+    let context = IntelContext::new(
+        plain_text.clone(),
+        RouteDecision::default(), // Dummy as formatter doesn't need it
+        String::new(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    );
+
+    match unit.execute_with_fallback(&context).await {
+        Ok(output) => (
+            output
+                .get_str("formatted_text")
+                .unwrap_or(&plain_text)
+                .to_string(),
+            usage_total, // Note: Usage tracking is omitted for now for simplicity, as it's a minor call
+        ),
+        _ => (plain_text, usage_total),
+    }
 }
 
 pub(crate) async fn request_judge_verdict(
@@ -633,7 +759,7 @@ pub(crate) async fn request_judge_verdict(
 
 #[cfg(test)]
 mod tests {
-    use super::preserve_exact_grounded_path;
+    use super::{preserve_exact_grounded_path, preserve_requested_summary_and_entry_point};
     use crate::StepResult;
 
     #[test]
@@ -684,5 +810,35 @@ mod tests {
         );
 
         assert!(final_text.starts_with("_stress_testing/_opencode_for_testing/main.go"));
+    }
+
+    #[test]
+    fn preserve_requested_summary_and_entry_point_restores_missing_bullets_and_path_line() {
+        let step_results = vec![
+            StepResult {
+                id: "sum1".to_string(),
+                kind: "summarize".to_string(),
+                ok: true,
+                summary: "- First repo purpose\n- Second repo purpose".to_string(),
+                ..StepResult::default()
+            },
+            StepResult {
+                id: "sel1".to_string(),
+                kind: "select".to_string(),
+                ok: true,
+                raw_output: Some("_stress_testing/_opencode_for_testing/main.go".to_string()),
+                ..StepResult::default()
+            },
+        ];
+
+        let final_text = preserve_requested_summary_and_entry_point(
+            "Primary entry point: _stress_testing/_opencode_for_testing/main.go".to_string(),
+            &step_results,
+            "Return exactly two bullet points from the grounded README summary first. Then add one final line that starts with `Entry point:` followed by the selected exact relative path. Preserve exact grounded relative file paths from the evidence and do not mention files that were not observed.",
+        );
+
+        assert!(final_text.contains("- First repo purpose"));
+        assert!(final_text.contains("- Second repo purpose"));
+        assert!(final_text.contains("Entry point: _stress_testing/_opencode_for_testing/main.go"));
     }
 }

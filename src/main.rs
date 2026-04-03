@@ -62,6 +62,7 @@ mod orchestration_loop_helpers;
 mod orchestration_loop_reviewers;
 mod orchestration_planning;
 mod orchestration_retry;
+mod orchestration_retry_tests;
 mod paths;
 mod profile_sets;
 mod program;

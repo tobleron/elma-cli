@@ -184,6 +184,27 @@ pub(crate) fn sync_and_upgrade_profiles(
     )?;
     sync_managed_profile(
         args,
+        &model_cfg_dir.join("result_presenter.toml"),
+        &mut profiles.result_presenter_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("claim_checker.toml"),
+        &mut profiles.claim_checker_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("formatter.toml"),
+        &mut profiles.formatter_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
         &model_cfg_dir.join("status_message_generator.toml"),
         &mut profiles.status_message_cfg,
         base_url,

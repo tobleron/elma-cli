@@ -1347,6 +1347,76 @@ impl IntelUnit for ExpertResponderUnit {
 }
 
 // ============================================================================
+// Formatter Unit
+// ============================================================================
+
+/// Formatter Intel Unit
+///
+/// Cleans up and structures the final response for terminal display.
+pub(crate) struct FormatterUnit {
+    profile: Profile,
+}
+
+impl FormatterUnit {
+    pub fn new(profile: Profile) -> Self {
+        Self { profile }
+    }
+}
+
+impl IntelUnit for FormatterUnit {
+    fn name(&self) -> &'static str {
+        "formatter"
+    }
+
+    fn profile(&self) -> &Profile {
+        &self.profile
+    }
+
+    fn pre_flight(&self, context: &IntelContext) -> Result<()> {
+        if context.user_message.trim().is_empty() {
+            return Err(anyhow::anyhow!("Empty input text"));
+        }
+        Ok(())
+    }
+
+    async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        // Formatter uses text-out task logic but for the "user_message" content which is the draft to format
+        let result = execute_intel_text_from_user_content(
+            &context.client,
+            &self.profile,
+            context.user_message.clone(),
+        )
+        .await?;
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::json!({ "formatted_text": result }),
+            0.9,
+        ))
+    }
+
+    fn post_flight(&self, output: &IntelOutput) -> Result<()> {
+        if output.get("formatted_text").is_none() {
+            return Err(anyhow::anyhow!("Missing 'formatted_text' field"));
+        }
+        Ok(())
+    }
+
+    fn fallback(&self, context: &IntelContext, error: &str) -> Result<IntelOutput> {
+        trace_fallback(self.name(), error);
+
+        Ok(IntelOutput::fallback(
+            self.name(),
+            serde_json::json!({
+                "formatted_text": context.user_message.clone(),
+                "reason": "fallback: return original text",
+            }),
+            &format!("formatter failed: {}", error),
+        ))
+    }
+}
+
+// ============================================================================
 // Status Message Unit
 // ============================================================================
 
@@ -1687,7 +1757,6 @@ impl IntelUnit for EvidenceNeedsClassifierUnit {
     }
 }
 
-/// Action Needs Classifier Intel Unit (atomic - 2 related outputs)
 pub(crate) struct ActionNeedsClassifierUnit {
     profile: Profile,
 }

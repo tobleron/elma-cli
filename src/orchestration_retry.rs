@@ -97,6 +97,17 @@ pub(crate) async fn orchestrate_with_retries(
             ),
         );
 
+        trace(
+            args,
+            &format!(
+                "orchestration_retry_attempt id={} strategy={:?} temp={:.2} use_initial={}",
+                attempt + 1,
+                strategy,
+                temperature,
+                use_initial_program
+            ),
+        );
+
         let retry_program = if use_initial_program {
             initial_program.clone()
         } else {
@@ -118,6 +129,26 @@ pub(crate) async fn orchestrate_with_retries(
             )
             .await?
         };
+
+        // Check for stale program generation
+        let is_stale =
+            !use_initial_program && attempt_history.iter().any(|(_, p, _)| p == &retry_program);
+        if is_stale {
+            trace(
+                args,
+                "orchestrator_stale_program=true reason=Generated program is identical to a previously failed attempt",
+            );
+            show_intel_summary(
+                args.show_process,
+                &format!("Attempt {} generated a stale program (identical to a previous failure). Switching strategy.", attempt + 1),
+            );
+            attempt_history.push((
+                attempt,
+                retry_program.clone(),
+                "STALE_PROGRAM: Strategy generated an identical program to a previously failed attempt".to_string(),
+            ));
+            continue;
+        }
 
         // Execute the program
         let outcome = run_autonomous_loop(

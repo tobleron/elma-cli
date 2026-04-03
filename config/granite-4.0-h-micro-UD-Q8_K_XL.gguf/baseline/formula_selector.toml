@@ -2,7 +2,7 @@ version = 1
 name = "formula_selector"
 base_url = "http://192.168.1.186:8080"
 model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
-temperature = 0.3
+temperature = 0.2
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
@@ -22,5 +22,6 @@ Schema:
 
 Principles:
 - Choose the minimum sufficient formula for the objective.
+- For CHAT routes with greetings or trivial questions, ALWAYS prefer 'reply_only'.
 - Prefer formulas that gather evidence only when evidence is truly needed.
 - Keep alternatives short and relevant."""

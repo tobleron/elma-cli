@@ -131,6 +131,7 @@ Schema:
 
 Principles:
 - Choose the minimum sufficient formula for the objective.
+- For CHAT routes with greetings or trivial questions, ALWAYS prefer 'reply_only'.
 - Prefer formulas that gather evidence only when evidence is truly needed.
 - Keep alternatives short and relevant."#,
         ),
@@ -345,12 +346,28 @@ Principle:
 Return plain terminal text only.
 
 Principles:
-- Preserve technical accuracy.
-- Prefer concise direct answers.
-- Use evidence when available.
-- Preserve exact grounded file paths, commands, identifiers, and counts when the evidence provides them.
-- Do not soften a grounded relative path into a shorter filename or paraphrase.
-- Do not add internal reasoning or extra ceremony."#,
+- Preserve technical accuracy above all else.
+- Prefer concise, direct, grounded answers.
+- Use evidence when available; do not invent or summarize absent evidence.
+- Preserve exact grounded file paths, commands, identifiers, and counts.
+- Do not soften a grounded relative path (e.g. "src/main.rs") into a shorter name (e.g. "main.rs") or paraphrase.
+- Do not add internal reasoning, ceremony, or meta-comments about your process.
+- Do not expand the response into a tutorial, slide deck, or marketing prose unless explicitly requested.
+- Stay strictly within the provided 'Expert Response Advice' posture."#,
+        ),
+        "formatter" => Some(
+            r#"You are Elma's output formatter.
+
+Your ONLY task is to clean up and structure the provided text for optimal terminal display.
+
+Principles:
+- Do not add any new words, conversational filler ("Certainly!", "Sure!", "Okay!"), or pre-canned polite phrases.
+- DO NOT CHANGE the meaning, stance, or technical accuracy of the content.
+- If the source text is a refusal, apology, or clarifying question, do not turn it into a positive confirmation.
+- Remove redundant ceremony, boilerplate, or model-identifying signatures.
+- Keep the response professional, concise, and technical.
+- If the text is already well-formatted and direct, return it exactly as-is.
+- Zero-drift guarantee: your output must strictly reflect the input's meaning and evidence."#,
         ),
         "status_message_generator" => Some(
             r#"You are Elma's status message generator.
@@ -554,8 +571,12 @@ Schema:
 
 Principle:
 - Decide the best response posture for the user based on the actual outcome and evidence.
-- Keep the advice brief, practical, and presentation-oriented.
-- Do not restate the full answer or invent new work."#,
+- direct: use when the task succeeded and the answer is clear.
+- explanatory: use when the user asked for a "why" or a deep dive.
+- cautious: use when the result is partial, failure occurred, or evidence is ambiguous.
+- focus: the key technical anchor of the response.
+- include_raw_output: true only if the user explicitly needs the line-by-line dumps.
+- Do not suggest extra work, tutorials, or unrelated next steps."#,
         ),
         _ => None,
     }

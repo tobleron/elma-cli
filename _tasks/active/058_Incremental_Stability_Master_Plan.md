@@ -59,18 +59,28 @@ Elma is **on the right track**, but the repo is now in a **mid-transition state*
 
 Use this order as the authoritative execution sequence. Do **not** prioritize by old filename numbers.
 
+Note on legacy numbering:
+- The active stress-harness task uses `064` while a pending cleanup file also historically uses `064`.
+- In this master plan, refer to the cleanup work by name first: `Cleanup dead code, legacy modules, and duplicate orchestration paths`.
+
 ### Phase A: Truthfulness and Reliability Closure
-- [ ] **Task 061** - Role-based temperature and retry strategy calibration
-- [ ] **Task 062** - Final answer presentation and formatting reliability
-- [ ] **Task 063** - Real CLI stress harness and reliability gates
+- [x] **Task 061** - Role-based temperature and retry strategy calibration (Phase A: RELIABILITY)
+    - [x] Detect and reject stale programs (identical repeat attempts).
+    - [x] Skip compactor/selector units when execution fails.
+    - [x] Implement role-based temperature policy (0.0 for logic, 0.3 for presentation).
+    - [x] Verifier unit tests added for Program equality.
+- [x] Task 062: Final Answer Presentation and Formatting Reliability (2026-04-03)
+- [x] Task 063: Greeting & Orchestration Hardening (resolved "weird response" to "hi") (2026-04-03)
+- [ ] Task 064: CLI-grounded stress runner and human-style reliability gates
+  - Current blocker: sloppy-human semantic continuity on casual self-description and combined `README + 2 bullets + exact entry point` prompts
+- [ ] Cleanup dead code, legacy modules, and duplicate orchestration paths (pending file currently numbered `064`)
+- [ ] Task 065: Improve crash reporting and verify fatal-path coverage
+- [ ] Task 066: Finish hard caps and batching for read/search/summarize/shell evidence
+- [ ] Task 067: Refinement-loop hardening
+- [ ] Task 068: Full multi-turn goal execution
+- [ ] Task 069: Runtime profile validation and config healthcheck
 - [ ] **Task 094** - Snapshot coverage for shell mutations and rollback integrity
 - [ ] **Task 093** - Hybrid masterplan and phase-implementation reliability
-- [ ] **Task 064** - Cleanup dead code, legacy modules, and duplicate orchestration paths
-- [ ] **Task 065** - Finish crash-reporting integration and verify fatal-path coverage
-- [ ] **Task 066** - Finish hard caps and batching for read/search/summarize/shell evidence
-- [ ] **Task 067** - Reframe as refinement-loop hardening, not first implementation
-- [ ] **Task 068** - Reframe as full multi-turn goal execution, not just goal-state storage
-- [ ] **Task 069** - Runtime profile validation and config healthcheck
 
 ### Phase B: Context Efficiency for Local Models
 - [ ] **Task 087** - llama.cpp runtime token telemetry
@@ -107,6 +117,73 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 
 ## Current Master Checklist
 
+### Authoritative Next Pending Tasks
+Work these in this exact order unless a newly discovered runtime failure proves a lower task is blocking a higher one.
+
+1. [ ] **Task 064** - Real CLI Stress Harness And Reliability Gates
+   - Close casual self-description drift so Elma identifies herself consistently in messy human chat.
+   - Close the bounded sloppy prompt that asks for README purpose plus exact entry-point path.
+   - Re-run `H001`, `H002`, `H003`, then resume the `_stress_testing` ladder from the first honest remaining failure.
+   - Exit criterion:
+     - `H001`, `H002`, `H003` pass through real `cargo run`
+     - the harness surfaces only real remaining failures
+
+2. [ ] **Task 069** - Runtime Profile Validation And Config Healthcheck
+   - Validate all managed/runtime-loaded profile TOMLs at startup.
+   - Detect malformed or partial profile files and repair/reseed safely when possible.
+   - Add an explicit startup report so config drift is visible instead of failing mid-session.
+   - Exit criterion:
+     - no transient profile parse failure can kill a normal CLI session silently
+
+3. [ ] **Task 066** - Hard Caps And Batching For Read/Search/Summarize/Shell Evidence
+   - Unify evidence budgets across read/search/shell/summarize.
+   - Prevent large-output prompts from degrading into formatter/presenter corruption.
+   - Keep compaction truthful and bounded for small local models.
+   - Exit criterion:
+     - long evidence tasks stay grounded without context blow-up or silent truncation drift
+
+4. [ ] **Task 067** - Refinement-Loop Hardening
+   - Stop stale retries and low-signal re-execution loops.
+   - Make recovery programs meaningfully different from failed ones.
+   - Improve failure typing so refinement only triggers when it truly helps.
+   - Exit criterion:
+     - retry paths no longer repeat equivalent bad shell/program patterns
+
+5. [ ] **Task 093** - Hybrid Masterplan And Phase-Implementation Reliability
+   - Generalize the successful `S005` slice beyond one audit-log scenario.
+   - Ensure “plan strategically, implement Phase 1 now” works as a real reusable pattern.
+   - Exit criterion:
+     - multiple hybrid masterplan prompts execute with grounded Phase-1 implementation
+
+6. [ ] **Task 094** - Snapshot Coverage For Shell Mutations And Rollback Integrity
+   - Extend automatic snapshots to shell-based file mutations, not only structured `Edit` steps.
+   - Verify rollback integrity after mixed `Shell` + `Edit` workflows.
+   - Exit criterion:
+     - all file-mutating paths are rollback-safe by default
+
+7. [ ] **Task 068** - Full Multi-Turn Goal Execution
+   - Promote the current goal scaffolding into a real multi-turn continuation loop.
+   - Carry unfinished subgoals forward safely without degrading short single-turn reliability.
+   - Exit criterion:
+     - Elma can resume bounded multi-turn work without losing grounded state
+
+8. [ ] **Cleanup task** - Dead Code, Legacy Modules, And Duplicate Orchestration Paths
+   - Pending file: [064_Cleanup_Dead_Code_And_Legacy_Modules.md](/Users/r2/elma-cli/_tasks/pending/064_Cleanup_Dead_Code_And_Legacy_Modules.md)
+   - Remove obsolete paths only after live callers are proven gone.
+   - Shrink architectural drag after the runtime behavior stabilizes.
+   - Exit criterion:
+     - no dead duplicate runtime path remains on the production call graph
+
+9. [ ] **Task 065** - Improve Crash Reporting And Verify Fatal-Path Coverage
+   - Finish true panic/fatal-path integration.
+   - Guarantee actionable local failure artifacts.
+   - Exit criterion:
+     - crashes always produce inspectable session evidence and clear recovery clues
+
+10. [ ] **Phase B** - Context Efficiency For Local Models
+    - Start only after the Phase A queue above is substantially green.
+    - Begin with Task 087, then 088, then 089, then Task 070, then the remaining Phase B tasks in order.
+
 ### Completed In This Masterplan Thread
 - [x] Repository-wide architectural audit completed
 - [x] Success-node / failure-node assessment completed
@@ -131,6 +208,9 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 - [x] Stress-testing prompts sandboxed to `_stress_testing/` targets
 - [x] Stress-test runners now reject prompts that do not anchor to `_stress_testing/`
 - [x] Stress-testing sandbox contract documented in `_stress_testing/README.md`
+- [x] Task 061 moved to completed with calibrated retry / temperature policy work
+- [x] Task 062 moved to completed with formatter / presentation hardening
+- [x] Troubleshooting task T059 moved to completed after direct-shell and baseline CLI stabilization
 
 ### Immediate Next Execution Targets
 - [x] Archive finished active task `006_Extend_Narrative_To_All_Intel_Units`
@@ -159,7 +239,13 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 - [ ] Start the sandboxed CLI stress ladder against `_stress_testing` prompts
 - [x] Verify stress-suite runner behavior against the rewritten `_stress_testing` prompts
 - [x] Add explicit sandbox expectations to the stress-test runner and/or docs if needed
+- [x] Start real CLI-grounded semantic gating for stress prompts inside the harness
+- [x] Close the remaining `S000B` live path-grounding seam so the harness can advance beyond the first honest failure
 - [ ] Run the CLI stress ladder incrementally against the sandbox-anchored prompts
+- [x] Seed the sloppy-human stress mini-suite (`H001`-`H003`) and use it to expose post-`intent_helper` semantic continuity failures
+- [ ] Close the remaining sloppy-human semantic continuity seams:
+  - Elma identity/self-description drift on casual chat
+  - combined bounded README-summary-plus-entry-point prompt still loses truthfulness in the summary/finalization path
 
 ### Done Criteria For This Masterplan
 - [ ] Phase A complete

@@ -80,6 +80,10 @@ Record:
 
 ## Suggested Implementation Order
 1. Add a small number of sloppy variants for one or two primitive stress prompts.
+   - Initial seed suite created:
+     - `H001_Sloppy_Chat_Greeting.md`
+     - `H002_Sloppy_Casual_Shell_Request.md`
+     - `H003_Sloppy_Multi_Instruction_Bounded.md`
 2. Add controlled A/B execution mode for `intent_helper`.
 3. Produce a comparison report format.
 4. Expand to broader primitive coverage only after the first slice is stable.

@@ -1,4 +1,4 @@
-# Task 063: Real CLI Stress Harness And Reliability Gates
+# Task 064: Real CLI Stress Harness And Reliability Gates
 
 ## Priority
 **P0 - VERIFICATION INFRASTRUCTURE**
@@ -75,3 +75,35 @@ The project already has stress prompts and scenario runners, but recent debuggin
   - 3-bullet summary prompts now fail if the final answer is not actually 3 bullets
   - candidate-selection prompts now fail if the final answer does not contain the requested number of grounded file candidates
 - The first honest failure after these gates is `S000B`, which confirms the harness is now surfacing a real runtime-quality seam instead of masking it.
+- The current remaining live seam is narrower than before:
+  - the `S000B` workflow now reaches a grounded 4-step evidence path in the real CLI
+  - targeted tests for exact-path preservation and exact-selection retry suppression now pass
+  - selector normalization now prefers the shallow grounded path when basename matches are ambiguous
+  - live CLI `S000B` now returns `_stress_testing/_opencode_for_testing/main.go`
+  - the next stress-harness step is to rerun the CLI ladder and capture the first honest failure after `S000B`
+
+## Additional Ad Hoc CLI Findings
+- Real human-style probing outside the formal stress prompts still exposes reliability gaps:
+  - sloppy greeting `yo elma u there??` returned `No steps observed for this request.` instead of a normal conversational greeting
+  - casual self-description prompt `sup buddy just tell me what u do real quick` returned a generic `AI language model providing quick assistance and information.` answer, which is stable but too generic for Elma's intended identity
+  - casual shell-style request `umm can u pls list src and dont overdo it` under-executed into a direct answer with incorrect file names like `src/config.rs` and `src/util.rs`, which indicates a real human-phrasing route/grounding seam outside the formal stress ladder
+  - a bounded multi-instruction sandbox request incorrectly routed to `CHAT` and hallucinated a repo purpose plus `scripts/run_stress_test.sh` as the entry point, proving that multi-instruction natural-language requests are still not reliably classified into evidence-grounded workflows
+- These findings confirm Elma is structurally much stronger than before, but not yet robust enough against sloppy human phrasing to claim broad conversational reliability.
+
+## Latest Progress
+- Human-style prompt handling improved materially:
+  - sloppy greeting `yo elma u there?? just say hi normal plz` now returns a normal conversational `Hello.` instead of the old meta-runtime failure text.
+  - casual scoped listing `umm can u pls list src and dont overdo it` now runs a bounded grounded 2-step list workflow (`ls -1 src | head -n 80` + reply) instead of hallucinating nonexistent files.
+  - path-scoped multi-instruction requests no longer take the direct chat fast path automatically; they now build a bounded evidence workflow instead.
+- Runtime profile/config writes are now atomic, which reduces transient parse failures during concurrent profile sync/load activity.
+- A new combined bounded workflow exists for:
+  - read README
+  - produce exactly 2 bullets
+  - identify the primary entry point by exact path
+  - no modification
+
+## Current Honest Remaining Seams
+- The combined sloppy multi-instruction sandbox prompt is still not fully reliable end to end:
+  - it now executes the grounded workflow instead of collapsing immediately to pure chat
+  - but the README-summary phase can still drift semantically, and the final answer is not yet consistently preserving both the requested 2-bullet purpose summary and the exact entry-point path together
+- Casual self-description prompts still drift into a generic identity response instead of a stable Elma-specific self-description.

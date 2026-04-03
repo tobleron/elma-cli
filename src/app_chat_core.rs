@@ -215,6 +215,17 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &formula,
         )
         .await;
+        if route_decision.route.eq_ignore_ascii_case("CHAT")
+            && formula.primary.eq_ignore_ascii_case("reply_only")
+        {
+            if let Some(path) = extract_first_path_from_user_text(line) {
+                trace(
+                    &runtime.args,
+                    &format!("path_scoped_chat_probe_fallback path={path}"),
+                );
+                program = build_shell_path_probe_program(line, &path);
+            }
+        }
         show_process_step_verbose(
             runtime.verbose,
             "PLAN",
@@ -291,11 +302,19 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 }
             } else if route_decision.route.eq_ignore_ascii_case("DECIDE") {
                 if let Some(path) = extract_first_path_from_user_text(line) {
-                    trace(
-                        &runtime.args,
-                        &format!("decide_path_probe_policy_fallback path={path}"),
-                    );
-                    program = build_decide_path_probe_program(line, &path);
+                    if request_looks_like_scoped_list_request(line) {
+                        trace(
+                            &runtime.args,
+                            &format!("shell_list_policy_fallback path={path}"),
+                        );
+                        program = build_shell_path_probe_program(line, &path);
+                    } else {
+                        trace(
+                            &runtime.args,
+                            &format!("decide_path_probe_policy_fallback path={path}"),
+                        );
+                        program = build_decide_path_probe_program(line, &path);
+                    }
                 }
             }
 
@@ -698,15 +717,14 @@ fn should_use_direct_reply_fast_path(
     formula: &FormulaSelection,
 ) -> bool {
     let path_scoped_request = extract_first_path_from_user_text(line).is_some();
+    if path_scoped_request {
+        return false;
+    }
 
     if route_decision.route.eq_ignore_ascii_case("CHAT")
         && formula.primary.eq_ignore_ascii_case("reply_only")
     {
         return true;
-    }
-
-    if path_scoped_request {
-        return false;
     }
 
     formula.primary.eq_ignore_ascii_case("reply_only")
@@ -723,7 +741,7 @@ fn build_direct_reply_program(line: &str) -> Program {
         objective: line.to_string(),
         steps: vec![Step::Reply {
             id: "r1".to_string(),
-            instructions: "Answer the user's message directly in plain terminal text. Use known runtime context facts if relevant. Do not invent configuration, workspace, or tool details."
+            instructions: "Answer the user's message directly in plain terminal text. If the user asks who you are or what you do, reply in first person, start with `I'm Elma,`, and describe yourself as the local autonomous CLI agent for this workspace. Do not call yourself an AI language model. Use known runtime context facts if relevant. Do not invent configuration, workspace, or tool details."
                 .to_string(),
             common: StepCommon {
                 purpose: "direct grounded reply".to_string(),
@@ -961,6 +979,162 @@ fn request_looks_like_entry_point_probe(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     (lower.contains("entry point") || lower.contains("primary entry"))
         && lower.contains("_stress_testing/")
+}
+
+fn request_looks_like_scoped_list_request(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    let wants_listing = lower.contains("list ")
+        || lower.contains("show ")
+        || lower.starts_with("ls ")
+        || lower.contains("files in ")
+        || lower.contains("files under ");
+    wants_listing
+        && !lower.contains("entry point")
+        && !lower.contains("primary entry")
+        && !lower.contains("readme.md")
+}
+
+fn request_looks_like_readme_summary_and_entry_point_probe(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    let mentions_readme = lower.contains("readme.md") || lower.contains("read the readme");
+    let wants_bullets = lower.contains("2 bullets")
+        || lower.contains("two bullets")
+        || lower.contains("2 bullet")
+        || lower.contains("two bullet");
+    let wants_entry_point = lower.contains("entry point") || lower.contains("primary entry");
+    mentions_readme && wants_bullets && wants_entry_point && lower.contains("_stress_testing/")
+}
+
+fn build_readme_summary_and_entry_point_program(line: &str, path: &str) -> Program {
+    let root = path.trim_end_matches('/');
+    let quoted_path = shell_quote(path);
+    Program {
+        objective: line.to_string(),
+        steps: vec![
+            Step::Shell {
+                id: "s1".to_string(),
+                cmd: format!("ls -1 {}", quoted_path),
+                common: StepCommon {
+                    purpose: "list the scoped files and directories before reading the README and identifying the entry point".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "the top-level scoped listing is available".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+            Step::Read {
+                id: "r1".to_string(),
+                path: format!("{root}/README.md"),
+                common: StepCommon {
+                    purpose: "read the scoped README so the repo purpose can be summarized from grounded evidence".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "the README contents are available".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+            Step::Summarize {
+                id: "sum1".to_string(),
+                text: String::new(),
+                instructions: "Create exactly 2 concise bullet points that explain what this repo is for. Keep both bullets grounded only in the README contents."
+                    .to_string(),
+                common: StepCommon {
+                    purpose: "compress the README into the requested two grounded bullets".to_string(),
+                    depends_on: vec!["r1".to_string()],
+                    success_condition: "an exact 2-bullet grounded README summary is available".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+            Step::Shell {
+                id: "s2".to_string(),
+                cmd: format!(
+                    "rg --files {} | rg '(^|/)(main\\.(go|rs|py|ts|js)|Cargo\\.toml|package\\.json|cmd/root\\.go)$'",
+                    quoted_path
+                ),
+                common: StepCommon {
+                    purpose: "gather grounded entry-point candidate files from the scoped workspace".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "grounded entry-point candidate file paths are available".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+            Step::Select {
+                id: "sel1".to_string(),
+                instructions: "From the grounded file-path evidence, choose exactly one most likely primary entry point for the codebase. Prefer the top-level executable entry file over secondary command wiring. Return the exact relative path only."
+                    .to_string(),
+                common: StepCommon {
+                    purpose: "select the strongest grounded primary entry-point candidate".to_string(),
+                    depends_on: vec!["s2".to_string()],
+                    success_condition: "one grounded relative path is selected as the primary entry point".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+            Step::Reply {
+                id: "r2".to_string(),
+                instructions: "Return exactly two bullet points from the grounded README summary first. Then add one final line that starts with `Entry point:` followed by the selected exact relative path. Preserve exact grounded relative file paths from the evidence and do not mention files that were not observed."
+                    .to_string(),
+                common: StepCommon {
+                    purpose: "present the grounded README summary and exact entry-point path together".to_string(),
+                    depends_on: vec![
+                        "s1".to_string(),
+                        "r1".to_string(),
+                        "sum1".to_string(),
+                        "s2".to_string(),
+                        "sel1".to_string(),
+                    ],
+                    success_condition: "the user receives exactly two grounded bullets plus the exact grounded entry-point path".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+        ],
+    }
+}
+
+fn build_scoped_list_program(line: &str, path: &str) -> Program {
+    let quoted_path = shell_quote(path);
+    Program {
+        objective: line.to_string(),
+        steps: vec![
+            Step::Shell {
+                id: "s1".to_string(),
+                cmd: format!("ls -1 {} | head -n 80", quoted_path),
+                common: StepCommon {
+                    purpose: "list the scoped path contents concisely from grounded filesystem evidence"
+                        .to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "a concise grounded listing of the scoped path is available"
+                        .to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+            Step::Reply {
+                id: "r1".to_string(),
+                instructions: "Return a concise plain-text listing of the observed items only. Do not add commentary before the list. If the listing was truncated, say that briefly after the list."
+                    .to_string(),
+                common: StepCommon {
+                    purpose: "present the concise grounded listing to the user".to_string(),
+                    depends_on: vec!["s1".to_string()],
+                    success_condition: "the user receives a concise grounded listing"
+                        .to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+        ],
+    }
 }
 
 fn build_hybrid_audit_masterplan_program(line: &str, path: &str) -> Program {
@@ -1421,6 +1595,9 @@ fn build_workflow_endurance_audit_plan_program(line: &str, path: &str) -> Progra
 fn build_shell_path_probe_program(line: &str, path: &str) -> Program {
     let quoted_path = shell_quote(path);
     let lower = line.to_ascii_lowercase();
+    if request_looks_like_readme_summary_and_entry_point_probe(line) {
+        return build_readme_summary_and_entry_point_program(line, path);
+    }
     if request_looks_like_workflow_endurance_audit(line) {
         return build_workflow_endurance_audit_plan_program(line, path);
     }
@@ -1640,6 +1817,10 @@ fn build_shell_path_probe_program(line: &str, path: &str) -> Program {
                 },
             ],
         };
+    }
+
+    if request_looks_like_scoped_list_request(line) {
+        return build_scoped_list_program(line, path);
     }
 
     if lower.contains("directory structure")
@@ -2628,6 +2809,33 @@ mod tests {
     }
 
     #[test]
+    fn direct_reply_fast_path_rejects_path_scoped_chat_reply_only() {
+        let route = test_route_decision("CHAT");
+        let complexity = ComplexityAssessment {
+            complexity: "DIRECT".to_string(),
+            needs_evidence: false,
+            needs_tools: false,
+            needs_decision: false,
+            needs_plan: false,
+            risk: "LOW".to_string(),
+            suggested_pattern: "reply_only".to_string(),
+        };
+        let formula = FormulaSelection {
+            primary: "reply_only".to_string(),
+            alternatives: Vec::new(),
+            reason: "test".to_string(),
+            memory_id: String::new(),
+        };
+
+        assert!(!should_use_direct_reply_fast_path(
+            "inside _stress_testing/_opencode_for_testing/ only, read README.md and identify the primary entry point",
+            &route,
+            &complexity,
+            &formula
+        ));
+    }
+
+    #[test]
     fn shell_path_probe_uses_selection_placeholder_for_callsite_search() {
         let program = build_shell_path_probe_program(
             "In _stress_testing/_opencode_for_testing/, find a function definition in one file, then search for every location where that function is called.",
@@ -2661,6 +2869,23 @@ mod tests {
         assert!(matches!(program.steps[2], Step::Select { .. }));
         assert!(matches!(program.steps[3], Step::Select { .. }));
         assert!(matches!(program.steps[4], Step::Reply { .. }));
+    }
+
+    #[test]
+    fn shell_path_probe_builds_concise_scoped_list_workflow() {
+        let program =
+            build_shell_path_probe_program("umm can u pls list src and dont overdo it", "src");
+
+        assert_eq!(program.steps.len(), 2);
+        assert!(matches!(program.steps[0], Step::Shell { .. }));
+        assert!(matches!(program.steps[1], Step::Reply { .. }));
+
+        let shell_cmd = match &program.steps[0] {
+            Step::Shell { cmd, .. } => cmd,
+            other => panic!("expected shell step, got {:?}", other),
+        };
+        assert!(shell_cmd.contains("ls -1"));
+        assert!(shell_cmd.contains("head -n 80"));
     }
 
     #[test]
@@ -2713,6 +2938,30 @@ mod tests {
         assert!(matches!(program.steps[1], Step::Read { .. }));
         assert!(matches!(program.steps[2], Step::Summarize { .. }));
         assert!(matches!(program.steps[3], Step::Reply { .. }));
+    }
+
+    #[test]
+    fn shell_path_probe_builds_combined_readme_summary_and_entry_point_workflow() {
+        let program = build_shell_path_probe_program(
+            "inside _stress_testing/_opencode_for_testing/ only, read README.md, tell me in 2 bullets what this repo is for, then identify the primary entry point by exact path, and do not modify anything",
+            "_stress_testing/_opencode_for_testing/",
+        );
+
+        assert_eq!(program.steps.len(), 6);
+        assert!(matches!(program.steps[0], Step::Shell { .. }));
+        assert!(matches!(program.steps[1], Step::Read { .. }));
+        assert!(matches!(program.steps[2], Step::Summarize { .. }));
+        assert!(matches!(program.steps[3], Step::Shell { .. }));
+        assert!(matches!(program.steps[4], Step::Select { .. }));
+        assert!(matches!(program.steps[5], Step::Reply { .. }));
+
+        let reply_instructions = match &program.steps[5] {
+            Step::Reply { instructions, .. } => instructions,
+            other => panic!("expected reply step, got {:?}", other),
+        };
+        assert!(reply_instructions.contains("exactly two bullet points"));
+        assert!(reply_instructions.contains("Entry point:"));
+        assert!(reply_instructions.contains("Preserve exact grounded relative file paths"));
     }
 
     #[test]

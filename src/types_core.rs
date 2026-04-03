@@ -653,7 +653,7 @@ impl ParameterBands {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
 pub(crate) struct RouteDecision {
     pub(crate) route: String,
     pub(crate) source: String,
@@ -688,7 +688,7 @@ impl From<&RouteDecision> for ClassificationFeatures {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
 pub(crate) struct ProbabilityDecision {
     pub(crate) choice: String,
     pub(crate) source: String,
@@ -697,13 +697,13 @@ pub(crate) struct ProbabilityDecision {
     pub(crate) entropy: f64,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Program {
     pub(crate) objective: String,
     pub(crate) steps: Vec<Step>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct StepCommon {
     #[serde(default)]
     pub(crate) purpose: String,
@@ -719,7 +719,7 @@ pub(crate) struct StepCommon {
     pub(crate) unit_type: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 pub(crate) struct EditSpec {
     #[serde(default)]
     pub(crate) path: String,
@@ -733,7 +733,7 @@ pub(crate) struct EditSpec {
     pub(crate) replace: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub(crate) enum Step {
     #[serde(rename = "shell")]

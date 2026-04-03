@@ -209,7 +209,9 @@ pub(crate) async fn execute_and_process_shell(
     state.artifacts.insert(format!("{sid}:raw"), output.clone());
 
     let mut compact_summary = summarize_shell_output(&output);
-    if let Some(compactor_cfg) = evidence_compactor_cfg {
+    if code != 0 {
+        compact_summary = format!("EXECUTION FAILED (code {}):\n{}", code, compact_summary);
+    } else if let Some(compactor_cfg) = evidence_compactor_cfg {
         if let Ok(compact) = compact_evidence_via_unit(
             client,
             compactor_cfg,
@@ -224,19 +226,18 @@ pub(crate) async fn execute_and_process_shell(
             let compact_text = summarize_evidence_compact(&compact);
             if !compact_text.trim().is_empty() {
                 compact_summary = compact_text.clone();
-                state.artifacts.insert(sid.clone(), compact_text);
+                // Task 023: Store compact version separately, do NOT overwrite raw output
+                // Grounded selection requires the raw path list for normalization.
+                state
+                    .artifacts
+                    .insert(format!("{}:compact", sid), compact_text);
             }
         }
     }
+
+    // Always store the raw/full output in the primary artifact key for grounded selection
     if !state.artifacts.contains_key(&sid) {
-        if let Some(path) = shell_result.artifact_path.as_ref() {
-            state.artifacts.insert(
-                sid.clone(),
-                format!("{}\nartifact: {}", output.trim_end(), path.display()),
-            );
-        } else {
-            state.artifacts.insert(sid.clone(), output.clone());
-        }
+        state.artifacts.insert(sid.clone(), output.clone());
     }
     if let Some(classifier_cfg) = artifact_classifier_cfg {
         if should_classify_artifacts(complexity, formula) {
