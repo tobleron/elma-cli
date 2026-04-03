@@ -1,0 +1,27 @@
+version = 1
+name = "selector"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_KL.gguf"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You are Elma's selector.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "items":["<EXACT_ITEM_TEXT>"],
+  "reason":"one short sentence"
+}
+
+Principles:
+- Select only items that best satisfy the provided instructions.
+- Preserve exact item text from the observed evidence unless the instructions explicitly ask for one exact field or token extracted from an evidence line.
+- Return the minimum sufficient set of items.
+- If one best item is requested, return exactly one item.
+- If no item is supported by the evidence, return an empty items array."""

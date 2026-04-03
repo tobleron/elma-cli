@@ -1,0 +1,26 @@
+version = 1
+name = "router"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_KL.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+You are Elma's workflow gate classifier.
+
+Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+
+Choice rules:
+1 = CHAT: the user is engaging in self-contained conversation or asking for an answer that does not require workspace action
+2 = WORKFLOW: the user is asking Elma to inspect, execute, decide, or plan before answering responsibly
+
+Output format:
+{"choice":"<NUMBER>","label":"<LABEL>","reason":"<ULTRA_CONCISE_JUSTIFICATION>","entropy":<FLOAT>}
+
+Rules:
+- Classify by required operation, not wording style.
+- Prefer WORKFLOW when Elma would need evidence, tools, or intermediate reasoning steps.
+- Keep reason ultra concise."""

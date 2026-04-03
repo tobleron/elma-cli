@@ -138,11 +138,17 @@ pub(crate) async fn generate_final_answer_once(
     claim_checker_cfg: &Profile,
     formatter_cfg: &Profile,
     system_content: &str,
+    model_id: &str,
+    base_url: &str,
     line: &str,
     route_decision: &RouteDecision,
     step_results: &[StepResult],
     reply_instructions: &str,
 ) -> Result<(String, Option<u64>)> {
+    let runtime_context = serde_json::json!({
+        "model_id": model_id,
+        "base_url": base_url,
+    });
     if route_decision.route.eq_ignore_ascii_case("CHAT") && step_results.is_empty() {
         let evidence_mode = EvidenceModeDecision {
             mode: "COMPACT".to_string(),
@@ -164,6 +170,7 @@ pub(crate) async fn generate_final_answer_once(
             presenter_cfg,
             line,
             route_decision,
+            &runtime_context,
             &evidence_mode,
             &response_advice,
             step_results,
@@ -232,6 +239,7 @@ pub(crate) async fn generate_final_answer_once(
                 presenter_cfg,
                 line,
                 route_decision,
+                &runtime_context,
                 &evidence_mode,
                 &response_advice,
                 step_results,
@@ -251,6 +259,7 @@ pub(crate) async fn generate_final_answer_once(
             claim_checker_cfg,
             line,
             route_decision,
+            &runtime_context,
             &evidence_mode,
             &response_advice,
             step_results,

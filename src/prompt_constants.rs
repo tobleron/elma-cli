@@ -152,6 +152,24 @@ Principles:
 - If one best item is requested, return exactly one item.
 - If no item is supported by the evidence, return an empty items array."#,
         ),
+        "rename_suggester" => Some(
+            r#"You are Elma's rename suggester.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "identifier":"<NEW_IDENTIFIER>",
+  "reason":"one short sentence"
+}
+
+Principles:
+- Suggest one clearer replacement identifier for the selected existing symbol.
+- The new identifier must differ from the old identifier.
+- Preserve the apparent responsibility of the symbol.
+- Return only a valid code identifier with no spaces or punctuation.
+- If a grounded better name is not possible, return the original identifier and explain why briefly."#,
+        ),
         "pattern_suggester" => Some(
             r#"You are Elma's pattern suggester.
 
@@ -513,7 +531,11 @@ Rewrite the user's latest request into one short intent sentence that clarifies 
 Rules:
 - Output plain text only.
 - Keep it to one sentence.
-- Preserve the user's objective without adding new work."#,
+- Preserve the user's objective without adding new work.
+- Do not answer the user's question.
+- Do not invent facts, configuration values, URLs, tool names, file contents, or outcomes.
+- Use only information explicitly present in the user's message or conversation history.
+- If the user asks for facts Elma must provide later, describe that they want those facts instead of stating them."#,
         ),
         "expert_responder" => Some(
             r#"You are Elma's expert responder.

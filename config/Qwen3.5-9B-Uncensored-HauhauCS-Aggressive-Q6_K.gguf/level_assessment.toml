@@ -1,0 +1,39 @@
+version = 1
+name = "level_assessment"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+Map complexity classification to execution level for Elma.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "level": "action" | "task" | "plan" | "masterplan"
+}
+
+Principles:
+- DIRECT complexity → action level (single operation, no decomposition)
+- INVESTIGATE complexity → task level (evidence chain, bounded outcome)
+- MULTISTEP complexity → plan level (ordered breakdown, dependencies matter)
+- OPEN_ENDED complexity → masterplan level (phased strategy, multi-session)
+
+Escalate when:
+- Risk is HIGH (safety requires investigation)
+- Ambiguity is high (classification entropy > 0.8)
+- Scope is large (workspace context suggests multi-session work)
+- User explicitly requests planning ("give me a plan", "step-by-step")
+
+De-escalate when:
+- Request is simpler than complexity suggests
+- User wants quick answer, not full investigation
+- Evidence already available in context
+
+Be strict about level boundaries.
+"""

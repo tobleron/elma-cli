@@ -74,6 +74,8 @@ pub(crate) fn refresh_runtime_workspace(runtime: &mut AppRuntime) -> Result<()> 
         &runtime.profiles.elma_cfg.system_prompt,
         &runtime.ws,
         &runtime.ws_brief,
+        &runtime.model_id,
+        runtime.chat_url.as_str(),
     );
     if let Some(system_message) = runtime.messages.first_mut() {
         if system_message.role == "system" {
@@ -89,8 +91,23 @@ pub(crate) fn refresh_runtime_workspace(runtime: &mut AppRuntime) -> Result<()> 
     Ok(())
 }
 
-pub(crate) fn rebuild_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {
+pub(crate) fn rebuild_system_content(
+    base_prompt: &str,
+    ws: &str,
+    ws_brief: &str,
+    model_id: &str,
+    base_url: &str,
+) -> String {
     let mut system_content = base_prompt.to_string();
+    if !model_id.trim().is_empty() || !base_url.trim().is_empty() {
+        system_content.push_str("\n\nRUNTIME CONTEXT:\n");
+        if !model_id.trim().is_empty() {
+            system_content.push_str(&format!("model_id: {}\n", model_id.trim()));
+        }
+        if !base_url.trim().is_empty() {
+            system_content.push_str(&format!("base_url: {}\n", base_url.trim()));
+        }
+    }
     if !ws.trim().is_empty() {
         system_content.push_str("\n\nWORKSPACE CONTEXT (facts):\n");
         system_content.push_str(ws.trim());
@@ -169,6 +186,15 @@ pub(crate) async fn maybe_save_formula_memory(
         trace(
             args,
             "memory_gate_status=skip reason=unclean_reasoning_fallback",
+        );
+        return Ok(());
+    }
+    if request_requires_workspace_evidence(route_decision, complexity, formula)
+        && !step_results_have_workspace_evidence(step_results)
+    {
+        trace(
+            args,
+            "memory_gate_status=skip reason=missing_workspace_evidence",
         );
         return Ok(());
     }

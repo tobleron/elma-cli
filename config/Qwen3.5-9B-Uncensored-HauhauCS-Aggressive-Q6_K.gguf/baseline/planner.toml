@@ -1,0 +1,15 @@
+version = 1
+name = "planner"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.4
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 2048
+timeout_s = 120
+system_prompt = """
+Create step-by-step implementation plan.
+
+Break objective into actionable steps.
+"""

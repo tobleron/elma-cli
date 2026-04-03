@@ -201,7 +201,13 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         ),
     );
 
-    let system_content = build_system_content(&profiles.elma_cfg.system_prompt, &ws, &ws_brief);
+    let system_content = build_system_content(
+        &profiles.elma_cfg.system_prompt,
+        &ws,
+        &ws_brief,
+        &model_id,
+        chat_url.as_str(),
+    );
     let messages = vec![ChatMessage {
         role: "system".to_string(),
         content: system_content.clone(),
@@ -278,8 +284,23 @@ fn persist_workspace_intel(
     Ok(())
 }
 
-fn build_system_content(base_prompt: &str, ws: &str, ws_brief: &str) -> String {
+fn build_system_content(
+    base_prompt: &str,
+    ws: &str,
+    ws_brief: &str,
+    model_id: &str,
+    base_url: &str,
+) -> String {
     let mut system_content = base_prompt.to_string();
+    if !model_id.trim().is_empty() || !base_url.trim().is_empty() {
+        system_content.push_str("\n\nRUNTIME CONTEXT:\n");
+        if !model_id.trim().is_empty() {
+            system_content.push_str(&format!("model_id: {}\n", model_id.trim()));
+        }
+        if !base_url.trim().is_empty() {
+            system_content.push_str(&format!("base_url: {}\n", base_url.trim()));
+        }
+    }
     if !ws.trim().is_empty() {
         system_content.push_str("\n\nWORKSPACE CONTEXT (facts):\n");
         system_content.push_str(ws.trim());

@@ -11,10 +11,16 @@ timeout_s = 120
 system_prompt = """
 Create a JSON Program object with steps to achieve the user's objective.
 
+Principle:
+- Build the smallest executable workflow that truly satisfies the objective while preserving the required planning depth.
+- If the task requires phased strategic planning, include a `masterplan` step.
+- If the task also requires implementing an initial phase, include both the strategic planning step and the concrete implementation and verification steps needed for that phase.
+
 Step types and their required fields:
 - shell: {"id":"s1","type":"shell","cmd":"command","purpose":"why","depends_on":[],"success_condition":"done when"}
 - reply: {"id":"r1","type":"reply","instructions":"what to say","purpose":"why","depends_on":[],"success_condition":"done when"}
 - plan: {"id":"p1","type":"plan","goal":"objective","purpose":"why","depends_on":[],"success_condition":"done when"}
+- masterplan: {"id":"m1","type":"masterplan","goal":"strategic objective","purpose":"why","depends_on":[],"success_condition":"done when"}
 - select: {"id":"sel1","type":"select","instructions":"what to select","purpose":"why","depends_on":[],"success_condition":"done when"}
 - decide: {"id":"d1","type":"decide","prompt":"question to answer","purpose":"why","depends_on":[],"success_condition":"done when"}
 - edit: {"id":"e1","type":"edit","path":"file","operation":"create|update|delete","content":"new content","purpose":"why","depends_on":[],"success_condition":"done when"}
@@ -36,6 +42,7 @@ ROUTER PRIOR RULES:
 
 - If the user asks for one concrete step-by-step plan, use a plan step.
 - If the user asks for a higher-level overall plan across phases, use a masterplan step.
+- If the user asks for a phased plan and also asks to implement the first phase, include the masterplan step plus the concrete implementation steps for that first phase.
 
 STRUCTURE RULES:
 - Every step must include purpose and success_condition.

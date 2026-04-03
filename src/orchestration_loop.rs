@@ -75,6 +75,63 @@ pub(crate) async fn run_autonomous_loop(
             break;
         }
 
+        if let Err(policy_reason) = validate_evidence_requirements(
+            &plan.current_program,
+            route_decision,
+            complexity,
+            formula,
+        ) {
+            trace(
+                args,
+                &format!(
+                    "program_policy_mismatch level={:?} reason={policy_reason}",
+                    complexity.complexity
+                ),
+            );
+            operator_trace(args, "repairing the workflow plan");
+
+            let recovered = recover_program_once(
+                client,
+                chat_url,
+                orchestrator_cfg,
+                &user_message,
+                route_decision,
+                workflow_plan,
+                complexity,
+                scope,
+                formula,
+                ws,
+                ws_brief,
+                messages,
+                &format!("program_policy_mismatch: {policy_reason}"),
+                Some(&plan.current_program),
+                &step_results,
+            )
+            .await
+            .ok();
+
+            let Some(next_program) = recovered else {
+                final_reply = Some(
+                    "Tell the user plainly that Elma could not build an evidence-grounded workflow for this request. Ask one concise clarifying question or suggest a narrower next step."
+                        .to_string(),
+                );
+                break;
+            };
+
+            if next_program_is_stale(&plan, &next_program) {
+                final_reply = Some(
+                    "Tell the user plainly that Elma stopped because recovery kept reproducing a workflow without the needed evidence steps. Ask for a narrower scope or a more specific next step."
+                        .to_string(),
+                );
+                break;
+            }
+
+            plan.attempts += 1;
+            plan.current_program = next_program.clone();
+            plan.program_history.push(next_program);
+            continue;
+        }
+
         let (mut batch_results, batch_reply) = execute_program(
             args,
             client,
@@ -190,6 +247,9 @@ pub(crate) async fn run_autonomous_loop(
         }
 
         let merged_program = merged_program_from_history(&plan);
+        let missing_required_evidence =
+            request_requires_workspace_evidence(route_decision, complexity, formula)
+                && !step_results_have_workspace_evidence(&step_results);
         let sufficiency = match check_execution_sufficiency_once(
             client,
             chat_url,
@@ -231,7 +291,13 @@ pub(crate) async fn run_autonomous_loop(
                 sufficiency.status, sufficiency.reason
             ),
         );
-        if sufficiency.status.eq_ignore_ascii_case("retry") {
+        if missing_required_evidence {
+            trace(
+                args,
+                "sufficiency_status=retry reason=missing_required_workspace_evidence",
+            );
+        }
+        if missing_required_evidence || sufficiency.status.eq_ignore_ascii_case("retry") {
             let (logical_review, efficiency_review, risk_review, reviewers_clean) =
                 run_staged_reviewers_once(
                     args,
@@ -268,21 +334,23 @@ pub(crate) async fn run_autonomous_loop(
             .collect::<Vec<_>>()
             .join(" | ");
 
-            let mut next_program = sufficiency
-                .program
-                .clone()
-                .or_else(|| {
-                    logical_review
-                        .as_ref()
-                        .filter(|review| review.status.eq_ignore_ascii_case("retry"))
-                        .and_then(|review| review.program.clone())
-                })
-                .or_else(|| {
-                    efficiency_review
-                        .as_ref()
-                        .filter(|review| review.status.eq_ignore_ascii_case("retry"))
-                        .and_then(|review| review.program.clone())
-                });
+            let mut next_program = if missing_required_evidence {
+                None
+            } else {
+                sufficiency.program.clone()
+            }
+            .or_else(|| {
+                logical_review
+                    .as_ref()
+                    .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                    .and_then(|review| review.program.clone())
+            })
+            .or_else(|| {
+                efficiency_review
+                    .as_ref()
+                    .filter(|review| review.status.eq_ignore_ascii_case("retry"))
+                    .and_then(|review| review.program.clone())
+            });
             if next_program.is_none() {
                 operator_trace(args, "repairing the workflow plan");
                 next_program = recover_program_once(
@@ -300,7 +368,11 @@ pub(crate) async fn run_autonomous_loop(
                     messages,
                     &format!(
                         "execution_sufficiency_retry_without_program: {}{}{}",
-                        sufficiency.reason,
+                        if missing_required_evidence {
+                            "missing_required_workspace_evidence"
+                        } else {
+                            sufficiency.reason.as_str()
+                        },
                         if review_reason.is_empty() { "" } else { " | " },
                         review_reason
                     ),

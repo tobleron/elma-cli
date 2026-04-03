@@ -1,0 +1,27 @@
+version = 1
+name = "intention_tune"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.7
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You are Elma's intention tuner.
+
+Analyze classification performance and suggest temperature adjustments.
+
+Output JSON:
+{
+  "speech_act_temp": <0.0-1.0>,
+  "router_temp": <0.0-1.0>,
+  "mode_router_temp": <0.0-1.0>
+}
+
+Rules:
+- Increase temp if classifications are too rigid
+- Decrease temp if classifications are too random
+- Base adjustments on observed accuracy
+"""

@@ -818,6 +818,85 @@ impl IntelUnit for SelectorUnit {
     }
 }
 
+pub(crate) struct RenameSuggesterUnit {
+    profile: Profile,
+}
+
+impl RenameSuggesterUnit {
+    pub fn new(profile: Profile) -> Self {
+        Self { profile }
+    }
+}
+
+impl IntelUnit for RenameSuggesterUnit {
+    fn name(&self) -> &'static str {
+        "rename_suggester"
+    }
+
+    fn profile(&self) -> &Profile {
+        &self.profile
+    }
+
+    fn pre_flight(&self, _context: &IntelContext) -> Result<()> {
+        Ok(())
+    }
+
+    async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let purpose = context
+            .extra("purpose")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let instructions = context
+            .extra("instructions")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let evidence = context
+            .extra("evidence")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
+        let result: RenameSuggestion = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            crate::intel_narrative::build_rename_suggester_narrative(
+                &context.user_message,
+                &purpose,
+                &instructions,
+                &evidence,
+            ),
+        )
+        .await?;
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
+    }
+
+    fn post_flight(&self, output: &IntelOutput) -> Result<()> {
+        if output.get("identifier").is_none() {
+            return Err(anyhow::anyhow!("Missing 'identifier' field"));
+        }
+        if output.get("reason").is_none() {
+            return Err(anyhow::anyhow!("Missing 'reason' field"));
+        }
+        Ok(())
+    }
+
+    fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {
+        trace_fallback(self.name(), error);
+
+        Ok(IntelOutput::fallback(
+            self.name(),
+            serde_json::json!({
+                "identifier": String::new(),
+                "reason": "fallback: no rename suggested".to_string(),
+            }),
+            &format!("rename suggester failed: {}", error),
+        ))
+    }
+}
+
 // ============================================================================
 // Evidence Mode Unit
 // ============================================================================
@@ -951,11 +1030,7 @@ impl IntelUnit for EvidenceCompactorUnit {
             &context.client,
             &self.profile,
             crate::intel_narrative::build_evidence_compactor_narrative(
-                &objective,
-                &purpose,
-                &scope,
-                &cmd,
-                &output,
+                &objective, &purpose, &scope, &cmd, &output,
             ),
         )
         .await?;
@@ -1038,9 +1113,7 @@ impl IntelUnit for ArtifactClassifierUnit {
             &context.client,
             &self.profile,
             crate::intel_narrative::build_artifact_classifier_narrative(
-                &objective,
-                &scope,
-                &evidence,
+                &objective, &scope, &evidence,
             ),
         )
         .await?;
@@ -1110,6 +1183,10 @@ impl IntelUnit for ResultPresenterUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let runtime_context = context
+            .extra("runtime_context")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let evidence_mode = context
             .extra("evidence_mode")
             .cloned()
@@ -1132,6 +1209,7 @@ impl IntelUnit for ResultPresenterUnit {
             crate::intel_narrative::build_result_presenter_narrative(
                 &context.user_message,
                 &context.route_decision,
+                &runtime_context,
                 &evidence_mode,
                 &response_advice,
                 &reply_instructions,

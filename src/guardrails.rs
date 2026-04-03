@@ -163,6 +163,16 @@ fn check_no_progress(objective: &str, step_results: &[StepResult]) -> Option<Str
 
 /// Check for self-referential planning (planning about planning)
 fn check_meta_planning(program: &Program) -> Option<String> {
+    let masterplan_count = program
+        .steps
+        .iter()
+        .filter(|s| matches!(s, Step::MasterPlan { .. }))
+        .count();
+    let concrete_plan_count = program
+        .steps
+        .iter()
+        .filter(|s| matches!(s, Step::Plan { .. }))
+        .count();
     let plan_count = program
         .steps
         .iter()
@@ -170,6 +180,11 @@ fn check_meta_planning(program: &Program) -> Option<String> {
         .count();
 
     let total_steps = program.steps.len();
+
+    // A bounded "strategic roadmap + one concrete phase plan + reply" is valid.
+    if masterplan_count == 1 && concrete_plan_count == 1 && total_steps <= 4 {
+        return None;
+    }
 
     // If more than half the steps are planning steps, we're planning about planning
     if plan_count >= 2 && plan_count * 2 >= total_steps && total_steps >= 3 {
@@ -391,6 +406,48 @@ mod tests {
         let verdict = check_goal_drift(objective, &program, &results);
         assert!(verdict.drift_detected);
         assert!(verdict.reason.as_ref().unwrap().contains("meta-planning"));
+    }
+
+    #[test]
+    fn test_check_goal_drift_allows_masterplan_plus_phase_plan() {
+        let objective = "Implement phase 1";
+        let program = Program {
+            objective: objective.to_string(),
+            steps: vec![
+                Step::MasterPlan {
+                    id: "m1".to_string(),
+                    goal: "Strategic roadmap".to_string(),
+                    common: StepCommon {
+                        purpose: "roadmap".to_string(),
+                        success_condition: "roadmap saved".to_string(),
+                        ..StepCommon::default()
+                    },
+                },
+                Step::Plan {
+                    id: "p1".to_string(),
+                    goal: "Phase 1 implementation".to_string(),
+                    common: StepCommon {
+                        purpose: "phase plan".to_string(),
+                        depends_on: vec!["m1".to_string()],
+                        success_condition: "phase plan saved".to_string(),
+                        ..StepCommon::default()
+                    },
+                },
+                Step::Reply {
+                    id: "r1".to_string(),
+                    instructions: "answer".to_string(),
+                    common: StepCommon {
+                        purpose: "answer".to_string(),
+                        depends_on: vec!["p1".to_string()],
+                        success_condition: "answer sent".to_string(),
+                        ..StepCommon::default()
+                    },
+                },
+            ],
+        };
+
+        let verdict = check_goal_drift(objective, &program, &[]);
+        assert!(!verdict.drift_detected);
     }
 
     #[test]

@@ -138,6 +138,17 @@ fn fallback_formula_for_route(route: &str, needs_evidence: bool) -> String {
     }
 }
 
+fn should_use_uncertain_reply_default(line: &str, route_decision: &RouteDecision) -> bool {
+    if route_decision.route.eq_ignore_ascii_case("CHAT") {
+        return true;
+    }
+
+    // Do not under-execute path-scoped workspace requests into reply-only.
+    // If the user anchored the request to explicit repo targets, we should
+    // prefer grounded evidence gathering over a free answer.
+    extract_first_path_from_user_text(line).is_none()
+}
+
 fn planning_prior_from_workflow_plan(
     line: &str,
     route_decision: &RouteDecision,
@@ -396,7 +407,9 @@ pub async fn derive_planning_prior_with_ladder(
     // If model is uncertain (high entropy or low margin), default to safe CHAT route
     // This prevents over-orchestration on ambiguous inputs WITHOUT hardcoded rules
     // Principle: When uncertain, safer to under-execute than over-execute
-    if route_decision.entropy > 0.8 || route_decision.margin < 0.15 {
+    if (route_decision.entropy > 0.8 || route_decision.margin < 0.15)
+        && should_use_uncertain_reply_default(line, route_decision)
+    {
         // Override to CHAT for uncertain classifications
         // Safer to under-execute than over-execute
         let ladder = ExecutionLadderAssessment::new(
@@ -505,7 +518,10 @@ pub async fn derive_planning_prior_with_ladder(
             || route_decision.route.eq_ignore_ascii_case("DECIDE"),
         needs_plan: ladder.level.requires_planning_structure(),
         risk: ladder.risk.clone(),
-        suggested_pattern: fallback_formula_for_route(&route_decision.route, ladder.requires_evidence),
+        suggested_pattern: fallback_formula_for_route(
+            &route_decision.route,
+            ladder.requires_evidence,
+        ),
     };
 
     // Build scope (use ladder's objective if available, otherwise build from scratch)
@@ -582,7 +598,14 @@ pub async fn derive_planning_prior_with_ladder(
         Some(workflow_plan)
     };
 
-    (workflow_plan, ladder, complexity, scope, formula, fallback_used)
+    (
+        workflow_plan,
+        ladder,
+        complexity,
+        scope,
+        formula,
+        fallback_used,
+    )
 }
 
 /// Check if hierarchical decomposition is needed using execution ladder
@@ -639,5 +662,60 @@ pub async fn try_hierarchical_decomposition_with_ladder(
     } else {
         // Plan level but not MasterPlan - may not need full hierarchy
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_probability_decision(choice: &str) -> ProbabilityDecision {
+        ProbabilityDecision {
+            choice: choice.to_string(),
+            source: "test".to_string(),
+            distribution: vec![(choice.to_string(), 1.0)],
+            margin: 1.0,
+            entropy: 0.0,
+        }
+    }
+
+    fn test_route_decision(route: &str, margin: f64, entropy: f64) -> RouteDecision {
+        RouteDecision {
+            route: route.to_string(),
+            source: "test".to_string(),
+            distribution: vec![(route.to_string(), 1.0)],
+            margin,
+            entropy,
+            speech_act: test_probability_decision("INQUIRE"),
+            workflow: test_probability_decision("WORKFLOW"),
+            mode: test_probability_decision("INSPECT"),
+        }
+    }
+
+    #[test]
+    fn uncertain_reply_default_allows_chat_like_turns() {
+        let route = test_route_decision("DECIDE", 0.05, 0.2);
+        assert!(should_use_uncertain_reply_default(
+            "What model are you using and what is the base url?",
+            &route
+        ));
+    }
+
+    #[test]
+    fn uncertain_reply_default_rejects_path_scoped_shell_requests() {
+        let route = test_route_decision("SHELL", 0.01, 0.03);
+        assert!(!should_use_uncertain_reply_default(
+            "Inspect only _stress_testing/_opencode_for_testing/. Map its directory structure and identify the top 3 largest source files by line count.",
+            &route
+        ));
+    }
+
+    #[test]
+    fn uncertain_reply_default_rejects_path_scoped_plan_requests() {
+        let route = test_route_decision("PLAN", 0.10, 0.10);
+        assert!(!should_use_uncertain_reply_default(
+            "Standardize the logging style across _stress_testing/_claude_code_src/ only. Find a small, coherent subset of files that use inconsistent logging patterns, create one shared wrapper utility under _stress_testing/_claude_code_src/, and refactor only that verified subset to use the new utility.",
+            &route
+        ));
     }
 }

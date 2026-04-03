@@ -2,7 +2,10 @@ use crate::*;
 
 pub(crate) fn looks_like_path_token(s: &str) -> bool {
     let t = s.trim_matches(|c: char| {
-        matches!(c, '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}')
+        matches!(
+            c,
+            '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}'
+        )
     });
     if t.is_empty() {
         return false;
@@ -22,17 +25,31 @@ pub(crate) fn looks_like_path_token(s: &str) -> bool {
 }
 
 pub(crate) fn extract_first_path_from_user_text(line: &str) -> Option<String> {
-    for tok in line.split_whitespace() {
-        if looks_like_path_token(tok) {
-            return Some(
-                tok.trim_matches(|c: char| {
-                    matches!(c, '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}')
-                })
-                    .to_string(),
-            );
-        }
-    }
-    None
+    let trimmed_tokens = line
+        .split_whitespace()
+        .map(|tok| {
+            tok.trim_matches(|c: char| {
+                matches!(
+                    c,
+                    '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}'
+                )
+            })
+        })
+        .filter(|tok| !tok.is_empty())
+        .collect::<Vec<_>>();
+
+    trimmed_tokens
+        .iter()
+        .copied()
+        .find(|tok| tok.contains('/') || tok.contains('\\'))
+        .map(str::to_string)
+        .or_else(|| {
+            trimmed_tokens
+                .iter()
+                .copied()
+                .find(|tok| looks_like_path_token(tok))
+                .map(str::to_string)
+        })
 }
 
 pub(crate) fn plain_terminal_text(s: &str) -> String {
@@ -156,6 +173,16 @@ mod tests {
     #[test]
     fn extract_first_path_trims_trailing_punctuation() {
         let line = "In _stress_testing/_opencode_for_testing/, find a function definition.";
+        assert_eq!(
+            extract_first_path_from_user_text(line).as_deref(),
+            Some("_stress_testing/_opencode_for_testing/")
+        );
+    }
+
+    #[test]
+    fn extract_first_path_prefers_scoped_directory_over_filename() {
+        let line =
+            "Read the README.md in _stress_testing/_opencode_for_testing/ and create a summary.";
         assert_eq!(
             extract_first_path_from_user_text(line).as_deref(),
             Some("_stress_testing/_opencode_for_testing/")

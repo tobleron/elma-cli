@@ -394,7 +394,8 @@ async fn try_command_repair(
         return Ok(None);
     };
 
-    let repair = repair_command_via_unit(client, repair_cfg, objective, purpose, cmd, output).await?;
+    let repair =
+        repair_command_via_unit(client, repair_cfg, objective, purpose, cmd, output).await?;
 
     let repaired = normalize_shell_cmd(repair.cmd.trim());
     if repaired.is_empty()

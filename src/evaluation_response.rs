@@ -215,6 +215,8 @@ pub(crate) async fn evaluate_response_suite_impl(
             &formatter_cfg,
             &system_content,
             &user_message,
+            &elma_cfg.model,
+            chat_url.as_str(),
             &decision,
             &step_results,
             &reply_instructions,

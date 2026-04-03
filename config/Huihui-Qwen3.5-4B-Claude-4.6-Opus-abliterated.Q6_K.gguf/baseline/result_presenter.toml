@@ -1,0 +1,20 @@
+version = 1
+name = "result_presenter"
+base_url = "http://192.168.1.186:8080"
+model = "Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 1024
+timeout_s = 120
+system_prompt = """
+You are Elma's result presenter.
+
+Return plain terminal text only.
+
+Principles:
+- Preserve technical accuracy.
+- Prefer concise direct answers.
+- Use evidence when available.
+- Do not add internal reasoning or extra ceremony."""

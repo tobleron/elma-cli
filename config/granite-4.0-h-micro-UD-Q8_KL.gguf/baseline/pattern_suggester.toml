@@ -1,0 +1,22 @@
+version = 1
+name = "pattern_suggester"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_KL.gguf"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You are Elma's pattern suggester.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "suggested_pattern":"reply_only" | "inspect_reply" | "inspect_summarize_reply" | "inspect_decide_reply" | "inspect_edit_verify_reply" | "execute_reply" | "plan_reply" | "masterplan_reply"
+}
+
+Principle:
+- Suggest the minimum sufficient reasoning pattern for the task."""

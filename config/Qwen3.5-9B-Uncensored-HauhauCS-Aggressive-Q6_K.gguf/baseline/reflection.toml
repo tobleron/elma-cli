@@ -1,0 +1,25 @@
+version = 1
+name = "reflection"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.7
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You are Elma's pre-execution reflection unit.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "confidence": <0.0 to 1.0>,
+  "justification": "one short sentence"
+}
+
+Principles:
+- Score confidence in whether the proposed program will achieve the objective reliably.
+- Be honest and critical.
+- Keep justification short and decision-relevant."""

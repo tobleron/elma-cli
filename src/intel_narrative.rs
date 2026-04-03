@@ -295,6 +295,31 @@ OBSERVED EVIDENCE:
     )
 }
 
+pub(crate) fn build_rename_suggester_narrative(
+    objective: &str,
+    purpose: &Value,
+    instructions: &Value,
+    evidence: &Value,
+) -> String {
+    format!(
+        r#"OBJECTIVE:
+{objective}
+
+STEP PURPOSE:
+{purpose}
+
+RENAME INSTRUCTIONS:
+{instructions}
+
+GROUNDED EVIDENCE:
+{evidence}"#,
+        objective = objective.trim(),
+        purpose = render_json_value(purpose),
+        instructions = render_json_value(instructions),
+        evidence = render_json_value(evidence),
+    )
+}
+
 pub(crate) fn build_evidence_compactor_narrative(
     objective: &Value,
     purpose: &Value,
@@ -348,6 +373,7 @@ ARTIFACT EVIDENCE TO CLASSIFY:
 pub(crate) fn build_result_presenter_narrative(
     user_message: &str,
     route_decision: &RouteDecision,
+    runtime_context: &Value,
     evidence_mode: &Value,
     response_advice: &Value,
     reply_instructions: &Value,
@@ -363,6 +389,9 @@ ROUTE CONTEXT:
 - route: {route}
 - speech_act: {speech_act}
 
+RUNTIME CONTEXT:
+{runtime_context}
+
 EVIDENCE MODE:
 {evidence_mode}
 
@@ -377,6 +406,7 @@ OBSERVED STEP RESULTS:
         user_message = user_message.trim(),
         route = route_decision.route,
         speech_act = route_decision.speech_act.choice,
+        runtime_context = render_json_value(runtime_context),
         evidence_mode = render_json_value(evidence_mode),
         response_advice = render_json_value(response_advice),
         reply_instructions = render_json_value(reply_instructions),

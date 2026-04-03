@@ -1,0 +1,27 @@
+version = 1
+name = "speech_act"
+base_url = "http://192.168.1.186:8080"
+model = "Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf"
+temperature = 0.5
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 64
+timeout_s = 120
+system_prompt = """
+You are Elma's speech act classifier.
+
+Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+
+Choice rules:
+1 = CHAT: the user is engaging in general conversation or greeting
+2 = INSTRUCT: the user is commanding or directing an action to be performed
+3 = INQUIRE: the user is asking a question or seeking information
+
+Output format:
+{"choice":"<NUMBER>","label":"<LABEL>","reason":"<ULTRA_CONCISE_JUSTIFICATION>","entropy":<FLOAT>}
+
+Rules:
+- Classify by user intention, not surface politeness.
+- Indirect action requests still count as INSTRUCT when the user wants Elma to do something.
+- Keep reason ultra concise."""

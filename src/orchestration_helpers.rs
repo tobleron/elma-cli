@@ -1,3 +1,5 @@
+use serde_json::Value;
+
 use crate::*;
 
 pub(crate) async fn request_program_or_repair(
@@ -312,6 +314,7 @@ pub(crate) async fn maybe_revise_presented_result(
     claim_checker_cfg: &Profile,
     line: &str,
     route_decision: &RouteDecision,
+    runtime_context: &Value,
     evidence_mode: &EvidenceModeDecision,
     response_advice: &ExpertResponderAdvice,
     step_results: &[StepResult],
@@ -335,6 +338,7 @@ pub(crate) async fn maybe_revise_presented_result(
                 presenter_cfg,
                 line,
                 route_decision,
+                runtime_context,
                 evidence_mode,
                 response_advice,
                 step_results,
@@ -423,7 +427,10 @@ pub(crate) async fn request_response_advice_via_unit(
     .with_extra("evidence_mode", evidence_mode)?
     .with_extra(
         "step_results",
-        step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+        step_results
+            .iter()
+            .map(step_result_json)
+            .collect::<Vec<_>>(),
     )?
     .with_extra("reply_instructions", reply_instructions)?;
     let output = unit.execute_with_fallback(&context).await?;
@@ -436,6 +443,7 @@ pub(crate) async fn present_result_via_unit(
     presenter_cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
+    runtime_context: &Value,
     evidence_mode: &EvidenceModeDecision,
     response_advice: &ExpertResponderAdvice,
     step_results: &[StepResult],
@@ -450,11 +458,15 @@ pub(crate) async fn present_result_via_unit(
         Vec::new(),
         client.clone(),
     )
+    .with_extra("runtime_context", runtime_context)?
     .with_extra("evidence_mode", evidence_mode)?
     .with_extra("response_advice", response_advice)?
     .with_extra(
         "step_results",
-        step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+        step_results
+            .iter()
+            .map(step_result_json)
+            .collect::<Vec<_>>(),
     )?
     .with_extra("reply_instructions", reply_instructions)?;
     let output = unit.execute_with_fallback(&context).await?;
@@ -462,51 +474,17 @@ pub(crate) async fn present_result_via_unit(
 }
 
 pub(crate) async fn maybe_format_final_text(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    formatter_cfg: &Profile,
+    _client: &reqwest::Client,
+    _chat_url: &Url,
+    _formatter_cfg: &Profile,
     line: &str,
     final_text: String,
     usage_total: Option<u64>,
 ) -> (String, Option<u64>) {
-    if user_requested_markdown(line) || !looks_like_markdown(&final_text) {
+    if user_requested_markdown(line) {
         return (final_text, usage_total);
     }
-
-    let fmt_req = ChatCompletionRequest {
-        model: formatter_cfg.model.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: formatter_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: final_text.clone(),
-            },
-        ],
-        temperature: formatter_cfg.temperature,
-        top_p: formatter_cfg.top_p,
-        stream: false,
-        max_tokens: formatter_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(formatter_cfg.repeat_penalty),
-        reasoning_format: Some(formatter_cfg.reasoning_format.clone()),
-        grammar: None,
-    };
-    if let Ok(fmt_resp) = chat_once_with_timeout(client, chat_url, &fmt_req, formatter_cfg.timeout_s).await {
-        let next_usage = fmt_resp
-            .usage
-            .as_ref()
-            .and_then(|u| u.total_tokens)
-            .or(usage_total);
-        let formatted = extract_response_text(&fmt_resp);
-        if !formatted.trim().is_empty() {
-            return (formatted.trim().to_string(), next_usage);
-        }
-        return (final_text, next_usage);
-    }
-    (final_text, usage_total)
+    (plain_terminal_text(&final_text), usage_total)
 }
 
 pub(crate) async fn request_judge_verdict(

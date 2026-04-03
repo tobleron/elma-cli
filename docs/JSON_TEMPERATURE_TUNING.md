@@ -1,8 +1,12 @@
 # JSON Temperature Tuning System
 
+> **See [ARCHITECTURE.md](./ARCHITECTURE.md)** for comprehensive documentation including design philosophy, GBNF grammar integration, and full implementation details.
+
 ## Overview
 
 The JSON Temperature Tuning system automatically finds the optimal temperature for reliable JSON output from the model. This is **Stage 0** (highest priority) in the tuning pipeline, ensuring JSON reliability before any other tuning occurs.
+
+---
 
 ## How It Works
 
@@ -107,6 +111,8 @@ recommended_temperature = 0.10
 
 ## Relationship to Helper/Intel Unit Tuning
 
+See [ARCHITECTURE.md](./ARCHITECTURE.md#json-reliability-pipeline) for the complete multi-layer protection pipeline.
+
 ### Key Difference: Adaptive vs. Grid Search
 
 **JSON Tuning (Stage 0)**: Always does full grid search
@@ -192,3 +198,81 @@ When `--tune` or `--calibrate` is used, JSON tuning runs automatically as Stage 
 2. **Per-Difficulty Temperatures**: Use different temperatures for different task complexities
 3. **Model-Specific Profiles**: Store and reuse optimal temperatures per model
 4. **Continuous Learning**: Update temperature based on runtime JSON success rate
+
+---
+
+## 📚 Quick Links
+
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Comprehensive reference documentation
+- **[TASKS.md](./TASKS.md)** - Complete task list by pillar
+- **[IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md)** - Recent progress & troubleshooting
+- **[INTEL_UNIT_STANDARD.md](./INTEL_UNIT_STANDARD.md)** - Intel unit output format standard
+
+---
+
+## 🚀 Essential Commands
+
+### Development
+```bash
+cargo build
+cargo run -- [args]
+cargo test
+cargo fmt
+```
+
+### Testing & Probing
+```bash
+# Run unit tests
+cargo test
+
+# Run behavioral probes
+./probe_parsing.sh
+./reliability_probe.sh
+./run_intention_scenarios.sh
+./smoke_llamacpp.sh
+
+# Run stress tests
+./run_stress_tests_cli.sh
+```
+
+### Architecture Analysis
+```bash
+# Run the de-bloating analyzer
+cd _dev-system/analyzer && cargo run
+```
+
+### Configuration Management
+```bash
+# View current config structure
+ls -la config/
+
+# View defaults
+ls -la config/defaults/
+
+# Test model-specific override
+mv config/<model>/angel_helper.toml /tmp/
+cargo run  # Should fall back to defaults
+mv /tmp/angel_helper.toml config/<model>/
+```
+
+### Troubleshooting Quick Reference
+
+**Connection Pool Exhaustion:**
+- Symptom: Hangs after ~5 HTTP API calls, no timeout errors.
+- Root Cause: Creating `reqwest::Client::new()` in hot paths (each intel unit call).
+- Solution: Pass shared client through `IntelContext`.
+
+**Shell Command Timeouts:**
+- Symptom: 30-minute timeouts for simple tasks.
+- Causes: Model hangs in retry loops, shell syntax issues, 30-minute timeout too long.
+- Solution: Reduce to 5-minute timeout, fix shell command syntax.
+
+**Terminology Mismatch:**
+- Symptom: All requests routed to CHAT with entropy=0.00.
+- Root Cause: Model tuned on old terminology (CHAT, SHELL), new terms not recognized.
+- Solution: Revert to original terminology or perform full re-tuning.
+
+**Pattern-Matching Routing:**
+- Symptom: Over-orchestration, keyword-based decisions.
+- Root Cause: Hardcoded word patterns in routing logic.
+- Solution: Use confidence-based fallback (entropy > 0.8 → CHAT).

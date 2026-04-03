@@ -21,6 +21,7 @@ pub(crate) use execution_steps_shell::*;
 async fn select_items_via_unit(
     client: &reqwest::Client,
     selector_cfg: &Profile,
+    unit_type: Option<&str>,
     objective: &str,
     purpose: &str,
     instructions: &str,
@@ -42,7 +43,6 @@ async fn select_items_via_unit(
     }
 
     let evidence = budget_selection_evidence(evidence);
-    let unit = SelectorUnit::new(selector_cfg.clone());
     let context = IntelContext::new(
         objective.to_string(),
         neutral_route_decision(),
@@ -54,9 +54,35 @@ async fn select_items_via_unit(
     .with_extra("purpose", purpose)?
     .with_extra("instructions", instructions)?
     .with_extra("evidence", evidence)?;
-    let output = unit.execute_with_fallback(&context).await?;
-    serde_json::from_value(output.data)
-        .map_err(|e| anyhow::anyhow!("Failed to parse selector output: {}", e))
+    match unit_type.unwrap_or("selector") {
+        "rename_suggester" => {
+            let mut profile = selector_cfg.clone();
+            profile.name = "rename_suggester".to_string();
+            if let Some(prompt) = canonical_system_prompt("rename_suggester") {
+                profile.system_prompt = prompt.to_string();
+            }
+            profile.temperature = profile.temperature.clamp(0.2, 0.35);
+            profile.max_tokens = profile.max_tokens.min(120);
+            let unit = RenameSuggesterUnit::new(profile);
+            let output = unit.execute_with_fallback(&context).await?;
+            let rename: RenameSuggestion = serde_json::from_value(output.data)
+                .map_err(|e| anyhow::anyhow!("Failed to parse rename suggester output: {}", e))?;
+            Ok(SelectionOutput {
+                items: if rename.identifier.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    vec![rename.identifier.trim().to_string()]
+                },
+                reason: rename.reason,
+            })
+        }
+        _ => {
+            let unit = SelectorUnit::new(selector_cfg.clone());
+            let output = unit.execute_with_fallback(&context).await?;
+            serde_json::from_value(output.data)
+                .map_err(|e| anyhow::anyhow!("Failed to parse selector output: {}", e))
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -176,6 +202,7 @@ pub(crate) async fn handle_program_step(
         Step::Select {
             id: _,
             instructions,
+            common,
             ..
         } => {
             let evidence = depends_on
@@ -185,9 +212,16 @@ pub(crate) async fn handle_program_step(
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
                 .join("\n\n");
-            let selection =
-                select_items_via_unit(client, selector_cfg, objective, &purpose, &instructions, &evidence)
-                    .await?;
+            let selection = select_items_via_unit(
+                client,
+                selector_cfg,
+                common.unit_type.as_deref(),
+                objective,
+                &purpose,
+                &instructions,
+                &evidence,
+            )
+            .await?;
             let items = selection
                 .items
                 .into_iter()

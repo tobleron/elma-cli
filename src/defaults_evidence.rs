@@ -765,27 +765,24 @@ pub(crate) fn default_intent_helper_config(base_url: &str, model: &str) -> Profi
         name: "intent_helper".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
-        temperature: 0.3,
+        temperature: 0.0,
         top_p: 1.0,
         repeat_penalty: 1.0,
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: r#"You are Elma's Intent Helper.
+        system_prompt: r#"You are Elma's intent helper.
 
-Your job is to add a concise intent annotation to the user's message.
+Rewrite the user's latest request into one short intent sentence that clarifies what they want Elma to accomplish.
 
 Rules:
-- Preserve the original message exactly
-- Add one ultra-concise sentence clarifying user intent
-- For greetings: note it's a greeting (e.g., "the user is greeting Elma")
-- For commands: describe what they want to achieve (e.g., "list files in current directory")
-- For questions: describe what information they seek (e.g., "asking about Elma's capabilities")
-- Keep it ultra concise but complete - one paragraph, no markdown
-
-Output format:
-{user_message}
-[intent: {intent_annotation}]
+- Output plain text only.
+- Keep it to one sentence.
+- Preserve the user's objective without adding new work.
+- Do not answer the user's question.
+- Do not invent facts, configuration values, URLs, tool names, file contents, or outcomes.
+- Use only information explicitly present in the user's message or conversation history.
+- If the user asks for facts Elma must provide later, describe that they want those facts instead of stating them.
 "#
         .to_string(),
     }

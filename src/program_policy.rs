@@ -75,6 +75,55 @@ pub(crate) fn command_is_readonly(cmd: &str) -> bool {
     false
 }
 
+pub(crate) fn request_requires_workspace_evidence(
+    route_decision: &RouteDecision,
+    complexity: &ComplexityAssessment,
+    formula: &FormulaSelection,
+) -> bool {
+    complexity.needs_evidence
+        || formula.primary.starts_with("inspect_")
+        || (route_decision.route.eq_ignore_ascii_case("DECIDE") && complexity.needs_evidence)
+}
+
+pub(crate) fn program_has_workspace_evidence_steps(program: &Program) -> bool {
+    program.steps.iter().any(|step| {
+        matches!(
+            step,
+            Step::Shell { .. } | Step::Read { .. } | Step::Search { .. }
+        )
+    })
+}
+
+pub(crate) fn step_results_have_workspace_evidence(step_results: &[StepResult]) -> bool {
+    step_results.iter().any(|result| {
+        matches!(result.kind.as_str(), "shell" | "read" | "search")
+            && result.ok
+            && (!result.summary.trim().is_empty()
+                || result
+                    .raw_output
+                    .as_ref()
+                    .is_some_and(|text| !text.trim().is_empty()))
+    })
+}
+
+pub(crate) fn validate_evidence_requirements(
+    program: &Program,
+    route_decision: &RouteDecision,
+    complexity: &ComplexityAssessment,
+    formula: &FormulaSelection,
+) -> Result<(), String> {
+    if request_requires_workspace_evidence(route_decision, complexity, formula)
+        && !program_has_workspace_evidence_steps(program)
+    {
+        return Err(
+            "Request requires workspace evidence but program has no shell/read/search step"
+                .to_string(),
+        );
+    }
+
+    Ok(())
+}
+
 pub(crate) fn is_command_sane(cmd: &str) -> bool {
     let t = cmd.trim();
     if t.is_empty() {
@@ -585,6 +634,29 @@ pub fn validate_formula_level(
 mod tests {
     use super::*;
 
+    fn test_probability_decision(choice: &str) -> ProbabilityDecision {
+        ProbabilityDecision {
+            choice: choice.to_string(),
+            source: "test".to_string(),
+            distribution: vec![(choice.to_string(), 1.0)],
+            margin: 1.0,
+            entropy: 0.0,
+        }
+    }
+
+    fn test_route_decision(route: &str) -> RouteDecision {
+        RouteDecision {
+            route: route.to_string(),
+            source: "test".to_string(),
+            distribution: vec![(route.to_string(), 1.0)],
+            margin: 1.0,
+            entropy: 0.0,
+            speech_act: test_probability_decision("INSTRUCT"),
+            workflow: test_probability_decision("WORKFLOW"),
+            mode: test_probability_decision("DECIDE"),
+        }
+    }
+
     fn make_program(steps: Vec<Step>) -> Program {
         Program {
             objective: "test".to_string(),
@@ -802,6 +874,81 @@ mod tests {
             memory_id: String::new(),
         };
         assert!(validate_formula_level(&formula, ExecutionLevel::Plan).is_err());
+    }
+
+    #[test]
+    fn test_validate_evidence_requirements_rejects_evidence_free_inspect_decide_program() {
+        let route = test_route_decision("DECIDE");
+        let complexity = ComplexityAssessment {
+            needs_evidence: true,
+            ..ComplexityAssessment::default()
+        };
+        let formula = FormulaSelection {
+            primary: "inspect_decide_reply".to_string(),
+            ..FormulaSelection::default()
+        };
+        let program = make_program(vec![
+            Step::Decide {
+                id: "d1".to_string(),
+                prompt: "decide".to_string(),
+                common: StepCommon::default(),
+            },
+            Step::Reply {
+                id: "r1".to_string(),
+                instructions: "answer".to_string(),
+                common: StepCommon::default(),
+            },
+        ]);
+
+        let result = validate_evidence_requirements(&program, &route, &complexity, &formula);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires workspace evidence"));
+    }
+
+    #[test]
+    fn test_validate_evidence_requirements_accepts_grounded_inspect_decide_program() {
+        let route = test_route_decision("DECIDE");
+        let complexity = ComplexityAssessment {
+            needs_evidence: true,
+            ..ComplexityAssessment::default()
+        };
+        let formula = FormulaSelection {
+            primary: "inspect_decide_reply".to_string(),
+            ..FormulaSelection::default()
+        };
+        let program = make_program(vec![
+            Step::Shell {
+                id: "s1".to_string(),
+                cmd: "rg --files .".to_string(),
+                common: StepCommon::default(),
+            },
+            Step::Decide {
+                id: "d1".to_string(),
+                prompt: "decide".to_string(),
+                common: StepCommon::default(),
+            },
+            Step::Reply {
+                id: "r1".to_string(),
+                instructions: "answer".to_string(),
+                common: StepCommon::default(),
+            },
+        ]);
+
+        assert!(validate_evidence_requirements(&program, &route, &complexity, &formula).is_ok());
+    }
+
+    #[test]
+    fn test_step_results_have_workspace_evidence_detects_grounded_read() {
+        let step_results = vec![StepResult {
+            id: "r1".to_string(),
+            kind: "read".to_string(),
+            ok: true,
+            summary: "read README".to_string(),
+            raw_output: Some("hello".to_string()),
+            ..StepResult::default()
+        }];
+
+        assert!(step_results_have_workspace_evidence(&step_results));
     }
 
     #[test]

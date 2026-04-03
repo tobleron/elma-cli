@@ -17,7 +17,9 @@ fn should_short_circuit_chat_route(
 }
 
 fn should_apply_speech_chat_boost(workflow: &ProbabilityDecision) -> bool {
-    workflow.choice.eq_ignore_ascii_case("CHAT") || workflow.margin < 0.15 || workflow.entropy > 0.50
+    workflow.choice.eq_ignore_ascii_case("CHAT")
+        || workflow.margin < 0.15
+        || workflow.entropy > 0.50
 }
 
 fn fallback_probability_decision(
@@ -167,7 +169,9 @@ Conversation so far (most recent last):
         speech_act_code_pairs(),
     )
     .await
-    .unwrap_or_else(|_| fallback_probability_decision("INQUIRE", speech_act_code_pairs(), "fallback"));
+    .unwrap_or_else(|_| {
+        fallback_probability_decision("INQUIRE", speech_act_code_pairs(), "fallback")
+    });
 
     let workflow_prompt = format!(
         "User message:\n{user_message}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",

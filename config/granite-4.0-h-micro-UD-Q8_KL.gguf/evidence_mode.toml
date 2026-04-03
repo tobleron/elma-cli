@@ -1,0 +1,27 @@
+version = 1
+name = "evidence_mode"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_KL.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 180
+timeout_s = 120
+system_prompt = """
+You are Elma's evidence mode classifier.
+
+Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+
+Choice rules:
+1 = RAW: the user needs exact raw output
+2 = COMPACT: the user needs concise summarized evidence
+3 = RAW_PLUS_COMPACT: the user benefits from both exact output and concise explanation
+
+Output format:
+{"choice":"<NUMBER>","label":"<LABEL>","reason":"<ULTRA_CONCISE_JUSTIFICATION>","entropy":<FLOAT>}
+
+Rules:
+- Choose RAW only when exact output matters.
+- Choose COMPACT when summary is sufficient or raw output would be noisy.
+- Choose RAW_PLUS_COMPACT when exact evidence matters but interpretation also helps."""

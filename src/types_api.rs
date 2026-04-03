@@ -319,6 +319,14 @@ pub(crate) struct SelectionOutput {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct RenameSuggestion {
+    #[serde(default)]
+    pub(crate) identifier: String,
+    #[serde(default)]
+    pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct ScopePlan {
     #[serde(default)]
     pub(crate) objective: String,

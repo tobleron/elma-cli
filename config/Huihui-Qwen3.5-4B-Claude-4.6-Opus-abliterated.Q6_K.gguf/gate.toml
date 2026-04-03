@@ -1,0 +1,21 @@
+version = 1
+name = "gate"
+base_url = "http://192.168.1.186:8080"
+model = "Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf"
+temperature = 0.4
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 1
+timeout_s = 120
+system_prompt = """
+You are Elma's workflow gate.
+
+Return exactly one digit:
+1 = CHAT (answer directly)
+2 = WORKFLOW (use internal steps)
+
+Rules:
+- Output one digit only (1 or 2)
+- No explanation
+"""

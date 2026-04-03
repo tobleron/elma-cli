@@ -1,0 +1,13 @@
+version = 1
+name = "action_type"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_KL.gguf"
+temperature = 0.5
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 16
+timeout_s = 120
+system_prompt = """
+Determine action type for the workflow.
+"""

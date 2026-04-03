@@ -60,30 +60,50 @@ Elma is **on the right track**, but the repo is now in a **mid-transition state*
 Use this order as the authoritative execution sequence. Do **not** prioritize by old filename numbers.
 
 ### Phase A: Truthfulness and Reliability Closure
-- [ ] **Task 056** - Cleanup dead code, legacy modules, and duplicate orchestration paths
-- [ ] **Task 015** - Finish crash-reporting integration and verify fatal-path coverage
-- [ ] **Task 014** - Finish hard caps and batching for read/search/summarize/shell evidence
-- [ ] **Task 012** - Reframe as refinement-loop hardening, not first implementation
-- [ ] **Task 013** - Reframe as full multi-turn goal execution, not just goal-state storage
+- [ ] **Task 061** - Role-based temperature and retry strategy calibration
+- [ ] **Task 062** - Final answer presentation and formatting reliability
+- [ ] **Task 063** - Real CLI stress harness and reliability gates
+- [ ] **Task 094** - Snapshot coverage for shell mutations and rollback integrity
+- [ ] **Task 093** - Hybrid masterplan and phase-implementation reliability
+- [ ] **Task 064** - Cleanup dead code, legacy modules, and duplicate orchestration paths
+- [ ] **Task 065** - Finish crash-reporting integration and verify fatal-path coverage
+- [ ] **Task 066** - Finish hard caps and batching for read/search/summarize/shell evidence
+- [ ] **Task 067** - Reframe as refinement-loop hardening, not first implementation
+- [ ] **Task 068** - Reframe as full multi-turn goal execution, not just goal-state storage
+- [ ] **Task 069** - Runtime profile validation and config healthcheck
 
 ### Phase B: Context Efficiency for Local Models
-- [ ] **Task 020** - Hierarchical evidence compaction
-- [ ] **Task 021** - Rolling conversation summary
-- [ ] **Task 019** - Specialized filesystem intel for structured observation
-- [ ] **Task 022** - Platform capability detection
+- [ ] **Task 087** - llama.cpp runtime token telemetry
+- [ ] **Task 088** - Objective-level token forecasting and budget envelopes
+- [ ] **Task 089** - Budget-aware orchestration and aggressive context conservation
+- [ ] **Task 070** - Hierarchical evidence compaction
+- [ ] **Task 071** - Rolling conversation summary
+- [ ] **Task 072** - Specialized filesystem intel for structured observation
+- [ ] **Task 073** - Platform capability detection
+- [ ] **Task 074** - Model capability profiles for local LLMs
+- [ ] **Task 075** - Offline-first network policy and web fallbacks
+- [ ] **Task 076** - Trace observability and session review tools
 
 ### Phase C: Controlled Autonomy
-- [ ] **Task 025** - Cross-scenario correlation
-- [ ] **Task 026** - Long-term tactical memory
-- [ ] **Task 029** - Predictive failure detection
-- [ ] **Task 031** - Constraint relaxation and creative problem solving
-- [ ] **Task 030** - Analogy-based reasoning engine
+- [ ] **Task 077** - Cross-scenario correlation
+- [ ] **Task 078** - Long-term tactical memory
+- [ ] **Task 079** - Predictive failure detection
+- [ ] **Task 080** - Constraint relaxation and creative problem solving
+- [ ] **Task 081** - Analogy-based reasoning engine
 
 ### Phase D: Self-Improvement and Maintainer Leverage
-- [ ] **Task 053** - Config orchestrator tool
-- [ ] **Task 054** - Document architecture abstractions
-- [ ] **Task 055** - Refine drag-formula weights
-- [ ] **Task 027** - Autonomous prompt evolution
+- [ ] **Task 082** - Config orchestrator tool
+- [ ] **Task 083** - Document architecture abstractions
+- [ ] **Task 084** - Refine drag-formula weights
+- [ ] **Task 085** - Autonomous prompt evolution
+
+### Phase E: Late-Stage Realism Validation
+- [ ] **Task 086** - Stress-test sloppy human prompts and intent-helper A/B behavior
+
+### Phase F: Late-Stage Cross-Model Adaptation
+- [ ] **Task 090** - Model behavior mapping and tuning graph
+- [ ] **Task 091** - Comprehensive per-model tuning lifecycle
+- [ ] **Task 092** - Model reliability scoring and upgrade advice
 
 ## Current Master Checklist
 
@@ -123,6 +143,19 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 - [x] Refine startup workspace context so routing/planning gets concise OS/shell/tool facts
 - [x] Reduce live classifier transport bloat by removing unused router logprob payloads
 - [x] Stabilize the first blocked sandbox CLI probe (`S000E`) through real end-to-end completion
+- [x] Stabilize `S000F` through grounded select/select/reply completion in the real CLI
+- [x] Close the evidence-free `DECIDE` reliability hole exposed by `S000H`
+- [x] Identify gaps in pending-task coverage for premium-quality local-model reliability
+- [x] Create new missing pending tasks for retry calibration, presentation reliability, CLI stress gates, config healthcheck, local-model capability profiles, offline-first network policy, and session review tooling
+- [x] Renumber the pending task queue to reflect the actual stabilization path
+- [x] Add advanced llama.cpp-first runtime token budgeting tasks for later-phase local-model efficiency work
+- [x] Add late-stage cross-model tuning, scoring, and upgrade-advice roadmap tasks
+- [x] Identify and track the hybrid masterplan-plus-Phase-1 implementation capability gap as Task 093
+- [x] Identify and track the shell-mutation auto-snapshot gap as Task 094
+- [x] Land the first working hybrid masterplan fallback slice for `S005` in the real CLI
+- [x] Land a working plan-level architecture-audit fallback for `S006` in the real CLI
+- [x] Land a working bounded subset-refactor fallback for `S007` in the real CLI
+- [x] Land a working documentation-audit endurance fallback for `S008` in the real CLI
 - [ ] Start the sandboxed CLI stress ladder against `_stress_testing` prompts
 - [x] Verify stress-suite runner behavior against the rewritten `_stress_testing` prompts
 - [x] Add explicit sandbox expectations to the stress-test runner and/or docs if needed
@@ -138,21 +171,63 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 
 ## Required Reframing of Existing Pending Tasks
 
-### Task 012
+### Task 067
 Current file assumes refinement does not exist. That is outdated.
 New scope: improve refinement triggers, better failure typing, and revision quality measurement.
 
-### Task 013
+### Task 068
 Current file assumes goal state does not exist. That is outdated.
 New scope: make persisted goals influence orchestration, continuation, and subgoal closure across turns.
 
-### Task 014
+### Task 066
 Current file is directionally correct but underestimates existing truncation/compaction work.
 New scope: unify hard evidence budgets across `Read`, `Search`, `Shell`, and `Summarize`.
 
-### Task 015
+### Task 065
 Current file assumes crash reporting is absent. That is outdated.
 New scope: integrate `SessionError` / panic-hook / status-file path end to end and test true failure modes.
+
+### Task 061
+New scope: unify role temperatures, strategy-chain behavior, retry escalation, and local-model-safe stochasticity envelopes under one calibrated policy.
+
+### Task 062
+New scope: prevent last-mile presenter/formatter corruption so grounded answers stay plain, direct, and terminal-appropriate.
+
+### Task 063
+New scope: make `cargo run` the authoritative stress-validation path, not only orchestrator-model approximations.
+
+### Task 094
+New scope: extend automatic recovery snapshots beyond structured `Edit` steps so shell-based workspace mutations are also rollback-safe.
+
+### Task 069
+New scope: validate profiles, grammars, prompt sync, and runtime config compatibility at startup.
+
+### Task 074
+New scope: define capability-aware runtime behavior for local small LLMs without forking the core prompt contract.
+
+### Task 075
+New scope: codify offline-first behavior with honest web fallback policy.
+
+### Task 076
+New scope: make session failures easier to inspect and explain from local trace artifacts.
+
+### Task 087
+New scope: capture authoritative runtime token usage and remaining-context telemetry from llama.cpp-style local endpoints.
+
+### Task 088
+New scope: forecast token cost for the active objective and produce budget envelopes before long workflows spend the context recklessly.
+
+### Task 089
+New scope: make budget-aware orchestration and aggressive context conservation a real runtime behavior, especially for 1B/3B local-model deployments.
+
+### Task 090
+New scope: map each model's behavioral deviations against Elma's benchmark expectations and record successful mitigations without philosophy-breaking prompt hacks.
+
+### Task 091
+New scope: run a comprehensive per-model tuning lifecycle that exhausts safe runtime adjustments to achieve best-known Elma compliance.
+
+### Task 092
+New scope: produce a final tuned reliability score and user-facing advice about whether the model is truly suitable for Elma workloads.
 
 ## Architectural Guardrails For All Future Work
 - Remove runtime keyword matching where confidence or evidence-based judgment should decide
@@ -165,15 +240,17 @@ New scope: integrate `SessionError` / panic-hook / status-file path end to end a
 ## Success Criteria
 - Routing / planning / verification behave consistently without brittle lexical shortcuts
 - Large-output tasks do not overflow context or silently degrade quality
+- Runtime token budgeting helps Elma preserve quality on constrained local models before overflow pressure becomes critical
 - Multi-turn objectives persist and close reliably
 - Failure paths always produce actionable reports
 - Legacy duplication is reduced enough that architecture becomes explainable and tunable
 - Advanced autonomy work begins only after the above baseline is stable
+- Cross-model tuning and scoring begin only after Elma's own single-model reliability baseline is strong enough to serve as a canonical benchmark
 
-## First Recommended Active Task
-Move **`_tasks/pending/056_Cleanup_Dead_Code_And_Legacy_Modules.md`** to active first.
+## First Recommended Pending Follow-Up
+Move **`_tasks/pending/061_Role_Based_Temperature_And_Retry_Strategy_Calibration.md`** to active after the current troubleshooting thread closes.
 
 Reason:
-- it reduces architectural drag immediately
-- it will expose which pathways are truly live
-- it lowers the cost and risk of Tasks 015, 014, 012, and 013
+- it closes a live reliability gap already visible in retries and strategy reuse
+- it gives the local-model stack a principled role-based stochasticity policy
+- it reduces wasted loops before the broader CLI stress harness work expands

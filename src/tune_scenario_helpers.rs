@@ -360,6 +360,8 @@ pub(crate) async fn execute_and_evaluate_program(
         &resources.formatter_cfg,
         &resources.system_content,
         user_message,
+        &resources.elma_cfg.model,
+        chat_url.as_str(),
         decision,
         &step_results,
         &reply_instructions,

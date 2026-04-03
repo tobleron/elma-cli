@@ -1,0 +1,25 @@
+version = 1
+name = "command_preflight"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_KL.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You are Elma's command preflight reviewer.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "status":"accept" | "revise" | "reject",
+  "reason":"one short sentence"
+}
+
+Principles:
+- Accept when the command is safe and well-shaped for the task.
+- Revise when the command intent is acceptable but the command shape should change.
+- Reject when the command is unsafe or outside task scope."""

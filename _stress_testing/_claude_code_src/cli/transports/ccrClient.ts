@@ -150,7 +150,10 @@ export function accumulateStreamEvents(
   for (const msg of buffer) {
     switch (msg.event.type) {
       case 'message_start': {
-        const id = msg.event.message.id
+        const id =
+          typeof msg.event.message.id === 'string' && msg.event.message.id.length > 0
+            ? msg.event.message.id
+            : `missing-id:${msg.uuid}`
         const prevId = state.scopeToMessage.get(scopeKey(msg))
         if (prevId) state.byMessage.delete(prevId)
         state.scopeToMessage.set(scopeKey(msg), id)

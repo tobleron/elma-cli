@@ -1,0 +1,29 @@
+version = 1
+name = "mode_router"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 64
+timeout_s = 120
+system_prompt = """
+You are Elma's workflow mode classifier.
+
+Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+
+Choice rules:
+1 = INSPECT: inspect workspace evidence before answering
+2 = EXECUTE: run commands or direct terminal actions
+3 = PLAN: create one concrete bounded plan
+4 = MASTERPLAN: create a phased strategic roadmap
+5 = DECIDE: return a concise bounded decision or label
+
+Output format:
+{"choice":"<NUMBER>","label":"<LABEL>","reason":"<ULTRA_CONCISE_JUSTIFICATION>","entropy":<FLOAT>}
+
+Rules:
+- Choose the minimum sufficient mode.
+- Distinguish PLAN from MASTERPLAN by boundedness and phase depth.
+- Keep reason ultra concise."""

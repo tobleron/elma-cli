@@ -237,6 +237,10 @@ pub(crate) fn ensure_model_config_folder(
             save_agent_config(&path, &profile)?;
         }
     }
+    let elma_path = dir.join("_elma.config");
+    if !elma_path.exists() {
+        save_agent_config(&elma_path, &default_elma_config(base_url, model_id))?;
+    }
     let router_cal_path = dir.join("router_calibration.toml");
     if !router_cal_path.exists() {
         // Placeholder; real values written by --tune.

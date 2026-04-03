@@ -1,10 +1,11 @@
 # Analysis Report: Claude Code Source Code & Potential Improvements for Elma-CLI
 
-This report summarizes the findings from an analysis of the Claude Code source code (`_stress_testing/_claude_code_src`) and compares its features and architecture with the current implementation of `elma-cli`. It identifies key areas where `elma-cli` can be improved to match or exceed the capabilities, safety, and reliability of the Claude Code agent.
+> **See [ARCHITECTURE.md](./ARCHITECTURE.md)** for comprehensive documentation including design philosophy, GBNF grammar integration, JSON reliability pipeline, and full implementation details.
+> **See [IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md)** for recent progress, troubleshooting sessions, and current state.
 
 ---
 
-## 🚀 1. Tool Sophistication & Discoverability
+## 7 Major Categories
 
 ### **Finding: Tool Search & Discovery (`ToolSearchTool`)**
 Claude Code uses a `ToolSearchTool` to manage a large ecosystem of tools. Instead of including all tool schemas in the system prompt (which consumes tokens and causes confusion), it only includes "deferred" tool names and search hints. The model can then use `ToolSearchTool` to find and load the necessary tools dynamically.
@@ -111,6 +112,78 @@ Claude Code uses `Ink` (React for CLI) to provide grouped tool use rendering, re
 
 ---
 
-## Conclusion
+## 📚 Quick Links
 
-Claude Code represents a significant step forward in agentic CLI design, particularly in its **security-first shell integration**, **dynamic tool discovery**, and **isolated sub-agent delegation**. By adopting these patterns, `elma-cli` can significantly increase its reliability and capability, moving from a multi-step orchestrator to a truly robust autonomous engineering partner.
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Comprehensive reference documentation
+- **[TASKS.md](./TASKS.md)** - Complete task list by pillar
+- **[IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md)** - Recent progress & troubleshooting
+- **[INTEL_UNIT_STANDARD.md](./INTEL_UNIT_STANDARD.md)** - Intel unit output format standard
+
+---
+
+## 🚀 Essential Commands
+
+### Development
+```bash
+cargo build
+cargo run -- [args]
+cargo test
+cargo fmt
+```
+
+### Testing & Probing
+```bash
+# Run unit tests
+cargo test
+
+# Run behavioral probes
+./probe_parsing.sh
+./reliability_probe.sh
+./run_intention_scenarios.sh
+./smoke_llamacpp.sh
+
+# Run stress tests
+./run_stress_tests_cli.sh
+```
+
+### Architecture Analysis
+```bash
+# Run the de-bloating analyzer
+cd _dev-system/analyzer && cargo run
+```
+
+### Configuration Management
+```bash
+# View current config structure
+ls -la config/
+
+# View defaults
+ls -la config/defaults/
+
+# Test model-specific override
+mv config/<model>/angel_helper.toml /tmp/
+cargo run  # Should fall back to defaults
+mv /tmp/angel_helper.toml config/<model>/
+```
+
+### Troubleshooting Quick Reference
+
+**Connection Pool Exhaustion:**
+- Symptom: Hangs after ~5 HTTP API calls, no timeout errors.
+- Root Cause: Creating `reqwest::Client::new()` in hot paths (each intel unit call).
+- Solution: Pass shared client through `IntelContext`.
+
+**Shell Command Timeouts:**
+- Symptom: 30-minute timeouts for simple tasks.
+- Causes: Model hangs in retry loops, shell syntax issues, 30-minute timeout too long.
+- Solution: Reduce to 5-minute timeout, fix shell command syntax.
+
+**Terminology Mismatch:**
+- Symptom: All requests routed to CHAT with entropy=0.00.
+- Root Cause: Model tuned on old terminology (CHAT, SHELL), new terms not recognized.
+- Solution: Revert to original terminology or perform full re-tuning.
+
+**Pattern-Matching Routing:**
+- Symptom: Over-orchestration, keyword-based decisions.
+- Root Cause: Hardcoded word patterns in routing logic.
+- Solution: Use confidence-based fallback (entropy > 0.8 → CHAT).
