@@ -17,6 +17,7 @@
 
 use crate::*;
 use std::collections::HashMap;
+use std::env;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -368,11 +369,36 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
 
 /// Check if a command exists in PATH
 pub fn command_exists(cmd: &str) -> bool {
-    Command::new(cmd)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    if cmd.is_empty() || cmd.contains(std::path::MAIN_SEPARATOR) {
+        return false;
+    }
+
+    let Some(path_var) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&path_var).any(|dir| {
+        let candidate = dir.join(cmd);
+        is_executable_path(&candidate)
+    })
+}
+
+fn is_executable_path(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        path.metadata()
+            .map(|meta| meta.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -409,6 +435,7 @@ mod tests {
         // Test with commands that exist on both macOS and Linux
         // Note: We use 'sh' as it's POSIX and always available
         assert!(command_exists("sh"));
+        assert!(command_exists("ls"));
         // Test a command that definitely doesn't exist
         assert!(!command_exists("nonexistent_command_xyz123"));
     }

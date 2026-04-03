@@ -127,12 +127,14 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
         // Task 014: Use new function with confidence fallback
-        let (ladder, complexity, scope, formula, planner_fallback_used) =
+        let (workflow_plan, ladder, complexity, scope, formula, planner_fallback_used) =
             derive_planning_prior_with_ladder(
                 &runtime.client,
                 &runtime.chat_url,
                 &runtime.profiles.workflow_planner_cfg,
                 &runtime.profiles.complexity_cfg,
+                &runtime.profiles.evidence_need_cfg,
+                &runtime.profiles.action_need_cfg,
                 &runtime.profiles.scope_builder_cfg,
                 &runtime.profiles.formula_cfg,
                 line,
@@ -143,8 +145,6 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 &runtime.messages,
             )
             .await;
-        // New function doesn't return workflow_plan, set to None
-        let workflow_plan: Option<WorkflowPlannerOutput> = None;
         trace(
             &runtime.args,
             &format!(
@@ -450,6 +450,82 @@ async fn build_program(
     .await
 }
 
+fn direct_shell_command_head(line: &str) -> Option<&str> {
+    let head = line.split_whitespace().next()?.trim();
+    if head.is_empty() {
+        return None;
+    }
+    Some(head)
+}
+
+fn should_use_direct_shell_fast_path(
+    line: &str,
+    route_decision: &RouteDecision,
+    workflow_plan: Option<&WorkflowPlannerOutput>,
+    complexity: &ComplexityAssessment,
+) -> bool {
+    if !route_decision.route.eq_ignore_ascii_case("SHELL") {
+        return false;
+    }
+
+    if !complexity.complexity.eq_ignore_ascii_case("DIRECT")
+        || !complexity.risk.eq_ignore_ascii_case("LOW")
+        || complexity.needs_plan
+        || complexity.needs_decision
+    {
+        return false;
+    }
+
+    if let Some(plan) = workflow_plan {
+        if !plan.complexity.trim().is_empty() && !plan.complexity.eq_ignore_ascii_case("DIRECT") {
+            return false;
+        }
+        if !plan.risk.trim().is_empty() && !plan.risk.eq_ignore_ascii_case("LOW") {
+            return false;
+        }
+    }
+
+    let Some(head) = direct_shell_command_head(line) else {
+        return false;
+    };
+
+    crate::tool_discovery::command_exists(head)
+}
+
+fn build_direct_shell_program(line: &str) -> Program {
+    Program {
+        objective: line.to_string(),
+        steps: vec![
+            Step::Shell {
+                id: "s1".to_string(),
+                cmd: line.to_string(),
+                common: StepCommon {
+                    purpose: "execute the requested shell command directly".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "the requested command completes".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+            Step::Reply {
+                id: "r1".to_string(),
+                instructions:
+                    "Report the command result clearly. If the output is short, show the relevant raw output."
+                        .to_string(),
+                common: StepCommon {
+                    purpose: "present the shell result to the user".to_string(),
+                    depends_on: vec!["s1".to_string()],
+                    success_condition: "the user receives the command result".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                },
+            },
+        ],
+    }
+}
+
 async fn build_program_with_temp(
     runtime: &AppRuntime,
     line: &str,
@@ -487,6 +563,17 @@ async fn build_program_with_temp(
                 },
             }],
         };
+    }
+
+    if should_use_direct_shell_fast_path(line, route_decision, workflow_plan, complexity) {
+        trace(
+            &runtime.args,
+            &format!(
+                "direct_shell_fast_path route={} complexity={} formula={}",
+                route_decision.route, complexity.complexity, formula.primary
+            ),
+        );
+        return build_direct_shell_program(line);
     }
 
     // Create a modified orchestrator config with the escalated temperature

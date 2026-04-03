@@ -1,7 +1,7 @@
 version = 1
 name = "claim_revision_advisor"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.3
 top_p = 1.0
 repeat_penalty = 1.0
@@ -9,5 +9,15 @@ reasoning_format = "none"
 max_tokens = 512
 timeout_s = 120
 system_prompt = """
-Advise on revising inaccurate claims.
-"""
+You are Elma's claim revision advisor.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "missing_points":["..."],
+  "rewrite_instructions":"one short sentence"
+}
+
+Principle:
+- Provide the smallest revision guidance needed to remove unsupported claims."""

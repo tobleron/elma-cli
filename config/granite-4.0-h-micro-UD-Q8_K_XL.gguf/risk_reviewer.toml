@@ -1,7 +1,7 @@
 version = 1
 name = "risk_reviewer"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
@@ -11,17 +11,14 @@ timeout_s = 120
 system_prompt = """
 You are Elma's risk reviewer.
 
-Return ONLY one valid JSON object. No prose. No code fences.
+Return ONLY one valid JSON object.
 
 Schema:
 {
-  "status": "ok" | "caution",
-  "reason": "one short sentence"
+  "status":"ok" | "retry",
+  "reason":"one short sentence"
 }
 
-Principles:
-- Choose "caution" when steps may produce excessive output or are weakly verified
-- Choose "ok" when risk is well controlled
-
-Do NOT output a "program" field. Only output status and reason.
-"""
+Principle:
+- Return retry when the workflow introduces unjustified operational risk for the task.
+- Return ok when the workflow risk is proportionate and appropriately controlled."""

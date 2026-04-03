@@ -30,7 +30,6 @@ pub struct DriftVerdict {
 /// 1. Step types vs. goal type mismatch
 /// 2. No progress toward success criteria
 /// 3. Self-referential steps (planning about planning)
-/// 4. Topic drift (keywords don't match goal)
 pub fn check_goal_drift(
     original_objective: &str,
     current_program: &Program,
@@ -51,11 +50,6 @@ pub fn check_goal_drift(
     // Check 3: Self-referential steps (planning about planning)
     if let Some(meta_planning) = check_meta_planning(current_program) {
         drift_signals.push(meta_planning);
-    }
-
-    // Check 4: Topic drift (keyword mismatch)
-    if let Some(topic_drift) = check_topic_drift(original_objective, current_program) {
-        drift_signals.push(topic_drift);
     }
 
     // Determine verdict based on signals
@@ -188,50 +182,6 @@ fn check_meta_planning(program: &Program) -> Option<String> {
     None
 }
 
-/// Check for topic drift using keyword analysis
-fn check_topic_drift(objective: &str, program: &Program) -> Option<String> {
-    // Extract key terms from objective
-    let objective_terms: Vec<&str> = objective
-        .split_whitespace()
-        .filter(|w| w.len() > 3)
-        .collect();
-
-    if objective_terms.is_empty() {
-        return None;
-    }
-
-    // Extract terms from step purposes
-    let step_terms: Vec<&str> = program
-        .steps
-        .iter()
-        .flat_map(|s| s.purpose().split_whitespace())
-        .filter(|w| w.len() > 3)
-        .collect();
-
-    // Check for term overlap
-    let overlap: Vec<_> = objective_terms
-        .iter()
-        .filter(|obj_term| {
-            step_terms
-                .iter()
-                .any(|step_term| obj_term.to_lowercase() == step_term.to_lowercase())
-        })
-        .collect();
-
-    // If less than 30% overlap, likely topic drift
-    if !objective_terms.is_empty() && !step_terms.is_empty() {
-        let overlap_ratio = overlap.len() as f64 / objective_terms.len() as f64;
-        if overlap_ratio < 0.3 && step_terms.len() >= 5 {
-            return Some(format!(
-                "Low keyword overlap ({:.0}%) between goal and steps",
-                overlap_ratio * 100.0
-            ));
-        }
-    }
-
-    None
-}
-
 // ============================================================================
 // Refinement Phase
 // ============================================================================
@@ -340,18 +290,18 @@ fn build_refinement_prompt(
 // ============================================================================
 
 fn truncate_objective(obj: &str, max_len: usize) -> String {
-    if obj.len() <= max_len {
+    if obj.chars().count() <= max_len {
         obj.to_string()
     } else {
-        format!("{}...", &obj[..max_len])
+        format!("{}...", obj.chars().take(max_len).collect::<String>())
     }
 }
 
 fn truncate_text(text: &str, max_len: usize) -> String {
-    if text.len() <= max_len {
+    if text.chars().count() <= max_len {
         text.to_string()
     } else {
-        format!("{}...", &text[..max_len])
+        format!("{}...", text.chars().take(max_len).collect::<String>())
     }
 }
 
@@ -560,5 +510,66 @@ mod tests {
             .as_ref()
             .unwrap()
             .contains("0 successful modifications"));
+    }
+
+    #[test]
+    fn test_check_goal_drift_direct_shell_success_is_not_drift() {
+        let objective = "ls -ltr";
+        let program = Program {
+            objective: objective.to_string(),
+            steps: vec![
+                Step::Shell {
+                    id: "s1".to_string(),
+                    cmd: "ls -ltr".to_string(),
+                    common: StepCommon {
+                        purpose: "execute the requested shell command directly".to_string(),
+                        ..StepCommon::default()
+                    },
+                },
+                Step::Reply {
+                    id: "r1".to_string(),
+                    instructions: "Report the command result clearly.".to_string(),
+                    common: StepCommon {
+                        purpose: "present the shell result to the user".to_string(),
+                        depends_on: vec!["s1".to_string()],
+                        ..StepCommon::default()
+                    },
+                },
+            ],
+        };
+        let results = vec![StepResult {
+            id: "s1".to_string(),
+            kind: "shell".to_string(),
+            purpose: "execute the requested shell command directly".to_string(),
+            depends_on: vec![],
+            success_condition: "the requested command completes".to_string(),
+            ok: true,
+            summary: "Directory listing completed".to_string(),
+            command: Some("ls -ltr".to_string()),
+            raw_output: Some("total 0".to_string()),
+            exit_code: Some(0),
+            output_bytes: Some(8),
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: Some("ok".to_string()),
+            outcome_reason: None,
+        }];
+
+        let verdict = check_goal_drift(objective, &program, &results);
+        assert!(!verdict.drift_detected);
+    }
+
+    #[test]
+    fn test_truncate_helpers_handle_unicode() {
+        let objective = "─".repeat(80);
+        let text = "╭".repeat(90);
+
+        let truncated_objective = truncate_objective(&objective, 50);
+        let truncated_text = truncate_text(&text, 40);
+
+        assert!(truncated_objective.ends_with("..."));
+        assert!(truncated_text.ends_with("..."));
     }
 }

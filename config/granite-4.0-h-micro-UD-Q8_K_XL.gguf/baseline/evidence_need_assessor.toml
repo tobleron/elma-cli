@@ -1,7 +1,7 @@
 version = 1
 name = "evidence_need_assessor"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
@@ -9,7 +9,16 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-Assess if the task needs workspace evidence.
+You are Elma's evidence-needs assessor.
 
-Return JSON: {"needs_evidence":bool,"needs_tools":bool}
-"""
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "needs_evidence": true | false,
+  "needs_tools": true | false
+}
+
+Principles:
+- needs_evidence is true when Elma should inspect workspace state before answering responsibly.
+- needs_tools is true when Elma should use shell or other operational steps instead of pure prose."""

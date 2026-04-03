@@ -351,20 +351,30 @@ pub(crate) fn managed_profile_specs(base_url: &str, model: &str) -> Vec<(String,
     // by startup sync through prompt_constants.rs.
     let defaults_dir = std::path::PathBuf::from("config/defaults");
     let mut specs = Vec::new();
+    let excluded_files = ["model_behavior.toml"];
 
     for entry in std::fs::read_dir(&defaults_dir).ok().into_iter().flatten() {
         if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.extension().map_or(false, |e| e == "toml") {
-                    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                        if let Ok(mut profile) = load_agent_config(&path) {
-                            apply_canonical_system_prompt(&mut profile);
-                            specs.push((filename.to_string(), profile));
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "toml") {
+                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    if excluded_files.contains(&filename) {
+                        continue;
+                    }
+                    if let Ok(mut profile) = load_agent_config(&path) {
+                        if !base_url.is_empty() {
+                            profile.base_url = base_url.to_string();
                         }
+                        if !model.is_empty() {
+                            profile.model = model.to_string();
+                        }
+                        apply_canonical_system_prompt(&mut profile);
+                        specs.push((filename.to_string(), profile));
                     }
                 }
             }
         }
+    }
 
     specs
 }

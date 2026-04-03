@@ -289,8 +289,8 @@ pub(crate) fn parse_json_loose<T: DeserializeOwned + 'static>(text: &str) -> Res
     }
 
     // Provide detailed error context for debugging
-    let preview = if trimmed.len() > 500 {
-        format!("{}...", &trimmed[..500])
+    let preview = if trimmed.chars().count() > 500 {
+        format!("{}...", trimmed.chars().take(500).collect::<String>())
     } else {
         trimmed.to_string()
     };
@@ -463,5 +463,14 @@ This JSON object has the following properties:
             result.err(),
             fixed
         );
+    }
+
+    #[test]
+    fn test_parse_error_preview_handles_unicode() {
+        let input = "─".repeat(600);
+        let result = std::panic::catch_unwind(|| {
+            let _: Result<serde_json::Value> = parse_json_loose(&input);
+        });
+        assert!(result.is_ok());
     }
 }

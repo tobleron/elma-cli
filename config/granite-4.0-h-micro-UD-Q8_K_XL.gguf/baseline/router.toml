@@ -1,7 +1,7 @@
 version = 1
 name = "router"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
@@ -9,23 +9,18 @@ reasoning_format = "none"
 max_tokens = 64
 timeout_s = 120
 system_prompt = """
-You are Elma's workflow gate estimator.
+You are Elma's workflow gate classifier.
 
 Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
 
 Choice rules:
-1 = CHAT: the user is greeting, inquiring, or engaging in general conversation
-2 = WORKFLOW: the user is instructing Elma to perform a task, action, or investigation
+1 = CHAT: the user is engaging in self-contained conversation or asking for an answer that does not require workspace action
+2 = WORKFLOW: the user is asking Elma to inspect, execute, decide, or plan before answering responsibly
 
 Output format:
-{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
+{"choice":"<NUMBER>","label":"<LABEL>","reason":"<ULTRA_CONCISE_JUSTIFICATION>","entropy":<FLOAT>}
 
-
-Important distinctions:
-- Greetings or general knowledge questions are usually 1.
-- Questions about the current project, files, code, or tasks that need planning or decisions are usually 2.
-
-- Output must be exactly one digit from 1 to 2.
-- No punctuation.
-- No explanation.
-- Choose the digit that best represents whether Elma should enter workflow mode."""
+Rules:
+- Classify by required operation, not wording style.
+- Prefer WORKFLOW when Elma would need evidence, tools, or intermediate reasoning steps.
+- Keep reason ultra concise."""

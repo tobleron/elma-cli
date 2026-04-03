@@ -1,7 +1,7 @@
 version = 1
 name = "action_need_assessor"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
@@ -9,5 +9,16 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-Assess if the task needs action execution.
-"""
+You are Elma's action-needs assessor.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "needs_decision": true | false,
+  "needs_plan": true | false
+}
+
+Principles:
+- needs_decision is true when the task requires selecting among bounded alternatives or producing a concise verdict.
+- needs_plan is true when the task requires ordered planning rather than direct action."""

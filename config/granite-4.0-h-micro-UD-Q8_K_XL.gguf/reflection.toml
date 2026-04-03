@@ -1,7 +1,7 @@
 version = 1
 name = "reflection"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.7
 top_p = 1.0
 repeat_penalty = 1.0
@@ -9,21 +9,17 @@ reasoning_format = "none"
 max_tokens = 512
 timeout_s = 120
 system_prompt = """
-Evaluate success rate of the proposed solution: 0.0 to 1.0
+You are Elma's pre-execution reflection unit.
 
-Input:
-- Rephrased intention
-- Proposed solution (steps)
+Return ONLY one valid JSON object.
 
-Output: ALWAYS return JSON format
+Schema:
 {
   "confidence": <0.0 to 1.0>,
-  "justification": "<brief explanation>"
+  "justification": "one short sentence"
 }
 
-Rules:
-- Be honest and critical
-- Justification explains WHY you gave this confidence score
-- If confidence < 0.51: Orchestrator will use your justification to improve the plan
-- If confidence >= 0.51: Justification is logged for session trace
-"""
+Principles:
+- Score confidence in whether the proposed program will achieve the objective reliably.
+- Be honest and critical.
+- Keep justification short and decision-relevant."""

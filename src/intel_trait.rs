@@ -456,6 +456,43 @@ pub(crate) fn apply_profile_grammar(
     Ok(())
 }
 
+pub(crate) fn build_intel_request(
+    profile: &Profile,
+    messages: Vec<ChatMessage>,
+) -> ChatCompletionRequest {
+    ChatCompletionRequest {
+        model: profile.model.clone(),
+        messages,
+        temperature: profile.temperature,
+        top_p: profile.top_p,
+        stream: false,
+        max_tokens: profile.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(profile.repeat_penalty),
+        reasoning_format: Some(profile.reasoning_format.clone()),
+        grammar: None,
+    }
+}
+
+pub(crate) fn build_intel_system_user_request(
+    profile: &Profile,
+    user_content: String,
+) -> ChatCompletionRequest {
+    build_intel_request(
+        profile,
+        vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: profile.system_prompt.clone(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user_content,
+            },
+        ],
+    )
+}
+
 pub(crate) async fn execute_intel_json_for_profile<T: DeserializeOwned + 'static>(
     client: &reqwest::Client,
     profile: &Profile,
@@ -473,6 +510,58 @@ pub(crate) async fn execute_intel_json_for_profile<T: DeserializeOwned + 'static
     .await
 }
 
+pub(crate) async fn execute_traced_intel_json_for_profile<T: DeserializeOwned + 'static>(
+    client: &reqwest::Client,
+    unit_name: &str,
+    profile: &Profile,
+    mut req: ChatCompletionRequest,
+) -> Result<T> {
+    append_trace_log_line(&format!(
+        "[INTEL_EXECUTE] unit={} model={}",
+        unit_name, profile.model
+    ));
+    append_trace_log_line(&format!(
+        "[INTEL_HTTP_START] url={} timeout={}s",
+        profile.base_url, profile.timeout_s
+    ));
+
+    let chat_url = intel_chat_url(profile)?;
+    append_trace_log_line(&format!("[INTEL_HTTP_URL] final_url={}", chat_url));
+
+    apply_profile_grammar(profile, &mut req)?;
+    if req.grammar.is_some() {
+        append_trace_log_line(&format!(
+            "[INTEL_GRAMMAR] injected grammar for unit={}",
+            unit_name
+        ));
+    }
+
+    let result = chat_json_with_repair_for_profile_timeout(
+        client,
+        &chat_url,
+        &req,
+        &profile.name,
+        profile.timeout_s,
+    )
+    .await?;
+
+    append_trace_log_line(&format!(
+        "[INTEL_HTTP_DONE] unit={} received response",
+        unit_name
+    ));
+
+    Ok(result)
+}
+
+pub(crate) async fn execute_intel_json_from_user_content<T: DeserializeOwned + 'static>(
+    client: &reqwest::Client,
+    profile: &Profile,
+    user_content: String,
+) -> Result<T> {
+    let req = build_intel_system_user_request(profile, user_content);
+    execute_intel_json_for_profile(client, profile, req).await
+}
+
 pub(crate) async fn execute_intel_text_for_profile(
     client: &reqwest::Client,
     profile: &Profile,
@@ -488,6 +577,15 @@ pub(crate) async fn execute_intel_text_for_profile(
         .unwrap_or_default()
         .trim()
         .to_string())
+}
+
+pub(crate) async fn execute_intel_text_from_user_content(
+    client: &reqwest::Client,
+    profile: &Profile,
+    user_content: String,
+) -> Result<String> {
+    let req = build_intel_system_user_request(profile, user_content);
+    execute_intel_text_for_profile(client, profile, req).await
 }
 
 // ============================================================================

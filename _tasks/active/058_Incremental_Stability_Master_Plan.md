@@ -99,6 +99,14 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 - [x] First trait-migration slice completed for the active `intel.rs` production path
 - [x] Live runtime callers migrated off `intel.rs` compatibility helpers
 - [x] Duplicate `src/intel.rs` module retired
+- [x] Trait layer cleanup started after legacy intel removal
+- [x] Repeated intel-unit request construction consolidated into shared trait helpers
+- [x] Repeated intel-unit execute boilerplate consolidated into shared trait helpers
+- [x] Remaining special-case complexity intel execution normalized onto shared traced helpers
+- [x] Live ladder path now preserves `workflow_plan` instead of dropping it
+- [x] Evidence/action assessment restored as independent ladder signals
+- [x] Early planning intel units switched onto shared narrative builders
+- [x] Evidence-mode lexical short-circuit removed so the unit owns the decision
 - [x] Stress-testing prompts S001-S008 rewritten for safer incremental escalation
 - [x] Stress-testing prompts sandboxed to `_stress_testing/` targets
 - [x] Stress-test runners now reject prompts that do not anchor to `_stress_testing/`
@@ -108,7 +116,11 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 - [x] Archive finished active task `006_Extend_Narrative_To_All_Intel_Units`
 - [x] Move this master plan into `_tasks/active/`
 - [x] Start **Task 056** as the first implementation task under this master plan
-- [ ] Continue **Task 056** by simplifying remaining trait-unit duplication and stale compatibility comments
+- [x] Continue **Task 056** by simplifying remaining trait-unit duplication and consolidating repeated request builders
+- [x] Continue **Task 056** by extracting the next shared intel-unit schema/request helpers
+- [x] Continue **Task 056** by normalizing the remaining special-case intel execution paths
+- [x] Verify orchestration-sequence and narrative gaps before stress testing
+- [ ] Start the sandboxed CLI stress ladder against `_stress_testing` prompts
 - [x] Verify stress-suite runner behavior against the rewritten `_stress_testing` prompts
 - [x] Add explicit sandbox expectations to the stress-test runner and/or docs if needed
 - [ ] Run the CLI stress ladder incrementally against the sandbox-anchored prompts

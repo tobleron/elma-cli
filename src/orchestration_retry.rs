@@ -60,8 +60,13 @@ pub(crate) async fn orchestrate_with_retries(
     let mut attempt_history: Vec<(u32, Program, String)> = Vec::new(); // (attempt, program, error)
 
     for attempt in 0..max_retries {
+        // Respect the already-built initial program on the first attempt.
+        let use_initial_program = attempt == 0;
+
         // Task 010: Get next strategy from chain (or use temperature escalation as before)
-        let strategy = if let Some(s) = strategy_chain.next_strategy() {
+        let strategy = if use_initial_program {
+            ExecutionStrategy::Direct
+        } else if let Some(s) = strategy_chain.next_strategy() {
             s
         } else {
             // Strategy chain exhausted, fall back to temperature escalation
@@ -92,23 +97,27 @@ pub(crate) async fn orchestrate_with_retries(
             ),
         );
 
-        // Build program with strategy-aware prompt
-        let retry_program = build_program_with_strategy(
-            client,
-            chat_url,
-            &profiles.orchestrator_cfg,
-            strategy,
-            temperature,
-            messages,
-            ws,
-            ws_brief,
-            route_decision,
-            complexity,
-            scope,
-            formula,
-            &attempt_history,
-        )
-        .await?;
+        let retry_program = if use_initial_program {
+            initial_program.clone()
+        } else {
+            // Build program with strategy-aware prompt
+            build_program_with_strategy(
+                client,
+                chat_url,
+                &profiles.orchestrator_cfg,
+                strategy,
+                temperature,
+                messages,
+                ws,
+                ws_brief,
+                route_decision,
+                complexity,
+                scope,
+                formula,
+                &attempt_history,
+            )
+            .await?
+        };
 
         // Execute the program
         let outcome = run_autonomous_loop(

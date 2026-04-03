@@ -1,7 +1,7 @@
 version = 1
 name = "speech_act"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.5
 top_p = 1.0
 repeat_penalty = 1.0
@@ -19,5 +19,9 @@ Choice rules:
 3 = INQUIRE: the user is asking a question or seeking information
 
 Output format:
-{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
-"""
+{"choice":"<NUMBER>","label":"<LABEL>","reason":"<ULTRA_CONCISE_JUSTIFICATION>","entropy":<FLOAT>}
+
+Rules:
+- Classify by user intention, not surface politeness.
+- Indirect action requests still count as INSTRUCT when the user wants Elma to do something.
+- Keep reason ultra concise."""

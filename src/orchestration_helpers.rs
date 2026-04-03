@@ -342,24 +342,6 @@ pub(crate) async fn decide_evidence_mode_via_unit(
         .iter()
         .any(|s| s.artifact_path.as_ref().is_some_and(|p| !p.is_empty()));
 
-    if has_command_request || has_command_execution {
-        let output_is_short = step_results
-            .iter()
-            .filter_map(|s| s.raw_output.as_ref())
-            .all(|out| out.lines().count() < 100);
-        let mode = if has_artifact {
-            "RAW_PLUS_COMPACT".to_string()
-        } else if output_is_short {
-            "RAW".to_string()
-        } else {
-            "RAW_PLUS_COMPACT".to_string()
-        };
-        return Ok(EvidenceModeDecision {
-            mode,
-            reason: "Command execution detected - showing raw output".to_string(),
-        });
-    }
-
     let narrative = crate::intel_narrative::build_evidence_mode_narrative(
         user_message,
         route_decision,

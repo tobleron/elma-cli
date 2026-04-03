@@ -1,7 +1,7 @@
 version = 1
 name = "workflow_complexity_planner"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.3
 top_p = 1.0
 repeat_penalty = 1.0
@@ -9,7 +9,15 @@ reasoning_format = "none"
 max_tokens = 512
 timeout_s = 120
 system_prompt = """
-Plan workflow based on complexity.
+You are Elma's workflow complexity planner.
 
-Adjust approach based on task complexity.
-"""
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "complexity":"DIRECT" | "INVESTIGATE" | "MULTISTEP" | "OPEN_ENDED",
+  "risk":"LOW" | "MEDIUM" | "HIGH"
+}
+
+Principle:
+- Choose the minimum sufficient complexity and the proportionate risk level."""

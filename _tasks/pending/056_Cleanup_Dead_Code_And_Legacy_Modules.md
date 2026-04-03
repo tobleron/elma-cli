@@ -37,4 +37,11 @@ As the project has evolved (especially with the `_dev-system` guidance), several
 - Expanded `IntelContext` with structured extras and shared profile-request helpers so trait units can preserve legacy payload richness while converging on one execution model.
 - Migrated direct runtime callers in planning, result presentation, selection, compaction, artifact classification, command repair, evidence-mode selection, and shell status generation onto trait units.
 - Deleted `src/intel.rs` after confirming it was no longer on the live call graph; neutral compatibility context now lives in `src/intel_trait.rs`.
+- Removed stale migration comments from `src/intel_units.rs` and aligned the remaining atomic classifier units with the shared trait-based request execution path.
+- Consolidated repeated `ChatCompletionRequest` construction into shared helper functions in `src/intel_trait.rs` and migrated the repetitive intel units onto that path to reduce duplication without changing prompt contracts.
+- Consolidated the repeated "build request, then execute it" pattern into shared text/JSON helper functions in `src/intel_trait.rs`, further shrinking duplicated execute logic across `src/intel_units.rs`.
+- Normalized the last major special-case intel path by moving `ComplexityAssessmentUnit` onto a shared traced execution helper instead of keeping custom inline grammar/HTTP wiring in `src/intel_units.rs`.
+- Restored the ladder's independent evidence/action assessment path and preserved the live `workflow_plan` object through the planning handoff instead of discarding it in the chat loop.
+- Switched the early planning intel units (complexity, evidence needs, action needs, workflow planner) onto the shared narrative builders so decision context is consistent with the later review/sufficiency path.
+- Removed the evidence-mode lexical bypass so evidence presentation routing is once again owned by the intel-unit decision path instead of pre-emptive word matching.
 - Verified after this slice with `cargo build`, `cargo test`, and `./run_intention_scenarios.sh`.

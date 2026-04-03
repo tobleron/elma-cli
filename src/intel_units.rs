@@ -1,15 +1,8 @@
 //! @efficiency-role: domain-logic
 //!
-//! Intel Units - Migrated Implementations
+//! Intel Units
 //!
-//! This module contains intel units that have been migrated from plain functions
-//! to the IntelUnit trait for better error handling, fallback support, and testability.
-//!
-//! Migrated Units:
-//! - ComplexityAssessmentUnit
-//! - EvidenceNeedsUnit
-//! - ActionNeedsUnit
-//! - WorkflowPlannerUnit
+//! This module contains Elma's trait-based intel units.
 
 use crate::intel_trait::*;
 use crate::*;
@@ -49,91 +42,20 @@ impl IntelUnit for ComplexityAssessmentUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        append_trace_log_line(&format!(
-            "[INTEL_EXECUTE] unit={} model={}",
-            self.name(),
-            self.profile.model
-        ));
+        let req = build_intel_system_user_request(
+            &self.profile,
+            crate::intel_narrative::build_complexity_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &context.workspace_facts,
+                &context.workspace_brief,
+                &context.conversation_excerpt,
+            ),
+        );
 
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "route_prior": {
-                            "route": context.route_decision.route,
-                            "distribution": context.route_decision.distribution.iter()
-                                .map(|(route, p)| serde_json::json!({"route": route, "p": p}))
-                                .collect::<Vec<_>>(),
-                        },
-                        "workspace_facts": context.workspace_facts,
-                        "workspace_brief": context.workspace_brief,
-                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        append_trace_log_line(&format!(
-            "[INTEL_HTTP_START] url={} timeout={}s",
-            self.profile.base_url, self.profile.timeout_s
-        ));
-
-        let chat_url = Url::parse(&self.profile.base_url)
-            .map_err(|e| anyhow::anyhow!("Invalid base_url '{}': {}", self.profile.base_url, e))?
-            .join("/v1/chat/completions")
-            .map_err(|e| anyhow::anyhow!("Failed to build chat URL: {}", e))?;
-
-        append_trace_log_line(&format!("[INTEL_HTTP_URL] final_url={}", chat_url));
-
-        // Use shared client from context instead of creating new one
-        // Inject grammar if profile has grammar mapping
-        let mut req_with_grammar = req;
-        if let Some(config_root) = crate::ui_chat::get_config_root_for_intel() {
-            if let Ok(grammar) =
-                crate::json_grammar::get_grammar_for_profile(&self.profile.name, config_root)
-            {
-                if let Some(grammar_content) = grammar {
-                    if let Ok(grammar_str) =
-                        crate::json_grammar::load_grammar(&grammar_content, config_root)
-                    {
-                        req_with_grammar.grammar = Some(grammar_str);
-                        append_trace_log_line(&format!(
-                            "[INTEL_GRAMMAR] injected grammar for unit={}",
-                            self.name()
-                        ));
-                    }
-                }
-            }
-        }
-
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &context.client,
-            &chat_url,
-            &req_with_grammar,
-            self.profile.timeout_s,
-        )
-        .await?;
-
-        append_trace_log_line(&format!(
-            "[INTEL_HTTP_DONE] unit={} received response",
-            self.name()
-        ));
+        let result: serde_json::Value =
+            execute_traced_intel_json_for_profile(&context.client, self.name(), &self.profile, req)
+                .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -187,12 +109,6 @@ impl IntelUnit for ComplexityAssessmentUnit {
     }
 }
 
-// Note: Compatibility wrappers are NOT provided here to avoid name conflicts.
-// The original functions in src/intel.rs continue to work.
-// To use the trait-based units directly, instantiate the unit struct:
-//   let unit = ComplexityAssessmentUnit::new(profile);
-//   let output = unit.execute_with_fallback(&context).await?;
-
 // ============================================================================
 // Evidence Needs Unit
 // ============================================================================
@@ -227,37 +143,18 @@ impl IntelUnit for EvidenceNeedsUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "route": context.route_decision.route,
-                        "workspace_facts": context.workspace_facts,
-                        "workspace_brief": context.workspace_brief,
-                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: serde_json::Value =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: serde_json::Value = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            crate::intel_narrative::build_evidence_needs_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &context.workspace_facts,
+                &context.workspace_brief,
+                &context.conversation_excerpt,
+            ),
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -285,9 +182,6 @@ impl IntelUnit for EvidenceNeedsUnit {
         ))
     }
 }
-
-// Note: Compatibility wrappers are NOT provided to avoid name conflicts.
-// Use the unit struct directly for trait-based execution.
 
 // ============================================================================
 // Action Needs Unit
@@ -323,37 +217,18 @@ impl IntelUnit for ActionNeedsUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "route": context.route_decision.route,
-                        "workspace_facts": context.workspace_facts,
-                        "workspace_brief": context.workspace_brief,
-                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: serde_json::Value =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: serde_json::Value = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            crate::intel_narrative::build_action_needs_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &context.workspace_facts,
+                &context.workspace_brief,
+                &context.conversation_excerpt,
+            ),
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -381,9 +256,6 @@ impl IntelUnit for ActionNeedsUnit {
         ))
     }
 }
-
-// Note: Compatibility wrappers are NOT provided to avoid name conflicts.
-// Use the unit struct directly for trait-based execution.
 
 // ============================================================================
 // Workflow Planner Unit
@@ -419,55 +291,18 @@ impl IntelUnit for WorkflowPlannerUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "speech_act": {
-                            "choice": context.route_decision.speech_act.choice,
-                            "distribution": context.route_decision.speech_act.distribution.iter()
-                                .map(|(label, p)| serde_json::json!({"label": label, "p": p}))
-                                .collect::<Vec<_>>()
-                        },
-                        "workflow": {
-                            "choice": context.route_decision.workflow.choice,
-                            "distribution": context.route_decision.workflow.distribution.iter()
-                                .map(|(label, p)| serde_json::json!({"label": label, "p": p}))
-                                .collect::<Vec<_>>()
-                        },
-                        "mode": {
-                            "choice": context.route_decision.mode.choice,
-                            "distribution": context.route_decision.mode.distribution.iter()
-                                .map(|(label, p)| serde_json::json!({"label": label, "p": p}))
-                                .collect::<Vec<_>>()
-                        },
-                        "route": context.route_decision.route,
-                        "workspace_facts": context.workspace_facts,
-                        "workspace_brief": context.workspace_brief,
-                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: WorkflowPlannerOutput =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: WorkflowPlannerOutput = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            crate::intel_narrative::build_workflow_planner_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &context.workspace_facts,
+                &context.workspace_brief,
+                &context.conversation_excerpt,
+            ),
+        )
+        .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -518,9 +353,6 @@ impl IntelUnit for WorkflowPlannerUnit {
     }
 }
 
-// Note: Compatibility wrappers are NOT provided to avoid name conflicts.
-// Use the unit struct directly for trait-based execution.
-
 // ============================================================================
 // Pattern Suggestion Unit
 // ============================================================================
@@ -555,35 +387,17 @@ impl IntelUnit for PatternSuggestionUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "route": context.route_decision.route,
-                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: serde_json::Value =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: serde_json::Value = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "user_message": context.user_message,
+                "route": context.route_decision.route,
+                "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -642,39 +456,21 @@ impl IntelUnit for ScopeBuilderUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "route": context.route_decision.route,
-                        "speech_act": context.route_decision.speech_act.choice,
-                        "complexity": context.complexity,
-                        "workspace_facts": context.workspace_facts,
-                        "workspace_brief": context.workspace_brief,
-                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: ScopePlan =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: ScopePlan = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "user_message": context.user_message,
+                "route": context.route_decision.route,
+                "speech_act": context.route_decision.speech_act.choice,
+                "complexity": context.complexity,
+                "workspace_facts": context.workspace_facts,
+                "workspace_brief": context.workspace_brief,
+                "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -750,39 +546,21 @@ impl IntelUnit for FormulaSelectorUnit {
             .extra("memory_candidates")
             .cloned()
             .unwrap_or_else(|| serde_json::json!([]));
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "speech_act": context.route_decision.speech_act.choice,
-                        "route": context.route_decision.route,
-                        "complexity": context.complexity,
-                        "scope": scope,
-                        "memory_candidates": memory_candidates,
-                        "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: FormulaSelection =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: FormulaSelection = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "user_message": context.user_message,
+                "speech_act": context.route_decision.speech_act.choice,
+                "route": context.route_decision.route,
+                "complexity": context.complexity,
+                "scope": scope,
+                "memory_candidates": memory_candidates,
+                "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -813,9 +591,6 @@ impl IntelUnit for FormulaSelectorUnit {
         ))
     }
 }
-
-// Note: Compatibility wrappers are NOT provided to avoid name conflicts.
-// Use the unit struct directly for trait-based execution.
 
 // ============================================================================
 // Selector Unit
@@ -926,30 +701,13 @@ impl IntelUnit for JsonRepairUnit {
             context.workspace_facts.trim().to_string()
         };
 
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: format!(
-                        "Original JSON:\n{}\n\nProblems to fix:\n{}",
-                        context.user_message, problems_text
-                    ),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
+        let req = build_intel_system_user_request(
+            &self.profile,
+            format!(
+                "Original JSON:\n{}\n\nProblems to fix:\n{}",
+                context.user_message, problems_text
+            ),
+        );
 
         let chat_url = Url::parse(&self.profile.base_url)
             .map_err(|e| anyhow::anyhow!("Invalid base_url '{}': {}", self.profile.base_url, e))?
@@ -1006,36 +764,18 @@ impl IntelUnit for SelectorUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "objective": context.user_message,
-                        "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
-                        "instructions": context.extra("instructions").cloned().unwrap_or(serde_json::Value::Null),
-                        "evidence": context.extra("evidence").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: SelectionOutput =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: SelectionOutput = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "objective": context.user_message,
+                "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
+                "instructions": context.extra("instructions").cloned().unwrap_or(serde_json::Value::Null),
+                "evidence": context.extra("evidence").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -1113,30 +853,9 @@ impl IntelUnit for EvidenceModeUnit {
                 })
                 .to_string()
             });
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: user_content,
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
         let result: EvidenceModeDecision =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+            execute_intel_json_from_user_content(&context.client, &self.profile, user_content)
+                .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -1198,37 +917,19 @@ impl IntelUnit for EvidenceCompactorUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
-                        "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
-                        "scope": context.extra("scope").cloned().unwrap_or(serde_json::Value::Null),
-                        "cmd": context.extra("cmd").cloned().unwrap_or(serde_json::Value::Null),
-                        "output": context.extra("output").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: EvidenceCompact =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: EvidenceCompact = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
+                "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
+                "scope": context.extra("scope").cloned().unwrap_or(serde_json::Value::Null),
+                "cmd": context.extra("cmd").cloned().unwrap_or(serde_json::Value::Null),
+                "output": context.extra("output").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -1292,35 +993,17 @@ impl IntelUnit for ArtifactClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
-                        "scope": context.extra("scope").cloned().unwrap_or(serde_json::Value::Null),
-                        "evidence": context.extra("evidence").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: ArtifactClassification =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: ArtifactClassification = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
+                "scope": context.extra("scope").cloned().unwrap_or(serde_json::Value::Null),
+                "evidence": context.extra("evidence").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -1387,37 +1070,20 @@ impl IntelUnit for ResultPresenterUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                        "route": context.route_decision.route,
-                        "speech_act": context.route_decision.speech_act.choice,
-                        "evidence_mode": context.extra("evidence_mode").cloned().unwrap_or(serde_json::Value::Null),
-                        "instructions": context.extra("reply_instructions").cloned().unwrap_or_else(|| serde_json::json!("Present results clearly to the user")),
-                        "step_results": context.extra("step_results").cloned().unwrap_or_else(|| serde_json::json!([])),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result = execute_intel_text_for_profile(&context.client, &self.profile, req).await?;
+        let result = execute_intel_text_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "user_message": context.user_message,
+                "route": context.route_decision.route,
+                "speech_act": context.route_decision.speech_act.choice,
+                "evidence_mode": context.extra("evidence_mode").cloned().unwrap_or(serde_json::Value::Null),
+                "instructions": context.extra("reply_instructions").cloned().unwrap_or_else(|| serde_json::json!("Present results clearly to the user")),
+                "step_results": context.extra("step_results").cloned().unwrap_or_else(|| serde_json::json!([])),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -1484,35 +1150,17 @@ impl IntelUnit for StatusMessageUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "current_action": context.extra("current_action").cloned().unwrap_or_else(|| serde_json::json!(context.user_message)),
-                        "step_type": context.extra("step_type").cloned().unwrap_or(serde_json::Value::Null),
-                        "step_purpose": context.extra("step_purpose").cloned().unwrap_or(serde_json::Value::Null),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: serde_json::Value =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: serde_json::Value = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "current_action": context.extra("current_action").cloned().unwrap_or_else(|| serde_json::json!(context.user_message)),
+                "step_type": context.extra("step_type").cloned().unwrap_or(serde_json::Value::Null),
+                "step_purpose": context.extra("step_purpose").cloned().unwrap_or(serde_json::Value::Null),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }
@@ -1570,36 +1218,18 @@ impl IntelUnit for CommandRepairUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
-                        "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
-                        "cmd": context.user_message,
-                        "output": context.extra("output").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: CommandRepair =
-            execute_intel_json_for_profile(&context.client, &self.profile, req).await?;
+        let result: CommandRepair = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
+                "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
+                "cmd": context.user_message,
+                "output": context.extra("output").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
+            })
+            .to_string(),
+        )
+        .await?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -1628,9 +1258,6 @@ impl IntelUnit for CommandRepairUnit {
         ))
     }
 }
-
-// Note: Compatibility wrappers are NOT provided to avoid name conflicts.
-// Use the unit struct directly for trait-based execution.
 
 // ============================================================================
 // Atomic Classification Units (Task 012)
@@ -1664,36 +1291,13 @@ impl IntelUnit for ComplexityClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
+        let result: serde_json::Value = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "user_message": context.user_message,
+            })
+            .to_string(),
         )
         .await?;
 
@@ -1745,36 +1349,13 @@ impl IntelUnit for RiskClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
+        let result: serde_json::Value = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "user_message": context.user_message,
+            })
+            .to_string(),
         )
         .await?;
 
@@ -1826,36 +1407,13 @@ impl IntelUnit for EvidenceNeedsClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
+        let result: serde_json::Value = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "user_message": context.user_message,
+            })
+            .to_string(),
         )
         .await?;
 
@@ -1907,36 +1465,13 @@ impl IntelUnit for ActionNeedsClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!({
-                        "user_message": context.user_message,
-                    })
-                    .to_string(),
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
-
-        let result: serde_json::Value = chat_json_with_repair_timeout(
-            &reqwest::Client::new(),
-            &Url::parse(&self.profile.base_url).unwrap(),
-            &req,
-            self.profile.timeout_s,
+        let result: serde_json::Value = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            serde_json::json!({
+                "user_message": context.user_message,
+            })
+            .to_string(),
         )
         .await?;
 

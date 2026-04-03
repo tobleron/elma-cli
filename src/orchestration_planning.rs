@@ -368,6 +368,8 @@ pub async fn derive_planning_prior_with_ladder(
     chat_url: &Url,
     workflow_planner_cfg: &Profile,
     complexity_cfg: &Profile,
+    evidence_need_cfg: &Profile,
+    action_need_cfg: &Profile,
     scope_builder_cfg: &Profile,
     formula_cfg: &Profile,
     line: &str,
@@ -377,6 +379,7 @@ pub async fn derive_planning_prior_with_ladder(
     memories: &[FormulaMemoryRecord],
     messages: &[ChatMessage],
 ) -> (
+    Option<WorkflowPlannerOutput>,
     ExecutionLadderAssessment,
     ComplexityAssessment,
     ScopePlan,
@@ -419,7 +422,7 @@ pub async fn derive_planning_prior_with_ladder(
             reason: "Classification uncertain, using safe default".to_string(),
             memory_id: String::new(),
         };
-        return (ladder, complexity, scope, formula, false);
+        return (None, ladder, complexity, scope, formula, false);
     }
 
     // Handle CHAT route specially (no ladder needed)
@@ -453,7 +456,7 @@ pub async fn derive_planning_prior_with_ladder(
             reason: "Direct conversational turn".to_string(),
             memory_id: String::new(),
         };
-        return (ladder, complexity, scope, formula, false);
+        return (None, ladder, complexity, scope, formula, false);
     }
 
     // Create classification features from route decision (Task 007: soft guidance)
@@ -464,8 +467,8 @@ pub async fn derive_planning_prior_with_ladder(
         client,
         chat_url,
         complexity_cfg,
-        complexity_cfg, // evidence_need (disabled, use complexity as fallback)
-        complexity_cfg, // action_need (disabled, use complexity as fallback)
+        evidence_need_cfg,
+        action_need_cfg,
         workflow_planner_cfg,
         line,
         route_decision,
@@ -476,11 +479,14 @@ pub async fn derive_planning_prior_with_ladder(
     )
     .await;
 
-    let ladder = match ladder_result {
-        Ok(assessment) => assessment,
+    let (ladder, workflow_plan) = match ladder_result {
+        Ok(result) => result,
         Err(error) => {
             trace_verbose(true, &format!("ladder_assessment_failed error={}", error));
-            ExecutionLadderAssessment::fallback(&format!("assessment error: {}", error))
+            (
+                ExecutionLadderAssessment::fallback(&format!("assessment error: {}", error)),
+                WorkflowPlannerOutput::default(),
+            )
         }
     };
 
@@ -562,7 +568,16 @@ pub async fn derive_planning_prior_with_ladder(
 
     let fallback_used = ladder.fallback_used;
 
-    (ladder, complexity, scope, formula, fallback_used)
+    let workflow_plan = if workflow_plan.objective.trim().is_empty()
+        && workflow_plan.reason.trim().is_empty()
+        && workflow_plan.scope.objective.trim().is_empty()
+    {
+        None
+    } else {
+        Some(workflow_plan)
+    };
+
+    (workflow_plan, ladder, complexity, scope, formula, fallback_used)
 }
 
 /// Check if hierarchical decomposition is needed using execution ladder

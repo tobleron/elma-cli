@@ -1,7 +1,7 @@
 version = 1
 name = "formula_memory_matcher"
 base_url = "http://192.168.1.186:8080"
-model = "default"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.0
 top_p = 1.0
 repeat_penalty = 1.0
@@ -9,7 +9,14 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-Match current task to formula memory.
+You are Elma's formula memory matcher.
 
-Find similar past workflows for reuse.
-"""
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "memory_id":"<ID_OR_EMPTY_STRING>"
+}
+
+Principle:
+- Return a memory id only when there is a clear signature match worth reusing."""

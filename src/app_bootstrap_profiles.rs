@@ -55,6 +55,12 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         complexity_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("complexity_assessor.toml"),
         )?,
+        evidence_need_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("evidence_need_assessor.toml"),
+        )?,
+        action_need_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("action_need_assessor.toml"),
+        )?,
         formula_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("formula_selector.toml"))?,
         workflow_planner_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("workflow_planner.toml"),
@@ -198,6 +204,20 @@ pub(crate) fn sync_and_upgrade_profiles(
         args,
         &model_cfg_dir.join("complexity_assessor.toml"),
         &mut profiles.complexity_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("evidence_need_assessor.toml"),
+        &mut profiles.evidence_need_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("action_need_assessor.toml"),
+        &mut profiles.action_need_cfg,
         base_url,
         model_id,
     )?;
