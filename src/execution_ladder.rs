@@ -231,13 +231,17 @@ pub async fn assess_execution_level(
     // For now, run sequentially (can optimize later)
 
     // 1. Get complexity assessment
-    let complexity_unit = ComplexityAssessmentUnit::new(complexity_profile.clone());
+    let mut bounded_complexity_profile = complexity_profile.clone();
+    bounded_complexity_profile.timeout_s = bounded_complexity_profile.timeout_s.min(45);
+    let complexity_unit = ComplexityAssessmentUnit::new(bounded_complexity_profile);
     let complexity_output = complexity_unit.execute_with_fallback(&context).await?;
     let complexity: ComplexityAssessment = serde_json::from_value(complexity_output.data.clone())
         .unwrap_or_else(|_| ComplexityAssessment::default());
 
     // 2. Get evidence needs
-    let evidence_unit = EvidenceNeedsUnit::new(evidence_need_profile.clone());
+    let mut bounded_evidence_profile = evidence_need_profile.clone();
+    bounded_evidence_profile.timeout_s = bounded_evidence_profile.timeout_s.min(45);
+    let evidence_unit = EvidenceNeedsUnit::new(bounded_evidence_profile);
     let evidence_output = evidence_unit.execute_with_fallback(&context).await?;
     let needs_evidence = evidence_output
         .get_bool("needs_evidence")
@@ -247,7 +251,9 @@ pub async fn assess_execution_level(
         .unwrap_or(complexity.needs_tools);
 
     // 3. Get action needs
-    let action_unit = ActionNeedsUnit::new(action_need_profile.clone());
+    let mut bounded_action_profile = action_need_profile.clone();
+    bounded_action_profile.timeout_s = bounded_action_profile.timeout_s.min(45);
+    let action_unit = ActionNeedsUnit::new(bounded_action_profile);
     let action_output = action_unit.execute_with_fallback(&context).await?;
     let needs_decision = action_output
         .get_bool("needs_decision")
@@ -257,10 +263,16 @@ pub async fn assess_execution_level(
         .unwrap_or(complexity.needs_plan);
 
     // 4. Get workflow plan (includes objective and reason)
-    let workflow_unit = WorkflowPlannerUnit::new(workflow_planner_profile.clone());
+    let mut bounded_workflow_profile = workflow_planner_profile.clone();
+    bounded_workflow_profile.timeout_s = bounded_workflow_profile.timeout_s.min(45);
+    let workflow_unit = WorkflowPlannerUnit::new(bounded_workflow_profile);
     let workflow_output = workflow_unit.execute_with_fallback(&context).await?;
     let workflow_plan: WorkflowPlannerOutput =
         serde_json::from_value(workflow_output.data.clone()).unwrap_or_default();
+
+    let explicit_planning_request = requests_planning(user_message);
+    let strategic_request = requests_strategy(user_message);
+    let phased_request = requests_phases(user_message);
 
     // Determine base level from complexity
     let base_level = complexity_to_level(&complexity.complexity);
@@ -270,7 +282,7 @@ pub async fn assess_execution_level(
     let mut escalation_factors = Vec::new();
 
     // Escalate for explicit planning request
-    if requests_planning(user_message) {
+    if explicit_planning_request {
         if level < ExecutionLevel::Plan {
             level = ExecutionLevel::Plan;
             escalation_factors.push("explicit planning request");
@@ -278,7 +290,7 @@ pub async fn assess_execution_level(
     }
 
     // Escalate for strategic request
-    if requests_strategy(user_message) {
+    if strategic_request {
         if level < ExecutionLevel::MasterPlan {
             level = ExecutionLevel::MasterPlan;
             escalation_factors.push("strategic decomposition request");
@@ -340,12 +352,25 @@ pub async fn assess_execution_level(
         }
     }
 
+    // Bounded ordered shell tasks should stay executable.
+    // MULTISTEP means more than one ordered operation, not necessarily a user-facing plan artifact.
+    let bounded_ordered_shell_task = route_decision.route.eq_ignore_ascii_case("SHELL")
+        && level == ExecutionLevel::Plan
+        && complexity.risk == "LOW"
+        && !needs_plan
+        && !strategic_request
+        && !explicit_planning_request
+        && !phased_request;
+    if bounded_ordered_shell_task {
+        level = ExecutionLevel::Task;
+    }
+
     // Determine requires_ordering
     let requires_ordering = needs_plan || has_dependencies(user_message, workspace_brief);
 
     // Determine requires_phases
     let requires_phases = level == ExecutionLevel::MasterPlan
-        || requests_phases(user_message)
+        || phased_request
         || complexity.complexity == "OPEN_ENDED";
 
     // Determine requires_revision_loop

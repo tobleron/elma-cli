@@ -562,7 +562,7 @@ pub(crate) async fn generate_text_from_reasoning(
         grammar: None,
     };
 
-    let resp = chat_once(client, chat_url, &req).await?;
+    let resp = chat_once_with_timeout(client, chat_url, &req, cfg.timeout_s).await?;
     Ok(extract_response_text(&resp).trim().to_string())
 }
 

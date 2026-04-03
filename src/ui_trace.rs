@@ -112,7 +112,12 @@ pub(crate) fn show_process_step_verbose(verbose: bool, category: &str, msg: &str
     let line = format!("[{}] {}", category, msg);
     append_trace_log_line(&line);
     if verbose {
-        eprintln!("{}", ansi_dim_gray(&line));
+        match category {
+            "CLASSIFY" => eprintln!("{}", ansi_bright_silver(&line)),
+            "PLAN" => eprintln!("{}", ansi_soft_blue(&line)),
+            "REFLECT" => eprintln!("{}", ansi_soft_rose(&line)),
+            _ => eprintln!("{}", ansi_dim_gray(&line)),
+        }
     }
 }
 
@@ -121,7 +126,7 @@ pub(crate) fn show_process_step(args: &Args, category: &str, msg: &str) {
 }
 
 pub(crate) fn show_intel_summary(verbose: bool, summary: &str) {
-    let line = format!("💡 {}", summary);
+    let line = format!("note: {}", summary);
     append_trace_log_line(&line);
     if verbose {
         eprintln!("{}", ansi_soft_gold(&line));
@@ -187,9 +192,9 @@ pub(crate) fn prompt_line(prompt: &str) -> Result<Option<String>> {
 
 pub(crate) fn user_prompt_label(args: &Args) -> String {
     if args.no_color {
-        "◉ ".to_string()
+        "> ".to_string()
     } else {
-        ansi_pale_yellow("◉ ")
+        ansi_pale_yellow("> ")
     }
 }
 

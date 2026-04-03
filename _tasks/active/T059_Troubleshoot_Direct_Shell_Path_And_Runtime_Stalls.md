@@ -14,6 +14,7 @@ Real Elma CLI sessions are still unstable on simple shell requests.
 Observed failures:
 - `cargo run` startup was broken by mixed-schema config loading (`model_behavior.toml`)
 - Recent live session stalled on a trivial `ls -ltr` request before any shell step executed
+- Baseline `hello` conversational turns could stall in classification or heavyweight chat finalization
 - Older sessions show Unicode char-boundary panics in runtime parsing/truncation paths
 
 ## Evidence
@@ -26,6 +27,7 @@ Observed failures:
 2. Formula alignment is overriding valid direct execution into `inspect_reply` for simple shell commands.
 3. Orchestrator JSON generation is still too fragile for trivial shell programs.
 4. Runtime string slicing paths still contain Unicode-unsafe truncation/parsing logic.
+5. Simple conversational turns are paying for too many model round-trips and can stall before final output.
 
 ## Phase 0 Plan
 - Reproduce the live CLI failure path from session evidence.
@@ -43,12 +45,17 @@ Observed failures:
 - [x] Verified no regression with `cargo test`
 - [x] Verified direct-shell behavior in live CLI session (`printf 'ls -ltr\n/exit\n' | cargo run`)
 - [x] Checked Unicode char-boundary panic sites and patched unsafe preview/truncation paths
+- [x] Reproduced baseline `hello` failure in live CLI mode
+- [x] Added timeout-aware routing/finalization calls on the baseline chat path
+- [x] Added conservative `CHAT` fallback when route confidence is low but speech act is conversational
+- [x] Verified baseline `hello` succeeds in real CLI mode
 
 ## Results
 - Root cause 1: `command_exists()` used `--version`, which falsely rejected valid macOS tools like `ls` and blocked the direct-shell fast path.
 - Root cause 2: `orchestrate_with_retries()` discarded the already-built initial program on attempt 1, so direct shell programs were regenerated instead of executed.
 - Root cause 3: goal-drift detection still used keyword-overlap heuristics, which falsely flagged successful direct shell execution as context drift and triggered malformed refinement.
 - Root cause 4: remaining byte-slice truncation paths in `routing_parse.rs` and `guardrails.rs` were still vulnerable to Unicode boundary panics.
+- Root cause 5: trivial `CHAT` turns were still using a multi-call routing/reflection/finalization chain, so a simple greeting could stall before Elma ever replied.
 
 ## Verified Fixes
 - `cargo test` passes with 146 tests
@@ -57,6 +64,15 @@ Observed failures:
   - direct shell success not triggering drift
   - Unicode-safe truncation helpers
   - Unicode-safe parse preview path
+- `printf 'hello\n/exit\n' | cargo run` now returns a real greeting through the lightweight chat path
+
+## Extended CLI Probe Results
+- `pwd` executes and returns the working directory through the direct shell path.
+- `ls src` executes and returns directory contents through the direct shell path.
+- `git status --short` now executes and returns real repository status after:
+  - allowing direct-shell fast path when workflow planning is `DIRECT/LOW` even if complexity is conservative
+  - raising inline shell capture ceiling from `128 KiB` to `1 MiB`
+- `hello` now classifies conservatively as `CHAT`, skips reflection for pure `reply_only` chat, and returns a greeting instead of stalling.
 
 ## Rollback Check
 - Any failed experimental changes must be reverted before leaving troubleshooting phase.

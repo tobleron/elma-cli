@@ -40,7 +40,9 @@ async fn trait_plan_workflow(
     ws_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<WorkflowPlannerOutput> {
-    let unit = WorkflowPlannerUnit::new(cfg.clone());
+    let mut cfg = cfg.clone();
+    cfg.timeout_s = cfg.timeout_s.min(45);
+    let unit = WorkflowPlannerUnit::new(cfg);
     let context = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
     let output = unit.execute_with_fallback(&context).await?;
     serde_json::from_value(output.data)
@@ -72,7 +74,9 @@ async fn trait_build_scope(
     ws_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<ScopePlan> {
-    let unit = ScopeBuilderUnit::new(cfg.clone());
+    let mut cfg = cfg.clone();
+    cfg.timeout_s = cfg.timeout_s.min(45);
+    let unit = ScopeBuilderUnit::new(cfg);
     let context = planning_intel_context(client, line, route_decision, ws, ws_brief, messages)
         .with_complexity(complexity.clone());
     let output = unit.execute_with_fallback(&context).await?;
@@ -102,7 +106,9 @@ async fn trait_select_formula(
             })
         })
         .collect::<Vec<_>>();
-    let unit = FormulaSelectorUnit::new(cfg.clone());
+    let mut cfg = cfg.clone();
+    cfg.timeout_s = cfg.timeout_s.min(45);
+    let unit = FormulaSelectorUnit::new(cfg);
     let context = planning_intel_context(client, line, route_decision, "", "", messages)
         .with_complexity(complexity.clone())
         .with_extra("scope", scope)?
@@ -499,9 +505,7 @@ pub async fn derive_planning_prior_with_ladder(
             || route_decision.route.eq_ignore_ascii_case("DECIDE"),
         needs_plan: ladder.level.requires_planning_structure(),
         risk: ladder.risk.clone(),
-        suggested_pattern: ladder.strategy_hint.clone().unwrap_or_else(|| {
-            fallback_formula_for_route(&route_decision.route, ladder.requires_evidence)
-        }),
+        suggested_pattern: fallback_formula_for_route(&route_decision.route, ladder.requires_evidence),
     };
 
     // Build scope (use ladder's objective if available, otherwise build from scratch)
@@ -545,6 +549,7 @@ pub async fn derive_planning_prior_with_ladder(
     let allowed_formulas = match ladder.level {
         ExecutionLevel::Action => vec!["reply_only", "execute_reply"],
         ExecutionLevel::Task => vec![
+            "execute_reply",
             "inspect_reply",
             "inspect_summarize_reply",
             "inspect_decide_reply",

@@ -6,6 +6,7 @@
 
 use crate::intel_trait::*;
 use crate::*;
+use serde_json::Value;
 
 // ============================================================================
 // Complexity Assessment Unit
@@ -456,19 +457,18 @@ impl IntelUnit for ScopeBuilderUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let complexity = serde_json::to_value(&context.complexity).unwrap_or(Value::Null);
         let result: ScopePlan = execute_intel_json_from_user_content(
             &context.client,
             &self.profile,
-            serde_json::json!({
-                "user_message": context.user_message,
-                "route": context.route_decision.route,
-                "speech_act": context.route_decision.speech_act.choice,
-                "complexity": context.complexity,
-                "workspace_facts": context.workspace_facts,
-                "workspace_brief": context.workspace_brief,
-                "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-            })
-            .to_string(),
+            crate::intel_narrative::build_scope_builder_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &complexity,
+                &context.workspace_facts,
+                &context.workspace_brief,
+                &context.conversation_excerpt,
+            ),
         )
         .await?;
 
@@ -546,19 +546,18 @@ impl IntelUnit for FormulaSelectorUnit {
             .extra("memory_candidates")
             .cloned()
             .unwrap_or_else(|| serde_json::json!([]));
+        let complexity = serde_json::to_value(&context.complexity).unwrap_or(Value::Null);
         let result: FormulaSelection = execute_intel_json_from_user_content(
             &context.client,
             &self.profile,
-            serde_json::json!({
-                "user_message": context.user_message,
-                "speech_act": context.route_decision.speech_act.choice,
-                "route": context.route_decision.route,
-                "complexity": context.complexity,
-                "scope": scope,
-                "memory_candidates": memory_candidates,
-                "conversation": conversation_excerpt(&context.conversation_excerpt, 12),
-            })
-            .to_string(),
+            crate::intel_narrative::build_formula_selector_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &complexity,
+                &serde_json::from_value(scope).unwrap_or_default(),
+                &memory_candidates,
+                &context.conversation_excerpt,
+            ),
         )
         .await?;
 
@@ -764,16 +763,27 @@ impl IntelUnit for SelectorUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let purpose = context
+            .extra("purpose")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let instructions = context
+            .extra("instructions")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let evidence = context
+            .extra("evidence")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
         let result: SelectionOutput = execute_intel_json_from_user_content(
             &context.client,
             &self.profile,
-            serde_json::json!({
-                "objective": context.user_message,
-                "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
-                "instructions": context.extra("instructions").cloned().unwrap_or(serde_json::Value::Null),
-                "evidence": context.extra("evidence").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
-            })
-            .to_string(),
+            crate::intel_narrative::build_selector_narrative(
+                &context.user_message,
+                &purpose,
+                &instructions,
+                &evidence,
+            ),
         )
         .await?;
 
@@ -917,17 +927,36 @@ impl IntelUnit for EvidenceCompactorUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let objective = context
+            .extra("objective")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let purpose = context
+            .extra("purpose")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let scope = context
+            .extra("scope")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let cmd = context
+            .extra("cmd")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let output = context
+            .extra("output")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
         let result: EvidenceCompact = execute_intel_json_from_user_content(
             &context.client,
             &self.profile,
-            serde_json::json!({
-                "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
-                "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
-                "scope": context.extra("scope").cloned().unwrap_or(serde_json::Value::Null),
-                "cmd": context.extra("cmd").cloned().unwrap_or(serde_json::Value::Null),
-                "output": context.extra("output").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
-            })
-            .to_string(),
+            crate::intel_narrative::build_evidence_compactor_narrative(
+                &objective,
+                &purpose,
+                &scope,
+                &cmd,
+                &output,
+            ),
         )
         .await?;
 
@@ -993,15 +1022,26 @@ impl IntelUnit for ArtifactClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let objective = context
+            .extra("objective")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let scope = context
+            .extra("scope")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let evidence = context
+            .extra("evidence")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
         let result: ArtifactClassification = execute_intel_json_from_user_content(
             &context.client,
             &self.profile,
-            serde_json::json!({
-                "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
-                "scope": context.extra("scope").cloned().unwrap_or(serde_json::Value::Null),
-                "evidence": context.extra("evidence").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
-            })
-            .to_string(),
+            crate::intel_narrative::build_artifact_classifier_narrative(
+                &objective,
+                &scope,
+                &evidence,
+            ),
         )
         .await?;
 
@@ -1070,18 +1110,28 @@ impl IntelUnit for ResultPresenterUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let evidence_mode = context
+            .extra("evidence_mode")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let reply_instructions = context
+            .extra("reply_instructions")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!("Present results clearly to the user"));
+        let step_results = context
+            .extra("step_results")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([]));
         let result = execute_intel_text_from_user_content(
             &context.client,
             &self.profile,
-            serde_json::json!({
-                "user_message": context.user_message,
-                "route": context.route_decision.route,
-                "speech_act": context.route_decision.speech_act.choice,
-                "evidence_mode": context.extra("evidence_mode").cloned().unwrap_or(serde_json::Value::Null),
-                "instructions": context.extra("reply_instructions").cloned().unwrap_or_else(|| serde_json::json!("Present results clearly to the user")),
-                "step_results": context.extra("step_results").cloned().unwrap_or_else(|| serde_json::json!([])),
-            })
-            .to_string(),
+            crate::intel_narrative::build_result_presenter_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &evidence_mode,
+                &reply_instructions,
+                &step_results,
+            ),
         )
         .await?;
 
@@ -1150,15 +1200,26 @@ impl IntelUnit for StatusMessageUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let current_action = context
+            .extra("current_action")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!(context.user_message));
+        let step_type = context
+            .extra("step_type")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let step_purpose = context
+            .extra("step_purpose")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let result: serde_json::Value = execute_intel_json_from_user_content(
             &context.client,
             &self.profile,
-            serde_json::json!({
-                "current_action": context.extra("current_action").cloned().unwrap_or_else(|| serde_json::json!(context.user_message)),
-                "step_type": context.extra("step_type").cloned().unwrap_or(serde_json::Value::Null),
-                "step_purpose": context.extra("step_purpose").cloned().unwrap_or(serde_json::Value::Null),
-            })
-            .to_string(),
+            crate::intel_narrative::build_status_message_narrative(
+                &current_action,
+                &step_type,
+                &step_purpose,
+            ),
         )
         .await?;
 
@@ -1218,16 +1279,27 @@ impl IntelUnit for CommandRepairUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let objective = context
+            .extra("objective")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let purpose = context
+            .extra("purpose")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let output = context
+            .extra("output")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
         let result: CommandRepair = execute_intel_json_from_user_content(
             &context.client,
             &self.profile,
-            serde_json::json!({
-                "objective": context.extra("objective").cloned().unwrap_or(serde_json::Value::Null),
-                "purpose": context.extra("purpose").cloned().unwrap_or(serde_json::Value::Null),
-                "cmd": context.user_message,
-                "output": context.extra("output").cloned().unwrap_or_else(|| serde_json::json!(context.workspace_facts)),
-            })
-            .to_string(),
+            crate::intel_narrative::build_command_repair_narrative(
+                &objective,
+                &purpose,
+                &context.user_message,
+                &output,
+            ),
         )
         .await?;
 

@@ -1,7 +1,9 @@
 use crate::*;
 
 pub(crate) fn looks_like_path_token(s: &str) -> bool {
-    let t = s.trim_matches(|c: char| c == '"' || c == '\'' || c == '`');
+    let t = s.trim_matches(|c: char| {
+        matches!(c, '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}')
+    });
     if t.is_empty() {
         return false;
     }
@@ -23,7 +25,9 @@ pub(crate) fn extract_first_path_from_user_text(line: &str) -> Option<String> {
     for tok in line.split_whitespace() {
         if looks_like_path_token(tok) {
             return Some(
-                tok.trim_matches(|c: char| c == '"' || c == '\'' || c == '`')
+                tok.trim_matches(|c: char| {
+                    matches!(c, '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}')
+                })
                     .to_string(),
             );
         }
@@ -95,6 +99,29 @@ pub(crate) fn normalize_shell_cmd(cmd: &str) -> String {
     if c.starts_with("cat cargo.toml") {
         return c.replacen("cat cargo.toml", "cat Cargo.toml", 1);
     }
+    if c.starts_with("rg ") {
+        let tokens: Vec<&str> = c.split_whitespace().collect();
+        if let Some(globstar_token) = tokens.iter().find(|token| token.contains("/**/*")) {
+            if let Some((base, glob)) = globstar_token.split_once("/**/") {
+                let normalized_glob = if glob.is_empty() {
+                    "*".to_string()
+                } else {
+                    glob.to_string()
+                };
+                let mut rewritten = tokens
+                    .iter()
+                    .filter(|token| **token != *globstar_token)
+                    .map(|token| (*token).to_string())
+                    .collect::<Vec<_>>();
+                if !base.is_empty() {
+                    rewritten.push(base.to_string());
+                }
+                rewritten.push("--glob".to_string());
+                rewritten.push(shell_quote(&normalized_glob));
+                return rewritten.join(" ");
+            }
+        }
+    }
     c.to_string()
 }
 
@@ -120,4 +147,28 @@ pub(crate) fn looks_like_markdown(text: &str) -> bool {
 pub(crate) fn user_requested_markdown(text: &str) -> bool {
     let t = text.to_lowercase();
     t.contains("markdown")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_first_path_trims_trailing_punctuation() {
+        let line = "In _stress_testing/_opencode_for_testing/, find a function definition.";
+        assert_eq!(
+            extract_first_path_from_user_text(line).as_deref(),
+            Some("_stress_testing/_opencode_for_testing/")
+        );
+    }
+
+    #[test]
+    fn normalize_shell_cmd_rewrites_rg_globstar_path() {
+        let original = "rg -i '^main' _stress_testing/_opencode_for_testing/**/*.rs";
+        let normalized = normalize_shell_cmd(original);
+        assert_eq!(
+            normalized,
+            "rg -i '^main' _stress_testing/_opencode_for_testing --glob '*.rs'"
+        );
+    }
 }

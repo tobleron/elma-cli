@@ -34,7 +34,13 @@ pub(crate) async fn request_program_or_repair(
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar,
     };
-    let (program, json_text) = chat_json_with_repair_text(client, chat_url, &orch_req).await?;
+    let (program, json_text) = chat_json_with_repair_text_timeout(
+        client,
+        chat_url,
+        &orch_req,
+        orchestrator_cfg.timeout_s.min(45),
+    )
+    .await?;
     Ok((program, json_text))
 }
 
@@ -98,7 +104,13 @@ pub(crate) async fn request_recovery_program(
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar: None,
     };
-    chat_json_with_repair(client, chat_url, &recovery_req).await
+    chat_json_with_repair_timeout(
+        client,
+        chat_url,
+        &recovery_req,
+        orchestrator_cfg.timeout_s.min(45),
+    )
+    .await
 }
 
 pub(crate) async fn request_critic_verdict(
@@ -141,7 +153,14 @@ pub(crate) async fn request_critic_verdict(
         reasoning_format: Some(critic_cfg.reasoning_format.clone()),
         grammar: None,
     };
-    chat_json_with_repair_for_profile(client, chat_url, &critic_req, &critic_cfg.name).await
+    chat_json_with_repair_for_profile_timeout(
+        client,
+        chat_url,
+        &critic_req,
+        &critic_cfg.name,
+        critic_cfg.timeout_s,
+    )
+    .await
 }
 
 pub(crate) async fn request_reviewer_verdict(
@@ -180,7 +199,14 @@ pub(crate) async fn request_reviewer_verdict(
         reasoning_format: Some(reviewer_cfg.reasoning_format.clone()),
         grammar: None,
     };
-    chat_json_with_repair_for_profile(client, chat_url, &reviewer_req, &reviewer_cfg.name).await
+    chat_json_with_repair_for_profile_timeout(
+        client,
+        chat_url,
+        &reviewer_req,
+        &reviewer_cfg.name,
+        reviewer_cfg.timeout_s,
+    )
+    .await
 }
 
 pub(crate) async fn request_risk_review(
@@ -221,7 +247,14 @@ pub(crate) async fn request_risk_review(
         reasoning_format: Some(risk_cfg.reasoning_format.clone()),
         grammar: None,
     };
-    chat_json_with_repair_for_profile(client, chat_url, &risk_req, &risk_cfg.name).await
+    chat_json_with_repair_for_profile_timeout(
+        client,
+        chat_url,
+        &risk_req,
+        &risk_cfg.name,
+        risk_cfg.timeout_s,
+    )
+    .await
 }
 
 pub(crate) async fn request_chat_final_text(
@@ -259,7 +292,7 @@ pub(crate) async fn request_chat_final_text(
         reasoning_format: Some(elma_cfg.reasoning_format.clone()),
         grammar: None,
     };
-    let parsed = chat_once(client, chat_url, &reply_req).await?;
+    let parsed = chat_once_with_timeout(client, chat_url, &reply_req, elma_cfg.timeout_s).await?;
     let usage_total = parsed.usage.as_ref().and_then(|u| u.total_tokens);
     let msg = &parsed
         .choices
@@ -428,7 +461,7 @@ pub(crate) async fn maybe_format_final_text(
         reasoning_format: Some(formatter_cfg.reasoning_format.clone()),
         grammar: None,
     };
-    if let Ok(fmt_resp) = chat_once(client, chat_url, &fmt_req).await {
+    if let Ok(fmt_resp) = chat_once_with_timeout(client, chat_url, &fmt_req, formatter_cfg.timeout_s).await {
         let next_usage = fmt_resp
             .usage
             .as_ref()

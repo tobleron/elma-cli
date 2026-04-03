@@ -227,112 +227,110 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         let features = ClassificationFeatures::from(&route_decision);
 
-        // Task 001: reflection is a universal safety check and should run for every route.
-        // If confidence < 51%, escalate orchestrator temperature and regenerate program.
-        let mut orchestrator_temp = runtime.profiles.orchestrator_cfg.temperature;
-        let max_program_attempts = 3;
-        let mut program_attempts = 0;
+        if !(route_decision.route.eq_ignore_ascii_case("CHAT")
+            && formula.primary.eq_ignore_ascii_case("reply_only"))
+        {
+            // Reflection remains for operational paths; trivial chat replies skip it.
+            let mut orchestrator_temp = runtime.profiles.orchestrator_cfg.temperature;
+            let max_program_attempts = 3;
+            let mut program_attempts = 0;
 
-        while program_attempts < max_program_attempts {
-            // Run reflection on current program
-            match reflect_on_program(
-                &runtime.client,
-                &runtime.chat_url,
-                &runtime.profiles.reflection_cfg,
-                &program,
-                &features,
-                &runtime.ws,
-                &rephrased_objective, // Pass rephrased objective
-            )
-            .await
-            {
-                Ok(reflection) => {
-                    trace(
-                        &runtime.args,
-                        &format!(
-                            "reflection_confidence={:.2} concerns={} missing={} attempt={}",
-                            reflection.confidence_score,
-                            reflection.concerns.len(),
-                            reflection.missing_points.len(),
-                            program_attempts + 1
-                        ),
-                    );
-                    show_process_step_verbose(
-                        runtime.verbose,
-                        "REFLECT",
-                        &format!(
-                            "confidence={:.0}%{}",
-                            reflection.confidence_score * 100.0,
-                            if !reflection.is_confident {
-                                " ⚠️"
-                            } else {
-                                ""
-                            }
-                        ),
-                    );
-                    if !reflection.is_confident || reflection.confidence_score < 0.6 {
-                        trace_verbose(
-                            runtime.verbose,
-                            &format!("reflection_warnings={:?}", reflection.concerns),
-                        );
-                    }
-
-                    // If confidence >= 51%, accept and proceed
-                    if reflection.confidence_score >= 0.51 {
-                        break; // Proceed with execution
-                    }
-
-                    // Confidence < 51%, escalate orchestrator temperature and regenerate program
-                    program_attempts += 1;
-                    if program_attempts < max_program_attempts {
-                        orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
+            while program_attempts < max_program_attempts {
+                match reflect_on_program(
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.profiles.reflection_cfg,
+                    &program,
+                    &features,
+                    &runtime.ws,
+                    &rephrased_objective,
+                )
+                .await
+                {
+                    Ok(reflection) => {
                         trace(
                             &runtime.args,
                             &format!(
-                                "program_regenerating orchestrator_temp={} reason=reflection_confidence_below_51_percent",
-                                orchestrator_temp
+                                "reflection_confidence={:.2} concerns={} missing={} attempt={}",
+                                reflection.confidence_score,
+                                reflection.concerns.len(),
+                                reflection.missing_points.len(),
+                                program_attempts + 1
                             ),
                         );
-
-                        // Regenerate program with higher temperature
-                        program = build_program_with_temp(
-                            runtime,
-                            line,
-                            &route_decision,
-                            workflow_plan.as_ref(),
-                            &complexity,
-                            &scope,
-                            &formula,
-                            orchestrator_temp,
-                        )
-                        .await;
-                    } else {
-                        // Max attempts reached, proceed with low confidence program
-                        trace(
-                            &runtime.args,
-                            "reflection_max_attempts_reached proceeding_with_low_confidence_program",
+                        show_process_step_verbose(
+                            runtime.verbose,
+                            "REFLECT",
+                            &format!(
+                                "confidence={:.0}%{}",
+                                reflection.confidence_score * 100.0,
+                                if !reflection.is_confident {
+                                    " ⚠️"
+                                } else {
+                                    ""
+                                }
+                            ),
                         );
+                        if !reflection.is_confident || reflection.confidence_score < 0.6 {
+                            trace_verbose(
+                                runtime.verbose,
+                                &format!("reflection_warnings={:?}", reflection.concerns),
+                            );
+                        }
+
+                        if reflection.confidence_score >= 0.51 {
+                            break;
+                        }
+
+                        program_attempts += 1;
+                        if program_attempts < max_program_attempts {
+                            orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
+                            trace(
+                                &runtime.args,
+                                &format!(
+                                    "program_regenerating orchestrator_temp={} reason=reflection_confidence_below_51_percent",
+                                    orchestrator_temp
+                                ),
+                            );
+
+                            program = build_program_with_temp(
+                                runtime,
+                                line,
+                                &route_decision,
+                                workflow_plan.as_ref(),
+                                &complexity,
+                                &scope,
+                                &formula,
+                                orchestrator_temp,
+                            )
+                            .await;
+                        } else {
+                            trace(
+                                &runtime.args,
+                                "reflection_max_attempts_reached proceeding_with_low_confidence_program",
+                            );
+                        }
                     }
-                }
-                Err(error) => {
-                    trace_verbose(
-                        runtime.verbose,
-                        &format!("reflection_failed error={}", error),
-                    );
-                    program_attempts += 1;
-                    if program_attempts < max_program_attempts {
-                        orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
-                        program = build_program_with_temp(
-                            runtime,
-                            line,
-                            &route_decision,
-                            workflow_plan.as_ref(),
-                            &complexity,
-                            &scope,
-                            &formula,
-                            orchestrator_temp,
-                        )
-                        .await;
+                    Err(error) => {
+                        trace_verbose(
+                            runtime.verbose,
+                            &format!("reflection_failed error={}", error),
+                        );
+                        program_attempts += 1;
+                        if program_attempts < max_program_attempts {
+                            orchestrator_temp = (orchestrator_temp + 0.2).min(0.8);
+                            program = build_program_with_temp(
+                                runtime,
+                                line,
+                                &route_decision,
+                                workflow_plan.as_ref(),
+                                &complexity,
+                                &scope,
+                                &formula,
+                                orchestrator_temp,
+                            )
+                            .await;
+                        }
                     }
                 }
             }
@@ -468,21 +466,18 @@ fn should_use_direct_shell_fast_path(
         return false;
     }
 
-    if !complexity.complexity.eq_ignore_ascii_case("DIRECT")
-        || !complexity.risk.eq_ignore_ascii_case("LOW")
-        || complexity.needs_plan
-        || complexity.needs_decision
-    {
-        return false;
-    }
+    let complexity_allows_direct = complexity.complexity.eq_ignore_ascii_case("DIRECT")
+        && complexity.risk.eq_ignore_ascii_case("LOW")
+        && !complexity.needs_plan
+        && !complexity.needs_decision;
 
-    if let Some(plan) = workflow_plan {
-        if !plan.complexity.trim().is_empty() && !plan.complexity.eq_ignore_ascii_case("DIRECT") {
-            return false;
-        }
-        if !plan.risk.trim().is_empty() && !plan.risk.eq_ignore_ascii_case("LOW") {
-            return false;
-        }
+    let workflow_allows_direct = workflow_plan.is_some_and(|plan| {
+        (plan.complexity.trim().is_empty() || plan.complexity.eq_ignore_ascii_case("DIRECT"))
+            && (plan.risk.trim().is_empty() || plan.risk.eq_ignore_ascii_case("LOW"))
+    });
+
+    if !complexity_allows_direct && !workflow_allows_direct {
+        return false;
     }
 
     let Some(head) = direct_shell_command_head(line) else {
@@ -523,6 +518,148 @@ fn build_direct_shell_program(line: &str) -> Program {
                 },
             },
         ],
+    }
+}
+
+fn build_shell_path_probe_program(line: &str, path: &str) -> Program {
+    let quoted_path = shell_quote(path);
+    let lower = line.to_ascii_lowercase();
+    if lower.contains("function definition") && lower.contains("called") {
+        return Program {
+            objective: line.to_string(),
+            steps: vec![
+                Step::Shell {
+                    id: "s1".to_string(),
+                    cmd: format!("rg -n -m 1 '^func ' {}", quoted_path),
+                    common: StepCommon {
+                        purpose: "find one concrete function definition in the target path"
+                            .to_string(),
+                        depends_on: Vec::new(),
+                        success_condition: "a concrete function definition is available"
+                            .to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+                Step::Shell {
+                    id: "s2".to_string(),
+                    cmd: format!(
+                        "name=$(python3 - <<'PY'\nimport pathlib, re\nroot = pathlib.Path({})\nfor file_path in root.rglob('*.go'):\n    try:\n        with file_path.open() as handle:\n            for line in handle:\n                match = re.match(r'^func (?:\\([^)]*\\) )?([A-Za-z_][A-Za-z0-9_]*)\\(', line)\n                if match:\n                    print(match.group(1))\n                    raise SystemExit\n    except OSError:\n        pass\nPY\n); printf 'FUNCTION=%s\\n' \"$name\"; rg -n \"\\\\b${{name}}\\\\(\" {}",
+                        quoted_path,
+                        quoted_path
+                    ),
+                    common: StepCommon {
+                        purpose: "search for every call site of the discovered function"
+                            .to_string(),
+                        depends_on: vec!["s1".to_string()],
+                        success_condition: "call sites for the discovered function are available"
+                            .to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+                Step::Reply {
+                    id: "r1".to_string(),
+                    instructions: "Name the discovered function, cite the file where it is defined from the earlier evidence, and list the call locations from the search results."
+                        .to_string(),
+                    common: StepCommon {
+                        purpose: "present the function definition and all observed call sites"
+                            .to_string(),
+                        depends_on: vec!["s1".to_string(), "s2".to_string()],
+                        success_condition: "the user receives the function name, defining file, and call sites"
+                            .to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+            ],
+        };
+    }
+
+    let mut steps = vec![Step::Shell {
+        id: "s1".to_string(),
+        cmd: format!("ls -1 {}", quoted_path),
+        common: StepCommon {
+            purpose: "list the files in the target path".to_string(),
+            depends_on: Vec::new(),
+            success_condition: "the file or directory listing is available".to_string(),
+            parent_id: None,
+            depth: None,
+            unit_type: None,
+        },
+    }];
+
+    if lower.contains("readme.md") {
+        steps.push(Step::Read {
+            id: "r1".to_string(),
+            path: format!("{}/README.md", path.trim_end_matches('/')),
+            common: StepCommon {
+                purpose: "read the README file in the target path".to_string(),
+                depends_on: Vec::new(),
+                success_condition: "the README contents are available".to_string(),
+                parent_id: None,
+                depth: None,
+                unit_type: None,
+            },
+        });
+        steps.push(Step::Reply {
+            id: "a1".to_string(),
+            instructions: "Summarize the README core purpose and keep the answer grounded in the observed file contents.".to_string(),
+            common: StepCommon {
+                purpose: "answer using the README evidence".to_string(),
+                depends_on: vec!["s1".to_string(), "r1".to_string()],
+                success_condition: "the user receives a grounded summary".to_string(),
+                parent_id: None,
+                depth: None,
+                unit_type: None,
+            },
+        });
+        return Program {
+            objective: line.to_string(),
+            steps,
+        };
+    }
+
+    let evidence_cmd = if lower.contains("entry point") || lower.contains("primary entry") {
+        format!(
+            "rg --files {} | rg '(^|/)(main\\.(go|rs|py|ts|js)|Cargo\\.toml|package\\.json|cmd/root\\.go)$'",
+            quoted_path
+        )
+    } else {
+        format!("rg --files {}", quoted_path)
+    };
+
+    steps.push(Step::Shell {
+        id: "s2".to_string(),
+        cmd: evidence_cmd,
+        common: StepCommon {
+            purpose: "collect supporting file evidence from the target path".to_string(),
+            depends_on: Vec::new(),
+            success_condition: "supporting file evidence is available".to_string(),
+            parent_id: None,
+            depth: None,
+            unit_type: None,
+        },
+    });
+    steps.push(Step::Reply {
+        id: "r1".to_string(),
+        instructions: "Answer using the observed file evidence. If the request asks for the primary entry point, identify the strongest candidate from the listed files and explain briefly.".to_string(),
+        common: StepCommon {
+            purpose: "present the grounded result".to_string(),
+            depends_on: vec!["s1".to_string(), "s2".to_string()],
+            success_condition: "the user receives a grounded answer".to_string(),
+            parent_id: None,
+            depth: None,
+            unit_type: None,
+        },
+    });
+
+    Program {
+        objective: line.to_string(),
+        steps,
     }
 }
 
@@ -624,6 +761,13 @@ async fn build_program_with_temp(
                 };
             }
 
+            if route_decision.route.eq_ignore_ascii_case("SHELL") {
+                if let Some(path) = extract_first_path_from_user_text(line) {
+                    trace(&runtime.args, &format!("shell_path_probe_fallback path={path}"));
+                    return build_shell_path_probe_program(line, &path);
+                }
+            }
+
             operator_trace(&runtime.args, "repairing the workflow plan");
             trace_verbose(runtime.verbose, "workflow_recovery=attempting");
             if let Ok(program) = recover_program_once(
@@ -700,4 +844,54 @@ async fn resolve_final_text(
         &reply_instructions,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_probability_decision(choice: &str) -> ProbabilityDecision {
+        ProbabilityDecision {
+            choice: choice.to_string(),
+            source: "test".to_string(),
+            distribution: vec![(choice.to_string(), 1.0)],
+            margin: 1.0,
+            entropy: 0.0,
+        }
+    }
+
+    fn test_route_decision(route: &str) -> RouteDecision {
+        RouteDecision {
+            route: route.to_string(),
+            source: "test".to_string(),
+            distribution: vec![(route.to_string(), 1.0)],
+            margin: 1.0,
+            entropy: 0.0,
+            speech_act: test_probability_decision("INSTRUCT"),
+            workflow: test_probability_decision("WORKFLOW"),
+            mode: test_probability_decision("EXECUTE"),
+        }
+    }
+
+    #[test]
+    fn direct_shell_fast_path_accepts_direct_workflow_plan() {
+        let route = test_route_decision("SHELL");
+        let workflow_plan = WorkflowPlannerOutput {
+            complexity: "DIRECT".to_string(),
+            risk: "LOW".to_string(),
+            ..WorkflowPlannerOutput::default()
+        };
+        let complexity = ComplexityAssessment {
+            complexity: "MULTISTEP".to_string(),
+            risk: "LOW".to_string(),
+            ..ComplexityAssessment::default()
+        };
+
+        assert!(should_use_direct_shell_fast_path(
+            "git status --short",
+            &route,
+            Some(&workflow_plan),
+            &complexity
+        ));
+    }
 }

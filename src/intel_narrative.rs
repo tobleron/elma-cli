@@ -10,7 +10,8 @@
 //! - Single point of change for narrative format updates
 //! - Future-proof: can swap to model-based narrative without changing callers
 
-use crate::{ChatMessage, Program, RouteDecision, Step, StepResult};
+use crate::{ChatMessage, Program, RouteDecision, ScopePlan, Step, StepResult};
+use serde_json::Value;
 
 // ============================================================================
 // Classification Intel Narratives (Task 047)
@@ -179,6 +180,248 @@ fn format_conversation_excerpt(messages: &[ChatMessage], max_items: usize) -> St
         .map(|m| format!("{}: {}", m.role, m.content.replace('\n', " ")))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn render_json_value(value: &Value) -> String {
+    if value.is_null() {
+        "-".to_string()
+    } else if let Some(text) = value.as_str() {
+        text.trim().to_string()
+    } else {
+        serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
+    }
+}
+
+pub(crate) fn build_scope_builder_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    complexity: &Value,
+    workspace_facts: &str,
+    workspace_brief: &str,
+    conversation: &[ChatMessage],
+) -> String {
+    let conversation_text = format_conversation_excerpt(conversation, 12);
+
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+ROUTE CONTEXT:
+- route: {route}
+- speech_act: {speech_act}
+
+COMPLEXITY CONTEXT:
+{complexity}
+
+WORKSPACE FACTS:
+{facts}
+
+WORKSPACE BRIEF:
+{brief}
+
+CONVERSATION SO FAR (most recent last):
+{conversation}"#,
+        user_message = user_message.trim(),
+        route = route_decision.route,
+        speech_act = route_decision.speech_act.choice,
+        complexity = render_json_value(complexity),
+        facts = workspace_facts.trim(),
+        brief = workspace_brief.trim(),
+        conversation = conversation_text,
+    )
+}
+
+pub(crate) fn build_formula_selector_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    complexity: &Value,
+    scope: &ScopePlan,
+    memory_candidates: &Value,
+    conversation: &[ChatMessage],
+) -> String {
+    let conversation_text = format_conversation_excerpt(conversation, 12);
+
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+ROUTE CONTEXT:
+- route: {route}
+- speech_act: {speech_act}
+
+COMPLEXITY CONTEXT:
+{complexity}
+
+SCOPE PLAN:
+{scope}
+
+MEMORY CANDIDATES:
+{memory_candidates}
+
+CONVERSATION SO FAR (most recent last):
+{conversation}"#,
+        user_message = user_message.trim(),
+        route = route_decision.route,
+        speech_act = route_decision.speech_act.choice,
+        complexity = render_json_value(complexity),
+        scope = serde_json::to_string_pretty(scope).unwrap_or_default(),
+        memory_candidates = render_json_value(memory_candidates),
+        conversation = conversation_text,
+    )
+}
+
+pub(crate) fn build_selector_narrative(
+    objective: &str,
+    purpose: &Value,
+    instructions: &Value,
+    evidence: &Value,
+) -> String {
+    format!(
+        r#"OBJECTIVE:
+{objective}
+
+STEP PURPOSE:
+{purpose}
+
+SELECTION INSTRUCTIONS:
+{instructions}
+
+OBSERVED EVIDENCE:
+{evidence}"#,
+        objective = objective.trim(),
+        purpose = render_json_value(purpose),
+        instructions = render_json_value(instructions),
+        evidence = render_json_value(evidence),
+    )
+}
+
+pub(crate) fn build_evidence_compactor_narrative(
+    objective: &Value,
+    purpose: &Value,
+    scope: &Value,
+    cmd: &Value,
+    output: &Value,
+) -> String {
+    format!(
+        r#"OBJECTIVE:
+{objective}
+
+STEP PURPOSE:
+{purpose}
+
+SCOPE:
+{scope}
+
+COMMAND:
+{cmd}
+
+RAW EVIDENCE TO COMPACT:
+{output}"#,
+        objective = render_json_value(objective),
+        purpose = render_json_value(purpose),
+        scope = render_json_value(scope),
+        cmd = render_json_value(cmd),
+        output = render_json_value(output),
+    )
+}
+
+pub(crate) fn build_artifact_classifier_narrative(
+    objective: &Value,
+    scope: &Value,
+    evidence: &Value,
+) -> String {
+    format!(
+        r#"OBJECTIVE:
+{objective}
+
+SCOPE:
+{scope}
+
+ARTIFACT EVIDENCE TO CLASSIFY:
+{evidence}"#,
+        objective = render_json_value(objective),
+        scope = render_json_value(scope),
+        evidence = render_json_value(evidence),
+    )
+}
+
+pub(crate) fn build_result_presenter_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    evidence_mode: &Value,
+    reply_instructions: &Value,
+    step_results: &Value,
+) -> String {
+    let step_results_narrative = render_json_value(step_results);
+
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+ROUTE CONTEXT:
+- route: {route}
+- speech_act: {speech_act}
+
+EVIDENCE MODE:
+{evidence_mode}
+
+REPLY INSTRUCTIONS:
+{reply_instructions}
+
+OBSERVED STEP RESULTS:
+{step_results}"#,
+        user_message = user_message.trim(),
+        route = route_decision.route,
+        speech_act = route_decision.speech_act.choice,
+        evidence_mode = render_json_value(evidence_mode),
+        reply_instructions = render_json_value(reply_instructions),
+        step_results = step_results_narrative,
+    )
+}
+
+pub(crate) fn build_status_message_narrative(
+    current_action: &Value,
+    step_type: &Value,
+    step_purpose: &Value,
+) -> String {
+    format!(
+        r#"CURRENT ACTION:
+{current_action}
+
+STEP TYPE:
+{step_type}
+
+STEP PURPOSE:
+{step_purpose}"#,
+        current_action = render_json_value(current_action),
+        step_type = render_json_value(step_type),
+        step_purpose = render_json_value(step_purpose),
+    )
+}
+
+pub(crate) fn build_command_repair_narrative(
+    objective: &Value,
+    purpose: &Value,
+    cmd: &str,
+    output: &Value,
+) -> String {
+    format!(
+        r#"OBJECTIVE:
+{objective}
+
+STEP PURPOSE:
+{purpose}
+
+FAILED COMMAND:
+{cmd}
+
+FAILED OUTPUT:
+{output}"#,
+        objective = render_json_value(objective),
+        purpose = render_json_value(purpose),
+        cmd = cmd.trim(),
+        output = render_json_value(output),
+    )
 }
 
 // ============================================================================

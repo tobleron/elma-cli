@@ -117,7 +117,7 @@ pub(crate) fn run_shell_one_liner(
     workdir: &PathBuf,
     artifact_target: Option<(&PathBuf, &str)>,
 ) -> Result<ShellExecutionResult> {
-    const MAX_INLINE_CAPTURE_BYTES: u64 = 128 * 1024;
+    const MAX_INLINE_CAPTURE_BYTES: u64 = 1024 * 1024;
     const MAX_ARTIFACT_BYTES: u64 = 8 * 1024 * 1024;
     const MAX_WALL_SECS: u64 = 20;
 

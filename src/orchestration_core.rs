@@ -142,6 +142,40 @@ pub(crate) async fn generate_final_answer_once(
     step_results: &[StepResult],
     reply_instructions: &str,
 ) -> Result<(String, Option<u64>)> {
+    if route_decision.route.eq_ignore_ascii_case("CHAT") && step_results.is_empty() {
+        let evidence_mode = EvidenceModeDecision {
+            mode: "COMPACT".to_string(),
+            reason: "chat reply fast path".to_string(),
+        };
+        let final_text = orchestration_helpers::present_result_via_unit(
+            client,
+            presenter_cfg,
+            line,
+            route_decision,
+            &evidence_mode,
+            step_results,
+            reply_instructions,
+        )
+        .await
+        .unwrap_or_else(|_| {
+            if reply_instructions.trim().is_empty() {
+                line.to_string()
+            } else {
+                reply_instructions.to_string()
+            }
+        });
+
+        return Ok(orchestration_helpers::maybe_format_final_text(
+            client,
+            chat_url,
+            formatter_cfg,
+            line,
+            final_text,
+            None,
+        )
+        .await);
+    }
+
     let evidence_mode = orchestration_helpers::decide_evidence_mode_via_unit(
         client,
         evidence_mode_cfg,
