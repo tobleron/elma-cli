@@ -64,3 +64,14 @@ The project already has stress prompts and scenario runners, but recent debuggin
 - Session `s_1775235404_589084000` showed a second missing gate:
   - downstream compacted evidence claimed a successful rename even though raw shell artifacts only showed an unsupported `rg` flag failure
   - the stress harness should eventually flag this contradiction automatically
+- Session `s_1775236515_901751000` showed a third missing gate that is now important:
+  - `S000B` produced the right entry-point filename (`main.go`) but failed to preserve the exact grounded relative path from evidence
+  - the CLI stress harness should treat path-softening as a real grounding failure for file-identification prompts
+
+## Progress Notes
+- The CLI runner now captures session ids, extracts final answers, prints failure context, and fails on timeout / no-progress termination instead of labeling those runs as passed.
+- Semantic validation has started for benchmark-specific prompts:
+  - entry-point prompts now fail if the final answer does not preserve a grounded file path
+  - 3-bullet summary prompts now fail if the final answer is not actually 3 bullets
+  - candidate-selection prompts now fail if the final answer does not contain the requested number of grounded file candidates
+- The first honest failure after these gates is `S000B`, which confirms the harness is now surfacing a real runtime-quality seam instead of masking it.

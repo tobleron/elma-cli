@@ -348,6 +348,8 @@ Principles:
 - Preserve technical accuracy.
 - Prefer concise direct answers.
 - Use evidence when available.
+- Preserve exact grounded file paths, commands, identifiers, and counts when the evidence provides them.
+- Do not soften a grounded relative path into a shorter filename or paraphrase.
 - Do not add internal reasoning or extra ceremony."#,
         ),
         "status_message_generator" => Some(

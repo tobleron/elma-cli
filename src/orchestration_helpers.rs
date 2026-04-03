@@ -2,6 +2,104 @@ use serde_json::Value;
 
 use crate::*;
 
+fn response_requires_exact_relative_path(reply_instructions: &str) -> bool {
+    let lower = reply_instructions.to_ascii_lowercase();
+    lower.contains("exact relative path")
+        || lower.contains("exact grounded relative file paths")
+        || lower.contains("preserve exact grounded relative file paths")
+}
+
+fn selected_exact_grounded_path(step_results: &[StepResult]) -> Option<String> {
+    let mut candidates = step_results
+        .iter()
+        .filter(|result| result.kind == "select" && result.ok)
+        .filter_map(|result| result.raw_output.as_deref())
+        .flat_map(|raw| raw.lines())
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && line.contains('/'))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>();
+    candidates.sort();
+    candidates.dedup();
+    if candidates.len() == 1 {
+        Some(candidates.remove(0))
+    } else {
+        None
+    }
+}
+
+fn derive_exact_grounded_path_from_evidence(
+    step_results: &[StepResult],
+    final_text: &str,
+) -> Option<String> {
+    let basename_candidates = step_results
+        .iter()
+        .filter(|result| result.kind == "select" && result.ok)
+        .filter_map(|result| result.raw_output.as_deref())
+        .flat_map(|raw| raw.lines())
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.contains('/'))
+        .filter(|line| final_text.contains(*line))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>();
+
+    for basename in basename_candidates {
+        let mut matches = step_results
+            .iter()
+            .filter(|result| result.kind == "shell" && result.ok)
+            .filter_map(|result| result.raw_output.as_deref())
+            .flat_map(|raw| raw.lines())
+            .map(str::trim)
+            .filter(|line| {
+                !line.is_empty()
+                    && line.contains('/')
+                    && line.ends_with(&basename)
+                    && line.len() > basename.len()
+                    && line
+                        .as_bytes()
+                        .get(line.len().saturating_sub(basename.len() + 1))
+                        == Some(&b'/')
+            })
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>();
+        matches.sort();
+        matches.dedup();
+        if matches.len() == 1 {
+            return Some(matches.remove(0));
+        }
+    }
+
+    None
+}
+
+pub(crate) fn preserve_exact_grounded_path(
+    final_text: String,
+    step_results: &[StepResult],
+    reply_instructions: &str,
+) -> String {
+    if !response_requires_exact_relative_path(reply_instructions) {
+        return final_text;
+    }
+    let Some(path) = selected_exact_grounded_path(step_results)
+        .or_else(|| derive_exact_grounded_path_from_evidence(step_results, &final_text))
+    else {
+        return final_text;
+    };
+    if final_text.contains(&path) {
+        return final_text;
+    }
+
+    let basename = std::path::Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    if basename.is_empty() || !final_text.contains(basename) {
+        return format!("{path}\n{final_text}");
+    }
+
+    final_text.replacen(basename, &path, 1)
+}
+
 pub(crate) async fn request_program_or_repair(
     client: &reqwest::Client,
     chat_url: &Url,
@@ -470,7 +568,11 @@ pub(crate) async fn present_result_via_unit(
     )?
     .with_extra("reply_instructions", reply_instructions)?;
     let output = unit.execute_with_fallback(&context).await?;
-    Ok(output.get_str("final_text").unwrap_or_default().to_string())
+    Ok(preserve_exact_grounded_path(
+        output.get_str("final_text").unwrap_or_default().to_string(),
+        step_results,
+        reply_instructions,
+    ))
 }
 
 pub(crate) async fn maybe_format_final_text(
@@ -527,4 +629,60 @@ pub(crate) async fn request_judge_verdict(
         grammar: None,
     };
     chat_json_with_repair(client, chat_url, &req).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preserve_exact_grounded_path;
+    use crate::StepResult;
+
+    #[test]
+    fn preserve_exact_grounded_path_replaces_shortened_basename() {
+        let step_results = vec![StepResult {
+            id: "sel1".to_string(),
+            kind: "select".to_string(),
+            ok: true,
+            raw_output: Some("_stress_testing/_opencode_for_testing/main.go".to_string()),
+            ..StepResult::default()
+        }];
+
+        let final_text = preserve_exact_grounded_path(
+            "main.go is the primary entry point.".to_string(),
+            &step_results,
+            "State the selected exact relative path first, then explain briefly why it is the strongest grounded entry point.",
+        );
+
+        assert!(final_text.starts_with("_stress_testing/_opencode_for_testing/main.go"));
+    }
+
+    #[test]
+    fn preserve_exact_grounded_path_can_recover_path_from_shell_evidence() {
+        let step_results = vec![
+            StepResult {
+                id: "s2".to_string(),
+                kind: "shell".to_string(),
+                ok: true,
+                raw_output: Some(
+                    "_stress_testing/_opencode_for_testing/main.go\n_stress_testing/_opencode_for_testing/cmd/root.go"
+                        .to_string(),
+                ),
+                ..StepResult::default()
+            },
+            StepResult {
+                id: "sel1".to_string(),
+                kind: "select".to_string(),
+                ok: true,
+                raw_output: Some("main.go".to_string()),
+                ..StepResult::default()
+            },
+        ];
+
+        let final_text = preserve_exact_grounded_path(
+            "main.go is the strongest grounded primary entry point.".to_string(),
+            &step_results,
+            "State the selected exact relative path first, then explain briefly why it is the strongest grounded entry point.",
+        );
+
+        assert!(final_text.starts_with("_stress_testing/_opencode_for_testing/main.go"));
+    }
 }

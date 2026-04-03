@@ -18,6 +18,58 @@ pub(crate) use execution_steps_read::*;
 pub(crate) use execution_steps_search::*;
 pub(crate) use execution_steps_shell::*;
 
+fn selection_expects_exact_path(instructions: &str) -> bool {
+    let lower = instructions.to_ascii_lowercase();
+    lower.contains("exact relative path")
+        || lower.contains("exact file path")
+        || lower.contains("exact file paths")
+        || lower.contains("exact path")
+}
+
+fn normalize_selected_items_against_evidence(
+    items: Vec<String>,
+    instructions: &str,
+    evidence: &str,
+) -> Vec<String> {
+    if !selection_expects_exact_path(instructions) {
+        return items;
+    }
+
+    let evidence_lines = evidence
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+
+    items.into_iter()
+        .map(|item| {
+            let trimmed = item.trim();
+            let matches = evidence_lines
+                .iter()
+                .filter(|line| {
+                    line.ends_with(trimmed)
+                        && line.len() > trimmed.len()
+                        && line
+                            .as_bytes()
+                            .get(line.len().saturating_sub(trimmed.len() + 1))
+                            == Some(&b'/')
+                })
+                .copied()
+                .collect::<Vec<_>>();
+
+            if matches.len() == 1 {
+                return matches[0].to_string();
+            }
+
+            if evidence_lines.iter().any(|line| *line == trimmed) {
+                trimmed.to_string()
+            } else {
+                trimmed.to_string()
+            }
+        })
+        .collect()
+}
+
 async fn select_items_via_unit(
     client: &reqwest::Client,
     selector_cfg: &Profile,
@@ -53,7 +105,7 @@ async fn select_items_via_unit(
     )
     .with_extra("purpose", purpose)?
     .with_extra("instructions", instructions)?
-    .with_extra("evidence", evidence)?;
+    .with_extra("evidence", &evidence)?;
     match unit_type.unwrap_or("selector") {
         "rename_suggester" => {
             let mut profile = selector_cfg.clone();
@@ -79,8 +131,11 @@ async fn select_items_via_unit(
         _ => {
             let unit = SelectorUnit::new(selector_cfg.clone());
             let output = unit.execute_with_fallback(&context).await?;
-            serde_json::from_value(output.data)
-                .map_err(|e| anyhow::anyhow!("Failed to parse selector output: {}", e))
+            let mut selection: SelectionOutput = serde_json::from_value(output.data)
+                .map_err(|e| anyhow::anyhow!("Failed to parse selector output: {}", e))?;
+            selection.items =
+                normalize_selected_items_against_evidence(selection.items, instructions, &evidence);
+            Ok(selection)
         }
     }
 }
@@ -555,4 +610,23 @@ pub(crate) async fn handle_program_step(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_selected_items_against_evidence;
+
+    #[test]
+    fn selector_normalizes_unique_suffix_to_exact_relative_path() {
+        let evidence =
+            "_stress_testing/_opencode_for_testing/main.go\n_stress_testing/_opencode_for_testing/cmd/root.go";
+        let instructions =
+            "Choose exactly one most likely primary entry point. Return the exact relative path only.";
+        let items = normalize_selected_items_against_evidence(
+            vec!["main.go".to_string()],
+            instructions,
+            evidence,
+        );
+        assert_eq!(items, vec!["_stress_testing/_opencode_for_testing/main.go"]);
+    }
 }

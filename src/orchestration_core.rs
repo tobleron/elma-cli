@@ -267,6 +267,11 @@ pub(crate) async fn generate_final_answer_once(
             final_text,
         )
         .await;
+        final_text = orchestration_helpers::preserve_exact_grounded_path(
+            final_text,
+            step_results,
+            reply_instructions,
+        );
     }
 
     let (formatted_text, formatted_usage) = orchestration_helpers::maybe_format_final_text(

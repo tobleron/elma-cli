@@ -194,7 +194,7 @@ New scope: unify role temperatures, strategy-chain behavior, retry escalation, a
 New scope: prevent last-mile presenter/formatter corruption so grounded answers stay plain, direct, and terminal-appropriate.
 
 ### Task 063
-New scope: make `cargo run` the authoritative stress-validation path, not only orchestrator-model approximations.
+New scope: make `cargo run` the authoritative stress-validation path, not only orchestrator-model approximations, with semantic grounded-answer gates that can catch path-softening and other false-positive passes.
 
 ### Task 094
 New scope: extend automatic recovery snapshots beyond structured `Edit` steps so shell-based workspace mutations are also rollback-safe.

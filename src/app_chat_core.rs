@@ -957,6 +957,12 @@ fn request_looks_like_workflow_endurance_audit(line: &str) -> bool {
         && lower.contains("_stress_testing/_opencode_for_testing/")
 }
 
+fn request_looks_like_entry_point_probe(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    (lower.contains("entry point") || lower.contains("primary entry"))
+        && lower.contains("_stress_testing/")
+}
+
 fn build_hybrid_audit_masterplan_program(line: &str, path: &str) -> Program {
     let quoted_path = shell_quote(path);
     let helper_path = format!("{}/internal/logging/audit.go", path.trim_end_matches('/'));
@@ -1971,18 +1977,46 @@ fn build_shell_path_probe_program(line: &str, path: &str) -> Program {
             unit_type: None,
         },
     });
-    steps.push(Step::Reply {
-        id: "r1".to_string(),
-        instructions: "Answer using the observed file evidence. If the request asks for the primary entry point, identify the strongest candidate from the listed files and explain briefly.".to_string(),
-        common: StepCommon {
-            purpose: "present the grounded result".to_string(),
-            depends_on: vec!["s1".to_string(), "s2".to_string()],
-            success_condition: "the user receives a grounded answer".to_string(),
-            parent_id: None,
-            depth: None,
-            unit_type: None,
-        },
-    });
+    if lower.contains("entry point") || lower.contains("primary entry") {
+        steps.push(Step::Select {
+            id: "sel1".to_string(),
+            instructions: "From the grounded file-path evidence, choose exactly one most likely primary entry point for the codebase. Prefer the top-level executable entry file over secondary command wiring. Return the exact relative path only."
+                .to_string(),
+            common: StepCommon {
+                purpose: "select the strongest grounded primary entry-point candidate".to_string(),
+                depends_on: vec!["s2".to_string()],
+                success_condition: "one grounded relative path is selected as the primary entry point".to_string(),
+                parent_id: None,
+                depth: None,
+                unit_type: None,
+            },
+        });
+        steps.push(Step::Reply {
+            id: "r1".to_string(),
+            instructions: "Answer using the observed file evidence and the selected entry-point candidate. Preserve exact grounded relative file paths from the evidence in the final answer. State the selected exact relative path first, then explain briefly why it is the strongest grounded entry point.".to_string(),
+            common: StepCommon {
+                purpose: "present the grounded result".to_string(),
+                depends_on: vec!["s2".to_string(), "sel1".to_string()],
+                success_condition: "the user receives a grounded answer".to_string(),
+                parent_id: None,
+                depth: None,
+                unit_type: None,
+            },
+        });
+    } else {
+        steps.push(Step::Reply {
+            id: "r1".to_string(),
+            instructions: "Answer using the observed file evidence. Preserve exact grounded relative file paths from the evidence in the final answer.".to_string(),
+            common: StepCommon {
+                purpose: "present the grounded result".to_string(),
+                depends_on: vec!["s1".to_string(), "s2".to_string()],
+                success_condition: "the user receives a grounded answer".to_string(),
+                parent_id: None,
+                depth: None,
+                unit_type: None,
+            },
+        });
+    }
 
     Program {
         objective: line.to_string(),
@@ -2201,6 +2235,16 @@ async fn build_program_with_temp(
         }
     }
 
+    if request_looks_like_entry_point_probe(line) {
+        if let Some(path) = extract_first_path_from_user_text(line) {
+            trace(
+                &runtime.args,
+                &format!("entry_point_authoritative_program path={path}"),
+            );
+            return build_shell_path_probe_program(line, &path);
+        }
+    }
+
     // Create a modified orchestrator config with the escalated temperature
     let mut orchestrator_cfg = runtime.profiles.orchestrator_cfg.clone();
     orchestrator_cfg.temperature = temperature;
@@ -2377,7 +2421,7 @@ async fn resolve_final_text(
     let reply_instructions = final_reply.clone().unwrap_or_else(|| {
         "Respond to the user in plain terminal text. Use any step outputs as evidence.".to_string()
     });
-    generate_final_answer_once(
+    let (final_text, usage) = generate_final_answer_once(
         &runtime.client,
         &runtime.chat_url,
         &runtime.profiles.elma_cfg,
@@ -2394,7 +2438,19 @@ async fn resolve_final_text(
         step_results,
         &reply_instructions,
     )
-    .await
+    .await?;
+
+    let preserved = if line.to_ascii_lowercase().contains("entry point") {
+        orchestration_helpers::preserve_exact_grounded_path(
+            final_text,
+            step_results,
+            "State the selected exact relative path first.",
+        )
+    } else {
+        final_text
+    };
+
+    Ok((preserved, usage))
 }
 
 #[cfg(test)]
@@ -2605,6 +2661,24 @@ mod tests {
         assert!(matches!(program.steps[2], Step::Select { .. }));
         assert!(matches!(program.steps[3], Step::Select { .. }));
         assert!(matches!(program.steps[4], Step::Reply { .. }));
+    }
+
+    #[test]
+    fn shell_path_probe_entry_point_reply_requires_exact_relative_path() {
+        let program = build_shell_path_probe_program(
+            "List the files in _stress_testing/_opencode_for_testing/ and identify the primary entry point of this codebase.",
+            "_stress_testing/_opencode_for_testing/",
+        );
+
+        assert_eq!(program.steps.len(), 4);
+        assert!(matches!(program.steps[2], Step::Select { .. }));
+
+        let reply_instructions = match &program.steps[3] {
+            Step::Reply { instructions, .. } => instructions,
+            other => panic!("expected reply step, got {:?}", other),
+        };
+        assert!(reply_instructions.contains("Preserve exact grounded relative file paths"));
+        assert!(reply_instructions.contains("exact relative path"));
     }
 
     #[test]

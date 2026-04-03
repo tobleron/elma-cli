@@ -10,6 +10,28 @@ use crate::orchestration_loop_helpers::*;
 use crate::orchestration_loop_reviewers::*;
 use crate::*;
 
+fn has_trusted_exact_selection_result(step_results: &[StepResult]) -> bool {
+    step_results.iter().any(|result| {
+        result.kind == "select"
+            && result.ok
+            && result
+                .raw_output
+                .as_ref()
+                .is_some_and(|raw| raw.lines().any(|line| line.trim().contains('/')))
+    })
+}
+
+fn should_accept_exact_selection_workflow(
+    step_results: &[StepResult],
+    missing_required_evidence: bool,
+    sufficiency: &ExecutionSufficiencyVerdict,
+) -> bool {
+    !missing_required_evidence
+        && sufficiency.status.eq_ignore_ascii_case("retry")
+        && has_trusted_exact_selection_result(step_results)
+        && step_results.iter().all(|result| result.ok)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_autonomous_loop(
     args: &Args,
@@ -291,13 +313,26 @@ pub(crate) async fn run_autonomous_loop(
                 sufficiency.status, sufficiency.reason
             ),
         );
+        let accept_exact_selection = should_accept_exact_selection_workflow(
+            &step_results,
+            missing_required_evidence,
+            &sufficiency,
+        );
+        if accept_exact_selection {
+            trace(
+                args,
+                "sufficiency_status=ok reason=trusted_exact_selection_workflow",
+            );
+        }
         if missing_required_evidence {
             trace(
                 args,
                 "sufficiency_status=retry reason=missing_required_workspace_evidence",
             );
         }
-        if missing_required_evidence || sufficiency.status.eq_ignore_ascii_case("retry") {
+        if missing_required_evidence
+            || (sufficiency.status.eq_ignore_ascii_case("retry") && !accept_exact_selection)
+        {
             let (logical_review, efficiency_review, risk_review, reviewers_clean) =
                 run_staged_reviewers_once(
                     args,
@@ -657,4 +692,32 @@ pub(crate) async fn run_autonomous_loop(
         final_reply,
         reasoning_clean,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_accept_exact_selection_workflow;
+    use crate::{ExecutionSufficiencyVerdict, StepResult};
+
+    #[test]
+    fn accepts_retry_override_for_successful_exact_selection_workflow() {
+        let step_results = vec![StepResult {
+            id: "sel1".to_string(),
+            kind: "select".to_string(),
+            ok: true,
+            raw_output: Some("_stress_testing/_opencode_for_testing/main.go".to_string()),
+            ..StepResult::default()
+        }];
+        let sufficiency = ExecutionSufficiencyVerdict {
+            status: "retry".to_string(),
+            reason: "hallucinated mismatch".to_string(),
+            program: None,
+        };
+
+        assert!(should_accept_exact_selection_workflow(
+            &step_results,
+            false,
+            &sufficiency,
+        ));
+    }
 }
