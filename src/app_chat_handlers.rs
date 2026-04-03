@@ -37,9 +37,11 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
 
     // Update base URL in all profiles
     runtime.profiles.elma_cfg.base_url = new_base_url.to_string();
+    runtime.profiles.expert_responder_cfg.base_url = new_base_url.to_string();
     runtime.profiles.router_cfg.base_url = new_base_url.to_string();
     runtime.profiles.speech_act_cfg.base_url = new_base_url.to_string();
     runtime.profiles.mode_router_cfg.base_url = new_base_url.to_string();
+    runtime.profiles.selector_cfg.base_url = new_base_url.to_string();
     runtime.profiles.complexity_cfg.base_url = new_base_url.to_string();
     runtime.profiles.evidence_need_cfg.base_url = new_base_url.to_string();
     runtime.profiles.action_need_cfg.base_url = new_base_url.to_string();
@@ -49,14 +51,18 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
     runtime.profiles.orchestrator_cfg.base_url = new_base_url.to_string();
     runtime.profiles.critic_cfg.base_url = new_base_url.to_string();
     runtime.profiles.json_outputter_cfg.base_url = new_base_url.to_string();
+    runtime.profiles.result_presenter_cfg.base_url = new_base_url.to_string();
+    runtime.profiles.claim_checker_cfg.base_url = new_base_url.to_string();
 
     // Update model ID if provided
     if let Some(model_id) = new_model_id {
         runtime.model_id = model_id.to_string();
         runtime.profiles.elma_cfg.model = model_id.to_string();
+        runtime.profiles.expert_responder_cfg.model = model_id.to_string();
         runtime.profiles.router_cfg.model = model_id.to_string();
         runtime.profiles.speech_act_cfg.model = model_id.to_string();
         runtime.profiles.mode_router_cfg.model = model_id.to_string();
+        runtime.profiles.selector_cfg.model = model_id.to_string();
         runtime.profiles.complexity_cfg.model = model_id.to_string();
         runtime.profiles.evidence_need_cfg.model = model_id.to_string();
         runtime.profiles.action_need_cfg.model = model_id.to_string();
@@ -66,6 +72,8 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
         runtime.profiles.orchestrator_cfg.model = model_id.to_string();
         runtime.profiles.critic_cfg.model = model_id.to_string();
         runtime.profiles.json_outputter_cfg.model = model_id.to_string();
+        runtime.profiles.result_presenter_cfg.model = model_id.to_string();
+        runtime.profiles.claim_checker_cfg.model = model_id.to_string();
     }
 
     // Save configs to disk

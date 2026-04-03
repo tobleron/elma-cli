@@ -690,13 +690,13 @@ pub(crate) struct VerifyCheckResult {
 }
 
 // ============================================================================
-// Angel Helper - Intention Clarification (Task 010)
+// Expert Responder - Response Posture Advice
 // ============================================================================
 
-pub(crate) fn default_angel_helper_config(base_url: &str, model: &str) -> Profile {
+pub(crate) fn default_expert_responder_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
-        name: "angel_helper".to_string(),
+        name: "expert_responder".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
         temperature: 0.7,
@@ -705,19 +705,18 @@ pub(crate) fn default_angel_helper_config(base_url: &str, model: &str) -> Profil
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt:
-            r#"Determine user intention and express what is the most appropriate way to respond.
-"#
+        system_prompt: canonical_system_prompt("expert_responder")
+            .unwrap_or("Determine the best response posture for the user's situation.")
             .to_string(),
     }
 }
 
-/// Angel Helper: Inspire Elma on how to respond
-pub(crate) async fn angel_helper_intention(
+/// Expert Responder: produce compact advice on how Elma should respond
+pub(crate) async fn expert_responder_advice(
     client: &reqwest::Client,
     chat_url: &Url,
     cfg: &Profile,
-    rephrased_objective: &str, // Takes rephrased intention as input
+    response_narrative: &str,
 ) -> Result<String> {
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
@@ -728,7 +727,7 @@ pub(crate) async fn angel_helper_intention(
             },
             ChatMessage {
                 role: "user".to_string(),
-                content: rephrased_objective.to_string(), // Use rephrased objective
+                content: response_narrative.to_string(),
             },
         ],
         temperature: cfg.temperature,
@@ -745,17 +744,14 @@ pub(crate) async fn angel_helper_intention(
     Ok(extract_response_text(&resp).trim().to_string())
 }
 
-/// Parse helper response to extract intention type
-pub(crate) fn parse_helper_intention(helper_response: &str) -> &str {
+pub(crate) fn parse_expert_responder_style(helper_response: &str) -> &str {
     let response_upper = helper_response.to_uppercase();
-    if response_upper.starts_with("ACTION:") {
-        "ACTION"
-    } else if response_upper.starts_with("INFO:") {
-        "INFO"
-    } else if response_upper.starts_with("CHAT:") {
-        "CHAT"
+    if response_upper.contains("CAUTIOUS") {
+        "cautious"
+    } else if response_upper.contains("EXPLANATORY") {
+        "explanatory"
     } else {
-        "UNKNOWN"
+        "direct"
     }
 }
 

@@ -349,6 +349,7 @@ pub(crate) fn build_result_presenter_narrative(
     user_message: &str,
     route_decision: &RouteDecision,
     evidence_mode: &Value,
+    response_advice: &Value,
     reply_instructions: &Value,
     step_results: &Value,
 ) -> String {
@@ -365,6 +366,9 @@ ROUTE CONTEXT:
 EVIDENCE MODE:
 {evidence_mode}
 
+EXPERT RESPONSE ADVICE:
+{response_advice}
+
 REPLY INSTRUCTIONS:
 {reply_instructions}
 
@@ -374,8 +378,44 @@ OBSERVED STEP RESULTS:
         route = route_decision.route,
         speech_act = route_decision.speech_act.choice,
         evidence_mode = render_json_value(evidence_mode),
+        response_advice = render_json_value(response_advice),
         reply_instructions = render_json_value(reply_instructions),
         step_results = step_results_narrative,
+    )
+}
+
+pub(crate) fn build_expert_responder_narrative(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    evidence_mode: &Value,
+    reply_instructions: &Value,
+    step_results: &Value,
+) -> String {
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+ROUTE CONTEXT:
+- route: {route}
+- speech_act: {speech_act}
+
+EVIDENCE MODE:
+{evidence_mode}
+
+REPLY INSTRUCTIONS:
+{reply_instructions}
+
+OBSERVED STEP RESULTS:
+{step_results}
+
+TASK:
+Return compact response advice that helps Elma present the outcome in the most useful way."#,
+        user_message = user_message.trim(),
+        route = route_decision.route,
+        speech_act = route_decision.speech_act.choice,
+        evidence_mode = render_json_value(evidence_mode),
+        reply_instructions = render_json_value(reply_instructions),
+        step_results = render_json_value(step_results),
     )
 }
 

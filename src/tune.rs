@@ -36,6 +36,10 @@ pub(crate) fn compute_all_prompt_hashes(profiles: &LoadedProfiles) -> HashMap<St
         compute_prompt_hash(&profiles.complexity_cfg.system_prompt),
     );
     hashes.insert(
+        "selector".to_string(),
+        compute_prompt_hash(&profiles.selector_cfg.system_prompt),
+    );
+    hashes.insert(
         "formula_selector".to_string(),
         compute_prompt_hash(&profiles.formula_cfg.system_prompt),
     );
@@ -66,6 +70,10 @@ pub(crate) fn compute_all_prompt_hashes(profiles: &LoadedProfiles) -> HashMap<St
     hashes.insert(
         "critic".to_string(),
         compute_prompt_hash(&profiles.critic_cfg.system_prompt),
+    );
+    hashes.insert(
+        "expert_responder".to_string(),
+        compute_prompt_hash(&profiles.expert_responder_cfg.system_prompt),
     );
 
     hashes
@@ -136,6 +144,7 @@ pub(crate) struct TuneResources {
     pub(crate) evidence_compactor_cfg: Profile,
     pub(crate) artifact_classifier_cfg: Profile,
     pub(crate) evidence_mode_cfg: Profile,
+    pub(crate) expert_responder_cfg: Profile,
     pub(crate) outcome_verifier_cfg: Profile,
     pub(crate) memory_gate_cfg: Profile,
     pub(crate) result_presenter_cfg: Profile,

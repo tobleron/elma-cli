@@ -1,5 +1,8 @@
 # Task 010: Elma Helper - Intention Clarification Layer ✅ COMPLETE
 
+## Naming Note
+Historical references to `angel_helper` in this task are superseded by the later `expert_responder` name for the response-posture advisor. The live intention clarifier remains `intent_helper`.
+
 ## Priority
 **P0 - CRITICAL** (Replaces direct speech act classification)
 

@@ -50,6 +50,7 @@ pub(crate) async fn prepare_tune_resources(
     let artifact_classifier_cfg =
         load_agent_config(&model_cfg_dir.join("artifact_classifier.toml"))?;
     let evidence_mode_cfg = load_agent_config(&model_cfg_dir.join("evidence_mode.toml"))?;
+    let expert_responder_cfg = load_agent_config(&model_cfg_dir.join("expert_responder.toml"))?;
     let outcome_verifier_cfg = load_agent_config(&model_cfg_dir.join("outcome_verifier.toml"))?;
     let memory_gate_cfg = load_agent_config(&model_cfg_dir.join("memory_gate.toml"))?;
     let result_presenter_cfg = load_agent_config(&model_cfg_dir.join("result_presenter.toml"))?;
@@ -140,6 +141,7 @@ pub(crate) async fn prepare_tune_resources(
         evidence_compactor_cfg,
         artifact_classifier_cfg,
         evidence_mode_cfg,
+        expert_responder_cfg,
         outcome_verifier_cfg,
         memory_gate_cfg,
         result_presenter_cfg,

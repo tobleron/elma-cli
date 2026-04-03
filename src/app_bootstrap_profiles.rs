@@ -35,6 +35,9 @@ fn load_agent_config_with_fallback(path: &PathBuf) -> Result<Profile> {
 pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
     Ok(LoadedProfiles {
         elma_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("_elma.config"))?,
+        expert_responder_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("expert_responder.toml"),
+        )?,
         status_message_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("status_message_generator.toml"),
         )?,
@@ -174,6 +177,13 @@ pub(crate) fn sync_and_upgrade_profiles(
     )?;
     sync_managed_profile(
         args,
+        &model_cfg_dir.join("expert_responder.toml"),
+        &mut profiles.expert_responder_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
         &model_cfg_dir.join("status_message_generator.toml"),
         &mut profiles.status_message_cfg,
         base_url,
@@ -218,6 +228,13 @@ pub(crate) fn sync_and_upgrade_profiles(
         args,
         &model_cfg_dir.join("action_need_assessor.toml"),
         &mut profiles.action_need_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("selector.toml"),
+        &mut profiles.selector_cfg,
         base_url,
         model_id,
     )?;

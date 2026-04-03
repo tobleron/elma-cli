@@ -26,11 +26,27 @@ async fn select_items_via_unit(
     instructions: &str,
     evidence: &str,
 ) -> Result<SelectionOutput> {
+    fn budget_selection_evidence(evidence: &str) -> String {
+        const MAX_LINES: usize = 120;
+        const MAX_CHARS: usize = 12_000;
+
+        let mut text = evidence
+            .lines()
+            .take(MAX_LINES)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if text.chars().count() > MAX_CHARS {
+            text = text.chars().take(MAX_CHARS).collect::<String>();
+        }
+        text
+    }
+
+    let evidence = budget_selection_evidence(evidence);
     let unit = SelectorUnit::new(selector_cfg.clone());
     let context = IntelContext::new(
         objective.to_string(),
         neutral_route_decision(),
-        evidence.to_string(),
+        evidence.clone(),
         String::new(),
         Vec::new(),
         client.clone(),

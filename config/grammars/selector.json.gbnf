@@ -1,0 +1,13 @@
+root ::= object
+
+object ::= "{" ws "\"items\"" ws ":" ws array ws "," ws "\"reason\"" ws ":" ws string ws "}"
+
+array ::= "[" ws "]" | "[" ws string_list ws "]"
+string_list ::= string | string ws "," ws string_list
+
+string ::= "\"" chars "\""
+chars ::= "" | char chars
+char ::= [^"\\\x00-\x1F] | escape
+escape ::= "\\" ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+
+ws ::= "" | " " ws | "\n" ws | "\r" ws | "\t" ws

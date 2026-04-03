@@ -133,6 +133,7 @@ pub(crate) async fn generate_final_answer_once(
     chat_url: &Url,
     elma_cfg: &Profile,
     evidence_mode_cfg: &Profile,
+    expert_responder_cfg: &Profile,
     presenter_cfg: &Profile,
     claim_checker_cfg: &Profile,
     formatter_cfg: &Profile,
@@ -147,12 +148,24 @@ pub(crate) async fn generate_final_answer_once(
             mode: "COMPACT".to_string(),
             reason: "chat reply fast path".to_string(),
         };
+        let response_advice = orchestration_helpers::request_response_advice_via_unit(
+            client,
+            expert_responder_cfg,
+            line,
+            route_decision,
+            &evidence_mode,
+            reply_instructions,
+            step_results,
+        )
+        .await
+        .unwrap_or_default();
         let final_text = orchestration_helpers::present_result_via_unit(
             client,
             presenter_cfg,
             line,
             route_decision,
             &evidence_mode,
+            &response_advice,
             step_results,
             reply_instructions,
         )
@@ -189,6 +202,17 @@ pub(crate) async fn generate_final_answer_once(
         mode: "COMPACT".to_string(),
         reason: "fallback".to_string(),
     });
+    let response_advice = orchestration_helpers::request_response_advice_via_unit(
+        client,
+        expert_responder_cfg,
+        line,
+        route_decision,
+        &evidence_mode,
+        reply_instructions,
+        step_results,
+    )
+    .await
+    .unwrap_or_default();
 
     let (mut final_text, mut usage_total) = if route_decision.route.eq_ignore_ascii_case("CHAT") {
         orchestration_helpers::request_chat_final_text(
@@ -209,6 +233,7 @@ pub(crate) async fn generate_final_answer_once(
                 line,
                 route_decision,
                 &evidence_mode,
+                &response_advice,
                 step_results,
                 reply_instructions,
             )
@@ -227,6 +252,7 @@ pub(crate) async fn generate_final_answer_once(
             line,
             route_decision,
             &evidence_mode,
+            &response_advice,
             step_results,
             reply_instructions,
             final_text,

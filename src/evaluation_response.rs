@@ -13,6 +13,7 @@ pub(crate) async fn evaluate_response_suite_impl(
 ) -> Result<(f64, bool, String)> {
     let elma_cfg = load_agent_config(&candidate_dir.join("_elma.config"))?;
     let evidence_mode_cfg = load_agent_config(&candidate_dir.join("evidence_mode.toml"))?;
+    let expert_responder_cfg = load_agent_config(&candidate_dir.join("expert_responder.toml"))?;
     let result_presenter_cfg = load_agent_config(&candidate_dir.join("result_presenter.toml"))?;
     let claim_checker_cfg = load_agent_config(&candidate_dir.join("claim_checker.toml"))?;
     let formatter_cfg = load_agent_config(&candidate_dir.join("formatter.toml"))?;
@@ -208,6 +209,7 @@ pub(crate) async fn evaluate_response_suite_impl(
             chat_url,
             &elma_cfg,
             &evidence_mode_cfg,
+            &expert_responder_cfg,
             &result_presenter_cfg,
             &claim_checker_cfg,
             &formatter_cfg,

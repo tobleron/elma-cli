@@ -8,18 +8,25 @@ use std::path::{Path, PathBuf};
 pub struct WorkspaceTree {
     root: PathBuf,
     max_depth: usize,
+    max_entries: usize,
 }
 
 impl WorkspaceTree {
     pub fn new(root: &Path) -> Self {
         Self {
             root: root.to_path_buf(),
-            max_depth: 3,
+            max_depth: 2,
+            max_entries: 160,
         }
     }
 
     pub fn with_max_depth(mut self, depth: usize) -> Self {
         self.max_depth = depth;
+        self
+    }
+
+    pub fn with_max_entries(mut self, max_entries: usize) -> Self {
+        self.max_entries = max_entries;
         self
     }
 
@@ -54,7 +61,7 @@ impl WorkspaceTree {
             }
         }
 
-        Ok(format_tree(&tree))
+        Ok(format_tree(&tree, self.max_entries))
     }
 }
 
@@ -82,10 +89,17 @@ fn is_ignored_file(name: &str) -> bool {
     )
 }
 
-fn format_tree(entries: &BTreeMap<PathBuf, (usize, bool)>) -> String {
+fn format_tree(entries: &BTreeMap<PathBuf, (usize, bool)>, max_entries: usize) -> String {
     let mut output = String::new();
+    let mut emitted = 0usize;
 
     for (path, (depth, is_dir)) in entries {
+        if emitted >= max_entries {
+            let remaining = entries.len().saturating_sub(emitted);
+            output.push_str(&format!("... ({remaining} more entries omitted)\n"));
+            break;
+        }
+
         // Add indentation
         for _ in 0..(depth - 1) {
             output.push_str("│   ");
@@ -103,6 +117,7 @@ fn format_tree(entries: &BTreeMap<PathBuf, (usize, bool)>) -> String {
                 output.push('/');
             }
             output.push('\n');
+            emitted += 1;
         }
     }
 

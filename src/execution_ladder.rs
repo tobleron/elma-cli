@@ -352,6 +352,13 @@ pub async fn assess_execution_level(
         }
     }
 
+    // A bounded evidence chain or bounded decision still needs a short workflow,
+    // even when the underlying complexity is otherwise direct.
+    if (needs_evidence || needs_decision) && level < ExecutionLevel::Task {
+        level = ExecutionLevel::Task;
+        escalation_factors.push("bounded evidence or decision chain");
+    }
+
     // Bounded ordered shell tasks should stay executable.
     // MULTISTEP means more than one ordered operation, not necessarily a user-facing plan artifact.
     let bounded_ordered_shell_task = route_decision.route.eq_ignore_ascii_case("SHELL")

@@ -19,6 +19,9 @@ grammar_path = "grammars/workflow_planner.json.gbnf"
 [formula_selector]
 grammar_path = "grammars/formula_selector.json.gbnf"
 
+[selector]
+grammar_path = "grammars/selector.json.gbnf"
+
 [scope_builder]
 grammar_path = "grammars/scope_builder.json.gbnf"
 

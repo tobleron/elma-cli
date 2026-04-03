@@ -630,6 +630,7 @@ impl ParameterBands {
             // Response units: modest creativity
             "elma"
             | "summarizer"
+            | "expert_responder"
             | "result_presenter"
             | "formatter"
             | "claim_checker"

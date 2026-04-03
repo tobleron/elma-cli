@@ -354,6 +354,7 @@ pub(crate) async fn execute_and_evaluate_program(
         chat_url,
         &resources.elma_cfg,
         &resources.evidence_mode_cfg,
+        &resources.expert_responder_cfg,
         &resources.result_presenter_cfg,
         &resources.claim_checker_cfg,
         &resources.formatter_cfg,

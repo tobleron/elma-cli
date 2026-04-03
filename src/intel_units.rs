@@ -1114,6 +1114,10 @@ impl IntelUnit for ResultPresenterUnit {
             .extra("evidence_mode")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
+        let response_advice = context
+            .extra("response_advice")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let reply_instructions = context
             .extra("reply_instructions")
             .cloned()
@@ -1129,6 +1133,7 @@ impl IntelUnit for ResultPresenterUnit {
                 &context.user_message,
                 &context.route_decision,
                 &evidence_mode,
+                &response_advice,
                 &reply_instructions,
                 &step_results,
             ),
@@ -1167,6 +1172,101 @@ impl IntelUnit for ResultPresenterUnit {
 
 // Note: Compatibility wrappers are NOT provided to avoid name conflicts.
 // Use the unit struct directly for trait-based execution.
+
+// ============================================================================
+// Expert Responder Unit
+// ============================================================================
+
+/// Expert Responder Intel Unit
+///
+/// Produces compact response-posture advice for the final presenter.
+pub(crate) struct ExpertResponderUnit {
+    profile: Profile,
+}
+
+impl ExpertResponderUnit {
+    pub fn new(profile: Profile) -> Self {
+        Self { profile }
+    }
+}
+
+impl IntelUnit for ExpertResponderUnit {
+    fn name(&self) -> &'static str {
+        "expert_responder"
+    }
+
+    fn profile(&self) -> &Profile {
+        &self.profile
+    }
+
+    fn pre_flight(&self, context: &IntelContext) -> Result<()> {
+        if context.user_message.trim().is_empty() {
+            return Err(anyhow::anyhow!("Empty user message"));
+        }
+        Ok(())
+    }
+
+    async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let evidence_mode = context
+            .extra("evidence_mode")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let reply_instructions = context
+            .extra("reply_instructions")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!("Respond clearly and use the evidence honestly."));
+        let step_results = context
+            .extra("step_results")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([]));
+        let result: ExpertResponderAdvice = execute_intel_json_from_user_content(
+            &context.client,
+            &self.profile,
+            crate::intel_narrative::build_expert_responder_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &evidence_mode,
+                &reply_instructions,
+                &step_results,
+            ),
+        )
+        .await?;
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::to_value(result)?,
+            0.9,
+        ))
+    }
+
+    fn post_flight(&self, output: &IntelOutput) -> Result<()> {
+        if output.get("style").is_none() {
+            return Err(anyhow::anyhow!("Missing 'style' field"));
+        }
+        if output.get("focus").is_none() {
+            return Err(anyhow::anyhow!("Missing 'focus' field"));
+        }
+        if output.get("include_raw_output").is_none() {
+            return Err(anyhow::anyhow!("Missing 'include_raw_output' field"));
+        }
+        Ok(())
+    }
+
+    fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {
+        trace_fallback(self.name(), error);
+
+        Ok(IntelOutput::fallback(
+            self.name(),
+            serde_json::json!({
+                "style": "direct",
+                "focus": "answer with the key result first",
+                "include_raw_output": false,
+                "reason": "fallback: keep the response simple and honest",
+            }),
+            &format!("expert responder failed: {}", error),
+        ))
+    }
+}
 
 // ============================================================================
 // Status Message Unit

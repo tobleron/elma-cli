@@ -120,6 +120,9 @@ Use this order as the authoritative execution sequence. Do **not** prioritize by
 - [x] Continue **Task 056** by extracting the next shared intel-unit schema/request helpers
 - [x] Continue **Task 056** by normalizing the remaining special-case intel execution paths
 - [x] Verify orchestration-sequence and narrative gaps before stress testing
+- [x] Refine startup workspace context so routing/planning gets concise OS/shell/tool facts
+- [x] Reduce live classifier transport bloat by removing unused router logprob payloads
+- [x] Stabilize the first blocked sandbox CLI probe (`S000E`) through real end-to-end completion
 - [ ] Start the sandboxed CLI stress ladder against `_stress_testing` prompts
 - [x] Verify stress-suite runner behavior against the rewritten `_stress_testing` prompts
 - [x] Add explicit sandbox expectations to the stress-test runner and/or docs if needed

@@ -134,6 +134,24 @@ Principles:
 - Prefer formulas that gather evidence only when evidence is truly needed.
 - Keep alternatives short and relevant."#,
         ),
+        "selector" => Some(
+            r#"You are Elma's selector.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "items":["<EXACT_ITEM_TEXT>"],
+  "reason":"one short sentence"
+}
+
+Principles:
+- Select only items that best satisfy the provided instructions.
+- Preserve exact item text from the observed evidence unless the instructions explicitly ask for one exact field or token extracted from an evidence line.
+- Return the minimum sufficient set of items.
+- If one best item is requested, return exactly one item.
+- If no item is supported by the evidence, return an empty items array."#,
+        ),
         "pattern_suggester" => Some(
             r#"You are Elma's pattern suggester.
 
@@ -496,6 +514,24 @@ Rules:
 - Output plain text only.
 - Keep it to one sentence.
 - Preserve the user's objective without adding new work."#,
+        ),
+        "expert_responder" => Some(
+            r#"You are Elma's expert responder.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "style":"direct" | "explanatory" | "cautious",
+  "focus":"one short phrase",
+  "include_raw_output": true | false,
+  "reason":"one short sentence"
+}
+
+Principle:
+- Decide the best response posture for the user based on the actual outcome and evidence.
+- Keep the advice brief, practical, and presentation-oriented.
+- Do not restate the full answer or invent new work."#,
         ),
         _ => None,
     }

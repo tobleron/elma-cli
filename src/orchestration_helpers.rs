@@ -313,6 +313,7 @@ pub(crate) async fn maybe_revise_presented_result(
     line: &str,
     route_decision: &RouteDecision,
     evidence_mode: &EvidenceModeDecision,
+    response_advice: &ExpertResponderAdvice,
     step_results: &[StepResult],
     reply_instructions: &str,
     final_text: String,
@@ -335,6 +336,7 @@ pub(crate) async fn maybe_revise_presented_result(
                 line,
                 route_decision,
                 evidence_mode,
+                response_advice,
                 step_results,
                 &format!(
                     "{}\n\nRevision guidance:\n{}",
@@ -400,12 +402,42 @@ pub(crate) async fn decide_evidence_mode_via_unit(
         .map_err(|e| anyhow::anyhow!("Failed to parse evidence mode decision: {}", e))
 }
 
+pub(crate) async fn request_response_advice_via_unit(
+    client: &reqwest::Client,
+    expert_responder_cfg: &Profile,
+    user_message: &str,
+    route_decision: &RouteDecision,
+    evidence_mode: &EvidenceModeDecision,
+    reply_instructions: &str,
+    step_results: &[StepResult],
+) -> Result<ExpertResponderAdvice> {
+    let unit = ExpertResponderUnit::new(expert_responder_cfg.clone());
+    let context = IntelContext::new(
+        user_message.to_string(),
+        route_decision.clone(),
+        String::new(),
+        String::new(),
+        Vec::new(),
+        client.clone(),
+    )
+    .with_extra("evidence_mode", evidence_mode)?
+    .with_extra(
+        "step_results",
+        step_results.iter().map(step_result_json).collect::<Vec<_>>(),
+    )?
+    .with_extra("reply_instructions", reply_instructions)?;
+    let output = unit.execute_with_fallback(&context).await?;
+    serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("Failed to parse expert responder advice: {}", e))
+}
+
 pub(crate) async fn present_result_via_unit(
     client: &reqwest::Client,
     presenter_cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
     evidence_mode: &EvidenceModeDecision,
+    response_advice: &ExpertResponderAdvice,
     step_results: &[StepResult],
     reply_instructions: &str,
 ) -> Result<String> {
@@ -419,6 +451,7 @@ pub(crate) async fn present_result_via_unit(
         client.clone(),
     )
     .with_extra("evidence_mode", evidence_mode)?
+    .with_extra("response_advice", response_advice)?
     .with_extra(
         "step_results",
         step_results.iter().map(step_result_json).collect::<Vec<_>>(),

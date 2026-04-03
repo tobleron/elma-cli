@@ -49,6 +49,17 @@ Observed failures:
 - [x] Added timeout-aware routing/finalization calls on the baseline chat path
 - [x] Added conservative `CHAT` fallback when route confidence is low but speech act is conversational
 - [x] Verified baseline `hello` succeeds in real CLI mode
+- [x] Reduced startup workspace brief size for routing/planning context
+- [x] Added startup workspace facts for repo root, shell name, and tool availability
+- [x] Removed unused router `n_probs` payload bloat from live classifier calls
+- [x] Added live program-policy rejection for overbuilt task-level plans
+- [x] Verified `S000E` now reaches real shell execution in CLI mode
+- [x] Standardized `selector` as a managed grammar-constrained intel unit for shell fallback selection
+- [x] Fixed shell placeholder handoff for selected values in `S000E` fallback execution
+- [x] Verified `S000E` now completes end-to-end in real CLI mode
+- [x] Reworked route aggregation so `speech_act=CHAT` cannot override a confident workflow/action route
+- [x] Reproduced and narrowed `S000F` to a post-selection verification/sufficiency seam
+- [x] Added a grounded candidate-selection fallback workflow for file-selection stress prompts
 
 ## Results
 - Root cause 1: `command_exists()` used `--version`, which falsely rejected valid macOS tools like `ls` and blocked the direct-shell fast path.
@@ -56,6 +67,8 @@ Observed failures:
 - Root cause 3: goal-drift detection still used keyword-overlap heuristics, which falsely flagged successful direct shell execution as context drift and triggered malformed refinement.
 - Root cause 4: remaining byte-slice truncation paths in `routing_parse.rs` and `guardrails.rs` were still vulnerable to Unicode boundary panics.
 - Root cause 5: trivial `CHAT` turns were still using a multi-call routing/reflection/finalization chain, so a simple greeting could stall before Elma ever replied.
+- Root cause 6: `S000E` fallback selection used an under-specified selector contract and oversized evidence payloads, so selection frequently returned empty items.
+- Root cause 7: shell fallback command generation emitted a malformed placeholder handoff (`{sel1|raw}`), so the selected value never reached the call-site search step correctly.
 
 ## Verified Fixes
 - `cargo test` passes with 146 tests
@@ -73,6 +86,22 @@ Observed failures:
   - allowing direct-shell fast path when workflow planning is `DIRECT/LOW` even if complexity is conservative
   - raising inline shell capture ceiling from `128 KiB` to `1 MiB`
 - `hello` now classifies conservatively as `CHAT`, skips reflection for pure `reply_only` chat, and returns a greeting instead of stalling.
+- Workspace startup context is now smaller and more decision-useful:
+  - concise repo/shell/tool facts in `workspace.txt`
+  - bounded workspace tree in `workspace_brief.txt`
+- Router calls no longer request unused logprob payloads, reducing response bodies from ~500-600 KB to ~10 KB in live traces.
+- `S000E_Sequential_Logic` no longer dies in classifier/planner stall:
+  - it reaches ladder/planning
+  - rejects invalid `plan`-only task-level programs
+  - falls back into executable shell probing
+  - reaches real shell artifacts under the sandbox session
+  - uses the standardized `selector` unit to choose one function candidate
+  - correctly injects the selected function into the shell call-site search
+  - completes with a grounded final answer in real CLI mode
+- `S000F_Select_Primitive` no longer hallucinates a repo-foreign answer or collapse into pure chat:
+  - it routes through workflow execution
+  - uses a grounded five-step shell/select/select/reply fallback
+  - currently stalls at the last-mile verification/sufficiency layer, which still underrates the completed selection workflow
 
 ## Rollback Check
 - Any failed experimental changes must be reverted before leaving troubleshooting phase.

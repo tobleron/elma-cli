@@ -4,10 +4,20 @@
 
 use crate::*;
 
-fn should_short_circuit_chat_route(speech_act: &ProbabilityDecision) -> bool {
+fn should_short_circuit_chat_route(
+    speech_act: &ProbabilityDecision,
+    workflow: &ProbabilityDecision,
+) -> bool {
     speech_act.choice.eq_ignore_ascii_case("CHAT")
         && speech_act.entropy <= 0.20
         && speech_act.margin >= 0.70
+        && workflow.choice.eq_ignore_ascii_case("CHAT")
+        && workflow.entropy <= 0.20
+        && workflow.margin >= 0.70
+}
+
+fn should_apply_speech_chat_boost(workflow: &ProbabilityDecision) -> bool {
+    workflow.choice.eq_ignore_ascii_case("CHAT") || workflow.margin < 0.15 || workflow.entropy > 0.50
 }
 
 fn fallback_probability_decision(
@@ -52,7 +62,7 @@ pub(crate) async fn infer_digit_router(
         top_p: router_cfg.top_p,
         stream: false,
         max_tokens: router_cfg.max_tokens,
-        n_probs: Some(router_cal.n_probs.max(16)),
+        n_probs: None,
         repeat_penalty: Some(router_cfg.repeat_penalty),
         reasoning_format: Some(router_cfg.reasoning_format.clone()),
         grammar: None,
@@ -159,7 +169,31 @@ Conversation so far (most recent last):
     .await
     .unwrap_or_else(|_| fallback_probability_decision("INQUIRE", speech_act_code_pairs(), "fallback"));
 
-    if should_short_circuit_chat_route(&speech_act) {
+    let workflow_prompt = format!(
+        "User message:\n{user_message}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
+        workspace_facts.trim(),
+        workspace_brief.trim(),
+        conversation
+    );
+    let workflow = infer_digit_router(
+        client,
+        chat_url,
+        workflow_router_cfg,
+        router_cal,
+        workflow_prompt,
+        workflow_code_pairs(),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        let choice = if speech_act.choice.eq_ignore_ascii_case("CHAT") {
+            "CHAT"
+        } else {
+            "WORKFLOW"
+        };
+        fallback_probability_decision(choice, workflow_code_pairs(), "fallback")
+    });
+
+    if should_short_circuit_chat_route(&speech_act, &workflow) {
         let workflow = ProbabilityDecision {
             choice: "CHAT".to_string(),
             source: "speech_short_circuit".to_string(),
@@ -197,30 +231,6 @@ Conversation so far (most recent last):
             mode,
         });
     }
-
-    let workflow_prompt = format!(
-        "User message:\n{user_message}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
-        workspace_facts.trim(),
-        workspace_brief.trim(),
-        conversation
-    );
-    let workflow = infer_digit_router(
-        client,
-        chat_url,
-        workflow_router_cfg,
-        router_cal,
-        workflow_prompt,
-        workflow_code_pairs(),
-    )
-    .await
-    .unwrap_or_else(|_| {
-        let choice = if speech_act.choice.eq_ignore_ascii_case("CHAT") {
-            "CHAT"
-        } else {
-            "WORKFLOW"
-        };
-        fallback_probability_decision(choice, workflow_code_pairs(), "fallback")
-    });
 
     let mode_prompt = format!(
         "User message:\n{user_message}\n\nWorkflow prior:\n- choice: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
@@ -276,7 +286,7 @@ Conversation so far (most recent last):
     let instruct_p = probability_of(&speech_act.distribution, "INSTRUCT");
 
     // If "CHAT" is high, boost CHAT route
-    if chat_p > 0.5 {
+    if chat_p > 0.5 && should_apply_speech_chat_boost(&workflow) {
         for (label, p) in &mut distribution {
             if label == "CHAT" {
                 *p = chat_p + (1.0 - chat_p) * *p;
@@ -338,4 +348,45 @@ Conversation so far (most recent last):
         workflow,
         mode,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decision(choice: &str, entropy: f64, margin: f64) -> ProbabilityDecision {
+        ProbabilityDecision {
+            choice: choice.to_string(),
+            source: "test".to_string(),
+            distribution: vec![(choice.to_string(), 1.0)],
+            margin,
+            entropy,
+        }
+    }
+
+    #[test]
+    fn chat_short_circuit_requires_consensus() {
+        let speech = decision("CHAT", 0.0, 1.0);
+        let workflow = decision("WORKFLOW", 0.0, 1.0);
+        assert!(!should_short_circuit_chat_route(&speech, &workflow));
+    }
+
+    #[test]
+    fn chat_short_circuit_allows_high_confidence_agreement() {
+        let speech = decision("CHAT", 0.0, 1.0);
+        let workflow = decision("CHAT", 0.0, 1.0);
+        assert!(should_short_circuit_chat_route(&speech, &workflow));
+    }
+
+    #[test]
+    fn speech_chat_boost_is_disabled_when_workflow_is_confidently_not_chat() {
+        let workflow = decision("WORKFLOW", 0.0, 1.0);
+        assert!(!should_apply_speech_chat_boost(&workflow));
+    }
+
+    #[test]
+    fn speech_chat_boost_is_allowed_when_workflow_is_confident_chat() {
+        let workflow = decision("CHAT", 0.0, 1.0);
+        assert!(should_apply_speech_chat_boost(&workflow));
+    }
 }

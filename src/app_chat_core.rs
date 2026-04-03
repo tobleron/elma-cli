@@ -225,6 +225,57 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             trace_verbose(runtime.verbose, "guard=capability_reply_only");
         }
 
+        let formula_level_error = validate_formula_level(&formula, ladder.level).err();
+        let program_level_error = program_matches_level(&program, ladder.level).err();
+        if let Some(policy_reason) = formula_level_error.or(program_level_error) {
+            trace(
+                &runtime.args,
+                &format!("program_policy_mismatch level={:?} reason={policy_reason}", ladder.level),
+            );
+
+            if route_decision.route.eq_ignore_ascii_case("SHELL") {
+                if let Some(path) = extract_first_path_from_user_text(line) {
+                    trace(
+                        &runtime.args,
+                        &format!("shell_path_probe_policy_fallback path={path}"),
+                    );
+                    program = build_shell_path_probe_program(line, &path);
+                }
+            }
+
+            if let Err(recheck_reason) = program_matches_level(&program, ladder.level) {
+                operator_trace(&runtime.args, "repairing the workflow plan");
+                if let Ok(recovered) = recover_program_once(
+                    &runtime.client,
+                    &runtime.chat_url,
+                    &runtime.profiles.orchestrator_cfg,
+                    line,
+                    &route_decision,
+                    workflow_plan.as_ref(),
+                    &complexity,
+                    &scope,
+                    &formula,
+                    &runtime.ws,
+                    &runtime.ws_brief,
+                    &runtime.messages,
+                    &format!("program_policy_mismatch: {recheck_reason}"),
+                    Some(&program),
+                    &[],
+                )
+                .await
+                {
+                    if program_matches_level(&recovered, ladder.level).is_ok() {
+                        program = recovered;
+                    } else {
+                        trace_verbose(
+                            runtime.verbose,
+                            "workflow_recovery=failed source=program_policy_mismatch",
+                        );
+                    }
+                }
+            }
+        }
+
         let features = ClassificationFeatures::from(&route_decision);
 
         if !(route_decision.route.eq_ignore_ascii_case("CHAT")
@@ -530,13 +581,27 @@ fn build_shell_path_probe_program(line: &str, path: &str) -> Program {
             steps: vec![
                 Step::Shell {
                     id: "s1".to_string(),
-                    cmd: format!("rg -n -m 1 '^func ' {}", quoted_path),
+                    cmd: format!("rg -n '^func ' {} | head -n 80", quoted_path),
                     common: StepCommon {
-                        purpose: "find one concrete function definition in the target path"
+                        purpose: "gather concrete function definitions in the target path"
                             .to_string(),
                         depends_on: Vec::new(),
-                        success_condition: "a concrete function definition is available"
+                        success_condition: "candidate function definitions are available"
                             .to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+                Step::Select {
+                    id: "sel1".to_string(),
+                    instructions: "Choose exactly one function name from the observed definitions. Prefer a non-entrypoint function that is most likely to have real call sites in the codebase. Return only the exact function name."
+                        .to_string(),
+                    common: StepCommon {
+                        purpose: "select the best function candidate for call-site tracing"
+                            .to_string(),
+                        depends_on: vec!["s1".to_string()],
+                        success_condition: "one exact function name is selected".to_string(),
                         parent_id: None,
                         depth: None,
                         unit_type: None,
@@ -545,15 +610,14 @@ fn build_shell_path_probe_program(line: &str, path: &str) -> Program {
                 Step::Shell {
                     id: "s2".to_string(),
                     cmd: format!(
-                        "name=$(python3 - <<'PY'\nimport pathlib, re\nroot = pathlib.Path({})\nfor file_path in root.rglob('*.go'):\n    try:\n        with file_path.open() as handle:\n            for line in handle:\n                match = re.match(r'^func (?:\\([^)]*\\) )?([A-Za-z_][A-Za-z0-9_]*)\\(', line)\n                if match:\n                    print(match.group(1))\n                    raise SystemExit\n    except OSError:\n        pass\nPY\n); printf 'FUNCTION=%s\\n' \"$name\"; rg -n \"\\\\b${{name}}\\\\(\" {}",
-                        quoted_path,
+                        "name={{{{sel1|shell_words}}}}; printf 'FUNCTION=%s\\n' \"$name\"; rg -n \"\\\\b${{name}}\\\\(\" {} | rg -v \"^.*:.*func (?:\\\\([^)]*\\\\) )?${{name}}\\\\(\"",
                         quoted_path
                     ),
                     common: StepCommon {
-                        purpose: "search for every call site of the discovered function"
+                        purpose: "search for every call site of the selected function"
                             .to_string(),
-                        depends_on: vec!["s1".to_string()],
-                        success_condition: "call sites for the discovered function are available"
+                        depends_on: vec!["sel1".to_string()],
+                        success_condition: "call sites for the selected function are available"
                             .to_string(),
                         parent_id: None,
                         depth: None,
@@ -562,13 +626,98 @@ fn build_shell_path_probe_program(line: &str, path: &str) -> Program {
                 },
                 Step::Reply {
                     id: "r1".to_string(),
-                    instructions: "Name the discovered function, cite the file where it is defined from the earlier evidence, and list the call locations from the search results."
+                    instructions: "Name the selected function, cite the defining line from the earlier evidence, and list the call locations from the search results. If no non-definition call sites were found, say that plainly."
                         .to_string(),
                     common: StepCommon {
                         purpose: "present the function definition and all observed call sites"
                             .to_string(),
-                        depends_on: vec!["s1".to_string(), "s2".to_string()],
+                        depends_on: vec!["s1".to_string(), "sel1".to_string(), "s2".to_string()],
                         success_condition: "the user receives the function name, defining file, and call sites"
+                            .to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+            ],
+        };
+    }
+
+    if lower.contains("potential files")
+        && lower.contains("most likely candidate")
+        && (lower.contains("main application logic") || lower.contains("main logic"))
+    {
+        return Program {
+            objective: line.to_string(),
+            steps: vec![
+                Step::Shell {
+                    id: "s1".to_string(),
+                    cmd: format!("ls -1 {}", quoted_path),
+                    common: StepCommon {
+                        purpose: "list the top-level files and directories in the target path"
+                            .to_string(),
+                        depends_on: Vec::new(),
+                        success_condition: "top-level candidate names are available".to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+                Step::Shell {
+                    id: "s2".to_string(),
+                    cmd: format!("rg --files {} | head -n 120", quoted_path),
+                    common: StepCommon {
+                        purpose: "gather concrete file-path evidence from the target path"
+                            .to_string(),
+                        depends_on: Vec::new(),
+                        success_condition: "grounded file paths are available".to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+                Step::Select {
+                    id: "sel1".to_string(),
+                    instructions: "Select exactly three grounded file paths that are the strongest candidates for main application logic. Prefer entry points, app wiring, root commands, and central runtime modules. Return exact file paths only."
+                        .to_string(),
+                    common: StepCommon {
+                        purpose: "choose three grounded candidate files".to_string(),
+                        depends_on: vec!["s1".to_string(), "s2".to_string()],
+                        success_condition: "three candidate file paths are selected".to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+                Step::Select {
+                    id: "sel2".to_string(),
+                    instructions: "From the candidate file paths, choose exactly one most likely main application logic file. Prefer the file that most directly acts as the application entry point or root command. Return the exact file path only."
+                        .to_string(),
+                    common: StepCommon {
+                        purpose: "select the most likely candidate from the three grounded options"
+                            .to_string(),
+                        depends_on: vec!["sel1".to_string()],
+                        success_condition: "one grounded file path is selected as the best candidate"
+                            .to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                    },
+                },
+                Step::Reply {
+                    id: "r1".to_string(),
+                    instructions: "Report the three selected candidate file paths, then name the most likely candidate and explain briefly why it is the strongest grounded choice."
+                        .to_string(),
+                    common: StepCommon {
+                        purpose: "present the grounded candidates and the final selection"
+                            .to_string(),
+                        depends_on: vec![
+                            "s1".to_string(),
+                            "s2".to_string(),
+                            "sel1".to_string(),
+                            "sel2".to_string(),
+                        ],
+                        success_condition: "the user receives three grounded candidates plus one selected best candidate with reasoning"
                             .to_string(),
                         parent_id: None,
                         depth: None,
@@ -834,6 +983,7 @@ async fn resolve_final_text(
         &runtime.chat_url,
         &runtime.profiles.elma_cfg,
         &runtime.profiles.evidence_mode_cfg,
+        &runtime.profiles.expert_responder_cfg,
         &runtime.profiles.result_presenter_cfg,
         &runtime.profiles.claim_checker_cfg,
         &runtime.profiles.formatter_cfg,
@@ -893,5 +1043,41 @@ mod tests {
             Some(&workflow_plan),
             &complexity
         ));
+    }
+
+    #[test]
+    fn shell_path_probe_uses_selection_placeholder_for_callsite_search() {
+        let program = build_shell_path_probe_program(
+            "In _stress_testing/_opencode_for_testing/, find a function definition in one file, then search for every location where that function is called.",
+            "_stress_testing/_opencode_for_testing/",
+        );
+
+        let steps = program.steps;
+        let first_cmd = match &steps[0] {
+            Step::Shell { cmd, .. } => cmd,
+            other => panic!("expected first shell step, got {:?}", other),
+        };
+        assert!(first_cmd.contains("| head -n 80"));
+
+        let second_cmd = match &steps[2] {
+            Step::Shell { cmd, .. } => cmd,
+            other => panic!("expected second shell step, got {:?}", other),
+        };
+        assert!(second_cmd.contains("{{sel1|shell_words}}"));
+    }
+
+    #[test]
+    fn shell_path_probe_builds_candidate_selection_workflow_for_main_logic_request() {
+        let program = build_shell_path_probe_program(
+            "In _stress_testing/_opencode_for_testing/, identify three potential files that could be the main application logic. Select the most likely candidate and explain your reasoning.",
+            "_stress_testing/_opencode_for_testing/",
+        );
+
+        assert_eq!(program.steps.len(), 5);
+        assert!(matches!(program.steps[0], Step::Shell { .. }));
+        assert!(matches!(program.steps[1], Step::Shell { .. }));
+        assert!(matches!(program.steps[2], Step::Select { .. }));
+        assert!(matches!(program.steps[3], Step::Select { .. }));
+        assert!(matches!(program.steps[4], Step::Reply { .. }));
     }
 }
