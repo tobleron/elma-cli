@@ -1,4 +1,4 @@
-# Task D003: Aggregate Completed Tasks
+# Task D001: Aggregate Completed Tasks
 
 ## 🚨 Trigger
 Completed tasks count exceeds 20 (Current: 44).

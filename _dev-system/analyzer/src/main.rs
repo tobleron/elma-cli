@@ -35,7 +35,6 @@ use verification::VerificationBundle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SurgicalTrigger {
-    Oversized,
     DragRisk,
 }
 
@@ -335,13 +334,6 @@ fn generate_work_units(
                             drag_target, lower, upper
                         ));
                     }
-                    SurgicalTrigger::Oversized => {
-                        let (lower, upper) = working_band_for_taxonomy(config, taxonomy);
-                        reason.push_str(&format!(
-                            "  ⚠️ Trigger: Oversized beyond the preferred {}-{} LOC working band.",
-                            lower, upper
-                        ));
-                    }
                 }
 
                 if let Some(symbol) = &metrics.hotspot_symbol {
@@ -630,9 +622,8 @@ fn surgical_trigger(
     }
 
     if is_drag_risk_exempt(path, content, taxonomy, driver_name, config) {
-        if loc > limit && loc > split_threshold(limit) {
-            return Some(SurgicalTrigger::Oversized);
-        }
+        // Exempt from drag concerns, but still check size.
+        // Both size AND drag must exceed targets, so exempt files don't trigger.
         return None;
     }
 
@@ -647,12 +638,13 @@ fn surgical_trigger(
     if is_low_value_drag_churn(loc, density, coupling_score, hotspot_reason, config) {
         return None;
     }
-    if drag >= drag_risk_threshold(drag_target, has_hotspot) && loc >= min_loc {
+    // Both size AND drag must exceed targets to trigger a refactor.
+    // This prevents false positives from cargo fmt expansion (size-only)
+    // and from low-density verbose files (drag-only).
+    let exceeds_drag = drag >= drag_risk_threshold(drag_target, has_hotspot);
+    let exceeds_size = loc > limit && loc > split_threshold(limit);
+    if exceeds_drag && exceeds_size {
         return Some(SurgicalTrigger::DragRisk);
-    }
-
-    if loc > limit && loc > split_threshold(limit) {
-        return Some(SurgicalTrigger::Oversized);
     }
 
     None
@@ -741,8 +733,9 @@ mod tests {
     }
 
     #[test]
-    fn surgical_trigger_keeps_existing_size_based_gate() {
+    fn surgical_trigger_requires_both_size_and_drag() {
         let config = config();
+        // Size OK (520 in band) but drag OK (1.2 < 3.6) → no trigger
         assert_eq!(
             surgical_trigger(
                 "../../src/systems/Example.res",
@@ -760,7 +753,7 @@ mod tests {
                 None,
                 &config,
             ),
-            Some(SurgicalTrigger::Oversized)
+            None
         );
     }
 

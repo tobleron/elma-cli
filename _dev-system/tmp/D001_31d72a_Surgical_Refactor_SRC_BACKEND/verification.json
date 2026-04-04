@@ -1,0 +1,130 @@
+{
+  "task": "D001_31d72a",
+  "category": "Surgical_Refactor_SRC_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D001_31d72a_Surgical_Refactor_SRC_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/app_chat_builders_advanced.rs`",
+      "snapshots": [
+        {
+          "path": "src/app_chat_builders_advanced.rs",
+          "functions": [
+            {
+              "name": "build_shell_path_probe_program",
+              "signature": "pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program {",
+              "line": 16
+            }
+          ],
+          "fingerprint": "09a59d357d96e2665937c0766929d1351046de3bb0c4da686ba5ccd2f3a15f1a"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/execution_steps.rs`",
+      "snapshots": [
+        {
+          "path": "src/execution_steps.rs",
+          "functions": [
+            {
+              "name": "gather_artifacts",
+              "signature": "fn gather_artifacts(",
+              "line": 21
+            },
+            {
+              "name": "normalize_selected_items_against_evidence",
+              "signature": "pub(crate) fn normalize_selected_items_against_evidence(",
+              "line": 34
+            },
+            {
+              "name": "normalize_single_item",
+              "signature": "fn normalize_single_item(item: &str, evidence_lines: &[&str]) -> String {",
+              "line": 50
+            },
+            {
+              "name": "is_relative_path_match",
+              "signature": "fn is_relative_path_match(line: &str, trimmed: &str) -> bool {",
+              "line": 79
+            },
+            {
+              "name": "budget_evidence",
+              "signature": "fn budget_evidence(evidence: &str) -> String {",
+              "line": 90
+            },
+            {
+              "name": "skip_selection",
+              "signature": "fn skip_selection(reason: &str) -> SelectionOutput {",
+              "line": 101
+            },
+            {
+              "name": "select_items_via_unit",
+              "signature": "async fn select_items_via_unit(",
+              "line": 108
+            },
+            {
+              "name": "mk_chat_req",
+              "signature": "fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionRequest {",
+              "line": 175
+            },
+            {
+              "name": "chat_once_get_text",
+              "signature": "async fn chat_once_get_text(",
+              "line": 199
+            },
+            {
+              "name": "mk_step_result",
+              "signature": "fn mk_step_result(",
+              "line": 214
+            },
+            {
+              "name": "handle_select_step",
+              "signature": "async fn handle_select_step(",
+              "line": 235
+            },
+            {
+              "name": "handle_summarize_step",
+              "signature": "async fn handle_summarize_step(",
+              "line": 305
+            },
+            {
+              "name": "handle_plan_step",
+              "signature": "async fn handle_plan_step(",
+              "line": 340
+            },
+            {
+              "name": "handle_master_plan_step",
+              "signature": "async fn handle_master_plan_step(",
+              "line": 382
+            },
+            {
+              "name": "handle_decide_step",
+              "signature": "async fn handle_decide_step(",
+              "line": 423
+            },
+            {
+              "name": "handle_reply_step",
+              "signature": "fn handle_reply_step(",
+              "line": 460
+            },
+            {
+              "name": "handle_program_step",
+              "signature": "pub(crate) async fn handle_program_step(",
+              "line": 483
+            },
+            {
+              "name": "selector_normalizes_unique_suffix_to_exact_relative_path",
+              "signature": "fn selector_normalizes_unique_suffix_to_exact_relative_path() {",
+              "line": 716
+            },
+            {
+              "name": "selector_prefers_shallow_grounded_path_when_basename_is_ambiguous",
+              "signature": "fn selector_prefers_shallow_grounded_path_when_basename_is_ambiguous() {",
+              "line": 728
+            }
+          ],
+          "fingerprint": "2bfa534c3b8a0f15c663a46255cfeb6ea5ba0c97eb5cbd57c818996b6b91d6ae"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-04-04T17:32:38.460082Z"
+}

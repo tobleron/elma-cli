@@ -18,7 +18,7 @@
     "merge_score_threshold": 1.2,
     "nesting_weight": 0.6,
     "density_weight": 1.0,
-    "drag_target": 2.6,
+    "drag_target": 3.6,
     "state_weight": 8.0,
     "max_depth_threshold": 4,
     "_formula_version": "2.0"
@@ -79,7 +79,7 @@
       "extensions": [
         ".rs"
       ],
-      "drag_target": 2.6,
+      "drag_target": 3.6,
       "complexity_dictionary": {
         "unsafe": 3.0,
         "unwrap()": 2.0,
