@@ -51,6 +51,24 @@ fn is_test_only_helper(path: &str) -> bool {
 }
 
 fn main() -> Result<()> {
+    // Normalize code style BEFORE analysis and baseline capture.
+    // This ensures LOC targets and baselines are consistent with cargo fmt's
+    // output, so refactored files won't appear to "grow" after formatting.
+    let repo_root = Path::new("../..");
+    let fmt_status = std::process::Command::new("cargo")
+        .arg("fmt")
+        .current_dir(repo_root)
+        .status();
+    if let Ok(status) = fmt_status {
+        if status.success() {
+            println!("✅ cargo fmt applied before analysis.");
+        } else {
+            println!("⚠️  cargo fmt failed (exit {:?}), continuing anyway.", status.code());
+        }
+    } else {
+        println!("⚠️  cargo fmt not available, skipping normalization.");
+    }
+
     // Load configuration and state
     let mut state = state::AnalyzerState::load();
     let guard_config = guard::GuardConfig::default();
