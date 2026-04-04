@@ -1,4 +1,4 @@
-//! @efficiency-role: domain-logic
+//! @efficiency-role: util-pure
 //!
 //! Execution Ladder Depth Module
 //!

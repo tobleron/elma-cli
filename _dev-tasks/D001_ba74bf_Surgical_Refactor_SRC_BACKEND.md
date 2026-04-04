@@ -1,4 +1,4 @@
-# Task D001_1c9ec2: Surgical Refactor SRC BACKEND
+# Task D001_ba74bf: Surgical Refactor SRC BACKEND
 
 ## Objective
 Senior Refactoring Engineer. Reduce estimated modification risk below the applicable drag target without fragmenting cohesive modules. Extract highlighted 'Hotspots' into sub-modules only when the resulting split stays within the preferred size policy. The file should remain a clear 'Orchestrator' or 'Service' boundary, with only truly dense or isolated logic moved to specialized siblings.
@@ -22,8 +22,8 @@ Senior Refactoring Engineer. Reduce estimated modification risk below the applic
 - [ ] **../../src/intel_narrative.rs** (Metric: [Nesting: 1.20, Density: 0.00, Coupling: 0.01] | Drag: 2.20 | LOC: 692/450  ⚠️ Trigger: Oversized beyond the preferred 310-410 LOC working band.) → 🏗️ Split into 2 modules (target 310-410 LOC each, center ~360 LOC, floor 260 LOC) [Size-only candidate; drag already within target.]
 
 ## 🔎 Programmatic Verification
-- Baseline artifacts: `_dev-system/tmp/D001_1c9ec2_Surgical_Refactor_SRC_BACKEND/verification.json` (files at `_dev-system/tmp/D001_1c9ec2_Surgical_Refactor_SRC_BACKEND/files/`).
-- Run `cargo run --manifest-path _dev-system/analyzer/Cargo.toml --bin spec_diff -- --baseline _dev-system/tmp/D001_1c9ec2_Surgical_Refactor_SRC_BACKEND/verification.json --targets <refactored files>` once the refactor is ready to ensure the function surface matches the captured snapshots.
+- Baseline artifacts: `_dev-system/tmp/D001_ba74bf_Surgical_Refactor_SRC_BACKEND/verification.json` (files at `_dev-system/tmp/D001_ba74bf_Surgical_Refactor_SRC_BACKEND/files/`).
+- Run `cargo run --manifest-path _dev-system/analyzer/Cargo.toml --bin spec_diff -- --baseline _dev-system/tmp/D001_ba74bf_Surgical_Refactor_SRC_BACKEND/verification.json --targets <refactored files>` once the refactor is ready to ensure the function surface matches the captured snapshots.
 
 ### Pre-split snapshot for `src/app_chat_builders_advanced.rs`
 - `src/app_chat_builders_advanced.rs` (1 functions, fingerprint 09a59d357d96e2665937c0766929d1351046de3bb0c4da686ba5ccd2f3a15f1a)

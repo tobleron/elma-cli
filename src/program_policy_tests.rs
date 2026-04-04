@@ -1,4 +1,4 @@
-//! @efficiency-role: domain-logic
+//! @efficiency-role: ignored
 //!
 //! Program Policy Tests
 //!

@@ -1,0 +1,1149 @@
+{
+  "task": "D001_ba74bf",
+  "category": "Surgical_Refactor_SRC_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D001_ba74bf_Surgical_Refactor_SRC_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/app_chat_builders_advanced.rs`",
+      "snapshots": [
+        {
+          "path": "src/app_chat_builders_advanced.rs",
+          "functions": [
+            {
+              "name": "build_shell_path_probe_program",
+              "signature": "pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program {",
+              "line": 16
+            }
+          ],
+          "fingerprint": "09a59d357d96e2665937c0766929d1351046de3bb0c4da686ba5ccd2f3a15f1a"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/app_chat_loop.rs`",
+      "snapshots": [
+        {
+          "path": "src/app_chat_loop.rs",
+          "functions": [
+            {
+              "name": "apply_policy_fallback",
+              "signature": "async fn apply_policy_fallback(",
+              "line": 16
+            },
+            {
+              "name": "handle_chat_command",
+              "signature": "async fn handle_chat_command(runtime: &mut AppRuntime, line: &str) -> Result<bool> {",
+              "line": 105
+            },
+            {
+              "name": "annotate_and_classify",
+              "signature": "async fn annotate_and_classify(",
+              "line": 158
+            },
+            {
+              "name": "try_workspace_discovery",
+              "signature": "fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) {",
+              "line": 205
+            },
+            {
+              "name": "trace_workflow_plan",
+              "signature": "fn trace_workflow_plan(args: &Args, plan: &WorkflowPlannerOutput) {",
+              "line": 224
+            },
+            {
+              "name": "apply_shape_fallbacks",
+              "signature": "fn apply_shape_fallbacks(",
+              "line": 243
+            },
+            {
+              "name": "has_edit_result",
+              "signature": "fn has_edit_result(step_results: &[StepResult]) -> bool {",
+              "line": 299
+            },
+            {
+              "name": "run_reflection_loop",
+              "signature": "async fn run_reflection_loop(",
+              "line": 303
+            },
+            {
+              "name": "run_chat_loop",
+              "signature": "pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {",
+              "line": 408
+            }
+          ],
+          "fingerprint": "543e5bb7ec3e0d1de2ee7d1eca7f0def048708bb40057a10c6e30dbf323aa7ea"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/execution_steps.rs`",
+      "snapshots": [
+        {
+          "path": "src/execution_steps.rs",
+          "functions": [
+            {
+              "name": "gather_artifacts",
+              "signature": "fn gather_artifacts(",
+              "line": 21
+            },
+            {
+              "name": "normalize_selected_items_against_evidence",
+              "signature": "fn normalize_selected_items_against_evidence(",
+              "line": 34
+            },
+            {
+              "name": "normalize_single_item",
+              "signature": "fn normalize_single_item(trimmed: &str, evidence_lines: &[&str]) -> String {",
+              "line": 50
+            },
+            {
+              "name": "is_relative_path_match",
+              "signature": "fn is_relative_path_match(line: &str, trimmed: &str) -> bool {",
+              "line": 79
+            },
+            {
+              "name": "select_items_via_unit",
+              "signature": "async fn select_items_via_unit(",
+              "line": 99
+            },
+            {
+              "name": "budget_selection_evidence",
+              "signature": "fn budget_selection_evidence(evidence: &str) -> String {",
+              "line": 108
+            },
+            {
+              "name": "mk_chat_req",
+              "signature": "fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionRequest {",
+              "line": 175
+            },
+            {
+              "name": "chat_once_get_text",
+              "signature": "async fn chat_once_get_text(",
+              "line": 199
+            },
+            {
+              "name": "mk_step_result",
+              "signature": "fn mk_step_result(",
+              "line": 214
+            },
+            {
+              "name": "mk_simple_step_result",
+              "signature": "fn mk_simple_step_result(",
+              "line": 252
+            },
+            {
+              "name": "handle_select_step",
+              "signature": "async fn handle_select_step(",
+              "line": 280
+            },
+            {
+              "name": "handle_summarize_step",
+              "signature": "async fn handle_summarize_step(",
+              "line": 356
+            },
+            {
+              "name": "handle_plan_step",
+              "signature": "async fn handle_plan_step(",
+              "line": 399
+            },
+            {
+              "name": "handle_master_plan_step",
+              "signature": "async fn handle_master_plan_step(",
+              "line": 441
+            },
+            {
+              "name": "handle_decide_step",
+              "signature": "async fn handle_decide_step(",
+              "line": 482
+            },
+            {
+              "name": "handle_reply_step",
+              "signature": "fn handle_reply_step(",
+              "line": 519
+            },
+            {
+              "name": "handle_program_step",
+              "signature": "pub(crate) async fn handle_program_step(",
+              "line": 542
+            },
+            {
+              "name": "selector_normalizes_unique_suffix_to_exact_relative_path",
+              "signature": "fn selector_normalizes_unique_suffix_to_exact_relative_path() {",
+              "line": 787
+            },
+            {
+              "name": "selector_prefers_shallow_grounded_path_when_basename_is_ambiguous",
+              "signature": "fn selector_prefers_shallow_grounded_path_when_basename_is_ambiguous() {",
+              "line": 801
+            }
+          ],
+          "fingerprint": "c801440068d1dcced83d3dfdc555f55ec3d724857f2c7ef730b1ff459c99ce9f"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/intel_trait.rs`",
+      "snapshots": [
+        {
+          "path": "src/intel_trait.rs",
+          "functions": [
+            {
+              "name": "new",
+              "signature": "pub fn new(",
+              "line": 46
+            },
+            {
+              "name": "with_complexity",
+              "signature": "pub fn with_complexity(mut self, complexity: ComplexityAssessment) -> Self {",
+              "line": 67
+            },
+            {
+              "name": "with_extra",
+              "signature": "pub fn with_extra<T: Serialize>(mut self, key: &str, value: T) -> Result<Self> {",
+              "line": 73
+            },
+            {
+              "name": "extra",
+              "signature": "pub fn extra(&self, key: &str) -> Option<&serde_json::Value> {",
+              "line": 80
+            },
+            {
+              "name": "success",
+              "signature": "pub fn success(unit_name: &str, data: serde_json::Value, confidence: f64) -> Self {",
+              "line": 108
+            },
+            {
+              "name": "fallback",
+              "signature": "pub fn fallback(unit_name: &str, data: serde_json::Value, reason: &str) -> Self {",
+              "line": 119
+            },
+            {
+              "name": "get",
+              "signature": "pub fn get(&self, key: &str) -> Option<&serde_json::Value> {",
+              "line": 130
+            },
+            {
+              "name": "get_str",
+              "signature": "pub fn get_str(&self, key: &str) -> Option<&str> {",
+              "line": 135
+            },
+            {
+              "name": "get_bool",
+              "signature": "pub fn get_bool(&self, key: &str) -> Option<bool> {",
+              "line": 140
+            },
+            {
+              "name": "get_f64",
+              "signature": "pub fn get_f64(&self, key: &str) -> Option<f64> {",
+              "line": 145
+            },
+            {
+              "name": "is_standard_format",
+              "signature": "pub fn is_standard_format(&self) -> bool {",
+              "line": 150
+            },
+            {
+              "name": "default",
+              "signature": "fn default() -> Self {",
+              "line": 156
+            },
+            {
+              "name": "extract_bool_fields",
+              "signature": "fn extract_bool_fields(output: &IntelOutput, a: &str, b: &str) -> (bool, bool) {",
+              "line": 252
+            },
+            {
+              "name": "test_prob_decision",
+              "signature": "fn test_prob_decision(choice: &str) -> ProbabilityDecision {",
+              "line": 261
+            },
+            {
+              "name": "from_intel_output",
+              "signature": "pub fn from_intel_output(output: &IntelOutput) -> Result<Self> {",
+              "line": 280
+            },
+            {
+              "name": "from_intel_output",
+              "signature": "pub fn from_intel_output(output: &IntelOutput) -> Result<Self> {",
+              "line": 301
+            },
+            {
+              "name": "from_intel_output",
+              "signature": "pub fn from_intel_output(output: &IntelOutput) -> Result<Self> {",
+              "line": 323
+            },
+            {
+              "name": "from_intel_output",
+              "signature": "pub fn from_intel_output(output: &IntelOutput) -> Result<Self> {",
+              "line": 344
+            },
+            {
+              "name": "trace_fallback",
+              "signature": "pub(crate) fn trace_fallback(unit_name: &str, error: &str) {",
+              "line": 358
+            },
+            {
+              "name": "trace_verbose",
+              "signature": "fn trace_verbose(verbose: bool, message: &str) {",
+              "line": 363
+            },
+            {
+              "name": "intel_chat_url",
+              "signature": "pub(crate) fn intel_chat_url(profile: &Profile) -> Result<Url> {",
+              "line": 369
+            },
+            {
+              "name": "neutral_route_decision",
+              "signature": "pub(crate) fn neutral_route_decision() -> RouteDecision {",
+              "line": 376
+            },
+            {
+              "name": "apply_profile_grammar",
+              "signature": "pub(crate) fn apply_profile_grammar(",
+              "line": 396
+            },
+            {
+              "name": "build_intel_request",
+              "signature": "pub(crate) fn build_intel_request(",
+              "line": 411
+            },
+            {
+              "name": "build_intel_system_user_request",
+              "signature": "pub(crate) fn build_intel_system_user_request(",
+              "line": 429
+            },
+            {
+              "name": "execute_intel_json_for_profile",
+              "signature": "pub(crate) async fn execute_intel_json_for_profile<T: DeserializeOwned + 'static>(",
+              "line": 448
+            },
+            {
+              "name": "log_intel_trace",
+              "signature": "fn log_intel_trace(unit_name: &str, profile: &Profile, chat_url: &Url, grammar_injected: bool) {",
+              "line": 465
+            },
+            {
+              "name": "execute_traced_intel_json_for_profile",
+              "signature": "pub(crate) async fn execute_traced_intel_json_for_profile<T: DeserializeOwned + 'static>(",
+              "line": 483
+            },
+            {
+              "name": "execute_intel_json_from_user_content",
+              "signature": "pub(crate) async fn execute_intel_json_from_user_content<T: DeserializeOwned + 'static>(",
+              "line": 513
+            },
+            {
+              "name": "execute_intel_text_for_profile",
+              "signature": "pub(crate) async fn execute_intel_text_for_profile(",
+              "line": 522
+            },
+            {
+              "name": "execute_intel_text_from_user_content",
+              "signature": "pub(crate) async fn execute_intel_text_from_user_content(",
+              "line": 539
+            },
+            {
+              "name": "test_intel_output_success",
+              "signature": "fn test_intel_output_success() {",
+              "line": 555
+            },
+            {
+              "name": "test_intel_output_fallback",
+              "signature": "fn test_intel_output_fallback() {",
+              "line": 565
+            },
+            {
+              "name": "test_intel_output_field_accessors",
+              "signature": "fn test_intel_output_field_accessors() {",
+              "line": 575
+            },
+            {
+              "name": "test_intel_context_builder",
+              "signature": "fn test_intel_context_builder() {",
+              "line": 592
+            }
+          ],
+          "fingerprint": "639600554cb2eb05c97f6cea9a269421e38b31bcdd802ca9b55c5050274ab12e"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/json_tuning.rs`",
+      "snapshots": [
+        {
+          "path": "src/json_tuning.rs",
+          "functions": [
+            {
+              "name": "from_str",
+              "signature": "fn from_str(s: &str) -> Self {",
+              "line": 24
+            },
+            {
+              "name": "load_json_tuning_manifest",
+              "signature": "pub(crate) fn load_json_tuning_manifest() -> Result<JsonTuningManifest> {",
+              "line": 82
+            },
+            {
+              "name": "test_scenario",
+              "signature": "async fn test_scenario(",
+              "line": 90
+            },
+            {
+              "name": "test_json_at_temperature",
+              "signature": "pub(crate) async fn test_json_at_temperature(",
+              "line": 124
+            },
+            {
+              "name": "build_chat_request",
+              "signature": "fn build_chat_request(model: &str, user_message: &str, temperature: f32) -> ChatCompletionRequest {",
+              "line": 167
+            },
+            {
+              "name": "classify_json_response",
+              "signature": "fn classify_json_response(text: &str) -> (bool, bool, bool) {",
+              "line": 192
+            },
+            {
+              "name": "try_last_resort_repair",
+              "signature": "fn try_last_resort_repair(text: &str) -> (bool, bool, bool) {",
+              "line": 210
+            },
+            {
+              "name": "compute_scores",
+              "signature": "fn compute_scores(",
+              "line": 223
+            },
+            {
+              "name": "process_temperature",
+              "signature": "async fn process_temperature(",
+              "line": 248
+            },
+            {
+              "name": "run_json_temperature_tuning",
+              "signature": "pub(crate) async fn run_json_temperature_tuning(",
+              "line": 274
+            },
+            {
+              "name": "try_load_cached_temp",
+              "signature": "fn try_load_cached_temp(cached: Option<&JsonTuningResult>, temp: f32) -> Option<TemperatureResult> {",
+              "line": 356
+            },
+            {
+              "name": "emit_full_cached_progress",
+              "signature": "fn emit_full_cached_progress(args: &Args, cached: &JsonTuningResult) {",
+              "line": 364
+            },
+            {
+              "name": "emit_temp_result_progress",
+              "signature": "fn emit_temp_result_progress(args: &Args, result: &TemperatureResult, cached: bool) {",
+              "line": 372
+            },
+            {
+              "name": "default_temp_result",
+              "signature": "fn default_temp_result() -> TemperatureResult {",
+              "line": 393
+            },
+            {
+              "name": "find_optimal_temperature",
+              "signature": "fn find_optimal_temperature(results: &[TemperatureResult]) -> TemperatureResult {",
+              "line": 405
+            },
+            {
+              "name": "find_recommended_temperature",
+              "signature": "fn find_recommended_temperature(results: &[TemperatureResult], optimal: &TemperatureResult) -> f32 {",
+              "line": 417
+            },
+            {
+              "name": "load_cached_json_tuning_result",
+              "signature": "pub(crate) fn load_cached_json_tuning_result(tune_dir: &Path) -> Result<Option<JsonTuningResult>> {",
+              "line": 434
+            },
+            {
+              "name": "find_latest_tuning_file",
+              "signature": "fn find_latest_tuning_file(tune_dir: &Path) -> Result<Option<std::path::PathBuf>> {",
+              "line": 450
+            },
+            {
+              "name": "parse_cached_result",
+              "signature": "fn parse_cached_result(content: &str) -> Option<JsonTuningResult> {",
+              "line": 478
+            },
+            {
+              "name": "parse_temp_result_line",
+              "signature": "fn parse_temp_result_line(line: &str) -> Option<TemperatureResult> {",
+              "line": 527
+            },
+            {
+              "name": "build_tuning_report_content",
+              "signature": "fn build_tuning_report_content(result: &JsonTuningResult, timestamp: u64) -> String {",
+              "line": 559
+            },
+            {
+              "name": "save_json_tuning_report",
+              "signature": "pub(crate) fn save_json_tuning_report(",
+              "line": 588
+            },
+            {
+              "name": "apply_json_tuning_temperature",
+              "signature": "pub(crate) fn apply_json_tuning_temperature(model_cfg_dir: &Path, temperature: f32) -> Result<()> {",
+              "line": 604
+            }
+          ],
+          "fingerprint": "b1e8dc1570b6d835a020d126e567c3a3c4729c6010f10d527047275ef325d892"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/optimization_tune.rs`",
+      "snapshots": [
+        {
+          "path": "src/optimization_tune.rs",
+          "functions": [
+            {
+              "name": "eval_stability",
+              "signature": "async fn eval_stability(",
+              "line": 10
+            },
+            {
+              "name": "update_beam_state",
+              "signature": "fn update_beam_state(",
+              "line": 22
+            },
+            {
+              "name": "json_score_for_temp",
+              "signature": "fn json_score_for_temp(result: &JsonTuningResult) -> f64 {",
+              "line": 40
+            },
+            {
+              "name": "new_search_candidate",
+              "signature": "fn new_search_candidate(",
+              "line": 49
+            },
+            {
+              "name": "router",
+              "signature": "fn router() -> Self {",
+              "line": 75
+            },
+            {
+              "name": "orchestration",
+              "signature": "fn orchestration() -> Self {",
+              "line": 83
+            },
+            {
+              "name": "response",
+              "signature": "fn response() -> Self {",
+              "line": 91
+            },
+            {
+              "name": "optimize_model",
+              "signature": "pub(crate) async fn optimize_model(",
+              "line": 101
+            }
+          ],
+          "fingerprint": "fb0c659b4ccbf9f752929ccffec6847b0575ed7e771b33926493df94717f2995"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/orchestration_loop.rs`",
+      "snapshots": [
+        {
+          "path": "src/orchestration_loop.rs",
+          "functions": [
+            {
+              "name": "has_trusted_exact_selection_result",
+              "signature": "fn has_trusted_exact_selection_result(step_results: &[StepResult]) -> bool {",
+              "line": 13
+            },
+            {
+              "name": "should_accept_exact_selection_workflow",
+              "signature": "fn should_accept_exact_selection_workflow(",
+              "line": 23
+            },
+            {
+              "name": "collect_review_reasons",
+              "signature": "fn collect_review_reasons(",
+              "line": 34
+            },
+            {
+              "name": "pick_program_from_reviews",
+              "signature": "fn pick_program_from_reviews(",
+              "line": 55
+            },
+            {
+              "name": "handle_verdict_parse_error",
+              "signature": "fn handle_verdict_parse_error<T>(",
+              "line": 78
+            },
+            {
+              "name": "handle_sufficiency_parse_error",
+              "signature": "fn handle_sufficiency_parse_error(",
+              "line": 99
+            },
+            {
+              "name": "handle_critic_parse_error",
+              "signature": "fn handle_critic_parse_error(",
+              "line": 122
+            },
+            {
+              "name": "handle_recovery_failure",
+              "signature": "fn handle_recovery_failure(plan: &mut AgentPlan, reason: &str) -> Option<String> {",
+              "line": 146
+            },
+            {
+              "name": "attempt_recovery",
+              "signature": "async fn attempt_recovery(",
+              "line": 156
+            },
+            {
+              "name": "has_preflight_failure",
+              "signature": "fn has_preflight_failure(step_results: &[StepResult]) -> bool {",
+              "line": 194
+            },
+            {
+              "name": "results_are_good",
+              "signature": "fn results_are_good(rs: &[StepResult]) -> bool {",
+              "line": 201
+            },
+            {
+              "name": "count_executed_steps",
+              "signature": "fn count_executed_steps(rs: &[StepResult]) -> usize {",
+              "line": 211
+            },
+            {
+              "name": "handle_drift",
+              "signature": "fn handle_drift(args: &Args, v: &DriftVerdict) -> bool {",
+              "line": 216
+            },
+            {
+              "name": "run_reviewers_and_recover",
+              "signature": "async fn run_reviewers_and_recover(",
+              "line": 233
+            },
+            {
+              "name": "check_should_retry",
+              "signature": "fn check_should_retry(",
+              "line": 319
+            },
+            {
+              "name": "handle_policy_mismatch",
+              "signature": "async fn handle_policy_mismatch(",
+              "line": 329
+            },
+            {
+              "name": "handle_sufficiency_retry",
+              "signature": "async fn handle_sufficiency_retry(",
+              "line": 387
+            },
+            {
+              "name": "handle_critic_retry",
+              "signature": "async fn handle_critic_retry(",
+              "line": 457
+            },
+            {
+              "name": "try_refinement_if_needed",
+              "signature": "async fn try_refinement_if_needed(",
+              "line": 564
+            },
+            {
+              "name": "run_autonomous_loop",
+              "signature": "pub(crate) async fn run_autonomous_loop(",
+              "line": 661
+            },
+            {
+              "name": "accepts_retry_override_for_successful_exact_selection_workflow",
+              "signature": "fn accepts_retry_override_for_successful_exact_selection_workflow() {",
+              "line": 1016
+            }
+          ],
+          "fingerprint": "173a53dd60f160b8cb51a8191508b26a1815623c35f2f9d5b8689c1a07e67b6b"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/orchestration_planning.rs`",
+      "snapshots": [
+        {
+          "path": "src/orchestration_planning.rs",
+          "functions": [
+            {
+              "name": "planning_intel_context",
+              "signature": "fn planning_intel_context(",
+              "line": 14
+            },
+            {
+              "name": "trait_plan_workflow",
+              "signature": "async fn trait_plan_workflow(",
+              "line": 32
+            },
+            {
+              "name": "trait_assess_complexity",
+              "signature": "async fn trait_assess_complexity(",
+              "line": 50
+            },
+            {
+              "name": "trait_build_scope",
+              "signature": "async fn trait_build_scope(",
+              "line": 65
+            },
+            {
+              "name": "trait_select_formula",
+              "signature": "async fn trait_select_formula(",
+              "line": 85
+            },
+            {
+              "name": "fallback_formula_for_route",
+              "signature": "fn fallback_formula_for_route(route: &str, needs_evidence: bool) -> String {",
+              "line": 113
+            },
+            {
+              "name": "build_chat_fallback",
+              "signature": "fn build_chat_fallback(",
+              "line": 133
+            },
+            {
+              "name": "build_ladder_chat",
+              "signature": "fn build_ladder_chat(reason: &str) -> ExecutionLadderAssessment {",
+              "line": 159
+            },
+            {
+              "name": "persist_masterplan",
+              "signature": "fn persist_masterplan(masterplan: &Masterplan, session_root: &PathBuf) {",
+              "line": 172
+            },
+            {
+              "name": "complexity_from_ladder",
+              "signature": "fn complexity_from_ladder(route: &str, ladder: &ExecutionLadderAssessment) -> ComplexityAssessment {",
+              "line": 189
+            },
+            {
+              "name": "alignment_for_level",
+              "signature": "fn alignment_for_level(level: ExecutionLevel) -> Vec<&'static str> {",
+              "line": 202
+            },
+            {
+              "name": "is_empty_workflow_plan",
+              "signature": "fn is_empty_workflow_plan(plan: &WorkflowPlannerOutput) -> bool {",
+              "line": 217
+            },
+            {
+              "name": "should_use_uncertain_reply_default",
+              "signature": "fn should_use_uncertain_reply_default(line: &str, route_decision: &RouteDecision) -> bool {",
+              "line": 223
+            },
+            {
+              "name": "planning_prior_from_workflow_plan",
+              "signature": "fn planning_prior_from_workflow_plan(",
+              "line": 234
+            },
+            {
+              "name": "derive_planning_prior",
+              "signature": "pub(crate) async fn derive_planning_prior(",
+              "line": 273
+            },
+            {
+              "name": "get_required_depth",
+              "signature": "fn get_required_depth(complexity: &str, risk: &str) -> u8 {",
+              "line": 369
+            },
+            {
+              "name": "try_hierarchical_decomposition",
+              "signature": "pub async fn try_hierarchical_decomposition(",
+              "line": 391
+            },
+            {
+              "name": "derive_planning_prior_with_ladder",
+              "signature": "pub async fn derive_planning_prior_with_ladder(",
+              "line": 434
+            },
+            {
+              "name": "try_hierarchical_decomposition_with_ladder",
+              "signature": "pub async fn try_hierarchical_decomposition_with_ladder(",
+              "line": 558
+            },
+            {
+              "name": "test_probability_decision",
+              "signature": "fn test_probability_decision(choice: &str) -> ProbabilityDecision {",
+              "line": 595
+            },
+            {
+              "name": "test_route_decision",
+              "signature": "fn test_route_decision(route: &str, margin: f64, entropy: f64) -> RouteDecision {",
+              "line": 605
+            },
+            {
+              "name": "uncertain_reply_default_allows_chat_like_turns",
+              "signature": "fn uncertain_reply_default_allows_chat_like_turns() {",
+              "line": 619
+            },
+            {
+              "name": "uncertain_reply_default_rejects_path_scoped_shell_requests",
+              "signature": "fn uncertain_reply_default_rejects_path_scoped_shell_requests() {",
+              "line": 628
+            },
+            {
+              "name": "uncertain_reply_default_rejects_path_scoped_plan_requests",
+              "signature": "fn uncertain_reply_default_rejects_path_scoped_plan_requests() {",
+              "line": 637
+            }
+          ],
+          "fingerprint": "1c3a9a585865cd5d7bc33af7ab06a4c15982110b38dc761af556bd0c255afb28"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/routing_parse.rs`",
+      "snapshots": [
+        {
+          "path": "src/routing_parse.rs",
+          "functions": [
+            {
+              "name": "strip_markdown_wrappers",
+              "signature": "pub(crate) fn strip_markdown_wrappers(text: &str) -> &str {",
+              "line": 7
+            },
+            {
+              "name": "extract_first_json_object",
+              "signature": "pub(crate) fn extract_first_json_object(text: &str) -> Option<&str> {",
+              "line": 20
+            },
+            {
+              "name": "is_known_step_field",
+              "signature": "fn is_known_step_field(key_str: &str) -> bool {",
+              "line": 62
+            },
+            {
+              "name": "is_orphaned_key_boundary",
+              "signature": "fn is_orphaned_key_boundary(recent: &str) -> bool {",
+              "line": 76
+            },
+            {
+              "name": "collect_json_string_value",
+              "signature": "fn collect_json_string_value(",
+              "line": 80
+            },
+            {
+              "name": "collect_nested_structure",
+              "signature": "fn collect_nested_structure(chars: &mut std::iter::Peekable<std::str::Chars>, result: &mut String) {",
+              "line": 99
+            },
+            {
+              "name": "collect_literal_value",
+              "signature": "fn collect_literal_value(chars: &mut std::iter::Peekable<std::str::Chars>, result: &mut String) {",
+              "line": 115
+            },
+            {
+              "name": "try_absorb_orphaned_key",
+              "signature": "fn try_absorb_orphaned_key(",
+              "line": 126
+            },
+            {
+              "name": "fix_orphaned_keys_in_arrays",
+              "signature": "fn fix_orphaned_keys_in_arrays(text: &str) -> String {",
+              "line": 163
+            },
+            {
+              "name": "detect_repetition_loop",
+              "signature": "fn detect_repetition_loop(text: &str) -> Option<String> {",
+              "line": 193
+            },
+            {
+              "name": "validate_no_repetition_loop",
+              "signature": "fn validate_no_repetition_loop(trimmed: &str) -> Result<()> {",
+              "line": 228
+            },
+            {
+              "name": "try_parse_extracted_json",
+              "signature": "fn try_parse_extracted_json<T: DeserializeOwned + 'static>(obj: &str) -> Result<T> {",
+              "line": 244
+            },
+            {
+              "name": "try_repair_and_parse",
+              "signature": "fn try_repair_and_parse<T: DeserializeOwned + 'static>(text: &str) -> Result<T> {",
+              "line": 267
+            },
+            {
+              "name": "parse_json_loose",
+              "signature": "pub(crate) fn parse_json_loose<T: DeserializeOwned + 'static>(text: &str) -> Result<T> {",
+              "line": 285
+            },
+            {
+              "name": "strip_markdown_wrappers_removes_code_fences",
+              "signature": "fn strip_markdown_wrappers_removes_code_fences() {",
+              "line": 305
+            },
+            {
+              "name": "strip_markdown_wrappers_handles_no_fences",
+              "signature": "fn strip_markdown_wrappers_handles_no_fences() {",
+              "line": 318
+            },
+            {
+              "name": "strip_markdown_wrappers_handles_prose_before_fence",
+              "signature": "fn strip_markdown_wrappers_handles_prose_before_fence() {",
+              "line": 325
+            },
+            {
+              "name": "extract_json_from_markdown_wrapped",
+              "signature": "fn extract_json_from_markdown_wrapped() {",
+              "line": 339
+            },
+            {
+              "name": "extract_json_from_pure_json",
+              "signature": "fn extract_json_from_pure_json() {",
+              "line": 361
+            },
+            {
+              "name": "extract_json_with_prose_after",
+              "signature": "fn extract_json_with_prose_after() {",
+              "line": 369
+            },
+            {
+              "name": "test_repair_malformed_llm_json",
+              "signature": "fn test_repair_malformed_llm_json() {",
+              "line": 394
+            },
+            {
+              "name": "test_detect_repetition_loop",
+              "signature": "fn test_detect_repetition_loop() {",
+              "line": 415
+            },
+            {
+              "name": "test_normal_json_not_flagged_as_repetitive",
+              "signature": "fn test_normal_json_not_flagged_as_repetitive() {",
+              "line": 429
+            },
+            {
+              "name": "test_fix_orphaned_keys_in_steps",
+              "signature": "fn test_fix_orphaned_keys_in_steps() {",
+              "line": 440
+            },
+            {
+              "name": "test_parse_error_preview_handles_unicode",
+              "signature": "fn test_parse_error_preview_handles_unicode() {",
+              "line": 457
+            }
+          ],
+          "fingerprint": "8e17704acbe0d42bab21ffe00c07cf663fc3cedbdfbf59d8718180fb58e73493"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/verification.rs`",
+      "snapshots": [
+        {
+          "path": "src/verification.rs",
+          "functions": [
+            {
+              "name": "mk_intel_req",
+              "signature": "fn mk_intel_req(cfg: &Profile, user_content: String) -> ChatCompletionRequest {",
+              "line": 11
+            },
+            {
+              "name": "chat_and_parse",
+              "signature": "async fn chat_and_parse(",
+              "line": 35
+            },
+            {
+              "name": "claim_check_once",
+              "signature": "pub(crate) async fn claim_check_once(",
+              "line": 44
+            },
+            {
+              "name": "guard_repair_semantics_once",
+              "signature": "pub(crate) async fn guard_repair_semantics_once(",
+              "line": 62
+            },
+            {
+              "name": "check_execution_sufficiency_once",
+              "signature": "pub(crate) async fn check_execution_sufficiency_once(",
+              "line": 82
+            },
+            {
+              "name": "truncate_output",
+              "signature": "fn truncate_output(s: &String) -> &str {",
+              "line": 99
+            },
+            {
+              "name": "outcome_verifier_configs",
+              "signature": "fn outcome_verifier_configs(cfg: &Profile) -> (Profile, Profile, Profile, Profile) {",
+              "line": 103
+            },
+            {
+              "name": "verify_outcome_match_intent",
+              "signature": "pub(crate) async fn verify_outcome_match_intent(",
+              "line": 114
+            },
+            {
+              "name": "parse_verdict_from_json",
+              "signature": "fn parse_verdict_from_json(",
+              "line": 189
+            },
+            {
+              "name": "mark_result_ok",
+              "signature": "fn mark_result_ok(result: &mut StepResult, id: &str, reason: &str, args: &Args) {",
+              "line": 197
+            },
+            {
+              "name": "try_apply_downstream_validation",
+              "signature": "fn try_apply_downstream_validation(",
+              "line": 206
+            },
+            {
+              "name": "try_skip_intermediate_evidence_step",
+              "signature": "fn try_skip_intermediate_evidence_step(",
+              "line": 227
+            },
+            {
+              "name": "handle_schema_error",
+              "signature": "fn handle_schema_error(",
+              "line": 245
+            },
+            {
+              "name": "handle_verify_error",
+              "signature": "fn handle_verify_error(args: &Args, result: &mut StepResult, error: &anyhow::Error) {",
+              "line": 289
+            },
+            {
+              "name": "verify_nontrivial_step_outcomes",
+              "signature": "pub(crate) async fn verify_nontrivial_step_outcomes(",
+              "line": 309
+            },
+            {
+              "name": "apply_verdict_to_result",
+              "signature": "fn apply_verdict_to_result(",
+              "line": 377
+            },
+            {
+              "name": "ground_outcome_reason_if_needed",
+              "signature": "fn ground_outcome_reason_if_needed(args: &Args, result: &mut StepResult) -> bool {",
+              "line": 412
+            },
+            {
+              "name": "gate_formula_memory_once",
+              "signature": "pub(crate) async fn gate_formula_memory_once(",
+              "line": 454
+            },
+            {
+              "name": "preflight_command_once",
+              "signature": "pub(crate) async fn preflight_command_once(",
+              "line": 476
+            }
+          ],
+          "fingerprint": "9c907aa732fc9c7b9e572cab506c7e437569266dcef4c448d512b8010ace586e"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/intel_narrative.rs`",
+      "snapshots": [
+        {
+          "path": "src/intel_narrative.rs",
+          "functions": [
+            {
+              "name": "build_complexity_narrative",
+              "signature": "pub(crate) fn build_complexity_narrative(",
+              "line": 37
+            },
+            {
+              "name": "build_evidence_needs_narrative",
+              "signature": "pub(crate) fn build_evidence_needs_narrative(",
+              "line": 78
+            },
+            {
+              "name": "build_action_needs_narrative",
+              "signature": "pub(crate) fn build_action_needs_narrative(",
+              "line": 112
+            },
+            {
+              "name": "build_workflow_planner_narrative",
+              "signature": "pub(crate) fn build_workflow_planner_narrative(",
+              "line": 146
+            },
+            {
+              "name": "build_scope_builder_narrative",
+              "signature": "pub(crate) fn build_scope_builder_narrative(",
+              "line": 184
+            },
+            {
+              "name": "build_formula_selector_narrative",
+              "signature": "pub(crate) fn build_formula_selector_narrative(",
+              "line": 223
+            },
+            {
+              "name": "build_selector_narrative",
+              "signature": "pub(crate) fn build_selector_narrative(",
+              "line": 262
+            },
+            {
+              "name": "build_rename_suggester_narrative",
+              "signature": "pub(crate) fn build_rename_suggester_narrative(",
+              "line": 287
+            },
+            {
+              "name": "build_evidence_compactor_narrative",
+              "signature": "pub(crate) fn build_evidence_compactor_narrative(",
+              "line": 312
+            },
+            {
+              "name": "build_artifact_classifier_narrative",
+              "signature": "pub(crate) fn build_artifact_classifier_narrative(",
+              "line": 342
+            },
+            {
+              "name": "build_result_presenter_narrative",
+              "signature": "pub(crate) fn build_result_presenter_narrative(",
+              "line": 362
+            },
+            {
+              "name": "build_expert_responder_narrative",
+              "signature": "pub(crate) fn build_expert_responder_narrative(",
+              "line": 413
+            },
+            {
+              "name": "build_status_message_narrative",
+              "signature": "pub(crate) fn build_status_message_narrative(",
+              "line": 450
+            },
+            {
+              "name": "build_command_repair_narrative",
+              "signature": "pub(crate) fn build_command_repair_narrative(",
+              "line": 470
+            },
+            {
+              "name": "build_critic_narrative",
+              "signature": "pub(crate) fn build_critic_narrative(",
+              "line": 503
+            },
+            {
+              "name": "build_sufficiency_narrative",
+              "signature": "pub(crate) fn build_sufficiency_narrative(",
+              "line": 534
+            },
+            {
+              "name": "build_reviewer_narrative",
+              "signature": "pub(crate) fn build_reviewer_narrative(",
+              "line": 559
+            },
+            {
+              "name": "build_evidence_mode_narrative",
+              "signature": "pub(crate) fn build_evidence_mode_narrative(",
+              "line": 595
+            },
+            {
+              "name": "build_claim_check_narrative",
+              "signature": "pub(crate) fn build_claim_check_narrative(",
+              "line": 636
+            },
+            {
+              "name": "build_repair_semantics_narrative",
+              "signature": "pub(crate) fn build_repair_semantics_narrative(",
+              "line": 664
+            }
+          ],
+          "fingerprint": "4ebd29fb9afe9b8c3597ff0c2cc689cd1ffece53d7c4a504a6d0936b9ad85c32"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-04-04T16:07:30.553594Z"
+}
