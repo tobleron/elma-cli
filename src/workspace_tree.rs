@@ -1,3 +1,4 @@
+//! @efficiency-role: util-pure
 //! Workspace Tree Generation
 
 use anyhow::Result;

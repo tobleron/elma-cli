@@ -1,4 +1,4 @@
-//! @efficiency-role: orchestrator
+//! @efficiency-role: service-orchestrator
 //!
 //! App Bootstrap - Profile Loading and Synchronization
 //!
@@ -19,7 +19,13 @@ fn load_agent_config_with_fallback(path: &PathBuf) -> Result<Profile> {
 
     // Fall back to global defaults
     let defaults_dir = std::path::PathBuf::from("config/defaults");
-    let default_path = defaults_dir.join(path.file_name().unwrap());
+    let Some(file_name) = path.file_name() else {
+        return Err(anyhow::anyhow!(
+            "Config path has no file name: {}",
+            path.display()
+        ));
+    };
+    let default_path = defaults_dir.join(file_name);
 
     if default_path.exists() {
         return load_agent_config(&default_path);

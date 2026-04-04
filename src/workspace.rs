@@ -1,3 +1,5 @@
+//! @efficiency-role: util-pure
+
 use crate::*;
 
 pub(crate) fn cmd_out(cmd: &str, cwd: &Path) -> String {

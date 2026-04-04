@@ -1,3 +1,4 @@
+//! @efficiency-role: data-model
 //! Formula Scores - Cost, Value, Risk metrics for efficiency optimization
 
 use serde::{Deserialize, Serialize};

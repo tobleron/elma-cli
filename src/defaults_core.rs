@@ -1,4 +1,4 @@
-//! @efficiency-role: data-model
+//! @efficiency-role: infra-config
 //!
 //! Defaults - Core and Reviewer Configurations
 

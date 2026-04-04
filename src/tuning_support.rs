@@ -1,3 +1,5 @@
+//! @efficiency-role: util-pure
+
 use crate::formulas::FormulaPattern;
 use crate::*;
 
@@ -384,9 +386,21 @@ pub(crate) fn build_orchestrator_user_content(
         features.suggested_route,
         features.entropy,
         entropy_warning,
-        features.speech_act_probs.first().map(|(l, p)| format!("{} ({:.2})", l, p)).unwrap_or_default(),
-        features.workflow_probs.first().map(|(l, p)| format!("{} ({:.2})", l, p)).unwrap_or_default(),
-        features.mode_probs.first().map(|(l, p)| format!("{} ({:.2})", l, p)).unwrap_or_default(),
+        features
+            .speech_act_probs
+            .first()
+            .map(|(l, p)| format!("{} ({:.2})", l, p))
+            .unwrap_or_default(),
+        features
+            .workflow_probs
+            .first()
+            .map(|(l, p)| format!("{} ({:.2})", l, p))
+            .unwrap_or_default(),
+        features
+            .mode_probs
+            .first()
+            .map(|(l, p)| format!("{} ({:.2})", l, p))
+            .unwrap_or_default(),
     );
 
     // Compact formula section
@@ -403,9 +417,7 @@ pub(crate) fn build_orchestrator_user_content(
     // Compact priors
     let priors_signal = format!(
         "COMPLEXITY: {} (risk={})\nSCOPE: {}\n",
-        complexity.complexity,
-        complexity.risk,
-        scope.objective
+        complexity.complexity, complexity.risk, scope.objective
     );
 
     // AUTONOMY RULE: Override priors if they contradict the user's clear request.

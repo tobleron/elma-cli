@@ -1,3 +1,5 @@
+//! @efficiency-role: util-pure
+
 use crate::*;
 
 pub(crate) fn read_expected_line(s: &str) -> Option<String> {

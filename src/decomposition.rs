@@ -1,3 +1,4 @@
+//! @efficiency-role: domain-logic
 //! Hierarchical Decomposition Module
 //!
 //! For OPEN_ENDED and HIGH complexity tasks, decompose into hierarchy:

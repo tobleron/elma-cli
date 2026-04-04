@@ -1,0 +1,812 @@
+{
+  "task": "D002_dc8ab6",
+  "category": "Surgical_Refactor_SRC_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D002_dc8ab6_Surgical_Refactor_SRC_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/app_chat_builders_advanced.rs`",
+      "snapshots": [
+        {
+          "path": "src/app_chat_builders_advanced.rs",
+          "functions": [
+            {
+              "name": "leaf_common",
+              "signature": "fn leaf_common(purpose: &str, success_condition: &str) -> StepCommon {",
+              "line": 12
+            },
+            {
+              "name": "dep_common",
+              "signature": "fn dep_common(purpose: &str, deps: &[&str], success_condition: &str) -> StepCommon {",
+              "line": 23
+            },
+            {
+              "name": "shell_step",
+              "signature": "fn shell_step(id: &str, cmd: &str, purpose: &str, success_condition: &str) -> Step {",
+              "line": 34
+            },
+            {
+              "name": "shell_step_with_deps",
+              "signature": "fn shell_step_with_deps(",
+              "line": 42
+            },
+            {
+              "name": "reply_step",
+              "signature": "fn reply_step(",
+              "line": 56
+            },
+            {
+              "name": "select_step",
+              "signature": "fn select_step(",
+              "line": 70
+            },
+            {
+              "name": "select_step_with_unit",
+              "signature": "fn select_step_with_unit(",
+              "line": 84
+            },
+            {
+              "name": "summarize_step",
+              "signature": "fn summarize_step(",
+              "line": 106
+            },
+            {
+              "name": "read_step",
+              "signature": "fn read_step(id: &str, path: &str, purpose: &str, success_condition: &str) -> Step {",
+              "line": 121
+            },
+            {
+              "name": "build_shell_path_probe_program",
+              "signature": "pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program {",
+              "line": 129
+            }
+          ],
+          "fingerprint": "ffa5b0517e76287838297d5325dcf440dba99e925354cf876bd8eb6741a7977e"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/app_chat_loop.rs`",
+      "snapshots": [
+        {
+          "path": "src/app_chat_loop.rs",
+          "functions": [
+            {
+              "name": "apply_policy_fallback",
+              "signature": "async fn apply_policy_fallback(",
+              "line": 16
+            },
+            {
+              "name": "handle_chat_command",
+              "signature": "async fn handle_chat_command(runtime: &mut AppRuntime, line: &str) -> Result<bool> {",
+              "line": 105
+            },
+            {
+              "name": "run_chat_loop",
+              "signature": "pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {",
+              "line": 156
+            }
+          ],
+          "fingerprint": "b255d7d26fd82ea0e6f7493a0e72a0f972a9a499410eaf4c8de6e0ced16547cf"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/json_parser.rs`",
+      "snapshots": [
+        {
+          "path": "src/json_parser.rs",
+          "functions": [
+            {
+              "name": "extract_json_object",
+              "signature": "pub(crate) fn extract_json_object(raw: &str) -> Option<serde_json::Value> {",
+              "line": 49
+            },
+            {
+              "name": "validate_schema",
+              "signature": "pub(crate) fn validate_schema(",
+              "line": 105
+            },
+            {
+              "name": "try_parse_candidate",
+              "signature": "fn try_parse_candidate<T: serde::de::DeserializeOwned + 'static>(candidate: &str) -> Result<T> {",
+              "line": 148
+            },
+            {
+              "name": "parse_with_repair",
+              "signature": "pub(crate) fn parse_with_repair<T: serde::de::DeserializeOwned + 'static>(raw: &str) -> Result<T> {",
+              "line": 156
+            },
+            {
+              "name": "parse_intel_output",
+              "signature": "pub(crate) fn parse_intel_output(",
+              "line": 192
+            },
+            {
+              "name": "validate_entropy",
+              "signature": "pub(crate) fn validate_entropy(entropy: f64) -> f64 {",
+              "line": 281
+            },
+            {
+              "name": "get_label_with_fallback",
+              "signature": "pub(crate) fn get_label_with_fallback(",
+              "line": 286
+            },
+            {
+              "name": "test_parse_clean_json",
+              "signature": "fn test_parse_clean_json() {",
+              "line": 307
+            },
+            {
+              "name": "test_parse_json_markdown",
+              "signature": "fn test_parse_json_markdown() {",
+              "line": 318
+            },
+            {
+              "name": "test_parse_json_with_leading_text",
+              "signature": "fn test_parse_json_with_leading_text() {",
+              "line": 329
+            },
+            {
+              "name": "test_parse_json_with_trailing_text",
+              "signature": "fn test_parse_json_with_trailing_text() {",
+              "line": 337
+            },
+            {
+              "name": "test_parse_legacy_digit",
+              "signature": "fn test_parse_legacy_digit() {",
+              "line": 345
+            },
+            {
+              "name": "test_parse_legacy_label",
+              "signature": "fn test_parse_legacy_label() {",
+              "line": 354
+            },
+            {
+              "name": "test_parse_quoted_legacy",
+              "signature": "fn test_parse_quoted_legacy() {",
+              "line": 362
+            },
+            {
+              "name": "test_parse_malformed_json_missing_brace",
+              "signature": "fn test_parse_malformed_json_missing_brace() {",
+              "line": 370
+            },
+            {
+              "name": "test_parse_empty_string",
+              "signature": "fn test_parse_empty_string() {",
+              "line": 382
+            },
+            {
+              "name": "test_parse_whitespace_only",
+              "signature": "fn test_parse_whitespace_only() {",
+              "line": 389
+            },
+            {
+              "name": "test_parse_partial_fields",
+              "signature": "fn test_parse_partial_fields() {",
+              "line": 396
+            },
+            {
+              "name": "test_parse_extra_fields",
+              "signature": "fn test_parse_extra_fields() {",
+              "line": 405
+            },
+            {
+              "name": "test_validate_entropy_clamps",
+              "signature": "fn test_validate_entropy_clamps() {",
+              "line": 413
+            },
+            {
+              "name": "test_get_label_with_fallback_from_choice",
+              "signature": "fn test_get_label_with_fallback_from_choice() {",
+              "line": 420
+            },
+            {
+              "name": "test_get_label_with_fallback_prefers_label",
+              "signature": "fn test_get_label_with_fallback_prefers_label() {",
+              "line": 436
+            },
+            {
+              "name": "test_markdown_with_language_tag",
+              "signature": "fn test_markdown_with_language_tag() {",
+              "line": 452
+            },
+            {
+              "name": "test_markdown_without_language_tag",
+              "signature": "fn test_markdown_without_language_tag() {",
+              "line": 462
+            },
+            {
+              "name": "test_nested_braces_in_string",
+              "signature": "fn test_nested_braces_in_string() {",
+              "line": 472
+            },
+            {
+              "name": "test_escaped_quotes_in_string",
+              "signature": "fn test_escaped_quotes_in_string() {",
+              "line": 479
+            },
+            {
+              "name": "test_repair_trailing_comma",
+              "signature": "fn test_repair_trailing_comma() {",
+              "line": 487
+            },
+            {
+              "name": "test_repair_missing_quotes",
+              "signature": "fn test_repair_missing_quotes() {",
+              "line": 495
+            },
+            {
+              "name": "test_repair_single_quotes",
+              "signature": "fn test_repair_single_quotes() {",
+              "line": 503
+            }
+          ],
+          "fingerprint": "ce1c73d32600a851003469cc8ff76ccd42aa6d1b6479a6a0e9cf43cf2e4c16c8"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/json_tuning.rs`",
+      "snapshots": [
+        {
+          "path": "src/json_tuning.rs",
+          "functions": [
+            {
+              "name": "from_str",
+              "signature": "fn from_str(s: &str) -> Self {",
+              "line": 24
+            },
+            {
+              "name": "load_json_tuning_manifest",
+              "signature": "pub(crate) fn load_json_tuning_manifest() -> Result<JsonTuningManifest> {",
+              "line": 82
+            },
+            {
+              "name": "test_scenario",
+              "signature": "async fn test_scenario(",
+              "line": 90
+            },
+            {
+              "name": "test_json_at_temperature",
+              "signature": "pub(crate) async fn test_json_at_temperature(",
+              "line": 124
+            },
+            {
+              "name": "build_chat_request",
+              "signature": "fn build_chat_request(model: &str, user_message: &str, temperature: f32) -> ChatCompletionRequest {",
+              "line": 167
+            },
+            {
+              "name": "classify_json_response",
+              "signature": "fn classify_json_response(text: &str) -> (bool, bool, bool) {",
+              "line": 192
+            },
+            {
+              "name": "try_last_resort_repair",
+              "signature": "fn try_last_resort_repair(text: &str) -> (bool, bool, bool) {",
+              "line": 212
+            },
+            {
+              "name": "compute_scores",
+              "signature": "fn compute_scores(",
+              "line": 225
+            },
+            {
+              "name": "process_temperature",
+              "signature": "async fn process_temperature(",
+              "line": 250
+            },
+            {
+              "name": "run_json_temperature_tuning",
+              "signature": "pub(crate) async fn run_json_temperature_tuning(",
+              "line": 276
+            },
+            {
+              "name": "try_load_cached_temp",
+              "signature": "fn try_load_cached_temp(cached: Option<&JsonTuningResult>, temp: f32) -> Option<TemperatureResult> {",
+              "line": 358
+            },
+            {
+              "name": "emit_full_cached_progress",
+              "signature": "fn emit_full_cached_progress(args: &Args, cached: &JsonTuningResult) {",
+              "line": 366
+            },
+            {
+              "name": "emit_temp_result_progress",
+              "signature": "fn emit_temp_result_progress(args: &Args, result: &TemperatureResult, cached: bool) {",
+              "line": 379
+            },
+            {
+              "name": "default_temp_result",
+              "signature": "fn default_temp_result() -> TemperatureResult {",
+              "line": 400
+            },
+            {
+              "name": "find_optimal_temperature",
+              "signature": "fn find_optimal_temperature(results: &[TemperatureResult]) -> TemperatureResult {",
+              "line": 412
+            },
+            {
+              "name": "find_recommended_temperature",
+              "signature": "fn find_recommended_temperature(results: &[TemperatureResult], optimal: &TemperatureResult) -> f32 {",
+              "line": 424
+            },
+            {
+              "name": "load_cached_json_tuning_result",
+              "signature": "pub(crate) fn load_cached_json_tuning_result(tune_dir: &Path) -> Result<Option<JsonTuningResult>> {",
+              "line": 441
+            },
+            {
+              "name": "find_latest_tuning_file",
+              "signature": "fn find_latest_tuning_file(tune_dir: &Path) -> Result<Option<std::path::PathBuf>> {",
+              "line": 457
+            },
+            {
+              "name": "parse_cached_result",
+              "signature": "fn parse_cached_result(content: &str) -> Option<JsonTuningResult> {",
+              "line": 488
+            },
+            {
+              "name": "parse_temp_result_line",
+              "signature": "fn parse_temp_result_line(line: &str) -> Option<TemperatureResult> {",
+              "line": 545
+            },
+            {
+              "name": "build_tuning_report_content",
+              "signature": "fn build_tuning_report_content(result: &JsonTuningResult, timestamp: u64) -> String {",
+              "line": 581
+            },
+            {
+              "name": "save_json_tuning_report",
+              "signature": "pub(crate) fn save_json_tuning_report(",
+              "line": 614
+            },
+            {
+              "name": "apply_json_tuning_temperature",
+              "signature": "pub(crate) fn apply_json_tuning_temperature(model_cfg_dir: &Path, temperature: f32) -> Result<()> {",
+              "line": 635
+            }
+          ],
+          "fingerprint": "b1e8dc1570b6d835a020d126e567c3a3c4729c6010f10d527047275ef325d892"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/models_api.rs`",
+      "snapshots": [
+        {
+          "path": "src/models_api.rs",
+          "functions": [
+            {
+              "name": "fetch_first_model_id",
+              "signature": "pub(crate) async fn fetch_first_model_id(",
+              "line": 5
+            },
+            {
+              "name": "fetch_all_model_ids",
+              "signature": "pub(crate) async fn fetch_all_model_ids(",
+              "line": 41
+            },
+            {
+              "name": "try_fetch_ctx_from_slots",
+              "signature": "async fn try_fetch_ctx_from_slots(client: &reqwest::Client, base_url: &Url) -> Option<Option<u64>> {",
+              "line": 79
+            },
+            {
+              "name": "try_fetch_ctx_from_props",
+              "signature": "async fn try_fetch_ctx_from_props(client: &reqwest::Client, base_url: &Url) -> Option<Option<u64>> {",
+              "line": 95
+            },
+            {
+              "name": "try_fetch_ctx_from_models",
+              "signature": "async fn try_fetch_ctx_from_models(",
+              "line": 111
+            },
+            {
+              "name": "fetch_ctx_max",
+              "signature": "pub(crate) async fn fetch_ctx_max(client: &reqwest::Client, base_url: &Url) -> Result<Option<u64>> {",
+              "line": 142
+            },
+            {
+              "name": "fetch_runtime_generation_defaults",
+              "signature": "pub(crate) async fn fetch_runtime_generation_defaults(",
+              "line": 159
+            },
+            {
+              "name": "probe_chat_completion_raw",
+              "signature": "async fn probe_chat_completion_raw(",
+              "line": 213
+            },
+            {
+              "name": "response_content",
+              "signature": "fn response_content(resp: &ChatCompletionResponse) -> String {",
+              "line": 238
+            },
+            {
+              "name": "probe_json_clean",
+              "signature": "fn probe_json_clean(resp: &ChatCompletionResponse) -> bool {",
+              "line": 247
+            },
+            {
+              "name": "probe_logprobs_support",
+              "signature": "async fn probe_logprobs_support(",
+              "line": 259
+            },
+            {
+              "name": "make_probe_request",
+              "signature": "fn make_probe_request(",
+              "line": 294
+            },
+            {
+              "name": "detect_behavior_probe",
+              "signature": "fn detect_behavior_probe(",
+              "line": 336
+            },
+            {
+              "name": "ensure_model_behavior_profile",
+              "signature": "pub(crate) async fn ensure_model_behavior_profile(",
+              "line": 392
+            },
+            {
+              "name": "isolate_reasoning_fields",
+              "signature": "pub(crate) fn isolate_reasoning_fields(resp: &mut ChatCompletionResponse) {",
+              "line": 500
+            },
+            {
+              "name": "isolates_reasoning_from_tagged_content",
+              "signature": "fn isolates_reasoning_from_tagged_content() {",
+              "line": 525
+            },
+            {
+              "name": "keeps_response_usable_when_reasoning_absent",
+              "signature": "fn keeps_response_usable_when_reasoning_absent() {",
+              "line": 555
+            }
+          ],
+          "fingerprint": "5d53ce55a3eded8838864d2a63c0932cd14261a861738b5f65006ac86db606d9"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/orchestration_loop.rs`",
+      "snapshots": [
+        {
+          "path": "src/orchestration_loop.rs",
+          "functions": [
+            {
+              "name": "has_trusted_exact_selection_result",
+              "signature": "fn has_trusted_exact_selection_result(step_results: &[StepResult]) -> bool {",
+              "line": 13
+            },
+            {
+              "name": "should_accept_exact_selection_workflow",
+              "signature": "fn should_accept_exact_selection_workflow(",
+              "line": 24
+            },
+            {
+              "name": "collect_review_reasons",
+              "signature": "fn collect_review_reasons(",
+              "line": 35
+            },
+            {
+              "name": "pick_program_from_reviews",
+              "signature": "fn pick_program_from_reviews(",
+              "line": 56
+            },
+            {
+              "name": "run_autonomous_loop",
+              "signature": "pub(crate) async fn run_autonomous_loop(",
+              "line": 80
+            },
+            {
+              "name": "accepts_retry_override_for_successful_exact_selection_workflow",
+              "signature": "fn accepts_retry_override_for_successful_exact_selection_workflow() {",
+              "line": 702
+            }
+          ],
+          "fingerprint": "cd1fb50a2cb2dad958c1ca81e86d11ad2932800aab9241c2e39dc1e44f99155d"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/routing_parse.rs`",
+      "snapshots": [
+        {
+          "path": "src/routing_parse.rs",
+          "functions": [
+            {
+              "name": "strip_markdown_wrappers",
+              "signature": "pub(crate) fn strip_markdown_wrappers(text: &str) -> &str {",
+              "line": 8
+            },
+            {
+              "name": "extract_first_json_object",
+              "signature": "pub(crate) fn extract_first_json_object(text: &str) -> Option<&str> {",
+              "line": 24
+            },
+            {
+              "name": "is_known_step_field",
+              "signature": "fn is_known_step_field(key_str: &str) -> bool {",
+              "line": 72
+            },
+            {
+              "name": "looks_like_orphaned_key_boundary",
+              "signature": "fn looks_like_orphaned_key_boundary(recent: &str) -> bool {",
+              "line": 83
+            },
+            {
+              "name": "collect_json_string_value",
+              "signature": "fn collect_json_string_value(",
+              "line": 88
+            },
+            {
+              "name": "collect_nested_structure",
+              "signature": "fn collect_nested_structure(chars: &mut std::iter::Peekable<std::str::Chars>, result: &mut String) {",
+              "line": 108
+            },
+            {
+              "name": "collect_literal_value",
+              "signature": "fn collect_literal_value(chars: &mut std::iter::Peekable<std::str::Chars>, result: &mut String) {",
+              "line": 125
+            },
+            {
+              "name": "try_absorb_orphaned_key",
+              "signature": "fn try_absorb_orphaned_key(",
+              "line": 139
+            },
+            {
+              "name": "fix_orphaned_keys_in_arrays",
+              "signature": "fn fix_orphaned_keys_in_arrays(text: &str) -> String {",
+              "line": 184
+            },
+            {
+              "name": "detect_repetition_loop",
+              "signature": "fn detect_repetition_loop(text: &str) -> Option<String> {",
+              "line": 215
+            },
+            {
+              "name": "validate_no_repetition_loop",
+              "signature": "fn validate_no_repetition_loop(trimmed: &str) -> Result<()> {",
+              "line": 266
+            },
+            {
+              "name": "try_parse_extracted_json",
+              "signature": "fn try_parse_extracted_json<T: DeserializeOwned + 'static>(obj: &str) -> Result<T> {",
+              "line": 282
+            },
+            {
+              "name": "try_repair_and_parse",
+              "signature": "fn try_repair_and_parse<T: DeserializeOwned + 'static>(text: &str) -> Result<T> {",
+              "line": 305
+            },
+            {
+              "name": "parse_json_loose",
+              "signature": "pub(crate) fn parse_json_loose<T: DeserializeOwned + 'static>(text: &str) -> Result<T> {",
+              "line": 322
+            },
+            {
+              "name": "strip_markdown_wrappers_removes_code_fences",
+              "signature": "fn strip_markdown_wrappers_removes_code_fences() {",
+              "line": 344
+            },
+            {
+              "name": "strip_markdown_wrappers_handles_no_fences",
+              "signature": "fn strip_markdown_wrappers_handles_no_fences() {",
+              "line": 357
+            },
+            {
+              "name": "strip_markdown_wrappers_handles_prose_before_fence",
+              "signature": "fn strip_markdown_wrappers_handles_prose_before_fence() {",
+              "line": 364
+            },
+            {
+              "name": "extract_json_from_markdown_wrapped",
+              "signature": "fn extract_json_from_markdown_wrapped() {",
+              "line": 378
+            },
+            {
+              "name": "extract_json_from_pure_json",
+              "signature": "fn extract_json_from_pure_json() {",
+              "line": 400
+            },
+            {
+              "name": "extract_json_with_prose_after",
+              "signature": "fn extract_json_with_prose_after() {",
+              "line": 408
+            },
+            {
+              "name": "test_repair_malformed_llm_json",
+              "signature": "fn test_repair_malformed_llm_json() {",
+              "line": 433
+            },
+            {
+              "name": "test_detect_repetition_loop",
+              "signature": "fn test_detect_repetition_loop() {",
+              "line": 457
+            },
+            {
+              "name": "test_normal_json_not_flagged_as_repetitive",
+              "signature": "fn test_normal_json_not_flagged_as_repetitive() {",
+              "line": 472
+            },
+            {
+              "name": "test_fix_orphaned_keys_in_steps",
+              "signature": "fn test_fix_orphaned_keys_in_steps() {",
+              "line": 485
+            },
+            {
+              "name": "test_parse_error_preview_handles_unicode",
+              "signature": "fn test_parse_error_preview_handles_unicode() {",
+              "line": 505
+            }
+          ],
+          "fingerprint": "4691d9829088755a60818c22fcb8f468da85f46a8e2ce88096950d8ae5b24187"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/verification.rs`",
+      "snapshots": [
+        {
+          "path": "src/verification.rs",
+          "functions": [
+            {
+              "name": "claim_check_once",
+              "signature": "pub(crate) async fn claim_check_once(",
+              "line": 11
+            },
+            {
+              "name": "guard_repair_semantics_once",
+              "signature": "pub(crate) async fn guard_repair_semantics_once(",
+              "line": 51
+            },
+            {
+              "name": "check_execution_sufficiency_once",
+              "signature": "pub(crate) async fn check_execution_sufficiency_once(",
+              "line": 93
+            },
+            {
+              "name": "verify_outcome_match_intent",
+              "signature": "pub(crate) async fn verify_outcome_match_intent(",
+              "line": 132
+            },
+            {
+              "name": "parse_verdict_from_json",
+              "signature": "fn parse_verdict_from_json(",
+              "line": 240
+            },
+            {
+              "name": "verify_nontrivial_step_outcomes",
+              "signature": "pub(crate) async fn verify_nontrivial_step_outcomes(",
+              "line": 257
+            },
+            {
+              "name": "gate_formula_memory_once",
+              "signature": "pub(crate) async fn gate_formula_memory_once(",
+              "line": 478
+            },
+            {
+              "name": "preflight_command_once",
+              "signature": "pub(crate) async fn preflight_command_once(",
+              "line": 524
+            }
+          ],
+          "fingerprint": "a84d868fbd77dbb931ce5e55ebf192040952a6df0e8cc8cdebea7dd14e4e3873"
+        }
+      ]
+    },
+    {
+      "headline": "Pre-split snapshot for `src/intel_narrative.rs`",
+      "snapshots": [
+        {
+          "path": "src/intel_narrative.rs",
+          "functions": [
+            {
+              "name": "build_complexity_narrative",
+              "signature": "pub(crate) fn build_complexity_narrative(",
+              "line": 37
+            },
+            {
+              "name": "build_evidence_needs_narrative",
+              "signature": "pub(crate) fn build_evidence_needs_narrative(",
+              "line": 78
+            },
+            {
+              "name": "build_action_needs_narrative",
+              "signature": "pub(crate) fn build_action_needs_narrative(",
+              "line": 112
+            },
+            {
+              "name": "build_workflow_planner_narrative",
+              "signature": "pub(crate) fn build_workflow_planner_narrative(",
+              "line": 146
+            },
+            {
+              "name": "build_scope_builder_narrative",
+              "signature": "pub(crate) fn build_scope_builder_narrative(",
+              "line": 184
+            },
+            {
+              "name": "build_formula_selector_narrative",
+              "signature": "pub(crate) fn build_formula_selector_narrative(",
+              "line": 223
+            },
+            {
+              "name": "build_selector_narrative",
+              "signature": "pub(crate) fn build_selector_narrative(",
+              "line": 262
+            },
+            {
+              "name": "build_rename_suggester_narrative",
+              "signature": "pub(crate) fn build_rename_suggester_narrative(",
+              "line": 287
+            },
+            {
+              "name": "build_evidence_compactor_narrative",
+              "signature": "pub(crate) fn build_evidence_compactor_narrative(",
+              "line": 312
+            },
+            {
+              "name": "build_artifact_classifier_narrative",
+              "signature": "pub(crate) fn build_artifact_classifier_narrative(",
+              "line": 342
+            },
+            {
+              "name": "build_result_presenter_narrative",
+              "signature": "pub(crate) fn build_result_presenter_narrative(",
+              "line": 362
+            },
+            {
+              "name": "build_expert_responder_narrative",
+              "signature": "pub(crate) fn build_expert_responder_narrative(",
+              "line": 413
+            },
+            {
+              "name": "build_status_message_narrative",
+              "signature": "pub(crate) fn build_status_message_narrative(",
+              "line": 450
+            },
+            {
+              "name": "build_command_repair_narrative",
+              "signature": "pub(crate) fn build_command_repair_narrative(",
+              "line": 470
+            },
+            {
+              "name": "build_critic_narrative",
+              "signature": "pub(crate) fn build_critic_narrative(",
+              "line": 503
+            },
+            {
+              "name": "build_sufficiency_narrative",
+              "signature": "pub(crate) fn build_sufficiency_narrative(",
+              "line": 534
+            },
+            {
+              "name": "build_reviewer_narrative",
+              "signature": "pub(crate) fn build_reviewer_narrative(",
+              "line": 559
+            },
+            {
+              "name": "build_evidence_mode_narrative",
+              "signature": "pub(crate) fn build_evidence_mode_narrative(",
+              "line": 595
+            },
+            {
+              "name": "build_claim_check_narrative",
+              "signature": "pub(crate) fn build_claim_check_narrative(",
+              "line": 636
+            },
+            {
+              "name": "build_repair_semantics_narrative",
+              "signature": "pub(crate) fn build_repair_semantics_narrative(",
+              "line": 664
+            }
+          ],
+          "fingerprint": "4ebd29fb9afe9b8c3597ff0c2cc689cd1ffece53d7c4a504a6d0936b9ad85c32"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-04-04T14:03:31.848862Z"
+}

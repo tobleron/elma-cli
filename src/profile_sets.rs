@@ -1,3 +1,5 @@
+//! @efficiency-role: util-pure
+
 use crate::*;
 
 pub(crate) fn new_tune_run_id() -> Result<String> {

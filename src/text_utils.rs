@@ -1,3 +1,5 @@
+//! @efficiency-role: util-pure
+
 use crate::*;
 
 pub(crate) fn looks_like_path_token(s: &str) -> bool {

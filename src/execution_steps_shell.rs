@@ -1,4 +1,4 @@
-//! @efficiency-role: service-orchestrator
+//! @efficiency-role: orchestrator
 //!
 //! Execution Steps - Shell Step Handling (De-bloated)
 //!

@@ -1,4 +1,4 @@
-//! @efficiency-role: service-orchestrator
+//! @efficiency-role: infra-adapter
 //!
 //! Session - Hierarchy Persistence (Task 023)
 

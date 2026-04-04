@@ -116,6 +116,85 @@ pub fn strip_code_modular(content: &str, treat_single_quote_as_string: bool) -> 
     result
 }
 
+pub fn strip_test_blocks_rust(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let lines: Vec<&str> = content.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i].trim();
+
+        // Detect #[cfg(test)] or #[cfg(test)] followed by mod
+        if line.starts_with("#[cfg(test)]") || line.starts_with("#[cfg(test)]") {
+            // Skip until we find the matching closing brace at nesting level 0
+            i += 1;
+            let mut depth = 0;
+            let mut started = false;
+            while i < lines.len() {
+                let l = lines[i];
+                for c in l.chars() {
+                    if c == '{' {
+                        depth += 1;
+                        started = true;
+                    } else if c == '}' {
+                        depth -= 1;
+                    }
+                }
+                if started && depth == 0 {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        // Detect individual #[test] or #[tokio::test] functions
+        if line.starts_with("#[test]") || line.starts_with("#[tokio::test]") {
+            let attr_line = line.clone();
+            // Skip the attribute line(s) and find the function
+            i += 1;
+            while i < lines.len() {
+                let l = lines[i].trim();
+                if l.starts_with("#[") {
+                    i += 1;
+                    continue;
+                }
+                break;
+            }
+            // Now skip the function body (find opening brace, then track depth)
+            let mut depth = 0;
+            let mut started = false;
+            // The function signature may be on the current line
+            for l_idx in i..lines.len() {
+                let l = lines[l_idx];
+                for c in l.chars() {
+                    if c == '{' {
+                        depth += 1;
+                        started = true;
+                    } else if c == '}' {
+                        depth -= 1;
+                    }
+                }
+                if started && depth == 0 {
+                    i = l_idx + 1;
+                    break;
+                }
+            }
+            if !started {
+                // No brace found, just skip a few lines as safety
+                i = i.saturating_add(1);
+            }
+            continue;
+        }
+
+        result.push_str(lines[i]);
+        result.push('\n');
+        i += 1;
+    }
+    result
+}
+
 pub fn apply_complexity_dictionary(
     content: &str,
     dict: &std::collections::HashMap<String, f64>,

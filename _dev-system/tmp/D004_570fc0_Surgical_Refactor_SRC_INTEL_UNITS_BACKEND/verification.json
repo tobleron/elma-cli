@@ -1,0 +1,264 @@
+{
+  "task": "D004_570fc0",
+  "category": "Surgical_Refactor_SRC_INTEL_UNITS_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D004_570fc0_Surgical_Refactor_SRC_INTEL_UNITS_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/intel_units/intel_units_core.rs`",
+      "snapshots": [
+        {
+          "path": "src/intel_units/intel_units_core.rs",
+          "functions": [
+            {
+              "name": "new",
+              "signature": "pub fn new(profile: Profile) -> Self {",
+              "line": 23
+            },
+            {
+              "name": "name",
+              "signature": "fn name(&self) -> &'static str {",
+              "line": 29
+            },
+            {
+              "name": "profile",
+              "signature": "fn profile(&self) -> &Profile {",
+              "line": 33
+            },
+            {
+              "name": "pre_flight",
+              "signature": "fn pre_flight(&self, context: &IntelContext) -> Result<()> {",
+              "line": 37
+            },
+            {
+              "name": "execute",
+              "signature": "async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {",
+              "line": 44
+            },
+            {
+              "name": "post_flight",
+              "signature": "fn post_flight(&self, output: &IntelOutput) -> Result<()> {",
+              "line": 63
+            },
+            {
+              "name": "fallback",
+              "signature": "fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {",
+              "line": 93
+            },
+            {
+              "name": "new",
+              "signature": "pub fn new(profile: Profile) -> Self {",
+              "line": 124
+            },
+            {
+              "name": "name",
+              "signature": "fn name(&self) -> &'static str {",
+              "line": 130
+            },
+            {
+              "name": "profile",
+              "signature": "fn profile(&self) -> &Profile {",
+              "line": 134
+            },
+            {
+              "name": "pre_flight",
+              "signature": "fn pre_flight(&self, context: &IntelContext) -> Result<()> {",
+              "line": 138
+            },
+            {
+              "name": "execute",
+              "signature": "async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {",
+              "line": 145
+            },
+            {
+              "name": "post_flight",
+              "signature": "fn post_flight(&self, output: &IntelOutput) -> Result<()> {",
+              "line": 162
+            },
+            {
+              "name": "fallback",
+              "signature": "fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {",
+              "line": 172
+            },
+            {
+              "name": "new",
+              "signature": "pub fn new(profile: Profile) -> Self {",
+              "line": 198
+            },
+            {
+              "name": "name",
+              "signature": "fn name(&self) -> &'static str {",
+              "line": 204
+            },
+            {
+              "name": "profile",
+              "signature": "fn profile(&self) -> &Profile {",
+              "line": 208
+            },
+            {
+              "name": "pre_flight",
+              "signature": "fn pre_flight(&self, context: &IntelContext) -> Result<()> {",
+              "line": 212
+            },
+            {
+              "name": "execute",
+              "signature": "async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {",
+              "line": 219
+            },
+            {
+              "name": "post_flight",
+              "signature": "fn post_flight(&self, output: &IntelOutput) -> Result<()> {",
+              "line": 236
+            },
+            {
+              "name": "fallback",
+              "signature": "fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {",
+              "line": 246
+            },
+            {
+              "name": "new",
+              "signature": "pub fn new(profile: Profile) -> Self {",
+              "line": 272
+            },
+            {
+              "name": "name",
+              "signature": "fn name(&self) -> &'static str {",
+              "line": 278
+            },
+            {
+              "name": "profile",
+              "signature": "fn profile(&self) -> &Profile {",
+              "line": 282
+            },
+            {
+              "name": "pre_flight",
+              "signature": "fn pre_flight(&self, context: &IntelContext) -> Result<()> {",
+              "line": 286
+            },
+            {
+              "name": "execute",
+              "signature": "async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {",
+              "line": 293
+            },
+            {
+              "name": "post_flight",
+              "signature": "fn post_flight(&self, output: &IntelOutput) -> Result<()> {",
+              "line": 314
+            },
+            {
+              "name": "fallback",
+              "signature": "fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {",
+              "line": 327
+            },
+            {
+              "name": "new",
+              "signature": "pub fn new(profile: Profile) -> Self {",
+              "line": 368
+            },
+            {
+              "name": "name",
+              "signature": "fn name(&self) -> &'static str {",
+              "line": 374
+            },
+            {
+              "name": "profile",
+              "signature": "fn profile(&self) -> &Profile {",
+              "line": 378
+            },
+            {
+              "name": "pre_flight",
+              "signature": "fn pre_flight(&self, context: &IntelContext) -> Result<()> {",
+              "line": 382
+            },
+            {
+              "name": "execute",
+              "signature": "async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {",
+              "line": 389
+            },
+            {
+              "name": "post_flight",
+              "signature": "fn post_flight(&self, output: &IntelOutput) -> Result<()> {",
+              "line": 405
+            },
+            {
+              "name": "fallback",
+              "signature": "fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {",
+              "line": 412
+            },
+            {
+              "name": "new",
+              "signature": "pub fn new(profile: Profile) -> Self {",
+              "line": 437
+            },
+            {
+              "name": "name",
+              "signature": "fn name(&self) -> &'static str {",
+              "line": 443
+            },
+            {
+              "name": "profile",
+              "signature": "fn profile(&self) -> &Profile {",
+              "line": 447
+            },
+            {
+              "name": "pre_flight",
+              "signature": "fn pre_flight(&self, context: &IntelContext) -> Result<()> {",
+              "line": 451
+            },
+            {
+              "name": "execute",
+              "signature": "async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {",
+              "line": 458
+            },
+            {
+              "name": "post_flight",
+              "signature": "fn post_flight(&self, output: &IntelOutput) -> Result<()> {",
+              "line": 481
+            },
+            {
+              "name": "fallback",
+              "signature": "fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {",
+              "line": 488
+            },
+            {
+              "name": "new",
+              "signature": "pub fn new(profile: Profile) -> Self {",
+              "line": 518
+            },
+            {
+              "name": "name",
+              "signature": "fn name(&self) -> &'static str {",
+              "line": 524
+            },
+            {
+              "name": "profile",
+              "signature": "fn profile(&self) -> &Profile {",
+              "line": 528
+            },
+            {
+              "name": "pre_flight",
+              "signature": "fn pre_flight(&self, context: &IntelContext) -> Result<()> {",
+              "line": 532
+            },
+            {
+              "name": "execute",
+              "signature": "async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {",
+              "line": 539
+            },
+            {
+              "name": "post_flight",
+              "signature": "fn post_flight(&self, output: &IntelOutput) -> Result<()> {",
+              "line": 570
+            },
+            {
+              "name": "fallback",
+              "signature": "fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {",
+              "line": 577
+            }
+          ],
+          "fingerprint": "02c1dbe5bc3fc6d24e944a71a1617064af4fc19b18b017ed5d1caf2eeeddd3c4"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-04-04T11:52:06.472111Z"
+}

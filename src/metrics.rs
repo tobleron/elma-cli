@@ -1,3 +1,5 @@
+//! @efficiency-role: util-pure
+
 use crate::*;
 
 pub(crate) fn calibration_metric(correct: usize, total: usize) -> CalibrationMetric {

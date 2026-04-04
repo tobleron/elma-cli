@@ -1,4 +1,4 @@
-//! @efficiency-role: service-orchestrator
+//! @efficiency-role: domain-logic
 //!
 //! Execution Steps Shell - Preflight Phase
 

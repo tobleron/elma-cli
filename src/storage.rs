@@ -1,3 +1,5 @@
+//! @efficiency-role: infra-adapter
+
 use crate::*;
 
 fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<()> {

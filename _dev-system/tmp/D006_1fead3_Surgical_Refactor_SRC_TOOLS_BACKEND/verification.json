@@ -1,0 +1,84 @@
+{
+  "task": "D006_1fead3",
+  "category": "Surgical_Refactor_SRC_TOOLS_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D006_1fead3_Surgical_Refactor_SRC_TOOLS_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/tools/discovery.rs`",
+      "snapshots": [
+        {
+          "path": "src/tools/discovery.rs",
+          "functions": [
+            {
+              "name": "discover_available_tools",
+              "signature": "pub async fn discover_available_tools(workspace: &Path) -> Vec<ToolCapability> {",
+              "line": 35
+            },
+            {
+              "name": "load_tool_cache",
+              "signature": "fn load_tool_cache(cache_path: &Path, path_hash: &str) -> Result<ToolCache, &'static str> {",
+              "line": 77
+            },
+            {
+              "name": "perform_full_scan",
+              "signature": "fn perform_full_scan(workspace: &Path) -> Vec<ToolCapability> {",
+              "line": 87
+            },
+            {
+              "name": "discover_cli_tools",
+              "signature": "fn discover_cli_tools() -> Vec<ToolCapability> {",
+              "line": 102
+            },
+            {
+              "name": "scan_common_directories",
+              "signature": "fn scan_common_directories() -> Vec<CachedTool> {",
+              "line": 181
+            },
+            {
+              "name": "scan_directory",
+              "signature": "fn scan_directory(dir: &Path, tools: &mut Vec<CachedTool>, category: &str) -> usize {",
+              "line": 221
+            },
+            {
+              "name": "is_executable",
+              "signature": "fn is_executable(path: &Path) -> bool {",
+              "line": 249
+            },
+            {
+              "name": "should_skip_tool",
+              "signature": "fn should_skip_tool(name: &str) -> bool {",
+              "line": 266
+            },
+            {
+              "name": "discover_project_tools",
+              "signature": "fn discover_project_tools(workspace: &Path) -> Vec<ToolCapability> {",
+              "line": 284
+            },
+            {
+              "name": "discover_custom_scripts",
+              "signature": "fn discover_custom_scripts(workspace: &Path) -> Vec<ToolCapability> {",
+              "line": 378
+            },
+            {
+              "name": "is_executable_script",
+              "signature": "fn is_executable_script(path: &Path) -> bool {",
+              "line": 428
+            },
+            {
+              "name": "cached_tool_to_capability",
+              "signature": "fn cached_tool_to_capability(cached: &CachedTool) -> ToolCapability {",
+              "line": 438
+            },
+            {
+              "name": "tool_to_cached",
+              "signature": "fn tool_to_cached(tool: &ToolCapability) -> CachedTool {",
+              "line": 452
+            }
+          ],
+          "fingerprint": "ecec6bdd2169269897308a45a1ecdcbcc1134a5ba58ab76f154581f909ef4f98"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-04-04T11:52:41.941122Z"
+}

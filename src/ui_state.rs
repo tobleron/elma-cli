@@ -1,4 +1,4 @@
-//! @efficiency-role: util-pure
+//! @efficiency-role: infra-config
 //!
 //! UI - State Management
 

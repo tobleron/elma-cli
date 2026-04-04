@@ -1,0 +1,115 @@
+{
+  "task": "D007_9eff0d",
+  "category": "Merge_Folders_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D007_9eff0d_Merge_Folders_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-merge snapshots for recursive cluster `src/tools`",
+      "snapshots": [
+        {
+          "path": "src/tools/registry.rs",
+          "functions": [
+            {
+              "name": "new",
+              "signature": "pub fn new(workspace: &Path) -> Self {",
+              "line": 20
+            },
+            {
+              "name": "available_tools",
+              "signature": "pub fn available_tools(&self) -> Vec<&ToolCapability> {",
+              "line": 63
+            },
+            {
+              "name": "builtin_steps",
+              "signature": "pub fn builtin_steps(&self) -> Vec<&BuiltinStep> {",
+              "line": 67
+            },
+            {
+              "name": "describe_tool",
+              "signature": "pub fn describe_tool(&self, name: &str) -> Option<String> {",
+              "line": 71
+            },
+            {
+              "name": "format_tools_for_prompt",
+              "signature": "pub fn format_tools_for_prompt(&self) -> String {",
+              "line": 91
+            }
+          ],
+          "fingerprint": "449243e5fe8331fc67526cd295032491bdf3e811ce6eb0b12b90aab0d21b5af8"
+        },
+        {
+          "path": "src/tools/cache.rs",
+          "functions": [
+            {
+              "name": "new",
+              "signature": "pub fn new() -> Self {",
+              "line": 28
+            },
+            {
+              "name": "load",
+              "signature": "pub fn load(cache_path: &Path) -> Option<Self> {",
+              "line": 37
+            },
+            {
+              "name": "save",
+              "signature": "pub fn save(&self, cache_path: &Path) -> Result<()> {",
+              "line": 46
+            },
+            {
+              "name": "is_valid",
+              "signature": "pub fn is_valid(&self, current_path_hash: &str) -> bool {",
+              "line": 55
+            },
+            {
+              "name": "get_tools",
+              "signature": "pub fn get_tools(&self) -> Vec<&CachedTool> {",
+              "line": 63
+            },
+            {
+              "name": "add_tool",
+              "signature": "pub fn add_tool(&mut self, tool: CachedTool) {",
+              "line": 67
+            },
+            {
+              "name": "remove_missing",
+              "signature": "pub fn remove_missing(&mut self) {",
+              "line": 74
+            },
+            {
+              "name": "compute_path_hash",
+              "signature": "pub fn compute_path_hash() -> String {",
+              "line": 79
+            },
+            {
+              "name": "get_cache_path",
+              "signature": "pub fn get_cache_path() -> PathBuf {",
+              "line": 99
+            },
+            {
+              "name": "current_timestamp",
+              "signature": "pub fn current_timestamp() -> u64 {",
+              "line": 110
+            },
+            {
+              "name": "verify_tool_exists",
+              "signature": "pub fn verify_tool_exists(path: &str) -> bool {",
+              "line": 117
+            },
+            {
+              "name": "merge_caches",
+              "signature": "pub fn merge_caches(old_cache: &ToolCache, new_tools: Vec<CachedTool>) -> ToolCache {",
+              "line": 121
+            }
+          ],
+          "fingerprint": "9017154a04a7d22131ca47f45055c8fb626c61a0e43ba7127730ce8381157bbd"
+        },
+        {
+          "path": "src/tools/mod.rs",
+          "functions": [],
+          "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-04-04T11:52:06.473549Z"
+}

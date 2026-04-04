@@ -1,10 +1,8 @@
+//! @efficiency-role: infra-adapter
 //! Tool Discovery - Scans for available tools and capabilities
 
-use crate::tools::cache::{
-    compute_path_hash, get_cache_path, verify_tool_exists, CachedTool, ToolCache,
-};
+use crate::tools::{compute_path_hash, get_cache_path, verify_tool_exists, CachedTool, ToolCache};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use which::which;
 
 #[derive(Debug, Clone)]
@@ -32,43 +30,45 @@ pub enum ToolCategory {
 }
 
 pub async fn discover_available_tools(workspace: &Path) -> Vec<ToolCapability> {
-    let mut tools = Vec::new();
-
-    // Try to load from cache first
     let cache_path = get_cache_path();
     let path_hash = compute_path_hash();
 
     if let Ok(mut cache) = load_tool_cache(&cache_path, &path_hash) {
-        // Use cached tools, verify they still exist
-        for cached in &cache.tools {
-            if verify_tool_exists(&cached.path) {
-                tools.push(cached_tool_to_capability(cached));
-            }
-        }
-
-        // Incremental update: scan for new tools in common directories
-        let new_tools = scan_common_directories();
-        for tool in &new_tools {
-            if !cache.tools.iter().any(|t| t.name == tool.name) {
-                cache.add_tool(tool.clone());
-                tools.push(cached_tool_to_capability(tool));
-            }
-        }
-
-        // Save updated cache
-        let _ = cache.save(&cache_path);
+        handle_cache_hit(&mut cache, &cache_path)
     } else {
-        // Full scan on first run or cache invalid
-        tools = perform_full_scan(workspace);
-
-        // Save to cache
-        let mut cache = ToolCache::new();
-        cache.path_hash = path_hash;
-        for tool in &tools {
-            cache.add_tool(tool_to_cached(tool));
-        }
-        let _ = cache.save(&cache_path);
+        handle_cache_miss(workspace, &path_hash, &cache_path)
     }
+}
+
+fn handle_cache_hit(cache: &mut ToolCache, cache_path: &Path) -> Vec<ToolCapability> {
+    let mut tools = Vec::new();
+
+    for cached in &cache.tools {
+        if verify_tool_exists(&cached.path) {
+            tools.push(cached_tool_to_capability(cached));
+        }
+    }
+
+    for tool in &scan_common_directories() {
+        if !cache.tools.iter().any(|t| t.name == tool.name) {
+            cache.add_tool(tool.clone());
+            tools.push(cached_tool_to_capability(tool));
+        }
+    }
+
+    let _ = cache.save(cache_path);
+    tools
+}
+
+fn handle_cache_miss(workspace: &Path, path_hash: &str, cache_path: &Path) -> Vec<ToolCapability> {
+    let tools = perform_full_scan(workspace);
+
+    let mut cache = ToolCache::new();
+    cache.path_hash = path_hash.to_string();
+    for tool in &tools {
+        cache.add_tool(tool_to_cached(tool));
+    }
+    let _ = cache.save(cache_path);
 
     tools
 }
@@ -180,8 +180,31 @@ fn discover_cli_tools() -> Vec<ToolCapability> {
 fn scan_common_directories() -> Vec<CachedTool> {
     let mut tools = Vec::new();
 
-    // Common binary directories to scan
-    let bin_dirs = vec![
+    scan_user_directories(&mut tools);
+    scan_standard_directories(&mut tools);
+
+    tools
+}
+
+fn scan_user_directories(tools: &mut Vec<CachedTool>) {
+    let Ok(home) = std::env::var("HOME") else {
+        return;
+    };
+
+    let user_dirs = [
+        format!("{}/.cargo/bin", home),
+        format!("{}/.npm-global/bin", home),
+        format!("{}/.local/bin", home),
+        format!("{}/.yarn/bin", home),
+    ];
+
+    for dir in user_dirs {
+        scan_directory(&PathBuf::from(dir), tools, "cli");
+    }
+}
+
+fn scan_standard_directories(tools: &mut Vec<CachedTool>) {
+    const BIN_DIRS: &[&str] = &[
         "/usr/local/bin",
         "/usr/bin",
         "/bin",
@@ -189,60 +212,52 @@ fn scan_common_directories() -> Vec<CachedTool> {
         "/home/linuxbrew/.linuxbrew/bin",
     ];
 
-    // Add user-specific dirs
-    if let Ok(home) = std::env::var("HOME") {
-        let user_dirs = vec![
-            format!("{}/.cargo/bin", home),
-            format!("{}/.npm-global/bin", home),
-            format!("{}/.local/bin", home),
-            format!("{}/.yarn/bin", home),
-        ];
-        for dir in user_dirs {
-            scan_directory(&PathBuf::from(dir), &mut tools, "cli");
-        }
-    }
-
-    // Scan standard dirs (limit to avoid too many tools)
     let mut count = 0;
-    for dir_str in bin_dirs {
+    for dir_str in BIN_DIRS {
         if count > 100 {
-            break; // Limit total tools
+            break;
         }
         let dir = PathBuf::from(dir_str);
         if dir.exists() {
-            count += scan_directory(&dir, &mut tools, "cli");
+            count += scan_directory(&dir, tools, "cli");
         }
     }
-
-    tools
 }
 
 fn scan_directory(dir: &Path, tools: &mut Vec<CachedTool>, category: &str) -> usize {
     let mut count = 0;
 
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() && is_executable(&path) {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    // Skip common non-tool files
-                    if should_skip_tool(name) {
-                        continue;
-                    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return count;
+    };
 
-                    tools.push(CachedTool {
-                        name: name.to_string(),
-                        path: path.to_string_lossy().to_string(),
-                        category: category.to_string(),
-                        description: format!("System command: {}", name),
-                    });
-                    count += 1;
-                }
-            }
-        }
+    for entry in entries.flatten() {
+        count += try_process_entry(&entry.path(), category, tools);
     }
 
     count
+}
+
+fn try_process_entry(path: &Path, category: &str, tools: &mut Vec<CachedTool>) -> usize {
+    if !path.is_file() || !is_executable(path) {
+        return 0;
+    }
+
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return 0;
+    };
+
+    if should_skip_tool(name) {
+        return 0;
+    }
+
+    tools.push(CachedTool {
+        name: name.to_string(),
+        path: path.to_string_lossy().to_string(),
+        category: category.to_string(),
+        description: format!("System command: {}", name),
+    });
+    1
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -283,145 +298,178 @@ fn should_skip_tool(name: &str) -> bool {
 fn discover_project_tools(workspace: &Path) -> Vec<ToolCapability> {
     let mut tools = Vec::new();
 
-    // Rust project
-    if workspace.join("Cargo.toml").exists() && which("cargo").is_ok() {
-        tools.push(ToolCapability {
-            name: "cargo".to_string(),
-            description: "Rust package manager - build, test, run".to_string(),
-            command_template: "cargo <command>".to_string(),
-            availability: ToolAvailability::ContextDependent("Rust project detected".to_string()),
-            category: ToolCategory::ProjectSpecific,
-        });
+    if let Some(rust_tool) = try_detect_rust_tools(workspace) {
+        tools.push(rust_tool);
     }
 
-    // Node.js project
-    if workspace.join("package.json").exists() {
-        if which("npm").is_ok() {
-            tools.push(ToolCapability {
-                name: "npm".to_string(),
-                description: "Node.js package manager".to_string(),
-                command_template: "npm <command>".to_string(),
-                availability: ToolAvailability::ContextDependent(
-                    "Node.js project detected".to_string(),
-                ),
-                category: ToolCategory::ProjectSpecific,
-            });
-        }
-        if which("yarn").is_ok() {
-            tools.push(ToolCapability {
-                name: "yarn".to_string(),
-                description: "Fast Node.js package manager".to_string(),
-                command_template: "yarn <command>".to_string(),
-                availability: ToolAvailability::ContextDependent(
-                    "Node.js project detected".to_string(),
-                ),
-                category: ToolCategory::ProjectSpecific,
-            });
-        }
-        if which("pnpm").is_ok() {
-            tools.push(ToolCapability {
-                name: "pnpm".to_string(),
-                description: "Fast, disk space efficient package manager".to_string(),
-                command_template: "pnpm <command>".to_string(),
-                availability: ToolAvailability::ContextDependent(
-                    "Node.js project detected".to_string(),
-                ),
-                category: ToolCategory::ProjectSpecific,
-            });
-        }
-    }
+    tools.extend(detect_nodejs_tools(workspace));
+    tools.extend(detect_python_tools(workspace));
 
-    // Python project
-    if workspace.join("requirements.txt").exists()
-        || workspace.join("setup.py").exists()
-        || workspace.join("pyproject.toml").exists()
-    {
-        if which("pip").is_ok() || which("pip3").is_ok() {
-            tools.push(ToolCapability {
-                name: "pip".to_string(),
-                description: "Python package installer".to_string(),
-                command_template: "pip <command>".to_string(),
-                availability: ToolAvailability::ContextDependent(
-                    "Python project detected".to_string(),
-                ),
-                category: ToolCategory::ProjectSpecific,
-            });
-        }
-        if which("python").is_ok() || which("python3").is_ok() {
-            tools.push(ToolCapability {
-                name: "python".to_string(),
-                description: "Python interpreter".to_string(),
-                command_template: "python <script>".to_string(),
-                availability: ToolAvailability::ContextDependent(
-                    "Python project detected".to_string(),
-                ),
-                category: ToolCategory::ProjectSpecific,
-            });
-        }
-    }
-
-    // Go project
-    if workspace.join("go.mod").exists() && which("go").is_ok() {
-        tools.push(ToolCapability {
-            name: "go".to_string(),
-            description: "Go programming language tools".to_string(),
-            command_template: "go <command>".to_string(),
-            availability: ToolAvailability::ContextDependent("Go project detected".to_string()),
-            category: ToolCategory::ProjectSpecific,
-        });
+    if let Some(go_tool) = try_detect_go_tools(workspace) {
+        tools.push(go_tool);
     }
 
     tools
 }
 
+fn try_detect_rust_tools(workspace: &Path) -> Option<ToolCapability> {
+    if !workspace.join("Cargo.toml").exists() || which("cargo").is_err() {
+        return None;
+    }
+
+    Some(ToolCapability {
+        name: "cargo".to_string(),
+        description: "Rust package manager - build, test, run".to_string(),
+        command_template: "cargo <command>".to_string(),
+        availability: ToolAvailability::ContextDependent("Rust project detected".to_string()),
+        category: ToolCategory::ProjectSpecific,
+    })
+}
+
+fn detect_nodejs_tools(workspace: &Path) -> Vec<ToolCapability> {
+    if !workspace.join("package.json").exists() {
+        return Vec::new();
+    }
+
+    let mut tools = Vec::new();
+
+    if which("npm").is_ok() {
+        tools.push(build_nodejs_tool("npm", "Node.js package manager"));
+    }
+    if which("yarn").is_ok() {
+        tools.push(build_nodejs_tool("yarn", "Fast Node.js package manager"));
+    }
+    if which("pnpm").is_ok() {
+        tools.push(build_nodejs_tool(
+            "pnpm",
+            "Fast, disk space efficient package manager",
+        ));
+    }
+
+    tools
+}
+
+fn build_nodejs_tool(name: &str, description: &str) -> ToolCapability {
+    ToolCapability {
+        name: name.to_string(),
+        description: description.to_string(),
+        command_template: format!("{} <command>", name),
+        availability: ToolAvailability::ContextDependent("Node.js project detected".to_string()),
+        category: ToolCategory::ProjectSpecific,
+    }
+}
+
+fn detect_python_tools(workspace: &Path) -> Vec<ToolCapability> {
+    let has_python_project = workspace.join("requirements.txt").exists()
+        || workspace.join("setup.py").exists()
+        || workspace.join("pyproject.toml").exists();
+
+    if !has_python_project {
+        return Vec::new();
+    }
+
+    let mut tools = Vec::new();
+
+    if which("pip").is_ok() || which("pip3").is_ok() {
+        tools.push(build_python_tool("pip", "Python package installer"));
+    }
+    if which("python").is_ok() || which("python3").is_ok() {
+        tools.push(build_python_tool("python", "Python interpreter"));
+    }
+
+    tools
+}
+
+fn build_python_tool(name: &str, description: &str) -> ToolCapability {
+    ToolCapability {
+        name: name.to_string(),
+        description: description.to_string(),
+        command_template: format!("{} <script>", name),
+        availability: ToolAvailability::ContextDependent("Python project detected".to_string()),
+        category: ToolCategory::ProjectSpecific,
+    }
+}
+
+fn try_detect_go_tools(workspace: &Path) -> Option<ToolCapability> {
+    if !workspace.join("go.mod").exists() || which("go").is_err() {
+        return None;
+    }
+
+    Some(ToolCapability {
+        name: "go".to_string(),
+        description: "Go programming language tools".to_string(),
+        command_template: "go <command>".to_string(),
+        availability: ToolAvailability::ContextDependent("Go project detected".to_string()),
+        category: ToolCategory::ProjectSpecific,
+    })
+}
+
 fn discover_custom_scripts(workspace: &Path) -> Vec<ToolCapability> {
     let mut tools = Vec::new();
 
-    // Common script directories
-    let script_dirs = vec![
+    let script_dirs = [
         workspace.join("scripts"),
         workspace.join("bin"),
         workspace.join(".scripts"),
     ];
 
     for script_dir in script_dirs {
-        if script_dir.exists() && script_dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&script_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file() && is_executable_script(&path) {
-                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                            let rel_path = path
-                                .strip_prefix(workspace)
-                                .unwrap_or(&path)
-                                .to_string_lossy();
-
-                            tools.push(ToolCapability {
-                                name: name.to_string(),
-                                description: format!("Custom script: {}", rel_path),
-                                command_template: format!("./{}", rel_path),
-                                availability: ToolAvailability::AlwaysAvailable,
-                                category: ToolCategory::CustomScript,
-                            });
-                        }
-                    }
-                }
-            }
-        }
+        scan_script_directory(&script_dir, workspace, &mut tools);
     }
 
-    // Check for Makefile
-    if workspace.join("Makefile").exists() && which("make").is_ok() {
-        tools.push(ToolCapability {
-            name: "make".to_string(),
-            description: "Build automation from Makefile".to_string(),
-            command_template: "make <target>".to_string(),
-            availability: ToolAvailability::ContextDependent("Makefile found".to_string()),
-            category: ToolCategory::ProjectSpecific,
-        });
+    if let Some(make_tool) = try_add_make_tool(workspace) {
+        tools.push(make_tool);
     }
 
     tools
+}
+
+fn scan_script_directory(script_dir: &Path, workspace: &Path, tools: &mut Vec<ToolCapability>) {
+    if !script_dir.exists() || !script_dir.is_dir() {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(script_dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() || !is_executable_script(&path) {
+            continue;
+        }
+
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+
+        let rel_path = path
+            .strip_prefix(workspace)
+            .unwrap_or(&path)
+            .to_string_lossy();
+
+        tools.push(ToolCapability {
+            name: name.to_string(),
+            description: format!("Custom script: {}", rel_path),
+            command_template: format!("./{}", rel_path),
+            availability: ToolAvailability::AlwaysAvailable,
+            category: ToolCategory::CustomScript,
+        });
+    }
+}
+
+fn try_add_make_tool(workspace: &Path) -> Option<ToolCapability> {
+    if !workspace.join("Makefile").exists() || which("make").is_err() {
+        return None;
+    }
+
+    Some(ToolCapability {
+        name: "make".to_string(),
+        description: "Build automation from Makefile".to_string(),
+        command_template: "make <target>".to_string(),
+        availability: ToolAvailability::ContextDependent("Makefile found".to_string()),
+        category: ToolCategory::ProjectSpecific,
+    })
 }
 
 fn is_executable_script(path: &Path) -> bool {

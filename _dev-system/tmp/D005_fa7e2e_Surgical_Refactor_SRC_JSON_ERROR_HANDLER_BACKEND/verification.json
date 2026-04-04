@@ -1,0 +1,144 @@
+{
+  "task": "D005_fa7e2e",
+  "category": "Surgical_Refactor_SRC_JSON_ERROR_HANDLER_BACKEND",
+  "baseline_dir": "_dev-system/tmp/D005_fa7e2e_Surgical_Refactor_SRC_JSON_ERROR_HANDLER_BACKEND",
+  "bundles": [
+    {
+      "headline": "Pre-split snapshot for `src/json_error_handler/schemas.rs`",
+      "snapshots": [
+        {
+          "path": "src/json_error_handler/schemas.rs",
+          "functions": [
+            {
+              "name": "matches",
+              "signature": "pub(crate) fn matches(&self, value: &serde_json::Value) -> bool {",
+              "line": 31
+            },
+            {
+              "name": "describe",
+              "signature": "pub(crate) fn describe(&self) -> String {",
+              "line": 48
+            },
+            {
+              "name": "new",
+              "signature": "pub(crate) fn new(field: &'static str) -> Self {",
+              "line": 75
+            },
+            {
+              "name": "validate",
+              "signature": "fn validate(&self, value: &serde_json::Value) -> Option<String> {",
+              "line": 81
+            },
+            {
+              "name": "new",
+              "signature": "pub(crate) fn new(field: &'static str, allowed: &'static [&'static str]) -> Self {",
+              "line": 99
+            },
+            {
+              "name": "validate",
+              "signature": "fn validate(&self, value: &serde_json::Value) -> Option<String> {",
+              "line": 105
+            },
+            {
+              "name": "new",
+              "signature": "pub(crate) fn new(field: &'static str, min: usize, max: usize) -> Self {",
+              "line": 132
+            },
+            {
+              "name": "validate",
+              "signature": "fn validate(&self, value: &serde_json::Value) -> Option<String> {",
+              "line": 138
+            },
+            {
+              "name": "validate",
+              "signature": "fn validate(&self, value: &serde_json::Value) -> Option<String> {",
+              "line": 153
+            },
+            {
+              "name": "schema",
+              "signature": "fn schema(required_fields: Vec<&'static str>) -> JsonSchema {",
+              "line": 186
+            },
+            {
+              "name": "classification_schema",
+              "signature": "fn classification_schema(choices: &'static [&'static str]) -> JsonSchema {",
+              "line": 194
+            },
+            {
+              "name": "critic_like_schema",
+              "signature": "fn critic_like_schema(choices: &'static [&'static str]) -> JsonSchema {",
+              "line": 219
+            },
+            {
+              "name": "scope_schema",
+              "signature": "fn scope_schema() -> JsonSchema {",
+              "line": 234
+            },
+            {
+              "name": "formula_schema",
+              "signature": "fn formula_schema() -> JsonSchema {",
+              "line": 267
+            },
+            {
+              "name": "workflow_schema",
+              "signature": "fn workflow_schema() -> JsonSchema {",
+              "line": 297
+            },
+            {
+              "name": "complexity_schema",
+              "signature": "fn complexity_schema() -> JsonSchema {",
+              "line": 364
+            },
+            {
+              "name": "schema_for_type",
+              "signature": "pub(crate) fn schema_for_type<T: 'static>() -> Option<JsonSchema> {",
+              "line": 397
+            },
+            {
+              "name": "validate_critic_verdict",
+              "signature": "pub(crate) fn validate_critic_verdict(",
+              "line": 436
+            },
+            {
+              "name": "validate_outcome_verdict",
+              "signature": "pub(crate) fn validate_outcome_verdict(",
+              "line": 467
+            },
+            {
+              "name": "deterministic_fix_critic_verdict",
+              "signature": "pub(crate) fn deterministic_fix_critic_verdict(",
+              "line": 498
+            },
+            {
+              "name": "deterministic_fix_outcome_verdict",
+              "signature": "pub(crate) fn deterministic_fix_outcome_verdict(",
+              "line": 550
+            },
+            {
+              "name": "fmt",
+              "signature": "fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {",
+              "line": 602
+            },
+            {
+              "name": "ground_critic_reason",
+              "signature": "pub(crate) fn ground_critic_reason(",
+              "line": 623
+            },
+            {
+              "name": "verify_claim_against_outputs",
+              "signature": "fn verify_claim_against_outputs(claim: &str, outputs: &[StepResult]) -> bool {",
+              "line": 658
+            },
+            {
+              "name": "fmt",
+              "signature": "fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {",
+              "line": 699
+            }
+          ],
+          "fingerprint": "4ae8fd8bee1200f2bbc142f9b8a8aeffffe2f041ed65e4b669ba7e25d3093f8a"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-04-04T11:52:41.940651Z"
+}

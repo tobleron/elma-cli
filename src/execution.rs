@@ -1,3 +1,5 @@
+//! @efficiency-role: data-model
+
 use crate::*;
 
 pub(crate) struct ExecutionState {

@@ -1,3 +1,5 @@
+//! @efficiency-role: orchestrator
+
 pub(crate) use anyhow::{Context, Result};
 pub(crate) use clap::Parser;
 pub(crate) use reqwest::Url;
@@ -17,14 +19,25 @@ mod app_bootstrap_core;
 mod app_bootstrap_modes;
 mod app_bootstrap_profiles;
 mod app_chat;
+mod app_chat_builders_advanced;
+mod app_chat_builders_audit;
+mod app_chat_builders_basic;
+mod app_chat_builders_probes;
 mod app_chat_core;
+mod app_chat_fast_paths;
 mod app_chat_handlers;
 mod app_chat_helpers;
+mod app_chat_loop;
+mod app_chat_orchestrator;
+#[cfg(test)]
+mod app_chat_orchestrator_tests;
+mod app_chat_patterns;
 mod app_chat_trace;
 mod decomposition; // Task 023: Hierarchical decomposition
 mod defaults;
 mod defaults_core;
 mod defaults_evidence;
+mod defaults_evidence_core;
 mod defaults_router;
 mod evaluation;
 mod evaluation_response;
@@ -42,12 +55,16 @@ mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
 mod formulas;
 mod guardrails; // State-aware guardrails for context drift (Task 011)
+mod guardrails_refinement; // Guardrails refinement phase (Task 011)
 mod intel_narrative; // Narrative transformation for intel units
+mod intel_narrative_steps; // Step-related narrative functions and helpers
+mod intel_narrative_utils; // Shared narrative utility helpers
 mod intel_trait; // Intel unit trait and interfaces
 mod intel_units; // Migrated intel units (complexity, evidence, action, workflow)
 mod json_error_handler; // JSON error handling with circuit breaker
 mod json_grammar; // GBNF grammar loading and injection
 mod json_parser; // Robust JSON parsing for intel unit outputs
+mod json_parser_extract; // Extraction helpers for json_parser
 mod json_tuning; // JSON temperature tuning
 mod metrics;
 mod models_api;
@@ -67,6 +84,8 @@ mod paths;
 mod profile_sets;
 mod program;
 mod program_policy;
+mod program_policy_level;
+mod program_policy_tests;
 mod program_steps;
 mod program_utils;
 mod prompt_constants;
@@ -100,6 +119,7 @@ mod tuning_support;
 mod types;
 mod types_api;
 mod types_core;
+mod types_core_impl;
 mod types_hierarchy;
 mod ui;
 mod ui_chat;
@@ -107,6 +127,7 @@ mod ui_colors;
 mod ui_state;
 mod ui_trace;
 mod verification;
+mod verification_evidence;
 mod workspace;
 mod workspace_tree;
 
@@ -117,6 +138,7 @@ pub(crate) use evaluation::*;
 pub(crate) use execution::*;
 pub(crate) use execution_ladder::*; // Execution ladder types and functions
 pub(crate) use guardrails::*; // State-aware guardrails (Task 011)
+pub(crate) use guardrails_refinement::*; // Guardrails refinement phase (Task 011)
 pub(crate) use intel_trait::*; // Intel unit trait and interfaces
 pub(crate) use intel_units::*; // Migrated intel units
 pub(crate) use json_error_handler::*; // JSON error handling

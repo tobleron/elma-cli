@@ -1,3 +1,4 @@
+//! @efficiency-role: data-model
 //! Formula Patterns - Abstract intent patterns (NO hardcoded commands)
 
 use serde::{Deserialize, Serialize};

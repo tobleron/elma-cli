@@ -1,4 +1,4 @@
-//! @efficiency-role: service-orchestrator
+//! @efficiency-role: util-pure
 //!
 //! App Chat - Helper Functions
 

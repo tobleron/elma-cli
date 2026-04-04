@@ -1,4 +1,4 @@
-//! @efficiency-role: service-orchestrator
+//! @efficiency-role: orchestrator
 //!
 //! Orchestration Module (De-bloated)
 //!

@@ -1,4 +1,4 @@
-//! @efficiency-role: service-orchestrator
+//! @efficiency-role: util-pure
 //!
 //! Model Optimization - Evaluation Module
 //!

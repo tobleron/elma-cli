@@ -402,6 +402,13 @@ fn generate_work_units(
             let treat_single_quote = d_name != "rescript" && d_name != "rust";
             let stripped = drivers::strip_code_modular(content, treat_single_quote);
 
+            // For Rust files, additionally strip #[cfg(test)] blocks and #[test] functions
+            let stripped = if d_name == "rust" {
+                drivers::strip_test_blocks_rust(&stripped)
+            } else {
+                stripped
+            };
+
             // Check for per-file violation overrides
             let skip_pattern = match drivers::parse_header(content) {
                 drivers::EfficiencyOverride::SkipViolation(p) => Some(p),

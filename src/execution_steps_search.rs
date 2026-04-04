@@ -1,3 +1,4 @@
+//! @efficiency-role: util-pure
 //! Search Step Execution
 
 use crate::*;

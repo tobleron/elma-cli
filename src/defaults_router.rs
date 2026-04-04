@@ -1,4 +1,4 @@
-//! @efficiency-role: data-model
+//! @efficiency-role: infra-config
 //!
 //! Defaults - Router, Planner, and Judge Configurations
 

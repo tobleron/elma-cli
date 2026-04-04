@@ -1,4 +1,4 @@
-//! @efficiency-role: service-orchestrator
+//! @efficiency-role: orchestrator
 //!
 //! Session Module (De-bloated)
 //!

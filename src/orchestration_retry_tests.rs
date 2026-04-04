@@ -1,3 +1,5 @@
+//! @efficiency-role: ignored
+
 #[cfg(test)]
 mod tests {
     use crate::types_core::{Program, Step, StepCommon};

@@ -1,9 +1,8 @@
+//! @efficiency-role: infra-adapter
+
 use crate::*;
 
-pub(crate) async fn fetch_first_model_id(
-    client: &reqwest::Client,
-    base_url: &Url,
-) -> Result<String> {
+async fn fetch_models_response(client: &reqwest::Client, base_url: &Url) -> Result<ModelsList> {
     let url = base_url
         .join("/v1/models")
         .context("Failed to build /v1/models URL")?;
@@ -20,17 +19,29 @@ pub(crate) async fn fetch_first_model_id(
     if !status.is_success() {
         anyhow::bail!("GET /v1/models returned HTTP {status}: {text}");
     }
-    let parsed: ModelsList = serde_json::from_str(&text).context("Invalid JSON from /v1/models")?;
-    let list = parsed
+    serde_json::from_str(&text).context("Invalid JSON from /v1/models")
+}
+
+fn model_id(item: ModelItem) -> Option<String> {
+    item.id
+        .or(item.name)
+        .or(item.model)
+        .filter(|id| !id.trim().is_empty())
+}
+
+pub(crate) async fn fetch_first_model_id(
+    client: &reqwest::Client,
+    base_url: &Url,
+) -> Result<String> {
+    let parsed = fetch_models_response(client, base_url).await?;
+    for item in parsed
         .data
         .or(parsed.models)
         .unwrap_or_default()
-        .into_iter();
-    for item in list {
-        if let Some(id) = item.id.or(item.name).or(item.model) {
-            if !id.trim().is_empty() {
-                return Ok(id);
-            }
+        .into_iter()
+    {
+        if let Some(id) = model_id(item) {
+            return Ok(id);
         }
     }
     anyhow::bail!("No model ids found in /v1/models response")
@@ -40,29 +51,12 @@ pub(crate) async fn fetch_all_model_ids(
     client: &reqwest::Client,
     base_url: &Url,
 ) -> Result<Vec<String>> {
-    let url = base_url
-        .join("/v1/models")
-        .context("Failed to build /v1/models URL")?;
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .context("GET /v1/models failed")?;
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .context("Failed to read /v1/models body")?;
-    if !status.is_success() {
-        anyhow::bail!("GET /v1/models returned HTTP {status}: {text}");
-    }
-    let parsed: ModelsList = serde_json::from_str(&text).context("Invalid JSON from /v1/models")?;
+    let parsed = fetch_models_response(client, base_url).await?;
     let mut out = Vec::new();
-    let list = parsed.data.or(parsed.models).unwrap_or_default();
-    for item in list {
-        if let Some(id) = item.id.or(item.name).or(item.model) {
+    for item in parsed.data.or(parsed.models).unwrap_or_default() {
+        if let Some(id) = model_id(item) {
             let id = id.trim().to_string();
-            if !id.is_empty() && !out.contains(&id) {
+            if !out.contains(&id) {
                 out.push(id);
             }
         }
@@ -73,48 +67,48 @@ pub(crate) async fn fetch_all_model_ids(
     Ok(out)
 }
 
-pub(crate) async fn fetch_ctx_max(client: &reqwest::Client, base_url: &Url) -> Result<Option<u64>> {
-    // Best-effort, ordered by "most likely runtime truth":
-    // 1) /slots[0].n_ctx (runtime ctx size)
-    // 2) /props.default_generation_settings.n_ctx (runtime default)
-    // 3) /v1/models meta.n_ctx_train (training ctx, can be larger than runtime)
-
-    if let Ok(url) = base_url.join("/slots") {
-        if let Ok(resp) = client.get(url).send().await {
-            if resp.status().is_success() {
-                if let Ok(text) = resp.text().await {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                        let n = v
-                            .get(0)
-                            .and_then(|s| s.get("n_ctx"))
-                            .and_then(|x| x.as_u64());
-                        if n.is_some() {
-                            return Ok(n);
-                        }
-                    }
-                }
-            }
-        }
+/// Try to fetch n_ctx from a given endpoint, extracting the value at a JSON path
+async fn try_fetch_ctx(
+    client: &reqwest::Client,
+    base_url: &Url,
+    endpoint: &str,
+    path: impl FnOnce(&serde_json::Value) -> Option<u64>,
+) -> Option<Option<u64>> {
+    let url = base_url.join(endpoint).ok()?;
+    let resp = client.get(url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return Some(None);
     }
+    let text = resp.text().await.ok()?;
+    let v = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    Some(path(&v))
+}
 
-    if let Ok(url) = base_url.join("/props") {
-        if let Ok(resp) = client.get(url).send().await {
-            if resp.status().is_success() {
-                if let Ok(text) = resp.text().await {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                        let n = v
-                            .get("default_generation_settings")
-                            .and_then(|d| d.get("n_ctx"))
-                            .and_then(|x| x.as_u64());
-                        if n.is_some() {
-                            return Ok(n);
-                        }
-                    }
-                }
-            }
-        }
-    }
+/// Try to fetch n_ctx from /slots endpoint
+async fn try_fetch_ctx_from_slots(client: &reqwest::Client, base_url: &Url) -> Option<Option<u64>> {
+    try_fetch_ctx(client, base_url, "/slots", |v| {
+        v.get(0)
+            .and_then(|s| s.get("n_ctx"))
+            .and_then(|x| x.as_u64())
+    })
+    .await
+}
 
+/// Try to fetch n_ctx from /props endpoint
+async fn try_fetch_ctx_from_props(client: &reqwest::Client, base_url: &Url) -> Option<Option<u64>> {
+    try_fetch_ctx(client, base_url, "/props", |v| {
+        v.get("default_generation_settings")
+            .and_then(|d| d.get("n_ctx"))
+            .and_then(|x| x.as_u64())
+    })
+    .await
+}
+
+/// Try to fetch n_ctx from /v1/models metadata
+async fn try_fetch_ctx_from_models(
+    client: &reqwest::Client,
+    base_url: &Url,
+) -> Result<Option<u64>> {
     let url = base_url
         .join("/v1/models")
         .context("Failed to build /v1/models URL")?;
@@ -142,6 +136,16 @@ pub(crate) async fn fetch_ctx_max(client: &reqwest::Client, base_url: &Url) -> R
         .and_then(|x| x.as_u64()))
 }
 
+pub(crate) async fn fetch_ctx_max(client: &reqwest::Client, base_url: &Url) -> Result<Option<u64>> {
+    if let Some(n) = try_fetch_ctx_from_slots(client, base_url).await {
+        return Ok(n);
+    }
+    if let Some(n) = try_fetch_ctx_from_props(client, base_url).await {
+        return Ok(n);
+    }
+    try_fetch_ctx_from_models(client, base_url).await
+}
+
 pub(crate) async fn fetch_runtime_generation_defaults(
     client: &reqwest::Client,
     base_url: &Url,
@@ -149,20 +153,17 @@ pub(crate) async fn fetch_runtime_generation_defaults(
     let Ok(url) = base_url.join("/props") else {
         return Ok(None);
     };
-    let resp = match client.get(url).send().await {
-        Ok(resp) => resp,
-        Err(_) => return Ok(None),
+    let Ok(resp) = client.get(url).send().await else {
+        return Ok(None);
     };
     if !resp.status().is_success() {
         return Ok(None);
     }
-    let text = match resp.text().await {
-        Ok(text) => text,
-        Err(_) => return Ok(None),
+    let Ok(text) = resp.text().await else {
+        return Ok(None);
     };
-    let value: serde_json::Value = match serde_json::from_str(&text) {
-        Ok(v) => v,
-        Err(_) => return Ok(None),
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Ok(None);
     };
     let Some(defaults) = value.get("default_generation_settings") else {
         return Ok(None);
@@ -189,7 +190,6 @@ pub(crate) async fn fetch_runtime_generation_defaults(
     {
         return Ok(None);
     }
-
     Ok(Some(RuntimeGenerationDefaults {
         temperature,
         top_p,
@@ -234,8 +234,7 @@ fn response_content(resp: &ChatCompletionResponse) -> String {
 }
 
 fn probe_json_clean(resp: &ChatCompletionResponse) -> bool {
-    let content = response_content(resp);
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&response_content(resp)) else {
         return false;
     };
     value
@@ -275,8 +274,106 @@ async fn probe_logprobs_support(
     Ok(resp
         .choices
         .get(0)
-        .and_then(|choice| choice.logprobs.as_ref())
+        .and_then(|c| c.logprobs.as_ref())
         .is_some())
+}
+
+/// Build a probe chat request
+fn make_probe_request(
+    model_id: &str,
+    reasoning_format: &str,
+    system_content: &str,
+    user_content: &str,
+    max_tokens: u32,
+) -> ChatCompletionRequest {
+    ChatCompletionRequest {
+        model: model_id.to_string(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: system_content.to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user_content.to_string(),
+            },
+        ],
+        temperature: 0.0,
+        top_p: 1.0,
+        stream: false,
+        max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(1.0),
+        reasoning_format: Some(reasoning_format.to_string()),
+        grammar: None,
+    }
+}
+
+/// Probe results for behavior detection
+struct BehaviorProbe {
+    auto_exact_content: String,
+    auto_reasoning: bool,
+    auto_truncated_before_final: bool,
+    none_exact_content: String,
+    none_has_thinking: bool,
+    none_leak_suspected: bool,
+    json_clean_with_auto: bool,
+    json_clean_with_none: bool,
+}
+
+fn first_msg_content(resp: &ChatCompletionResponse) -> (Option<&str>, Option<&str>) {
+    (
+        resp.choices
+            .get(0)
+            .and_then(|c| c.message.content.as_deref()),
+        resp.choices
+            .get(0)
+            .and_then(|c| c.message.reasoning_content.as_deref()),
+    )
+}
+
+fn preferred_reasoning_format(probe: &BehaviorProbe) -> String {
+    if probe.auto_reasoning && (probe.none_exact_content != "7" || !probe.json_clean_with_none) {
+        "auto".to_string()
+    } else {
+        "none".to_string()
+    }
+}
+
+fn detect_behavior_probe(
+    auto_exact_resp: &ChatCompletionResponse,
+    none_exact_resp: &ChatCompletionResponse,
+    auto_json_resp: &ChatCompletionResponse,
+    none_json_resp: &ChatCompletionResponse,
+    exact_token: &str,
+) -> BehaviorProbe {
+    let auto_exact_content = response_content(auto_exact_resp);
+    let none_exact_content = response_content(none_exact_resp);
+    let (auto_content, auto_reasoning) = first_msg_content(auto_exact_resp);
+    let (none_content, _) = first_msg_content(none_exact_resp);
+    let auto_reasoning = thinking_content::is_thinking_model(auto_content, auto_reasoning);
+    let auto_truncated_before_final = auto_reasoning
+        && auto_exact_content.is_empty()
+        && auto_exact_resp
+            .choices
+            .get(0)
+            .and_then(|c| c.finish_reason.as_deref())
+            == Some("length");
+    let none_has_thinking =
+        thinking_content::is_thinking_model(none_content, first_msg_content(none_exact_resp).1);
+    let none_leak_suspected = !none_exact_content.eq(exact_token)
+        && !none_has_thinking
+        && none_exact_content.lines().count() > 1;
+    BehaviorProbe {
+        auto_exact_content,
+        auto_reasoning,
+        auto_truncated_before_final,
+        none_exact_content,
+        none_has_thinking,
+        none_leak_suspected,
+        json_clean_with_auto: probe_json_clean(auto_json_resp),
+        json_clean_with_none: probe_json_clean(none_json_resp),
+    }
 }
 
 pub(crate) async fn ensure_model_behavior_profile(
@@ -294,37 +391,11 @@ pub(crate) async fn ensure_model_behavior_profile(
     }
 
     let exact_token = "7";
-    let json_token = r#"{"status":"ok"}"#;
-
-    let make_req =
-        |reasoning_format: &str, system_content: &str, user_content: &str, max_tokens| {
-            ChatCompletionRequest {
-                model: model_id.to_string(),
-                messages: vec![
-                    ChatMessage {
-                        role: "system".to_string(),
-                        content: system_content.to_string(),
-                    },
-                    ChatMessage {
-                        role: "user".to_string(),
-                        content: user_content.to_string(),
-                    },
-                ],
-                temperature: 0.0,
-                top_p: 1.0,
-                stream: false,
-                max_tokens,
-                n_probs: None,
-                repeat_penalty: Some(1.0),
-                reasoning_format: Some(reasoning_format.to_string()),
-                grammar: None,
-            }
-        };
-
+    let mk = |rf, sc, uc, mt| make_probe_request(model_id, rf, sc, uc, mt);
     let auto_exact_resp = probe_chat_completion_raw(
         client,
         chat_url,
-        &make_req(
+        &mk(
             "auto",
             "Return exactly 7 and nothing else.",
             "Return 7.",
@@ -335,7 +406,7 @@ pub(crate) async fn ensure_model_behavior_profile(
     let none_exact_resp = probe_chat_completion_raw(
         client,
         chat_url,
-        &make_req(
+        &mk(
             "none",
             "Return exactly 7 and nothing else.",
             "Return 7.",
@@ -346,7 +417,7 @@ pub(crate) async fn ensure_model_behavior_profile(
     let auto_json_resp = probe_chat_completion_raw(
         client,
         chat_url,
-        &make_req(
+        &mk(
             "auto",
             "Return exactly one JSON object: {\"status\":\"ok\"}. No prose.",
             "Return the JSON object now.",
@@ -357,7 +428,7 @@ pub(crate) async fn ensure_model_behavior_profile(
     let none_json_resp = probe_chat_completion_raw(
         client,
         chat_url,
-        &make_req(
+        &mk(
             "none",
             "Return exactly one JSON object: {\"status\":\"ok\"}. No prose.",
             "Return the JSON object now.",
@@ -366,67 +437,29 @@ pub(crate) async fn ensure_model_behavior_profile(
     )
     .await?;
 
-    let auto_exact_content = response_content(&auto_exact_resp);
-    let none_exact_content = response_content(&none_exact_resp);
-
-    // Use centralized thinking detection
-    let auto_reasoning = thinking_content::is_thinking_model(
-        auto_exact_resp
-            .choices
-            .get(0)
-            .and_then(|c| c.message.content.as_deref()),
-        auto_exact_resp
-            .choices
-            .get(0)
-            .and_then(|c| c.message.reasoning_content.as_deref()),
+    let probe = detect_behavior_probe(
+        &auto_exact_resp,
+        &none_exact_resp,
+        &auto_json_resp,
+        &none_json_resp,
+        exact_token,
     );
-
-    let auto_truncated_before_final = auto_reasoning
-        && auto_exact_content.is_empty()
-        && auto_exact_resp
-            .choices
-            .get(0)
-            .and_then(|c| c.finish_reason.as_deref())
-            == Some("length");
-
-    // Check for thinking in none mode as well
-    let none_has_thinking = thinking_content::is_thinking_model(
-        none_exact_resp
-            .choices
-            .get(0)
-            .and_then(|c| c.message.content.as_deref()),
-        none_exact_resp
-            .choices
-            .get(0)
-            .and_then(|c| c.message.reasoning_content.as_deref()),
-    );
-
-    let none_leak_suspected = !none_exact_content.eq(exact_token)
-        && !none_has_thinking
-        && none_exact_content.lines().count() > 1;
-
+    let preferred_rf = preferred_reasoning_format(&probe);
     let profile = ModelBehaviorProfile {
         version: 3,
         model: model_id.to_string(),
         base_url: base_url.to_string(),
-        auto_reasoning_separated: auto_reasoning,
-        auto_final_clean: auto_exact_content == exact_token,
-        auto_truncated_before_final,
-        none_final_clean: none_exact_content == exact_token,
-        none_reasoning_leak_suspected: none_leak_suspected,
-        json_clean_with_auto: probe_json_clean(&auto_json_resp),
-        json_clean_with_none: probe_json_clean(&none_json_resp),
-        needs_text_finalizer: auto_reasoning && (auto_exact_content != exact_token),
-        preferred_reasoning_format: if auto_reasoning
-            && (none_exact_content != exact_token || !probe_json_clean(&none_json_resp))
-        {
-            "auto".to_string()
-        } else {
-            "none".to_string()
-        },
+        auto_reasoning_separated: probe.auto_reasoning,
+        auto_final_clean: probe.auto_exact_content == exact_token,
+        auto_truncated_before_final: probe.auto_truncated_before_final,
+        none_final_clean: probe.none_exact_content == exact_token,
+        none_reasoning_leak_suspected: probe.none_leak_suspected,
+        json_clean_with_auto: probe.json_clean_with_auto,
+        json_clean_with_none: probe.json_clean_with_none,
+        needs_text_finalizer: probe.auto_reasoning && (probe.auto_exact_content != exact_token),
+        preferred_reasoning_format: preferred_rf,
     };
-
-    let _supports_logprobs = probe_logprobs_support(client, chat_url, model_id)
+    let _ = probe_logprobs_support(client, chat_url, model_id)
         .await
         .ok();
     save_model_behavior_profile(&path, &profile)?;
@@ -437,10 +470,7 @@ pub(crate) fn isolate_reasoning_fields(resp: &mut ChatCompletionResponse) {
     for choice in &mut resp.choices {
         let content = choice.message.content.as_deref();
         let reasoning = choice.message.reasoning_content.as_deref();
-
-        // Use centralized thinking extraction
         let extraction = thinking_content::extract_thinking(content, reasoning);
-
         choice.message.reasoning_content = extraction.thinking.filter(|s| !s.trim().is_empty());
         choice.message.content = if extraction.final_answer.trim().is_empty() {
             match content {

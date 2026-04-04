@@ -122,6 +122,17 @@ pub fn discover_and_analyze(
                 .or_default()
                 .push(p_str.clone());
 
+            // If this is mod.rs, also register under parent directory name
+            // so `mod xyz;` resolves to `xyz/mod.rs` (Rust two-tier module resolution)
+            if file_stem == "mod" {
+                if let Some(parent) = path.parent().and_then(|p| p.file_stem()) {
+                    file_resolver
+                        .entry(parent.to_string_lossy().to_string())
+                        .or_default()
+                        .push(p_str.clone());
+                }
+            }
+
             // Store in registry
             registry.insert(
                 p_str,

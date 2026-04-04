@@ -1,4 +1,4 @@
-//! @efficiency-role: orchestrator
+//! @efficiency-role: util-pure
 //!
 //! App Bootstrap - Mode Handling and Banners
 

@@ -1,3 +1,4 @@
+//! @efficiency-role: orchestrator
 //! Formula Patterns Module
 
 pub mod patterns;
