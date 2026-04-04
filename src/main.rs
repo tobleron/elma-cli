@@ -50,6 +50,8 @@ mod execution_steps_compat;
 mod execution_steps_edit;
 mod execution_steps_read;
 mod execution_steps_search;
+#[cfg(test)]
+mod execution_steps_selectors;
 mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
@@ -57,6 +59,7 @@ mod formulas;
 mod guardrails; // State-aware guardrails for context drift (Task 011)
 mod guardrails_refinement; // Guardrails refinement phase (Task 011)
 mod intel_narrative; // Narrative transformation for intel units
+mod intel_narrative_planning; // Planning-related narrative functions
 mod intel_narrative_steps; // Step-related narrative functions and helpers
 mod intel_narrative_utils; // Shared narrative utility helpers
 mod intel_trait; // Intel unit trait and interfaces
@@ -77,6 +80,7 @@ mod orchestration_helpers;
 mod orchestration_loop;
 mod orchestration_loop_helpers;
 mod orchestration_loop_reviewers;
+mod orchestration_loop_verdicts;
 mod orchestration_planning;
 mod orchestration_retry;
 mod orchestration_retry_tests;

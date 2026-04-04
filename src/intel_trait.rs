@@ -42,7 +42,6 @@ pub(crate) struct IntelContext {
 }
 
 impl IntelContext {
-    /// Create new context with minimal required fields
     pub fn new(
         user_message: String,
         route_decision: RouteDecision,
@@ -63,20 +62,17 @@ impl IntelContext {
         }
     }
 
-    /// Set complexity assessment (for units that depend on it)
     pub fn with_complexity(mut self, complexity: ComplexityAssessment) -> Self {
         self.complexity = Some(complexity);
         self
     }
 
-    /// Attach extra serialized context for richer intel-unit execution.
     pub fn with_extra<T: Serialize>(mut self, key: &str, value: T) -> Result<Self> {
         self.extras
             .insert(key.to_string(), serde_json::to_value(value)?);
         Ok(self)
     }
 
-    /// Read an extra JSON field by key.
     pub fn extra(&self, key: &str) -> Option<&serde_json::Value> {
         self.extras.get(key)
     }
@@ -87,24 +83,14 @@ impl IntelContext {
 /// Generic output from intel units
 #[derive(Debug, Clone)]
 pub(crate) struct IntelOutput {
-    /// Unit name for tracing/logging
     pub unit_name: String,
-
-    /// Raw output data (JSON value)
     pub data: serde_json::Value,
-
-    /// Confidence score (0.0 to 1.0)
     pub confidence: f64,
-
-    /// Whether fallback was used instead of model output
     pub fallback_used: bool,
-
-    /// Error message if fallback was used
     pub fallback_reason: Option<String>,
 }
 
 impl IntelOutput {
-    /// Create successful output from model
     pub fn success(unit_name: &str, data: serde_json::Value, confidence: f64) -> Self {
         Self {
             unit_name: unit_name.to_string(),
@@ -115,38 +101,32 @@ impl IntelOutput {
         }
     }
 
-    /// Create fallback output when model fails
     pub fn fallback(unit_name: &str, data: serde_json::Value, reason: &str) -> Self {
         Self {
             unit_name: unit_name.to_string(),
             data,
-            confidence: 0.5, // Neutral confidence for fallback
+            confidence: 0.5,
             fallback_used: true,
             fallback_reason: Some(reason.to_string()),
         }
     }
 
-    /// Get a field from the output data
     pub fn get(&self, key: &str) -> Option<&serde_json::Value> {
         self.data.get(key)
     }
 
-    /// Get a string field from the output data
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.data.get(key).and_then(|v| v.as_str())
     }
 
-    /// Get a bool field from the output data
     pub fn get_bool(&self, key: &str) -> Option<bool> {
         self.data.get(key).and_then(|v| v.as_bool())
     }
 
-    /// Get a f64 field from the output data
     pub fn get_f64(&self, key: &str) -> Option<f64> {
         self.data.get(key).and_then(|v| v.as_f64())
     }
 
-    /// Check if output contains standard fields (label or choice)
     pub fn is_standard_format(&self) -> bool {
         self.get("label").is_some() || self.get("choice").is_some()
     }
@@ -168,29 +148,22 @@ impl Default for IntelOutput {
 
 /// Common interface for all intel units
 pub(crate) trait IntelUnit: Send + Sync {
-    /// Unit name for tracing/logging
     fn name(&self) -> &'static str;
-
-    /// Profile configuration for this unit
     fn profile(&self) -> &Profile;
 
-    /// Pre-flight validation (context, inputs)
-    /// Default implementation always succeeds (units can override).
+    /// Pre-flight validation (context, inputs). Default always succeeds.
     fn pre_flight(&self, _context: &IntelContext) -> Result<()> {
         Ok(())
     }
 
-    /// Execute the intel unit (model call)
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput>;
 
-    /// Post-flight verification (output validation)
-    /// Default implementation always succeeds (units can override).
+    /// Post-flight verification. Default always succeeds.
     fn post_flight(&self, _output: &IntelOutput) -> Result<()> {
         Ok(())
     }
 
-    /// Fallback when execute() or post_flight() fails
-    /// Default implementation returns generic fallback (units SHOULD override).
+    /// Fallback on failure. Units SHOULD override.
     fn fallback(&self, context: &IntelContext, error: &str) -> Result<IntelOutput> {
         trace_fallback(self.name(), error);
         Ok(IntelOutput::fallback(
@@ -200,8 +173,7 @@ pub(crate) trait IntelUnit: Send + Sync {
         ))
     }
 
-    /// Execute with automatic fallback handling
-    /// Returns Ok(output) in all cases (fallback ensures success).
+    /// Execute with automatic fallback. Always returns Ok.
     async fn execute_with_fallback(&self, context: &IntelContext) -> Result<IntelOutput> {
         if let Err(error) = self.pre_flight(context) {
             trace_verbose(
@@ -213,7 +185,6 @@ pub(crate) trait IntelUnit: Send + Sync {
         self.execute_and_verify(context).await
     }
 
-    /// Internal: execute model call and verify post-flight
     async fn execute_and_verify(&self, context: &IntelContext) -> Result<IntelOutput> {
         match self.execute(context).await {
             Ok(output) => self.verify_or_fallback(output, context).await,
@@ -227,7 +198,6 @@ pub(crate) trait IntelUnit: Send + Sync {
         }
     }
 
-    /// Internal: run post-flight verification, fallback on failure
     async fn verify_or_fallback(
         &self,
         output: IntelOutput,
@@ -248,7 +218,6 @@ pub(crate) trait IntelUnit: Send + Sync {
 // Specialized Output Types
 // ============================================================================
 
-/// Shared helper: extract two bool fields from IntelOutput
 fn extract_bool_fields(output: &IntelOutput, a: &str, b: &str) -> (bool, bool) {
     (
         output.get_bool(a).unwrap_or(false),
@@ -256,7 +225,6 @@ fn extract_bool_fields(output: &IntelOutput, a: &str, b: &str) -> (bool, bool) {
     )
 }
 
-/// Shared helper: build a test ProbabilityDecision
 #[cfg(test)]
 fn test_prob_decision(choice: &str) -> ProbabilityDecision {
     ProbabilityDecision {
@@ -268,7 +236,6 @@ fn test_prob_decision(choice: &str) -> ProbabilityDecision {
     }
 }
 
-/// Specialized output for complexity assessment
 #[derive(Debug, Clone)]
 pub(crate) struct ComplexityOutput {
     pub assessment: ComplexityAssessment,
@@ -288,7 +255,6 @@ impl ComplexityOutput {
     }
 }
 
-/// Specialized output for evidence needs assessment
 #[derive(Debug, Clone)]
 pub(crate) struct EvidenceNeedsOutput {
     pub needs_evidence: bool,
@@ -310,7 +276,6 @@ impl EvidenceNeedsOutput {
     }
 }
 
-/// Specialized output for action needs assessment
 #[derive(Debug, Clone)]
 pub(crate) struct ActionNeedsOutput {
     pub needs_decision: bool,
@@ -332,7 +297,6 @@ impl ActionNeedsOutput {
     }
 }
 
-/// Specialized output for pattern suggestion
 #[derive(Debug, Clone)]
 pub(crate) struct PatternSuggestionOutput {
     pub suggested_pattern: String,
@@ -354,12 +318,10 @@ impl PatternSuggestionOutput {
     }
 }
 
-/// Trace fallback usage for metrics
 pub(crate) fn trace_fallback(unit_name: &str, error: &str) {
     eprintln!("[INTEL_FALLBACK] unit={} error={}", unit_name, error);
 }
 
-/// Trace verbose output (only when verbose mode enabled)
 fn trace_verbose(verbose: bool, message: &str) {
     if verbose {
         eprintln!("[INTEL_VERBOSE] {}", message);
@@ -574,13 +536,10 @@ mod tests {
     #[test]
     fn test_intel_output_field_accessors() {
         let data = serde_json::json!({
-            "complexity": "DIRECT",
-            "risk": "LOW",
-            "needs_evidence": false,
-            "confidence": 0.95
+            "complexity": "DIRECT", "risk": "LOW",
+            "needs_evidence": false, "confidence": 0.95
         });
         let output = IntelOutput::success("test_unit", data, 0.9);
-
         assert_eq!(output.get_str("complexity"), Some("DIRECT"));
         assert_eq!(output.get_str("risk"), Some("LOW"));
         assert_eq!(output.get_bool("needs_evidence"), Some(false));
@@ -601,7 +560,6 @@ mod tests {
             workflow: pd("CHAT"),
             mode: pd("INSPECT"),
         };
-
         let client = reqwest::Client::new();
         let context = IntelContext::new(
             "test message".to_string(),
@@ -611,17 +569,15 @@ mod tests {
             vec![],
             client.clone(),
         );
-
         assert_eq!(context.user_message, "test message");
         assert_eq!(context.route_decision.route, "CHAT");
         assert!(context.complexity.is_none());
 
-        let context_with_complexity = context.with_complexity(ComplexityAssessment {
+        let ctx = context.with_complexity(ComplexityAssessment {
             complexity: "DIRECT".to_string(),
             risk: "LOW".to_string(),
             ..ComplexityAssessment::default()
         });
-
-        assert!(context_with_complexity.complexity.is_some());
+        assert!(ctx.complexity.is_some());
     }
 }

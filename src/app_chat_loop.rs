@@ -1,4 +1,5 @@
 //! @efficiency-role: service-orchestrator
+//!
 //! App Chat - Main Chat Loop Orchestration
 
 use crate::app::*;
@@ -18,46 +19,42 @@ async fn apply_policy_fallback(
     line: &str,
     route_decision: &RouteDecision,
     ladder: &ExecutionLadderAssessment,
-    complexity: &ComplexityAssessment,
-    scope: &ScopePlan,
-    formula: &FormulaSelection,
-    workflow_plan: &Option<WorkflowPlannerOutput>,
+    _complexity: &ComplexityAssessment,
+    _scope: &ScopePlan,
+    _formula: &FormulaSelection,
+    _workflow_plan: &Option<WorkflowPlannerOutput>,
     program: &mut Program,
 ) {
     let Some(path) = extract_first_path_from_user_text(line) else {
         return;
     };
-    let new_program = match ladder.level {
+    let fallback: Option<(&str, fn(&str, &str) -> Program)> = match ladder.level {
         ExecutionLevel::Plan => {
             if request_looks_like_logging_standardization(line) {
-                trace(
-                    &runtime.args,
-                    &format!("logging_standardization_plan_policy_fallback path={path}"),
-                );
-                Some(build_logging_standardization_plan_program(line, &path))
+                Some((
+                    "logging_standardization_plan_policy_fallback",
+                    build_logging_standardization_plan_program,
+                ))
             } else if request_looks_like_workflow_endurance_audit(line) {
-                trace(
-                    &runtime.args,
-                    &format!("workflow_endurance_plan_policy_fallback path={path}"),
-                );
-                Some(build_workflow_endurance_audit_plan_program(line, &path))
+                Some((
+                    "workflow_endurance_plan_policy_fallback",
+                    build_workflow_endurance_audit_plan_program,
+                ))
             } else if request_looks_like_architecture_audit(line) {
-                trace(
-                    &runtime.args,
-                    &format!("architecture_audit_plan_policy_fallback path={path}"),
-                );
-                Some(build_architecture_audit_plan_program(line, &path))
+                Some((
+                    "architecture_audit_plan_policy_fallback",
+                    build_architecture_audit_plan_program,
+                ))
             } else {
                 None
             }
         }
         ExecutionLevel::MasterPlan => {
             if request_looks_like_hybrid_audit_masterplan(line) {
-                trace(
-                    &runtime.args,
-                    &format!("hybrid_masterplan_policy_fallback path={path}"),
-                );
-                Some(build_hybrid_audit_masterplan_program(line, &path))
+                Some((
+                    "hybrid_masterplan_policy_fallback",
+                    build_hybrid_audit_masterplan_program,
+                ))
             } else {
                 None
             }
@@ -65,39 +62,33 @@ async fn apply_policy_fallback(
         _ => {
             if route_decision.route.eq_ignore_ascii_case("SHELL") {
                 if looks_like_natural_language_edit_request(line) {
-                    trace(
-                        &runtime.args,
-                        &format!("edit_path_probe_policy_fallback path={path}"),
-                    );
-                    Some(build_edit_path_probe_program(line, &path))
+                    Some((
+                        "edit_path_probe_policy_fallback",
+                        build_edit_path_probe_program,
+                    ))
                 } else {
-                    trace(
-                        &runtime.args,
-                        &format!("shell_path_probe_policy_fallback path={path}"),
-                    );
-                    Some(build_shell_path_probe_program(line, &path))
+                    Some((
+                        "shell_path_probe_policy_fallback",
+                        build_shell_path_probe_program,
+                    ))
                 }
             } else if route_decision.route.eq_ignore_ascii_case("DECIDE") {
                 if request_looks_like_scoped_list_request(line) {
-                    trace(
-                        &runtime.args,
-                        &format!("shell_list_policy_fallback path={path}"),
-                    );
-                    Some(build_shell_path_probe_program(line, &path))
+                    Some(("shell_list_policy_fallback", build_shell_path_probe_program))
                 } else {
-                    trace(
-                        &runtime.args,
-                        &format!("decide_path_probe_policy_fallback path={path}"),
-                    );
-                    Some(build_decide_path_probe_program(line, &path))
+                    Some((
+                        "decide_path_probe_policy_fallback",
+                        build_decide_path_probe_program,
+                    ))
                 }
             } else {
                 None
             }
         }
     };
-    if let Some(p) = new_program {
-        *program = p;
+    if let Some((tag, builder)) = fallback {
+        trace(&runtime.args, &format!("{tag} path={path}"));
+        *program = builder(line, &path);
     }
 }
 
@@ -106,47 +97,52 @@ async fn handle_chat_command(runtime: &mut AppRuntime, line: &str) -> Result<boo
     if line.is_empty() {
         return Ok(true);
     }
+    macro_rules! handled {
+        () => {
+            Ok(true)
+        };
+    }
     match line {
         "/exit" | "/quit" => Ok(false),
         "/reset" => {
             runtime.messages.truncate(1);
             eprintln!("(history reset)");
-            Ok(true)
+            handled!()
         }
         "/snapshot" => {
             handle_manual_snapshot(runtime)?;
-            Ok(true)
+            handled!()
         }
         "/tune" => {
             handle_runtime_tune(runtime).await?;
-            Ok(true)
+            handled!()
         }
         "/goals" => {
             handle_show_goals(runtime)?;
-            Ok(true)
+            handled!()
         }
         "/reset-goals" => {
             runtime.goal_state.clear();
             eprintln!("(goals reset)");
-            Ok(true)
+            handled!()
         }
         "/tools" => {
             handle_discover_tools(runtime)?;
-            Ok(true)
+            handled!()
         }
         "/verbose" => {
             runtime.verbose = !runtime.verbose;
             eprintln!("(verbose {})", if runtime.verbose { "on" } else { "off" });
-            Ok(true)
+            handled!()
         }
         _ => {
             if let Some(id) = line.strip_prefix("/rollback") {
                 handle_manual_rollback(runtime, id.trim())?;
-                return Ok(true);
+                return handled!();
             }
             if let Some(a) = line.strip_prefix("/api") {
                 handle_api_config(runtime, a)?;
-                return Ok(true);
+                return handled!();
             }
             Ok(true)
         }
@@ -207,14 +203,12 @@ fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) {
         return;
     };
     let cmd = format!(
-        "ls -R '{}' | head -n 100; echo '---'; file -b '{}'/* 2>/dev/null | head -n 10",
-        path, path
+        "ls -R '{path}' | head -n 100; echo '---'; file -b '{path}'/* 2>/dev/null | head -n 10"
     );
     let output = crate::workspace::cmd_out(&cmd, &std::path::PathBuf::from("."));
     if !output.trim().is_empty() {
         runtime.ws = format!(
-            "### GROUNDED WORKSPACE DISCOVERY ({})\n{}\n\n{}",
-            path,
+            "### GROUNDED WORKSPACE DISCOVERY ({path})\n{}\n\n{}",
             output.trim(),
             runtime.ws
         );
@@ -222,20 +216,22 @@ fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) {
 }
 
 fn trace_workflow_plan(args: &Args, plan: &WorkflowPlannerOutput) {
-    let obj = plan.objective.trim();
-    let obj = if obj.is_empty() { "-" } else { obj };
-    let cpx = plan.complexity.trim();
-    let cpx = if cpx.is_empty() { "-" } else { cpx };
-    let risk = plan.risk.trim();
-    let risk = if risk.is_empty() { "-" } else { risk };
+    fn fmt(s: &str) -> &str {
+        let s = s.trim();
+        if s.is_empty() {
+            "-"
+        } else {
+            s
+        }
+    }
     trace(
         args,
         &format!(
             "workflow_planner objective={} complexity={} risk={} reason={}",
-            obj,
-            cpx,
-            risk,
-            plan.reason.trim()
+            fmt(&plan.objective),
+            fmt(&plan.complexity),
+            fmt(&plan.risk),
+            fmt(&plan.reason),
         ),
     );
 }
@@ -246,8 +242,11 @@ fn apply_shape_fallbacks(
     ladder: &ExecutionLadderAssessment,
     program: &mut Program,
 ) {
-    let try_path = |line: &str| extract_first_path_from_user_text(line);
-    if ladder.level == ExecutionLevel::MasterPlan
+    let try_path = || extract_first_path_from_user_text(line);
+    let is_plan = ladder.level == ExecutionLevel::Plan;
+    let is_master = ladder.level == ExecutionLevel::MasterPlan;
+
+    if is_master
         && request_looks_like_hybrid_audit_masterplan(line)
         && !program.steps.iter().any(|s| {
             matches!(
@@ -256,7 +255,7 @@ fn apply_shape_fallbacks(
             )
         })
     {
-        if let Some(path) = try_path(line) {
+        if let Some(path) = try_path() {
             trace(
                 &runtime.args,
                 &format!("hybrid_masterplan_shape_fallback path={path}"),
@@ -264,8 +263,8 @@ fn apply_shape_fallbacks(
             *program = build_hybrid_audit_masterplan_program(line, &path);
         }
     }
-    if ladder.level == ExecutionLevel::Plan && request_looks_like_logging_standardization(line) {
-        if let Some(path) = try_path(line) {
+    if is_plan && request_looks_like_logging_standardization(line) {
+        if let Some(path) = try_path() {
             trace(
                 &runtime.args,
                 &format!("logging_standardization_plan_shape_fallback path={path}"),
@@ -273,8 +272,8 @@ fn apply_shape_fallbacks(
             *program = build_logging_standardization_plan_program(line, &path);
         }
     }
-    if ladder.level == ExecutionLevel::Plan && request_looks_like_workflow_endurance_audit(line) {
-        if let Some(path) = try_path(line) {
+    if is_plan && request_looks_like_workflow_endurance_audit(line) {
+        if let Some(path) = try_path() {
             trace(
                 &runtime.args,
                 &format!("workflow_endurance_plan_shape_fallback path={path}"),
@@ -282,11 +281,11 @@ fn apply_shape_fallbacks(
             *program = build_workflow_endurance_audit_plan_program(line, &path);
         }
     }
-    if ladder.level == ExecutionLevel::Plan
+    if is_plan
         && request_looks_like_architecture_audit(line)
         && !program.steps.iter().any(|s| matches!(s, Step::Plan { .. }))
     {
-        if let Some(path) = try_path(line) {
+        if let Some(path) = try_path() {
             trace(
                 &runtime.args,
                 &format!("architecture_audit_plan_shape_fallback path={path}"),
@@ -311,16 +310,17 @@ async fn run_reflection_loop(
     formula: &FormulaSelection,
     rephrased_objective: &str,
 ) -> Program {
-    let is_trivial_chat = route_decision.route.eq_ignore_ascii_case("CHAT")
+    let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
         && formula.primary.eq_ignore_ascii_case("reply_only");
-    if is_trivial_chat {
+    if is_trivial {
         return program;
     }
+
     let features = ClassificationFeatures::from(route_decision);
-    let mut temp = runtime.profiles.orchestrator_cfg.temperature;
-    let (mut program, mut attempts) = (program, 0u32);
+    let (mut program, mut attempts, mut temp) =
+        (program, 0u32, runtime.profiles.orchestrator_cfg.temperature);
     while attempts < 3 {
-        match reflect_on_program(
+        let result = reflect_on_program(
             &runtime.client,
             &runtime.chat_url,
             &runtime.profiles.reflection_cfg,
@@ -329,8 +329,8 @@ async fn run_reflection_loop(
             &runtime.ws,
             rephrased_objective,
         )
-        .await
-        {
+        .await;
+        let ok = match result {
             Ok(r) => {
                 trace(
                     &runtime.args,
@@ -357,49 +357,36 @@ async fn run_reflection_loop(
                         &format!("reflection_warnings={:?}", r.concerns),
                     );
                 }
-                if r.confidence_score >= 0.51 {
-                    break;
-                }
-                attempts += 1;
-                if attempts < 3 {
-                    temp = (temp + 0.2).min(0.8);
-                    trace(&runtime.args, &format!("program_regenerate orchestrator_temp={} reason=reflection_confidence_below_51_percent", temp));
-                    program = build_program_with_temp(
-                        runtime,
-                        line,
-                        route_decision,
-                        workflow_plan,
-                        complexity,
-                        scope,
-                        formula,
-                        temp,
-                    )
-                    .await;
-                } else {
-                    trace(
-                        &runtime.args,
-                        "reflection_max_attempts_reached proceeding_with_low_confidence_program",
-                    );
-                }
+                r.confidence_score >= 0.51
             }
             Err(e) => {
                 trace_verbose(runtime.verbose, &format!("reflection_failed error={}", e));
-                attempts += 1;
-                if attempts < 3 {
-                    temp = (temp + 0.2).min(0.8);
-                    program = build_program_with_temp(
-                        runtime,
-                        line,
-                        route_decision,
-                        workflow_plan,
-                        complexity,
-                        scope,
-                        formula,
-                        temp,
-                    )
-                    .await;
-                }
+                false
             }
+        };
+        if ok {
+            break;
+        }
+        attempts += 1;
+        if attempts < 3 {
+            temp = (temp + 0.2).min(0.8);
+            trace(&runtime.args, &format!("program_regenerate orchestrator_temp={temp} reason=reflection_confidence_below_51_percent"));
+            program = build_program_with_temp(
+                runtime,
+                line,
+                route_decision,
+                workflow_plan,
+                complexity,
+                scope,
+                formula,
+                temp,
+            )
+            .await;
+        } else {
+            trace(
+                &runtime.args,
+                "reflection_max_attempts_reached proceeding_with_low_confidence_program",
+            );
         }
     }
     program
@@ -428,7 +415,6 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         try_workspace_discovery(runtime, line);
 
         let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
-        // Task 014: Use new function with confidence fallback
         let (workflow_plan, ladder, complexity, scope, formula, planner_fallback_used) =
             derive_planning_prior_with_ladder(
                 &runtime.client,
@@ -447,19 +433,16 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 &runtime.messages,
             )
             .await;
+        let src = if planner_fallback_used {
+            "fallback_chain"
+        } else {
+            "ladder_assessment"
+        };
         trace(
             &runtime.args,
-            &format!(
-                "planning_source={} ladder_level={:?}",
-                if planner_fallback_used {
-                    "fallback_chain"
-                } else {
-                    "ladder_assessment"
-                },
-                ladder.level
-            ),
+            &format!("planning_source={src} ladder_level={:?}", ladder.level),
         );
-        if let Some(plan) = workflow_plan.as_ref() {
+        if let Some(plan) = &workflow_plan {
             trace_workflow_plan(&runtime.args, plan);
         }
         trace_complexity(&runtime.args, &complexity);
@@ -481,7 +464,6 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         )
         .await
         .unwrap_or(None);
-
         if hierarchy_goal.is_some() {
             trace_verbose(runtime.verbose, "hierarchy_decomposition=triggered");
         }
@@ -510,25 +492,24 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         show_process_step_verbose(
             runtime.verbose,
             "PLAN",
-            &format!("{} → {} steps", complexity.complexity, program.steps.len()),
+            &format!("{} -> {} steps", complexity.complexity, program.steps.len()),
         );
-        let guards_enabled = !runtime.args.disable_guards;
-        if apply_capability_guard(&mut program, &route_decision, guards_enabled) {
+        if apply_capability_guard(&mut program, &route_decision, !runtime.args.disable_guards) {
             trace_verbose(runtime.verbose, "guard=capability_reply_only");
         }
 
-        let formula_level_error = validate_formula_level(&formula, ladder.level).err();
-        let program_level_error = program_matches_level(&program, ladder.level).err();
-        let evidence_level_error =
-            validate_evidence_requirements(&program, &route_decision, &complexity, &formula).err();
-        if let Some(policy_reason) = formula_level_error
-            .or(program_level_error)
-            .or(evidence_level_error)
-        {
+        let policy_err = validate_formula_level(&formula, ladder.level)
+            .err()
+            .or_else(|| program_matches_level(&program, ladder.level).err())
+            .or_else(|| {
+                validate_evidence_requirements(&program, &route_decision, &complexity, &formula)
+                    .err()
+            });
+        if let Some(reason) = policy_err {
             trace(
                 &runtime.args,
                 &format!(
-                    "program_policy_mismatch level={:?} reason={policy_reason}",
+                    "program_policy_mismatch level={:?} reason={reason}",
                     ladder.level
                 ),
             );
@@ -544,14 +525,13 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 &mut program,
             )
             .await;
-
-            if let Some(recheck_reason) = program_matches_level(&program, ladder.level)
+            let recheck = program_matches_level(&program, ladder.level)
                 .err()
                 .or_else(|| {
                     validate_evidence_requirements(&program, &route_decision, &complexity, &formula)
                         .err()
-                })
-            {
+                });
+            if let Some(recheck_reason) = recheck {
                 operator_trace(&runtime.args, "repairing the workflow plan");
                 if let Ok(recovered) = recover_program_once(
                     &runtime.client,
@@ -593,7 +573,6 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         }
 
         apply_shape_fallbacks(runtime, line, &ladder, &mut program);
-
         program = run_reflection_loop(
             runtime,
             program,
@@ -607,10 +586,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         )
         .await;
 
-        // For CHAT+reply_only, skip retry loop entirely - just execute the simple reply program
-        let mut loop_outcome = if route_decision.route.eq_ignore_ascii_case("CHAT")
-            && formula.primary.eq_ignore_ascii_case("reply_only")
-        {
+        let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
+            && formula.primary.eq_ignore_ascii_case("reply_only");
+        let mut loop_outcome = if is_trivial {
             AutonomousLoopOutcome {
                 program: program.clone(),
                 step_results: vec![],
