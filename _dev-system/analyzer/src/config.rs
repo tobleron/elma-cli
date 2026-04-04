@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 pub struct EfficiencyConfig {
@@ -68,6 +69,8 @@ pub struct Profile {
 pub struct TaxonomyRole {
     pub multiplier: f64,
     pub desc: Option<String>,
+    #[serde(default)]
+    pub preferred_loc: Option<usize>,
 }
 
 fn default_map_tree_bool() -> bool {
@@ -103,6 +106,22 @@ fn default_map_scope() -> String {
 impl EfficiencyConfig {
     /// Load configuration from the default path
     pub fn load() -> Result<Self> {
+        let mut candidates = vec![PathBuf::from("../config/efficiency.json")];
+
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.push(cwd.join("_dev-system/config/efficiency.json"));
+        }
+
+        candidates.push(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../config/efficiency.json"),
+        );
+
+        for candidate in candidates {
+            if candidate.exists() {
+                return Self::load_from(&candidate.to_string_lossy());
+            }
+        }
+
         Self::load_from("../config/efficiency.json")
     }
 

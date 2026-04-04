@@ -370,90 +370,60 @@ pub(crate) fn build_orchestrator_user_content(
     let features = ClassificationFeatures::from(route_decision);
 
     // Determine entropy warning level
-    let entropy_warning = if features.entropy < 0.05 {
-        "⚠️ EXTREMELY LOW - Classifier is over-confident. Probabilities have been adjusted to encourage alternative reasoning."
-    } else if features.entropy < 0.1 {
-        "⚠️ LOW - Classifier may be over-confident. Consider alternative interpretations."
+    let entropy_warning = if features.entropy < 0.1 {
+        "LOW (confident)"
     } else if features.entropy < 0.5 {
-        "📊 MODERATE - Some uncertainty. Use your judgment."
+        "MODERATE"
     } else {
-        "🔍 HIGH - Classifier is uncertain. Rely on your reasoning."
+        "HIGH (uncertain)"
     };
 
-    // Build classification features section with autonomy guidance
-    let classification_section = format!(
-        "## Classification Features (SOFT EVIDENCE - Not Hard Rules)\n\n\
-         These probabilities are signals from a classifier, NOT deterministic rules.\n\
-         You should reason about the actual user request and override these priors when appropriate.\n\n\
-         **Speech Act Probabilities:** {}\n\
-         **Workflow Probabilities:** {}\n\
-         **Mode Probabilities:** {}\n\
-         **Route Probabilities:** {}\n\
-         **Classification Entropy:** {:.2} - {}\n\
-         **Suggested Route:** {} (treat as a suggestion, not a command)\n\n\
-         **AUTONOMY RULE:** If the user's actual request clearly requires a different approach \
-         than what the priors suggest, follow the user's request. These priors are here to help, \
-         not to constrain your reasoning.\n\n",
-        format_route_distribution(&features.speech_act_probs),
-        format_route_distribution(&features.workflow_probs),
-        format_route_distribution(&features.mode_probs),
-        format_route_distribution(&features.route_probs),
+    // Compact classification signal
+    let classification_signal = format!(
+        "ROUTE PRIOR: {} (entropy={:.2} {})\nSPEECH_ACT: {}\nWORKFLOW: {}\nMODE: {}\n",
+        features.suggested_route,
         features.entropy,
         entropy_warning,
-        features.suggested_route
+        features.speech_act_probs.first().map(|(l, p)| format!("{} ({:.2})", l, p)).unwrap_or_default(),
+        features.workflow_probs.first().map(|(l, p)| format!("{} ({:.2})", l, p)).unwrap_or_default(),
+        features.mode_probs.first().map(|(l, p)| format!("{} ({:.2})", l, p)).unwrap_or_default(),
     );
 
-    // Build available tools section
-    let tools_section = tool_registry.format_tools_for_prompt();
-
-    // Build formula section with scores
-    let formula_section = format!(
-        "## Formula Pattern\n\n\
-         **Selected Formula:** {}\n\
-         **Intent:** {}\n\
-         **Expected Steps:** {:?}\n\
-         **Cost Score:** {} (1-10, lower = cheaper)\n\
-         **Value Score:** {} (1-10, higher = more thorough)\n\
-         **Efficiency Ratio:** {:.2} (value / cost)\n\
-         **Selection Reason:** {}\n\n\
-         **INSTRUCTION:** Generate program steps that match this formula pattern.\n\
-         Use available tools from the tool registry to implement each step.\n\
-         For example, if formula is 'inspect_reply', use read/search/workspace_tree tools for inspection,\n\
-         then use reply tool to present findings.\n\n",
+    // Compact formula section
+    let formula_signal = format!(
+        "FORMULA: {} (intent: {})\nPLAN_STEPS: {:?}\nREASON: {}\n",
         formula_selection.formula,
         FormulaPattern::by_name(&formula_selection.formula)
             .map(|f| f.intent)
             .unwrap_or("Execute task"),
         formula_selection.scores.expected_steps,
-        formula_selection.scores.cost_score,
-        formula_selection.scores.value_score,
-        formula_selection.scores.efficiency_ratio,
         formula_selection.reason
     );
 
+    // Compact priors
+    let priors_signal = format!(
+        "COMPLEXITY: {} (risk={})\nSCOPE: {}\n",
+        complexity.complexity,
+        complexity.risk,
+        scope.objective
+    );
+
+    // AUTONOMY RULE: Override priors if they contradict the user's clear request.
+    let autonomy_rule = "AUTONOMY: Use the above priors as guidance, but override them if they contradict the user's explicit request.\n";
+
     format!(
-        "User message:\n{line}\n\n{}\
-         {}\n\n\
-         {}\n\n\
-         Workflow planner prior:\n{}\n\n\
-         Complexity prior:\n{}\n\n\
-         Scope prior:\n{}\n\n\
-         Formula prior:\n{}\n\n\
-         Workspace facts:\n{}\n\n\
-         Workspace brief:\n{}\n\n\
-         Conversation so far (most recent last):\n{}",
-        classification_section,
-        tools_section,
-        formula_section,
-        workflow_plan
-            .map(|plan| serde_json::to_string_pretty(plan).unwrap_or_else(|_| "{}".to_string()))
-            .unwrap_or_else(|| "null".to_string()),
-        serde_json::to_string_pretty(complexity).unwrap_or_else(|_| "{}".to_string()),
-        serde_json::to_string_pretty(scope).unwrap_or_else(|_| "{}".to_string()),
-        serde_json::to_string_pretty(formula).unwrap_or_else(|_| "{}".to_string()),
-        ws.trim(),
-        ws_brief.trim(),
-        conversation_excerpt(messages, 12)
+        "USER MESSAGE: {line}\n\n\
+         {autonomy_rule}\
+         {classification_signal}\n\
+         BUILTIN TOOLS:\n- shell: Execute shell commands\n- read: Read file contents\n- search: Search with ripgrep\n- edit: Edit files\n- select: Select items from list\n- reply: Respond to user\n\n\
+         {formula_signal}\
+         {priors_signal}\n\
+         WORKSPACE FACTS (TRUNCATED):\n{}\n\n\
+         WORKSPACE BRIEF (TRUNCATED):\n{}\n\n\
+         CONVERSATION EXCERPT:\n{}",
+        ws.chars().take(6000).collect::<String>().trim(),
+        ws_brief.chars().take(500).collect::<String>().trim(),
+        conversation_excerpt(messages, 4)
     )
 }
 

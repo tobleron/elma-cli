@@ -52,7 +52,7 @@ impl ExecutionStrategy {
     pub fn hint(&self) -> &'static str {
         match self {
             ExecutionStrategy::Direct => "Use the most straightforward approach.",
-            ExecutionStrategy::InspectFirst => "First gather evidence, then propose action.",
+            ExecutionStrategy::InspectFirst => "Gather evidence first using 1-2 SIMPLE shell commands (ls, rg, cat). Avoid complex pipes or jq logic in early steps. Propose action ONLY after seeing results.",
             ExecutionStrategy::PlanThenExecute => "Create a detailed plan before acting.",
             ExecutionStrategy::SafeMode => "Start with dry-run/preview, then execute.",
             ExecutionStrategy::Incremental => "Break into small verifiable steps.",
@@ -161,6 +161,11 @@ fn select_primary_strategy(
     // High risk → SafeMode
     if complexity.risk == "HIGH" {
         return ExecutionStrategy::SafeMode;
+    }
+
+    // Selection tasks → InspectFirst
+    if route_decision.route.eq_ignore_ascii_case("SELECT") {
+        return ExecutionStrategy::InspectFirst;
     }
 
     // Complex tasks → PlanThenExecute or InspectFirst
@@ -338,7 +343,8 @@ User request: {}
 Objective: {}
 Formula: {}
 
-Generate a program that follows this strategy."#,
+Output ONLY valid Program JSON that follows this strategy and satisfies the objective. 
+A Program JSON must contain a "steps" array of objects with "id", "type", "cmd" (for shell/search), "instructions" (for read/reply), and "purpose"."#,
         orchestrator_cfg.system_prompt,
         strategy,
         strategy_hint,

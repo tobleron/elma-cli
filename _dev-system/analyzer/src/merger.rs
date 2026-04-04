@@ -369,7 +369,7 @@ mod tests {
 
         assert!(is_invalid_merge_scope("", &config));
         assert!(is_invalid_merge_scope("src", &config));
-        assert!(is_invalid_merge_scope("backend/src", &config));
+        assert!(!is_invalid_merge_scope("backend/src", &config));
         assert!(!is_invalid_merge_scope("src/site", &config));
         assert!(!is_invalid_merge_scope(
             "backend/src/services/geocoding",

@@ -239,12 +239,36 @@ pub struct FormulaSelectionResult {
     pub efficiency_priority: f32,
 }
 
-/// Select optimal formula based on complexity and efficiency priority
+/// Select optimal formula based on complexity, risk, route, and efficiency priority
 pub fn select_optimal_formula(
     complexity: &str,
     risk: &str,
+    route: &str,
     efficiency_priority: f32, // 0.0 = quality focused, 1.0 = speed focused
 ) -> FormulaSelectionResult {
+    // Task: SELECT route must use evidence-gathering for choices
+    if route.eq_ignore_ascii_case("SELECT") {
+        return FormulaSelectionResult {
+            formula: "inspect_decide_reply".to_string(),
+            scores: FormulaScores {
+                formula: "inspect_decide_reply".to_string(),
+                cost_score: 5,
+                expected_steps: 3,
+                expected_tokens: 1000,
+                expected_time_sec: 15,
+                value_score: 8,
+                completeness_score: 8,
+                accuracy_score: 8,
+                risk_score: 3,
+                verification_level: 6,
+                error_potential: 3,
+                efficiency_ratio: 1.6,
+            },
+            reason: "SELECT route requires grounded evidence before decision".to_string(),
+            efficiency_priority,
+        };
+    }
+
     let all_scores = FormulaScores::defaults();
 
     // Filter by complexity

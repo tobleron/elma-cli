@@ -27,7 +27,10 @@ use discovery::discover_and_analyze;
 use flusher::flush_plans;
 use merger::{detect_merge_candidates, detect_recursive_clusters};
 use task_generator::{sync_all_architectural_tasks, WorkUnit};
-use utils::{get_drag_target, normalize_repo_relative_path};
+use utils::{
+    drag_trigger_min_loc_for_taxonomy, get_drag_target, normalize_repo_relative_path,
+    preferred_loc_for_taxonomy, working_band_for_taxonomy,
+};
 use verification::VerificationBundle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -265,6 +268,7 @@ fn generate_work_units(
                     platform: platform.clone(),
                     complexity: 0.0,
                     recommended_splits: 1,
+                    taxonomy: taxonomy.clone(),
                     verification: None,
                 });
         }
@@ -298,22 +302,27 @@ fn generate_work_units(
                 );
 
                 match trigger {
-                    SurgicalTrigger::DragRisk if metrics.loc <= working_band_upper_loc(config) => {
+                    SurgicalTrigger::DragRisk
+                        if metrics.loc <= working_band_upper_loc(config, taxonomy) =>
+                    {
                         reason.push_str(&format!(
                             "  ⚠️ Trigger: Drag above target ({:.2}) with file already at {} LOC.",
                             drag_target, metrics.loc
                         ));
                     }
                     SurgicalTrigger::DragRisk => {
+                        let (lower, upper) = working_band_for_taxonomy(config, taxonomy);
                         reason.push_str(&format!(
-                            "  ⚠️ Trigger: Drag above target ({:.2}); keep the module within the 350-450 LOC working band if you extract helpers.",
-                            drag_target
+                            "  ⚠️ Trigger: Drag above target ({:.2}); keep the module within the preferred {}-{} LOC working band if you extract helpers.",
+                            drag_target, lower, upper
                         ));
                     }
                     SurgicalTrigger::Oversized => {
-                        reason.push_str(
-                            "  ⚠️ Trigger: Oversized beyond the preferred 350-450 LOC working band.",
-                        );
+                        let (lower, upper) = working_band_for_taxonomy(config, taxonomy);
+                        reason.push_str(&format!(
+                            "  ⚠️ Trigger: Oversized beyond the preferred {}-{} LOC working band.",
+                            lower, upper
+                        ));
                     }
                 }
 
@@ -330,7 +339,7 @@ fn generate_work_units(
                 }
 
                 let complexity = ((metrics.loc.saturating_sub(limit)) as f64 / 10.0) + drag;
-                let recommended_splits = recommended_module_count(metrics.loc, config);
+                let recommended_splits = recommended_module_count(metrics.loc, config, taxonomy);
                 let verification = spec_map.get(p_str).map(|snapshot| VerificationBundle {
                     headline: format!("Pre-split snapshot for `{}`", snapshot.path),
                     snapshots: vec![snapshot.clone()],
@@ -347,6 +356,7 @@ fn generate_work_units(
                         platform: platform.clone(),
                         complexity,
                         recommended_splits,
+                        taxonomy: taxonomy.clone(),
                         verification,
                     });
             }
@@ -425,23 +435,25 @@ fn split_threshold(limit: usize) -> usize {
     (limit as f64 * 1.25) as usize
 }
 
-fn drag_trigger_min_loc(config: &EfficiencyConfig) -> usize {
-    config
-        .settings
-        .soft_floor_loc
-        .saturating_sub(50)
-        .max(config.settings.min_extracted_module_loc)
+fn drag_trigger_min_loc(config: &EfficiencyConfig, taxonomy: &str) -> usize {
+    drag_trigger_min_loc_for_taxonomy(config, taxonomy)
 }
 
-fn working_band_upper_loc(config: &EfficiencyConfig) -> usize {
-    config.settings.soft_floor_loc + 50
+fn working_band_upper_loc(config: &EfficiencyConfig, taxonomy: &str) -> usize {
+    working_band_for_taxonomy(config, taxonomy).1
 }
 
-fn module_count_score(loc: usize, modules: usize, config: &EfficiencyConfig) -> f64 {
+fn module_count_score(
+    loc: usize,
+    modules: usize,
+    config: &EfficiencyConfig,
+    taxonomy: &str,
+) -> f64 {
     let average_loc = loc as f64 / modules as f64;
-    let center = config.settings.soft_floor_loc as f64;
-    let lower = drag_trigger_min_loc(config) as f64;
-    let upper = working_band_upper_loc(config) as f64;
+    let center = preferred_loc_for_taxonomy(config, taxonomy) as f64;
+    let (lower, upper) = working_band_for_taxonomy(config, taxonomy);
+    let lower = lower as f64;
+    let upper = upper as f64;
     let minimum_child = config.settings.min_extracted_module_loc as f64;
 
     if average_loc < minimum_child {
@@ -458,18 +470,18 @@ fn module_count_score(loc: usize, modules: usize, config: &EfficiencyConfig) -> 
     (average_loc - center).abs() * 0.5
 }
 
-fn recommended_module_count(loc: usize, config: &EfficiencyConfig) -> usize {
-    if loc <= working_band_upper_loc(config) {
+fn recommended_module_count(loc: usize, config: &EfficiencyConfig, taxonomy: &str) -> usize {
+    if loc <= working_band_upper_loc(config, taxonomy) {
         return 1;
     }
 
     let max_modules =
         ((loc as f64 / config.settings.min_extracted_module_loc as f64).ceil() as usize).max(1);
     let mut best_modules = 1usize;
-    let mut best_score = module_count_score(loc, best_modules, config);
+    let mut best_score = module_count_score(loc, best_modules, config, taxonomy);
 
     for modules in 2..=max_modules {
-        let score = module_count_score(loc, modules, config);
+        let score = module_count_score(loc, modules, config, taxonomy);
         if score < best_score {
             best_score = score;
             best_modules = modules;
@@ -600,9 +612,9 @@ fn surgical_trigger(
     }
 
     let min_loc = if has_hotspot {
-        drag_trigger_min_loc(config)
+        drag_trigger_min_loc(config, taxonomy)
     } else {
-        config.settings.soft_floor_loc
+        preferred_loc_for_taxonomy(config, taxonomy)
     };
     if is_thin_shell_drag_exempt(loc, max_nesting, density, coupling_score, config) {
         return None;
@@ -736,7 +748,7 @@ mod tests {
                 "",
                 "domain-logic",
                 "rescript",
-                380,
+                390,
                 400,
                 4.0,
                 2.4,
@@ -760,7 +772,7 @@ mod tests {
                 "",
                 "service-orchestrator",
                 "rescript",
-                410,
+                560,
                 400,
                 5.3,
                 2.4,
@@ -802,22 +814,23 @@ mod tests {
     #[test]
     fn drag_trigger_min_loc_tracks_soft_floor_with_guardrail() {
         let config = config();
-        assert_eq!(drag_trigger_min_loc(&config), 350);
+        assert_eq!(drag_trigger_min_loc(&config, "domain-logic"), 390);
+        assert_eq!(drag_trigger_min_loc(&config, "service-orchestrator"), 510);
     }
 
     #[test]
     fn recommended_module_count_keeps_medium_drag_risk_modules_in_place() {
         let config = config();
-        assert_eq!(recommended_module_count(450, &config), 1);
-        assert_eq!(recommended_module_count(500, &config), 1);
+        assert_eq!(recommended_module_count(450, &config, "domain-logic"), 1);
+        assert_eq!(recommended_module_count(500, &config, "domain-logic"), 1);
     }
 
     #[test]
     fn recommended_module_count_splits_only_when_modules_stay_near_centerline() {
         let config = config();
-        assert_eq!(recommended_module_count(700, &config), 2);
-        assert_eq!(recommended_module_count(900, &config), 2);
-        assert_eq!(recommended_module_count(1011, &config), 3);
+        assert_eq!(recommended_module_count(700, &config, "domain-logic"), 2);
+        assert_eq!(recommended_module_count(900, &config, "domain-logic"), 2);
+        assert_eq!(recommended_module_count(1011, &config, "domain-logic"), 2);
     }
 
     #[test]
@@ -944,7 +957,7 @@ mod tests {
                 "",
                 "service-orchestrator",
                 "rescript",
-                420,
+                560,
                 400,
                 4.2,
                 2.4,
@@ -1008,15 +1021,15 @@ mod tests {
             "portal-admin".to_string(),
             vec![
                 (
-                    "src/site/PortalAppAdminSurface.res".to_string(),
+                    "../../src/site/admin/PortalAppAdminSurface.res".to_string(),
                     "frontend".to_string(),
                 ),
                 (
-                    "src/site/PortalAppAdminSurfaceActions.res".to_string(),
+                    "../../src/site/actions/PortalAppAdminSurfaceActions.res".to_string(),
                     "frontend".to_string(),
                 ),
                 (
-                    "src/site/PortalAppAdminSurfaceRefresh.res".to_string(),
+                    "../../src/site/refresh/PortalAppAdminSurfaceRefresh.res".to_string(),
                     "frontend".to_string(),
                 ),
             ],

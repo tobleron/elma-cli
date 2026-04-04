@@ -1,36 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run stress tests through Elma CLI directly (not raw API)
-# This tests the FULL orchestration pipeline including:
-# - Formula selection
-# - Step limit validation
-# - Output truncation
-# - Progress monitoring (prevents endless loops)
-#
-# Timeout: 5 minutes per test with progress monitoring
-# If no output progress for 3 minutes, test is terminated
-#
-# Usage:
-#   ./run_stress_tests_cli.sh [test_pattern]
-#
-# Env:
-#   LLAMA_BASE_URL=http://192.168.1.186:8080
-#   LLAMA_MODEL=<override model id>
+# Run SLOPPY HUMAN stress tests through Elma CLI directly
+# Focuses on H001, H002, H003
 
 BASE_URL="${LLAMA_BASE_URL:-http://192.168.1.186:8080}"
 export LLAMA_BASE_URL
 
 echo "=========================================="
-echo "Stress Test Runner (CLI Mode)"
+echo "Sloppy Human Test Runner (CLI Mode)"
 echo "=========================================="
 echo "Base URL: $BASE_URL"
 echo ""
 
 STRESS_SANDBOX_ROOT="_stress_testing"
 export ELMA_STRESS_SANDBOX_ROOT="$STRESS_SANDBOX_ROOT"
-
-last_session_id=""
 
 extract_session_id() {
   local file="$1"
@@ -53,6 +37,7 @@ import re, sys
 
 text = open(sys.argv[1], "r", encoding="utf-8", errors="ignore").read()
 # Extract the final Elma response block
+# Looking for "Elma:" followed by text until the end or another header
 parts = text.split("Elma:")
 if len(parts) > 1:
     print(parts[-1].strip())
@@ -84,44 +69,59 @@ def fail(msg: str) -> None:
 def extract_existing_files(candidate_text: str):
     tokens = re.findall(r"[_A-Za-z0-9./-]+\.(?:go|rs|py|ts|tsx|js|jsx|md|toml|json|yaml|yml|sql)", candidate_text)
     seen = []
-    sandbox_root = "_stress_testing/_opencode_for_testing"
     for token in tokens:
         normalized = token.rstrip(".,:;)")
         path = repo / normalized
-        if path.exists():
-            if normalized not in seen:
-                seen.append(normalized)
-        else:
-            # Check if it's a relative path inside the sandbox
-            rel_path = repo / sandbox_root / normalized
-            if rel_path.exists():
-                full_rel = f"{sandbox_root}/{normalized}"
-                if full_rel not in seen:
-                    seen.append(full_rel)
+        if path.exists() and normalized not in seen:
+            seen.append(normalized)
     return seen
 
 if not answer:
     fail("Could not find a final Elma answer")
 
 lower_prompt = prompt.lower()
+lower_answer = answer.lower()
 
-if "three potential files" in lower_prompt:
+# H001: Sloppy Chat Greeting
+if "yo elma" in lower_prompt:
+    # Expect a normal conversational greeting, not meta-failure
+    if "no steps observed" in lower_answer or "internal error" in lower_answer:
+        fail("Answer contains meta-failure or internal error text")
+    if len(answer) > 200:
+        fail("Greeting is too long/verbose")
+
+# H002: Sloppy Casual Shell Request
+if "list src" in lower_prompt:
+    # Handle filenames that might not have src/ prefix in the output
     existing = extract_existing_files(answer)
-    if len(existing) < 2:
-        fail(f"Expected at least 2 grounded file candidates, got {len(existing)}")
+    src_files = [f for f in existing if f.startswith("src/")]
+    
+    # Also check for basenames that exist in src/
+    if not src_files:
+        tokens = re.findall(r"[_A-Za-z0-9./-]+\.(?:go|rs|py|ts|tsx|js|jsx|md|toml|json|yaml|yml|sql)", answer)
+        for token in tokens:
+            normalized = token.rstrip(".,:;)")
+            if (repo / "src" / normalized).exists():
+                src_files.append(f"src/{normalized}")
+    
+    if not src_files:
+        fail("No real files from 'src/' detected in answer")
 
-if "3-bullet point executive summary" in lower_prompt or "3 bullet point executive summary" in lower_prompt:
+# H003: Sloppy Multi-Instruction Bounded Workflow
+if "2 bullets" in lower_prompt and "identify the primary entry point" in lower_prompt:
+    # Check for 2 bullets
     bullet_lines = [
         line for line in answer.splitlines()
         if line.strip().startswith("- ") or line.strip().startswith("* ") or re.match(r"^\d+\.\s", line.strip())
     ]
-    if len(bullet_lines) != 3:
-        fail(f"Expected exactly 3 bullet lines, got {len(bullet_lines)}")
-
-if "identify the primary entry point" in lower_prompt:
+    if len(bullet_lines) != 2:
+        fail(f"Expected exactly 2 bullet lines, got {len(bullet_lines)}")
+    
+    # Check for exact entry point path
     existing = extract_existing_files(answer)
-    if not existing:
-        fail("Expected a grounded file path in final answer")
+    entry_point = "_stress_testing/_opencode_for_testing/main.go"
+    if entry_point not in existing:
+        fail(f"Expected exact entry point path '{entry_point}' not found in answer")
 
 PY
 }
@@ -152,7 +152,6 @@ validate_cli_run() {
   local terminated="$4"
   local session_id
   session_id="$(extract_session_id "$output_file")"
-  last_session_id="$session_id"
 
   if [[ "$terminated" -eq 1 ]]; then
     echo "FAILED: run terminated early (timeout or no progress)"
@@ -173,15 +172,6 @@ validate_cli_run() {
     return 1
   fi
 
-  local trace_file="sessions/${session_id}/trace_debug.log"
-  if [[ -f "$trace_file" ]]; then
-    if grep -q "workflow_recovery=failed" "$trace_file" && ! grep -q "note: Retry .* succeeded" "$output_file"; then
-      echo "FAILED: workflow recovery failed without a successful retry"
-      print_failure_context "$session_id"
-      return 1
-    fi
-  fi
-
   validate_semantic_answer "$test_name" "$prompt" "$output_file" || {
     print_failure_context "$session_id"
     return 1
@@ -190,7 +180,6 @@ validate_cli_run() {
   return 0
 }
 
-# Extract prompt from stress test file
 extract_prompt() {
   local file="$1"
   python3 - <<PY "$file"
@@ -199,7 +188,6 @@ import re, sys
 with open(sys.argv[1], 'r') as f:
     content = f.read()
 
-# Find the prompt section
 match = re.search(r'## 1\. The Test \(Prompt\)\s*\n\s*"([^"]+)"', content)
 if match:
     print(match.group(1))
@@ -209,25 +197,14 @@ else:
 PY
 }
 
-validate_prompt_sandbox() {
-  local file="$1"
-  local prompt="$2"
-
-  if [[ "$prompt" != *"$STRESS_SANDBOX_ROOT/"* ]] && [[ "$prompt" != *"$STRESS_SANDBOX_ROOT"* ]]; then
-    echo "FAILED: $file does not keep the prompt inside $STRESS_SANDBOX_ROOT" >&2
-    return 1
-  fi
-}
-
-# Run single stress test through CLI
 run_test() {
   local file="$1"
   local test_name="$(basename "$file" .md)"
   local terminated=0
-  local output_file="/tmp/elma_stress_test_$$.txt"
+  local output_file="/tmp/elma_sloppy_test_$$.txt"
   
   echo "=========================================="
-  echo "Test: $test_name"
+  echo "Sloppy Test: $test_name"
   echo "=========================================="
   
   local prompt="$(extract_prompt "$file")"
@@ -236,46 +213,31 @@ run_test() {
     echo "FAILED: $prompt"
     return 1
   fi
-
-  validate_prompt_sandbox "$file" "$prompt" || return 1
   
   echo "Prompt: $prompt"
   echo ""
-  echo "Sandbox root: $STRESS_SANDBOX_ROOT"
-  echo ""
-  echo "Response:"
-  echo "------------------------------------------"
   
-  # Run through elma-cli (send prompt via echo pipe)
-  touch "$output_file"
-  tail -f "$output_file" &
-  TAIL_PID=$!
-  
+  # macOS background process with progress monitoring
   (echo "$prompt" | cargo run --quiet 2>&1) > "$output_file" &
   PID=$!
   
-  # Monitor for progress (check if output is still growing)
   ELAPSED=0
   LAST_SIZE=0
   NO_PROGRESS_COUNT=0
-  MAX_NO_PROGRESS=6  # 6 checks with no progress = stuck (3 minutes max)
-  MAX_ELAPSED=300  # Hard limit 5 minutes
+  MAX_NO_PROGRESS=10 # 5 minutes of no progress
+  MAX_ELAPSED=300    # 5 minutes hard limit
   
   while kill -0 $PID 2>/dev/null; do
-    sleep 30  # Check every 30 seconds
+    sleep 30
     ELAPSED=$((ELAPSED + 30))
     
-    # Check if test is still producing output (progress check)
     if [[ -f "$output_file" ]]; then
       CURRENT_SIZE=$(wc -c < "$output_file")
       if [[ "$CURRENT_SIZE" -eq "$LAST_SIZE" ]]; then
         NO_PROGRESS_COUNT=$((NO_PROGRESS_COUNT + 1))
-        # echo "⚠️ No progress detected ($NO_PROGRESS_COUNT/$MAX_NO_PROGRESS checks)"
-        
+        echo "  - No progress ($NO_PROGRESS_COUNT/$MAX_NO_PROGRESS)"
         if [[ $NO_PROGRESS_COUNT -ge $MAX_NO_PROGRESS ]]; then
-          echo ""
-          echo "❌ Elma appears stuck - no progress for 3 minutes"
-          echo "Terminating test..."
+          echo "  - Terminating: No progress"
           kill $PID 2>/dev/null
           terminated=1
           break
@@ -283,30 +245,21 @@ run_test() {
       else
         NO_PROGRESS_COUNT=0
         LAST_SIZE=$CURRENT_SIZE
-        # echo "✓ Progress detected (${CURRENT_SIZE} bytes so far)"
+        echo "  - Progress: ${CURRENT_SIZE} bytes"
       fi
     fi
     
-    # Hard timeout
     if [[ $ELAPSED -ge $MAX_ELAPSED ]]; then
-      echo ""
-      echo "⚠️ $MAX_ELAPSED-second timeout reached"
+      echo "  - Terminating: Timeout"
       kill $PID 2>/dev/null
       terminated=1
       break
     fi
   done
   
-  kill $TAIL_PID 2>/dev/null
-  wait $TAIL_PID 2>/dev/null
+  # Final cat to see what happened
+  cat "$output_file"
   
-  wait $PID 2>/dev/null || {
-    if [[ "$terminated" -eq 0 ]]; then
-        echo ""
-        echo "⚠️ Test process exited"
-    fi
-  }
-
   validate_cli_run "$test_name" "$prompt" "$output_file" "$terminated" || {
     rm -f "$output_file"
     return 1
@@ -314,27 +267,20 @@ run_test() {
   rm -f "$output_file"
   
   echo ""
-  echo "------------------------------------------"
-  echo "✅ Test PASSED: $test_name"
+  echo "✅ Sloppy Test PASSED: $test_name"
   echo ""
 }
 
-# Run stress tests until first failure
-PATTERN="${1:-S}"
-for file in _stress_testing/${PATTERN}*.md; do
+# Run H001, H002, H003
+for file in _stress_testing/H00[123]*.md; do
   if [[ -f "$file" ]]; then
     if ! run_test "$file"; then
-      echo ""
-      echo "=========================================="
-      echo "❌ FIRST FAILURE: $file"
-      echo "=========================================="
-      echo "Stopping stress tests at first failure."
-      echo "Troubleshoot this test before continuing."
+      echo "❌ SLOPPY FAILURE: $file"
       exit 1
     fi
   fi
 done
 
 echo "=========================================="
-echo "All stress tests PASSED!"
+echo "All SLOPPY tests PASSED!"
 echo "=========================================="

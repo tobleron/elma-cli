@@ -76,6 +76,35 @@ pub fn get_drag_target(config: &EfficiencyConfig, path: &str) -> f64 {
     config.settings.drag_target
 }
 
+pub fn preferred_loc_for_taxonomy(config: &EfficiencyConfig, taxonomy: &str) -> usize {
+    config
+        .taxonomy
+        .get(taxonomy)
+        .and_then(|role| role.preferred_loc)
+        .unwrap_or(config.settings.soft_floor_loc)
+}
+
+pub fn working_band_for_taxonomy(
+    config: &EfficiencyConfig,
+    taxonomy: &str,
+) -> (usize, usize) {
+    let center = preferred_loc_for_taxonomy(config, taxonomy);
+    (
+        center
+            .saturating_sub(50)
+            .max(config.settings.min_extracted_module_loc),
+        center + 50,
+    )
+}
+
+pub fn drag_trigger_min_loc_for_taxonomy(
+    config: &EfficiencyConfig,
+    taxonomy: &str,
+) -> usize {
+    let (lower, _) = working_band_for_taxonomy(config, taxonomy);
+    lower.max(config.settings.min_extracted_module_loc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,8 +139,22 @@ mod tests {
     #[test]
     fn get_drag_target_uses_language_specific_thresholds() {
         let config = config();
-        assert_eq!(get_drag_target(&config, "src/App.res"), 2.4);
+        assert_eq!(get_drag_target(&config, "src/App.res"), 2.6);
         assert_eq!(get_drag_target(&config, "backend/src/main.rs"), 2.6);
-        assert_eq!(get_drag_target(&config, "index.html"), 2.2);
+        assert_eq!(get_drag_target(&config, "index.html"), 2.6);
+    }
+
+    #[test]
+    fn taxonomy_working_band_prefers_role_specific_centerline() {
+        let config = config();
+        assert_eq!(preferred_loc_for_taxonomy(&config, "service-orchestrator"), 560);
+        assert_eq!(
+            working_band_for_taxonomy(&config, "service-orchestrator"),
+            (510, 610)
+        );
+        assert_eq!(
+            drag_trigger_min_loc_for_taxonomy(&config, "util-pure"),
+            310
+        );
     }
 }

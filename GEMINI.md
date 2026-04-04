@@ -1,220 +1,346 @@
-This file provides universal guidelines for agents working with code in this repository.
+This file provides universal guidance for agents working in this repository.
 
-## 🤖 Elma CLI Agent Philosophy
+## Elma CLI Philosophy
 
-**Elma is a highly autonomous CLI agent engineered to deliver intelligent, reliable assistance through adaptive reasoning and improvisation rather than deterministic rules. Designed for efficiency on local AI models with constrained hardware resources, Elma achieves sophisticated outcomes through minimal reasoning units (intel units), composable planning formulas, and aggressive compression techniques—including evidence summarization and compact knowledge representation—that maximize intelligence per token while minimizing computational overhead. Built as an orchestration layer over high-resolution specialized components, Elma dynamically leverages available knowledge, tools, environment context, and platform capabilities to determine the most effective course of action. The architecture prioritizes accuracy and reliability over speed, empowering Elma to autonomously assess each situation, reason about available options, and execute workflows that genuinely address user objectives—treating classification signals as soft guidance rather than hard constraints, and maintaining the flexibility to improvise solutions that rigid rule-based systems would miss.**
+Elma is a local-first autonomous CLI agent designed to deliver the highest reliability and practical usefulness possible on constrained local models.
 
----
+Core philosophy:
+- Reliability before speed.
+- Adaptive reasoning before deterministic rule playback.
+- Small-model-friendly decomposition before asking one model call to do too much.
+- Truth-grounded answers before polished but weakly supported answers.
+- Offline-first behavior by default, with network use only when truly necessary.
+- Prompt principles over long brittle examples.
+- Classification signals are soft guidance, not hard law.
 
-## 🧠 Core Protocols
+Elma should feel premium, careful, and capable even on low-end hardware. The system must maximize quality per token, quality per unit of reasoning, and quality per unit of context window.
 
-**Context-First Approach:**
-1. **ALWAYS READ FIRST**: Start every task by reading `_tasks/TASKS.md` for context.
-2. **Architecture Check**: Check `_dev-tasks/` for current de-bloating and structural priorities.
-3. **Root-Relative Paths**: All file references must be relative to repository root.
+## What The User Wants
 
-**Commitment Constraint:**
-- NEVER commit changes unless explicitly asked to "save", "checkpoint", or "commit".
-- Only commit when the user explicitly provides a message or instruction.
+When in doubt, optimize for these repo-specific preferences:
+- Keep Elma optimized for small local LLMs first.
+- Do not reduce intel-unit coverage for performance without explicit approval.
+- If a model is too weak for a step, prefer adding a narrow intermediary intel unit over bloating a prompt or adding rigid heuristics.
+- Preserve autonomy, but make it honest and bounded.
+- Prefer stable canonical system prompts that are code-authoritative and not casually rewritten to “make tests pass.”
+- Do not turn Elma into a keyword matcher.
+- Maintain semantic continuity from user intent to final answer.
+- Keep the system principle-first, not example-driven.
+- Favor incremental reliability closure over ambitious new capability work.
 
-**Task Protocol:**
-- Follow the exact procedures: Move to `_tasks/active/` → Implement → Verify build (`cargo build`) → Archive.
-- **Troubleshoot (T###)**: If a bug is detected, start a T-prefixed task immediately.
+## Mandatory Context Order
 
-## 🛠️ Workflow Automation
+Before substantial work:
+1. Read [`_tasks/TASKS.md`](_tasks/TASKS.md).
+2. Read the active master task if present, usually [`_tasks/active/058_Incremental_Stability_Master_Plan.md`](_tasks/active/058_Incremental_Stability_Master_Plan.md).
+3. Check [`_dev-tasks/`](_dev-tasks/) for current structural guidance.
+4. Use root-relative paths in reasoning and edits.
 
-### Phase 0: Troubleshooting
-- Create `_tasks/active/T###_troubleshoot_[context].md`.
-- Document hypothesis, experiment log, and results.
-- **Rollback Check**: Ensure any failed experiments are reverted before moving to implementation.
+If the work touches an existing active task, update that task instead of creating duplicate planning.
 
-### Phase 1: Implementation & Verification
-- Run `cargo build` after significant edits.
-- Run `cargo test` and scenario probes (`./run_intention_scenarios.sh`, etc.) to verify behavioral correctness.
-- Maintain **Zero Warnings** in all Rust modules.
+## Task Protocol
 
-## 🚨 Coding Vitals (PRIORITY 0)
+Follow this workflow unless the user explicitly asks otherwise:
+1. Pickup: move a pending task into `_tasks/active/` if starting it formally.
+2. Implement surgically.
+3. Verify with `cargo build`.
+4. Verify behavior with the relevant tests and probes.
+5. Report results while the task is still active.
+6. Archive only after approval.
 
-1. **Rust Orchestration**: Follow idiomatic Rust patterns.
-2. **De-bloating Target**: `src/main.rs` is an oversized orchestrator (6.5k LOC). Use `_dev-system` guidance to extract logic into cohesive domain modules.
-3. **Configurations**: Model and system configurations live in `config/` as TOML files.
-4. **Scenario Integrity**: Verification MUST include running relevant scenarios in `scenarios/`.
+Troubleshooting rule:
+- If a real bug or regression is discovered, create or continue a `T###` troubleshooting task immediately.
 
-## 🧠 System Prompt Design Principles (CRITICAL)
+Task creation rules:
+- Main tasks use the next available numeric prefix across `_tasks/active/`, `_tasks/pending/`, `_tasks/completed/`, and `_tasks/postponed/`.
+- Troubleshooting tasks use the same numeric sequence with a `T` prefix.
+- Tasks must be self-documenting enough that renaming to `_DONE` is sufficient when complete.
 
-**Do not build system prompts around long deterministic rule lists or brittle pattern examples.**  
-Prompts must remain principle-first. Minimal examples are allowed only to clarify a boundary when the principle could otherwise be misread.
+## Commit And Git Rules
 
-### Required Prompt Pattern
-1. State the governing principle first.
-2. Add a short example block only if it sharpens the decision boundary.
-3. Use a **4:1 ratio** of representative positive examples to negative edge cases.
-4. Keep examples short, canonical, and high-signal.
-5. Examples must anchor judgment, not replace reasoning.
+- Never commit unless the user explicitly asks to save, checkpoint, commit, merge, or push.
+- Never rewrite history unless the user explicitly asks.
+- Never discard intended local changes just to obtain a clean diff.
+- If the tree is dirty, work with it carefully.
 
-### Wrong Approach (Deterministic Rule Dump)
-```text
-Use INVESTIGATE when:
-- "pending tasks" is mentioned
-- "recent files" is mentioned
-- Multiple sources exist
-```
+## Non-Negotiable Architecture Rules
 
-### Right Approach (Principle First, Minimal Boundary Examples)
-```text
-Use INVESTIGATE when the model cannot determine what to do responsibly without first exploring the workspace, validating evidence, or clarifying missing context.
+### 1. No Word-Based Routing
 
-Examples:
-- Need to inspect files before answering a repo-specific question -> INVESTIGATE
-- Need to search symbols before making a code claim -> INVESTIGATE
-- Need to examine task state before proposing next implementation step -> INVESTIGATE
-- Need to gather workspace evidence before confirming a result -> INVESTIGATE
+Never implement routing, classification, or behavior selection through hardcoded word triggers.
 
-Edge case:
-- User asks a self-contained conceptual question that can be answered without workspace inspection -> do not force INVESTIGATE
-```
-
-### Critic Prompt Example (Preferred Style)
-```text
-Principle:
-Return retry when a repo-specific claim is not supported by actual workspace evidence in the step results. Return ok when the evidence clearly supports the claim.
-
-Examples:
-- The answer claims a file was inspected, but no read/search output exists -> retry
-- The answer claims a symbol exists, but no grep/read evidence exists -> retry
-- The answer claims a file was edited, but no edit or verification evidence exists -> retry
-- The answer claims a test passed, but no test output exists -> retry
-
-Edge case:
-- The step results clearly show the relevant file contents or command output and the answer is grounded in that evidence -> ok
-```
-
-### Why This Matters
-- **Long example lists limit reasoning** - the model starts pattern-matching instead of assessing the situation
-- **Principles preserve flexibility** - the model can generalize to novel cases
-- **Minimal examples improve calibration** - they clarify the boundary without turning the prompt into a script
-- **Elma's philosophy** is adaptive reasoning and improvisation, not rigid rule playback
-
-### Rule of Thumb
-If the prompt is mostly examples, exception lists, or "if X then Y" rules, rewrite it.
-If the principle is clear but the boundary is fuzzy, add a small example block with a 4:1 positive-to-edge-case ratio.
-
----
-
-## 🚫 CRITICAL: Never Use Word-Based Pattern Matching
-
-**NEVER implement routing/classification using hardcoded word patterns.**
-
-### Wrong Approach (Word-Based Pattern Matching):
+Wrong:
 ```rust
-// ❌ WRONG: Hardcoded word patterns
-fn is_obvious_chat(input: &str) -> bool {
-    if input.starts_with("hello") || input.contains("who are you") {
-        return true;  // Forces CHAT route
-    }
-}
+if input.contains("hello") { route = "CHAT"; }
 ```
 
-**Why this violates Elma's philosophy:**
-- Turns Elma into a keyword-matching robot
-- Breaks on variations ("Hey there" vs "Hello")
-- Cannot handle novel phrasings
-- Violates "adaptive reasoning over deterministic rules"
+Right:
+- use model confidence
+- use entropy / margin
+- use evidence availability
+- use bounded fallback principles
 
-### Right Approach (Confidence-Based Fallback):
-```rust
-// ✅ RIGHT: Use model's own uncertainty
-if route_decision.entropy > 0.8 || route_decision.margin < 0.15 {
-    // Model is uncertain → use safe default
-    return CHAT;  // Principle: when uncertain, under-execute
-}
-```
+If you are checking user text for words in order to force a route, you are likely violating Elma’s philosophy.
 
-**Why this aligns with Elma's philosophy:**
-- Uses model's own confidence metrics
-- Principle-based: "when uncertain, be conservative"
-- Works on ANY input the model is uncertain about
-- Allows model to reason, not match keywords
+### 2. Reliability Over Speed
 
-### Rule of Thumb:
-**If you're checking `input.contains("word")` to make routing decisions, you're doing it wrong.**
+Do not skip reasoning stages, ladder stages, or intel units just to make the system faster unless the user explicitly approves that tradeoff.
 
-Instead, use:
-- Model confidence (entropy, margin)
-- Classification distributions
-- Principle-based thresholds
+If a fast path exists:
+- it must be low risk
+- it must preserve truthfulness
+- it must not silently remove needed reasoning
 
----
+### 3. Use Decomposition To Help Small Models
 
-## 🧠 Intel Unit Format Standard
+If a small model is struggling:
+- first try to tighten the narrative/context
+- then reuse an existing intel unit if it already fits
+- then add a new focused intermediary intel unit if truly needed
 
-**All intel units must follow the standardized JSON output format.**
+Do not respond to small-model weakness by:
+- stuffing more examples into prompts
+- overfitting deterministic rules
+- forcing giant prompts
+- merging many cognitive jobs into one prompt
 
-### Required Reading
-**Before modifying any intel unit configuration, read:**
-→ [`docs/INTEL_UNIT_STANDARD.md`](docs/INTEL_UNIT_STANDARD.md)
+Preferred pattern:
+- one intel unit
+- one role
+- one narrow decision or transformation
 
-### Standard Output Format
+### 4. Preserve Semantic Continuity
+
+Meaning must survive the whole pipeline:
+1. user message
+2. intent helper / rephrase
+3. speech act / routing / mode
+4. complexity / formula / workflow plan
+5. program steps
+6. final answer
+
+If the user asks for X, and the final answer solves Y, that is a semantic continuity failure even if the code technically ran.
+
+Agents should inspect continuity whenever behavior feels “weird”:
+- compare the raw prompt
+- compare the intent annotation
+- compare the chosen route/formula
+- compare the executed steps
+- compare the final answer
+
+### 5. Grounded Answers Only
+
+Repo-specific claims must be supported by actual workspace evidence.
+
+If evidence is missing:
+- gather it
+- or say clearly that evidence is insufficient
+
+Do not:
+- hallucinate file names
+- soften exact paths into vague labels
+- claim edits/tests/verification without artifacts
+
+### 6. Local-First, Offline-First
+
+Elma is primarily for local use on local endpoints.
+
+Default stance:
+- prefer local workspace evidence
+- prefer local tools
+- prefer local runtime facts
+- prefer no internet
+
+Web access is a secondary capability, not the default operating assumption.
+
+## Prompt Design Rules
+
+### Principle-First Prompts
+
+System prompts must stay principle-first.
+
+Required structure:
+1. governing principle
+2. minimal boundary clarification only if necessary
+3. compact output contract
+
+Avoid:
+- long deterministic rule dumps
+- long positive/negative example lists
+- prompt scripts that replace judgment
+
+Rule of thumb:
+- if a prompt is mostly examples or exceptions, rewrite it
+
+### Canonical Prompt Stability
+
+Managed prompts should be treated as canonical constants.
+
+Do not casually mutate prompts to pass a temporary test.
+
+If prompt changes are necessary:
+- they should be deliberate
+- they should align with philosophy
+- they should be reflected in the code-authoritative canonical source
+- grammar, parser expectations, and prompt contracts must agree
+
+### Intel Unit Output Standard
+
+All choice-style intel units must follow the standard compact JSON contract described in [`docs/INTEL_UNIT_STANDARD.md`](docs/INTEL_UNIT_STANDARD.md):
+
 ```json
-{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
+{"choice":"<NUMBER>","label":"<LABEL>","reason":"<ULTRA_CONCISE_JUSTIFICATION>","entropy":0.42}
 ```
 
-### System Prompt Structure
-```
-You are Elma's <ROLE>.
+Key rules:
+- choice rules describe intention, not consequence
+- no heuristics section
+- no large example section
+- keep output compact for latency and stability
 
-Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+Not every intel unit must use the same classifier schema.
+Structured units may return other stable canonical JSON schemas when their job requires it.
 
-Choice rules:
-1 = <LABEL>: <what this choice represents about user intention>
-2 = <LABEL>: <what this choice represents about user intention>
+## Narrative Context Rules
 
-Output format:
-{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
-```
+Whenever an intel unit is asked to decide, prefer a purpose-built narrative over a raw dump.
 
-### Key Principles
-1. **Choice rules describe intention, not consequence** - What the user IS doing, not what happens after
-2. **No heuristics section** - Trust the model to reason from the definitions
-3. **No example section** - The format specification is sufficient
-4. **Compact JSON** - Minimizes token generation time and latency
+Good narrative context explains:
+- what the user wants
+- what stage Elma is in
+- what evidence is available
+- what decision is needed
+- what boundary matters
 
-### Token Tiers
-| Tier | Max Tokens | Use Case |
-|------|------------|----------|
-| 1 | 64 | Single-choice classifiers (router, speech_act, mode_router) |
-| 2 | 180 | Structured decisions with reason (evidence_mode, command_repair) |
-| 3 | 540 | Multi-step planning (workflow_planner, decomposition) |
+Raw JSON blobs are acceptable only when they remain small, clear, and are the best fit for the unit.
 
----
+Before building context compaction systems, make sure the uncompressed decision narratives are already correct.
 
-## Essential Commands
+## Runtime Behavior Priorities
 
-### Development
+When choosing the next engineering step, use this priority order:
+1. eliminate falsehoods
+2. eliminate crashes / parse failures / stalls
+3. eliminate path and evidence corruption
+4. eliminate retry loops and stale recovery behavior
+5. improve human-style robustness
+6. improve context efficiency
+7. expand autonomy
+8. expand cross-model adaptability
+
+If stress tests are green but casual human prompts still fail in the real CLI, the system is not yet reliable enough.
+
+## Real Verification Requirements
+
+Do not trust orchestrator-only or model-only checks when the real CLI path is the thing that matters.
+
+Verification ladder:
+1. `cargo build`
+2. targeted `cargo test`
+3. relevant probes or scenarios
+4. real `cargo run` validation when behavior is user-facing
+
+Use the real CLI as the authority for:
+- startup correctness
+- prompt routing behavior
+- end-to-end final answers
+- stress-testing outcomes
+
+### Required Commands
+
+Build:
 ```bash
 cargo build
-cargo run -- [args]
 ```
 
-### Testing & Probing
+Tests:
 ```bash
-# Run unit tests
 cargo test
+```
 
-# Run behavioral probes
+Behavior probes:
+```bash
 ./probe_parsing.sh
 ./reliability_probe.sh
 ./run_intention_scenarios.sh
 ./smoke_llamacpp.sh
 ```
 
-### Architecture Analysis
-```bash
-# Run the de-bloating analyzer
-cd _dev-system/analyzer && cargo run
-```
-
-### Formatting
+Formatting:
 ```bash
 cargo fmt
 ```
+
+Architecture analysis:
+```bash
+cd _dev-system/analyzer && cargo run
+```
+
+## Configuration And Runtime Safety
+
+- Model and system configs live in `config/` as TOML files.
+- Treat profile/config health as a reliability surface, not just data files.
+- Prefer atomic config writes and defensive startup validation.
+- Do not let malformed transient profile state silently break normal CLI usage.
+
+## Startup Context Expectations
+
+Elma should begin sessions with enough concise runtime context to reason well:
+- workspace context
+- workspace brief
+- current working directory / repo context
+- OS/platform basics
+- shell name
+- core tool availability
+- active model/base URL/runtime facts when useful
+
+This context should be concise and useful, not bloated.
+
+## Snapshot And Safety Expectations
+
+If Elma mutates files, recovery should be possible.
+
+Structured edit flows should be snapshot-aware.
+Long term, shell-based file mutation paths should also be rollback-safe.
+
+Do not design workflows that make recovery harder than necessary.
+
+## De-Bloating Guidance
+
+`src/main.rs` has historically been oversized. Continue extracting logic into cohesive domain modules.
+
+High-risk concentration areas should be treated carefully, especially:
+- `src/intel_units.rs`
+- `src/json_error_handler.rs`
+- `src/program_policy.rs`
+- `src/defaults_evidence.rs`
+- `src/types_core.rs`
+
+Do not perform broad refactors unless they directly serve the active reliability goal.
+
+## What To Prefer When Stuck
+
+Prefer this order:
+1. better evidence
+2. better narrative
+3. narrower intel decomposition
+4. smaller safer fallback program
+5. better verification
+
+Avoid this order:
+1. more heuristics
+2. more keywords
+3. more examples
+4. hotter temperatures
+5. vague retries
+
+## Success Standard
+
+A change is aligned with Elma only if it improves at least one of:
+- truthfulness
+- reliability
+- bounded autonomy
+- small-model effectiveness
+- context efficiency
+
+without materially harming the others.

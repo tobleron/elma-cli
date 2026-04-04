@@ -335,14 +335,14 @@ Conversation so far (most recent last):
     let entropy = route_entropy(&distribution);
     let path_scoped_request = extract_first_path_from_user_text(user_message).is_some();
     let workflow_confident = workflow.choice.eq_ignore_ascii_case("WORKFLOW")
-        && workflow.margin >= 0.50
-        && workflow.entropy <= 0.40;
+        && workflow.margin >= 0.30
+        && workflow.entropy <= 0.60;
     let speech_confident_chat = speech_act.choice.eq_ignore_ascii_case("CHAT")
         && speech_act.margin >= 0.50
         && speech_act.entropy <= 0.40;
     let speech_confident_instruct = speech_act.choice.eq_ignore_ascii_case("INSTRUCT")
-        && speech_act.margin >= 0.50
-        && speech_act.entropy <= 0.40;
+        && speech_act.margin >= 0.30
+        && speech_act.entropy <= 0.60;
 
     // PRINCIPLE: Under-execute when uncertain.
     // If entropy is high (> 0.6) or margin is low (< 0.2), fallback to CHAT if speech act is CHAT.
@@ -378,6 +378,17 @@ Conversation so far (most recent last):
             "speech:{} workflow:{} mode:{}",
             speech_act.source, workflow.source, mode.source
         )
+    };
+
+    // PRINCIPLE: Distinguish selection from categorization.
+    // Categorization (DECIDE) needs a label. Selection (SELECT) needs a choice from workspace items.
+    let identify_request = ["identify", "choose", "select", "which"]
+        .iter()
+        .any(|w| user_message.to_lowercase().contains(w));
+    let route = if identify_request && route.eq_ignore_ascii_case("DECIDE") {
+        "SELECT".to_string()
+    } else {
+        route
     };
 
     Ok(RouteDecision {

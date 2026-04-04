@@ -60,18 +60,17 @@ pub(crate) async fn orchestrate_with_retries(
     let mut attempt_history: Vec<(u32, Program, String)> = Vec::new(); // (attempt, program, error)
 
     for attempt in 0..max_retries {
-        // Respect the already-built initial program on the first attempt.
-        let use_initial_program = attempt == 0;
-
         // Task 010: Get next strategy from chain (or use temperature escalation as before)
-        let strategy = if use_initial_program {
-            ExecutionStrategy::Direct
-        } else if let Some(s) = strategy_chain.next_strategy() {
+        let strategy = if let Some(s) = strategy_chain.next_strategy() {
             s
         } else {
             // Strategy chain exhausted, fall back to temperature escalation
             ExecutionStrategy::Direct
         };
+
+        // Respect the already-built initial program on the first attempt ONLY IF strategy matches.
+        // If the selected strategy is different from Direct, we should rebuild the program.
+        let use_initial_program = attempt == 0 && strategy == ExecutionStrategy::Direct;
 
         // Calculate temperature for this attempt (adjusted by strategy)
         let base_temperature = profiles.orchestrator_cfg.temperature;
@@ -307,6 +306,7 @@ async fn build_program_with_retry(
     let formula_selection = crate::formulas::select_optimal_formula(
         &complexity.complexity,
         &complexity.risk,
+        &route_decision.route,
         0.6, // Slightly more efficiency-focused on retry
     );
 
@@ -393,6 +393,7 @@ async fn build_program_with_strategy(
     let formula_selection = crate::formulas::select_optimal_formula(
         &complexity.complexity,
         &complexity.risk,
+        &route_decision.route,
         0.6, // Slightly more efficiency-focused
     );
 
@@ -498,10 +499,10 @@ async fn synthesize_meta_review(
         ));
     }
 
-    prompt.push_str("\n=== WORKSPACE CONTEXT ===\n");
-    prompt.push_str(ws);
+    prompt.push_str("\n=== WORKSPACE CONTEXT (TRUNCATED) ===\n");
+    prompt.push_str(&ws.chars().take(4000).collect::<String>());
     prompt.push_str("\n\n");
-    prompt.push_str(ws_brief);
+    prompt.push_str(&ws_brief.chars().take(1000).collect::<String>());
 
     prompt.push_str("\n\n=== ROUTE PRIOR ===\n");
     prompt.push_str(&format!("Suggested route: {}\n", route_decision.route));

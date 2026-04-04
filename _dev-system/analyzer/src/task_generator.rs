@@ -1,6 +1,6 @@
 use crate::config::EfficiencyConfig;
 use crate::graph::DependencyGraph;
-use crate::utils::get_drag_target;
+use crate::utils::{get_drag_target, preferred_loc_for_taxonomy, working_band_for_taxonomy};
 use crate::verification::{VerificationBundle, VerificationReport};
 use anyhow::Result;
 use serde_json;
@@ -32,6 +32,7 @@ pub enum WorkUnit {
         platform: String,
         complexity: f64,
         recommended_splits: usize,
+        taxonomy: String,
         verification: Option<VerificationBundle>,
     },
     Merge {
@@ -881,10 +882,6 @@ fn surgical_reason_is_size_only(reason: &str, drag_target: f64) -> bool {
         .unwrap_or(false)
 }
 
-fn surgical_working_band(soft_floor_loc: usize) -> (usize, usize) {
-    (soft_floor_loc.saturating_sub(50), soft_floor_loc + 50)
-}
-
 fn drag_target_for_unit(unit: &WorkUnit, config: &EfficiencyConfig) -> f64 {
     match unit {
         WorkUnit::Ambiguity { file, .. }
@@ -916,21 +913,26 @@ pub fn generate_strategic_directive(
     config: &EfficiencyConfig,
 ) -> String {
     let drag_target = drag_target_for_unit(unit, config);
-    let soft_floor_loc = config.settings.soft_floor_loc;
     let minimum_child_loc = config.settings.min_extracted_module_loc;
-    let (lower, upper) = surgical_working_band(soft_floor_loc);
     match unit {
-        WorkUnit::Surgical { reason, recommended_splits, .. } => {
+        WorkUnit::Surgical {
+            reason,
+            recommended_splits,
+            taxonomy,
+            ..
+        } => {
+            let center = preferred_loc_for_taxonomy(config, taxonomy);
+            let (lower, upper) = working_band_for_taxonomy(config, taxonomy);
             let base = surgical_base_strategy(reason, drag_target);
             if *recommended_splits > 1 {
                 format!(
                     "{} 🏗️ ARCHITECTURAL TARGET: Split into {} cohesive modules while keeping each module within the {}-{} LOC working band (center ~{} LOC, minimum child floor {} LOC).",
-                    base, recommended_splits, lower, upper, soft_floor_loc, minimum_child_loc
+                    base, recommended_splits, lower, upper, center, minimum_child_loc
                 )
             } else {
                 format!(
                     "{} Refactor in-place to reduce drag score while keeping the module near the ~{} LOC centerline and above the {} LOC child floor.",
-                    base, soft_floor_loc, minimum_child_loc
+                    base, center, minimum_child_loc
                 )
             }
         },
@@ -1042,11 +1044,11 @@ pub fn sync_all_architectural_tasks(
         String,
         f64,
         usize,
+        String,
         Option<VerificationBundle>,
     );
     let mut surgical_fe_units: Vec<SurgicalEntry> = Vec::new();
     let mut surgical_be_units: Vec<SurgicalEntry> = Vec::new();
-    let soft_floor_loc = config.settings.soft_floor_loc;
 
     for units in buffer.values() {
         for unit in units {
@@ -1077,6 +1079,7 @@ pub fn sync_all_architectural_tasks(
                     complexity,
                     action,
                     recommended_splits,
+                    taxonomy,
                     verification,
                     ..
                 } => {
@@ -1093,6 +1096,7 @@ pub fn sync_all_architectural_tasks(
                             strategy,
                             *complexity,
                             *recommended_splits,
+                            taxonomy.clone(),
                             verification.clone(),
                         ));
                     } else {
@@ -1103,6 +1107,7 @@ pub fn sync_all_architectural_tasks(
                             strategy,
                             *complexity,
                             *recommended_splits,
+                            taxonomy.clone(),
                             verification.clone(),
                         ));
                     }
@@ -1244,11 +1249,11 @@ pub fn sync_all_architectural_tasks(
         String,
         f64,
         usize,
+        String,
         Option<VerificationBundle>,
     )>,
                          platform: &str|
      -> Vec<GeneratedTaskSpec> {
-        let (working_band_lower, working_band_upper) = surgical_working_band(soft_floor_loc);
         let mut specs = Vec::new();
         let mut domain_groups: HashMap<
             String,
@@ -1259,6 +1264,7 @@ pub fn sync_all_architectural_tasks(
                 String,
                 f64,
                 usize,
+                String,
                 Option<VerificationBundle>,
             )>,
         > = HashMap::new();
@@ -1273,17 +1279,17 @@ pub fn sync_all_architectural_tasks(
         for (domain, domain_units) in domain_groups {
             let mut action_groups: HashMap<
                 (String, String, i32),
-                Vec<(String, String, usize, bool, Option<VerificationBundle>)>,
+                Vec<(String, String, usize, bool, String, Option<VerificationBundle>)>,
             > = HashMap::new();
 
-            for (file, reason, action, _strategy, _comp, splits, verification) in domain_units {
+            for (file, reason, action, _strategy, _comp, splits, taxonomy, verification) in domain_units {
                 let drag_target = get_drag_target(config, &file);
                 let base_strategy = surgical_base_strategy(&reason, drag_target).to_string();
                 let size_only = surgical_reason_is_size_only(&reason, drag_target);
                 action_groups
                     .entry((action, base_strategy, (drag_target * 100.0).round() as i32))
                     .or_default()
-                    .push((file, reason, splits, size_only, verification));
+                    .push((file, reason, splits, size_only, taxonomy, verification));
             }
 
             let category_name = format!(
@@ -1313,7 +1319,10 @@ pub fn sync_all_architectural_tasks(
                     action, base_strategy
                 ));
 
-                for (file, reason, splits, size_only, maybe_bundle) in items.iter() {
+                for (file, reason, splits, size_only, taxonomy, maybe_bundle) in items.iter() {
+                    let center = preferred_loc_for_taxonomy(config, taxonomy);
+                    let (working_band_lower, working_band_upper) =
+                        working_band_for_taxonomy(config, taxonomy);
                     // Embed per-file split recommendation inline
                     let split_note = if *splits > 1 {
                         format!(
@@ -1321,13 +1330,13 @@ pub fn sync_all_architectural_tasks(
                             splits,
                             working_band_lower,
                             working_band_upper,
-                            soft_floor_loc,
+                            center,
                             config.settings.min_extracted_module_loc
                         )
                     } else {
                         format!(
                             " → Refactor in-place (keep near ~{} LOC and above {} LOC floor)",
-                            soft_floor_loc, config.settings.min_extracted_module_loc
+                            center, config.settings.min_extracted_module_loc
                         )
                     };
                     let size_note = if *size_only {
@@ -1664,6 +1673,7 @@ mod tests {
                     platform: "backend".to_string(),
                     complexity: 1.0,
                     recommended_splits: 2,
+                    taxonomy: "service-orchestrator".to_string(),
                     verification: None,
                 },
             ],
@@ -1896,13 +1906,14 @@ mod tests {
                 platform: "frontend".to_string(),
                 complexity: 7.94,
                 recommended_splits: 2,
+                taxonomy: "service-orchestrator".to_string(),
                 verification: None,
             },
             &config,
         );
-        assert!(directive.contains("350-450 LOC working band"));
-        assert!(directive.contains("center ~400 LOC"));
-        assert!(directive.contains("minimum child floor 220 LOC"));
+        assert!(directive.contains("510-610 LOC working band"));
+        assert!(directive.contains("center ~560 LOC"));
+        assert!(directive.contains("minimum child floor 260 LOC"));
     }
 
     #[test]
@@ -1918,12 +1929,13 @@ mod tests {
                 platform: "frontend".to_string(),
                 complexity: 5.30,
                 recommended_splits: 1,
+                taxonomy: "domain-logic".to_string(),
                 verification: None,
             },
             &config,
         );
         assert!(directive.contains("Refactor in-place"));
-        assert!(directive.contains("~400 LOC centerline"));
-        assert!(directive.contains("220 LOC child floor"));
+        assert!(directive.contains("~440 LOC centerline"));
+        assert!(directive.contains("260 LOC child floor"));
     }
 }

@@ -125,16 +125,6 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         );
         trace_route_decision(&runtime.args, &route_decision);
 
-        // Task: Grounded workspace discovery for path-scoped requests
-        if let Some(path) = extract_first_path_from_user_text(line) {
-            // Include language identification in discovery
-            let discovery_cmd = format!("ls -R '{}' | head -n 100; echo '---'; file -b '{}'/* 2>/dev/null | head -n 10", path, path);
-            let output = crate::workspace::cmd_out(&discovery_cmd, &std::path::PathBuf::from("."));
-            if !output.trim().is_empty() {
-                runtime.ws = format!("### GROUNDED WORKSPACE DISCOVERY ({})\n{}\n\n{}", path, output.trim(), runtime.ws);
-            }
-        }
-
         let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
         // Task 014: Use new function with confidence fallback
         let (workflow_plan, ladder, complexity, scope, formula, planner_fallback_used) =

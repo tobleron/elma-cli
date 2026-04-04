@@ -31,6 +31,7 @@ pub(crate) async fn orchestrate_program_once(
     let formula_selection = select_optimal_formula(
         &complexity.complexity,
         &complexity.risk,
+        &route_decision.route,
         0.5, // Balanced efficiency priority (can be tuned)
     );
 

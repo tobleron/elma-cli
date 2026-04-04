@@ -10,10 +10,10 @@
   ],
   "settings": {
     "min_dead_code_loc": 30,
-    "base_loc_limit": 400,
-    "hard_ceiling_loc": 800,
-    "soft_floor_loc": 400,
-    "min_extracted_module_loc": 220,
+    "base_loc_limit": 450,
+    "hard_ceiling_loc": 900,
+    "soft_floor_loc": 450,
+    "min_extracted_module_loc": 260,
     "max_session_complexity": 500.0,
     "merge_score_threshold": 1.2,
     "nesting_weight": 0.6,
@@ -110,35 +110,43 @@
   "taxonomy": {
     "domain-logic": {
       "multiplier": 0.7,
-      "desc": "Pure business logic, entities, and domain services."
+      "desc": "Pure business logic, entities, and domain services.",
+      "preferred_loc": 440
     },
     "infra-adapter": {
       "multiplier": 1.1,
-      "desc": "External API clients, database drivers, and third-party bindings."
+      "desc": "External API clients, database drivers, and third-party bindings.",
+      "preferred_loc": 460
     },
     "data-model": {
-      "multiplier": 1.5,
-      "desc": "Type definitions, schemas, and DTOs (low logic density)."
+      "multiplier": 2.0,
+      "desc": "Type definitions, schemas, and DTOs (low logic density).",
+      "preferred_loc": 600
     },
     "orchestrator": {
-      "multiplier": 1.1,
-      "desc": "App entry points and high-level flow control."
+      "multiplier": 1.2,
+      "desc": "App entry points and high-level flow control.",
+      "preferred_loc": 520
     },
     "service-orchestrator": {
-      "multiplier": 1.1,
-      "desc": "Complex coordination between multiple domain services."
+      "multiplier": 1.2,
+      "desc": "Complex coordination between multiple domain services.",
+      "preferred_loc": 560
     },
     "util-pure": {
       "multiplier": 0.4,
-      "desc": "Side-effect free helper functions."
+      "desc": "Side-effect free helper functions.",
+      "preferred_loc": 360
     },
     "infra-config": {
       "multiplier": 1.5,
-      "desc": "Build scripts, project configuration, and environment setups."
+      "desc": "Build scripts, project configuration, and environment setups.",
+      "preferred_loc": 520
     },
     "scenario-spec": {
       "multiplier": 1.2,
-      "desc": "Scenario definitions and testing specifications."
+      "desc": "Scenario definitions and testing specifications.",
+      "preferred_loc": 500
     },
     "ignored": {
       "multiplier": 0.0,

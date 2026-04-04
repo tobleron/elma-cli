@@ -104,17 +104,25 @@ fn discover_cli_tools() -> Vec<ToolCapability> {
     // Common CLI tools to check - using `which` for fast lookup
     let cli_tools = vec![
         ("git", "Version control operations", "git <args>"),
-        ("rg", "Fast text search with ripgrep", "rg <pattern> <path>"),
+        (
+            "rg",
+            "Fast search. Use: rg -l 'pattern' path (list files), rg -n 'pattern' path (lines). Avoid --no-color, use --color=never if needed.",
+            "rg <pattern> <path>",
+        ),
         ("grep", "Text search", "grep <pattern> <file>"),
         (
             "find",
-            "Find files and directories",
+            "Find files. Use: find path -name 'pattern', find path -type f.",
             "find <path> <expression>",
         ),
         ("jq", "JSON processing", "jq <filter> <json>"),
         ("curl", "HTTP requests", "curl <url>"),
         ("cat", "Display file contents", "cat <file>"),
-        ("ls", "List directory contents", "ls <options> <path>"),
+        (
+            "ls",
+            "List files. Use: ls -1 path (one per line), ls -R path (recursive).",
+            "ls <options> <path>",
+        ),
         ("cp", "Copy files", "cp <source> <destination>"),
         ("mv", "Move files", "mv <source> <destination>"),
         ("rm", "Remove files", "rm <options> <file>"),
