@@ -2,10 +2,10 @@
 
 ## Task Creation Rule
 
-### Main Project Tasks (Numbered 1XX, 2XX, etc.)
-- **Mandatory Prefix**: Every new task MUST have a sequential number prefix (e.g., `189_task_name.md`).
+### Main Project Tasks (Numbered 0XX)
+- **Mandatory Prefix**: Every new task MUST have a sequential number prefix (e.g., `096_task_name.md`).
 - **Sequence Basis**: The sequence number must be the next available number based on the highest existing number across `_tasks/completed/`, `_tasks/pending/`, `_tasks/postponed/`, and `_tasks/active/` folders.
-- **Format**: Use three-digit padding where possible (e.g., `001`, `012`, `123`).
+- **Format**: Use three-digit padding (e.g., `001`, `012`, `095`).
 - **Detail Requirement**: Every task MUST be self-documenting. Provide enough technical detail, context, and clear objective so that a rename (e.g., `_DONE`) is sufficient to signify completion.
 
 ### Dev-System Tasks (Prefixed with D: D001, D002, etc.) ⚙️
@@ -16,6 +16,14 @@
 ### Troubleshooting Tasks (Prefixed with T: T001, T002, etc.) 🛠️
 - **Trigger**: Created manually when starting a "Phase 0" troubleshooting session.
 - **Numbering**: Follows the **Main Project Task** sequence but uses the `T` prefix (e.g., `T042_Fix_Scenario_Parsing.md`).
+
+## Current Master Plan
+**Task 095**: Incremental Upgrade Master Plan — 4-phase disciplined rollout with verification gates.
+- **Phase 1**: Clean up & stabilize foundation (tasks 1-4)
+- **Phase 2**: Reliability core (tasks 5-8)
+- **Phase 3**: Efficiency & observability (tasks 9-12)
+- **Phase 4**: Advanced capabilities (tasks 13-15)
+- **Tier C**: 14 tasks formally postponed until all phases complete
 
 ## Workflow Instructions (Must be followed sequentially)
 
@@ -29,8 +37,8 @@
 6. **Archive**: Once approved, move to `_tasks/completed/` and append `_DONE`.
 
 ## Folder Structure
-- `_tasks/pending/`: Main project tasks waiting to be started.
-- `_tasks/active/`: The single main project task currently being worked on.
+- `_tasks/pending/`: Main project tasks waiting to be started (Tier A + Tier B only).
+- `_tasks/active/`: The master plan (095) + current sub-tasks being worked on.
 - `_tasks/completed/`: Finished tasks.
-- `_tasks/postponed/`: Deferred tasks.
+- `_tasks/postponed/`: Tier C tasks deferred until all 4 phases complete.
 - `_dev-tasks/`: Auto-generated architectural guidance.

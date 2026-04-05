@@ -1,0 +1,12 @@
+AUDIT_REPORT.md
+cmd
+go.mod
+go.sum
+install
+internal
+LICENSE
+main.go
+opencode-schema.json
+README.md
+scripts
+sqlc.yaml

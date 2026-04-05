@@ -1,0 +1,124 @@
+trace: workspace_context_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775371123_275480000/workspace.txt
+trace: workspace_brief_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775371123_275480000/workspace_brief.txt
+trace: base_url_source=cli_or_env value=http://192.168.1.186:8080
+trace: model_behavior preferred_reasoning=none auto_separated=false auto_truncated=false finalizer=false none_clean=true json_auto=true json_none=true
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3559 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: planning_source=maestro ladder_level=Action
+trace: intent_annotation=The user is requesting a list of files located in the directory "_stress_testing/_opencode_for_testing/".
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 12502 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 13663 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4312 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: maestro_pipeline_failed error=JSON parsing failed after model-based repair
+trace: maestro_fallback_shell path=_stress_testing/_opencode_for_testing/
+[PLAN] DIRECT -> 2 steps
+trace: strategy_chain_selected primary=Direct fallbacks=1
+note: Retry 1/2 (temp=0.2, strategy=Direct)
+trace: orchestration_retry_attempt id=1 strategy=Direct temp=0.20 use_initial=true
+trace: step id=s1 type=shell purpose=list directory contents depends_on=-
+-> list directory contents
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3017 bytes
+[HTTP_SUCCESS] parsed response successfully
+→ listing directory
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4117 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: preflight id=s1 status=accept reason=The 'ls -1' command is safe and appropriate for listing directory contents in the specified path on macOS.
+trace: shell_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775371123_275480000/shell/001.sh
+-> ls -1 '_stress_testing/_opencode_for_testing/'
+trace: shell_output_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775371123_275480000/shell/001.out
+trace: exec_exit_code=0
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4408 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: step id=s2 type=respond purpose=present findings depends_on=s1
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4035 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: sufficiency_status=ok reason=The workflow successfully listed the files in the specified directory as requested.
+[GRAMMAR] injected grammar for profile=critic
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4192 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: critic_status=ok reason=The workflow successfully lists the files in the specified directory as requested.
+trace: refinement_needed iteration=1 confidence=0.8 gaps=1
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 5756 bytes
+[HTTP_SUCCESS] parsed response successfully
+note: Retry 1 succeeded
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 5233 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 5765 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 6354 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4254 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3534 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4975 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: memory_gate_status=save reason=The workflow successfully listed the files in the specified directory, preserving the task semantics of providing a directory listing as requested.
+trace: formula_memory_saved=/Users/r2/elma-cli/config/granite-4.0-h-micro-UD-Q8_K_XL.gguf/formula_memory/fm_1775371142.json

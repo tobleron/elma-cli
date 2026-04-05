@@ -1,7 +1,7 @@
 # Task 094: Snapshot Coverage For Shell Mutations And Rollback Integrity
 
 ## Priority
-**P1 - Reliability / Recovery Safety**
+**P1 - RELIABILITY CORE (Tier A)**
 **Created:** 2026-04-03
 **Basis:** Live snapshot audit during CLI stability work
 

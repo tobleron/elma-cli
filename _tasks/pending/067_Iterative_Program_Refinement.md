@@ -1,11 +1,11 @@
 # Task 067: Iterative Program Refinement
 
 ## Priority
-**P0-4.1 - CRITICAL (PILLAR 4: RELIABILITY TASKS)**
-**Blocked by:** P0-1 (JSON Reliability), P0-2 (Context Narrative), P0-3 (Workflow Sequence)
+**P1 - RELIABILITY CORE (Tier A)**
+**Was Blocked by:** P0-1, P0-2, P0-3 — **NOW UNBLOCKED** (P0 pillars substantially complete per Task 058)
 
 ## Status
-**PENDING** — Blocked on completion of P0-1, P0-2, P0-3
+**PENDING** — Ready to start
 
 ## Renumbering Note
 - **Old Number:** Task 013

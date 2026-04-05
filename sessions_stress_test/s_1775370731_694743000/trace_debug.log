@@ -1,0 +1,89 @@
+trace: workspace_context_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775370731_694743000/workspace.txt
+trace: workspace_brief_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775370731_694743000/workspace_brief.txt
+trace: base_url_source=cli_or_env value=http://192.168.1.186:8080
+trace: model_behavior preferred_reasoning=none auto_separated=false auto_truncated=false finalizer=false none_clean=true json_auto=true json_none=true
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3569 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: planning_source=maestro ladder_level=Action
+trace: intent_annotation=The user is requesting a listing of all files contained within the directory path "_stress_testing/_opencode_for_testing/".
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 12336 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3815 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 13642 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4328 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: maestro_pipeline_failed error=JSON parsing failed after model-based repair
+[PLAN] DIRECT -> 1 steps
+trace: strategy_chain_selected primary=Direct fallbacks=1
+note: Retry 1/2 (temp=0.2, strategy=Direct)
+trace: orchestration_retry_attempt id=1 strategy=Direct temp=0.20 use_initial=true
+trace: program_policy_mismatch level="DIRECT" reason=Request requires workspace evidence but program has no shell/read/search step
+-> repairing the workflow plan
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 20734 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: program_policy_mismatch level="DIRECT" reason=Request requires workspace evidence but program has no shell/read/search step
+-> repairing the workflow plan
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 20831 bytes
+[HTTP_SUCCESS] parsed response successfully
+note: Retry 1 succeeded
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4509 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4317 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 5142 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3989 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 5107 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: memory_gate_status=skip reason=missing_workspace_evidence

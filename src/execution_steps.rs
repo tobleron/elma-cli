@@ -479,6 +479,110 @@ fn handle_reply_step(
     ));
 }
 
+fn handle_respond_step(
+    sid: &str,
+    kind: &str,
+    purpose: String,
+    depends_on: Vec<String>,
+    success_condition: String,
+    instructions: String,
+    state: &mut ExecutionState,
+) {
+    state.final_reply = Some(instructions.clone());
+    state.artifacts.insert(sid.into(), instructions);
+    state.step_results.push(mk_step_result(
+        sid,
+        kind,
+        purpose,
+        depends_on,
+        success_condition,
+        true,
+        "respond".into(),
+    ));
+}
+
+fn handle_explore_step(
+    sid: &str,
+    kind: &str,
+    purpose: String,
+    depends_on: Vec<String>,
+    success_condition: String,
+    objective: String,
+    state: &mut ExecutionState,
+) {
+    state.artifacts.insert(sid.into(), objective.clone());
+    state.step_results.push(mk_step_result(
+        sid,
+        kind,
+        purpose,
+        depends_on,
+        success_condition,
+        true,
+        "explore".into(),
+    ));
+}
+
+fn handle_write_step(
+    args: &Args,
+    workdir: &PathBuf,
+    sid: &str,
+    kind: &str,
+    purpose: String,
+    depends_on: Vec<String>,
+    success_condition: String,
+    path: String,
+    content: String,
+    state: &mut ExecutionState,
+) {
+    let full_path = if std::path::Path::new(&path).is_relative() {
+        workdir.join(&path)
+    } else {
+        path.clone().into()
+    };
+    let ok = std::fs::create_dir_all(full_path.parent().unwrap_or(workdir)).is_ok()
+        && std::fs::write(&full_path, &content).is_ok();
+    trace(args, &format!("write_step path={} ok={}", path, ok));
+    state.step_results.push(mk_step_result(
+        sid,
+        kind,
+        purpose,
+        depends_on,
+        success_condition,
+        ok,
+        "write".into(),
+    ));
+}
+
+fn handle_delete_step(
+    args: &Args,
+    workdir: &PathBuf,
+    sid: &str,
+    kind: &str,
+    purpose: String,
+    depends_on: Vec<String>,
+    success_condition: String,
+    path: String,
+    state: &mut ExecutionState,
+) {
+    let full_path = if std::path::Path::new(&path).is_relative() {
+        workdir.join(&path)
+    } else {
+        path.clone().into()
+    };
+    let ok =
+        std::fs::remove_file(&full_path).is_ok() || std::fs::remove_dir_all(&full_path).is_ok();
+    trace(args, &format!("delete_step path={} ok={}", path, ok));
+    state.step_results.push(mk_step_result(
+        sid,
+        kind,
+        purpose,
+        depends_on,
+        success_condition,
+        ok,
+        "delete".into(),
+    ));
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_program_step(
     args: &Args,
@@ -523,7 +627,7 @@ pub(crate) async fn handle_program_step(
             purpose, dep_str
         ),
     );
-    if !matches!(step, Step::Reply { .. }) {
+    if !matches!(step, Step::Reply { .. } | Step::Respond { .. }) {
         operator_trace(args, &purpose);
     }
 
@@ -702,6 +806,47 @@ pub(crate) async fn handle_program_step(
             depends_on,
             success_condition,
             instructions,
+            state,
+        ),
+        Step::Respond { instructions, .. } => handle_respond_step(
+            &sid,
+            &kind,
+            purpose,
+            depends_on,
+            success_condition,
+            instructions,
+            state,
+        ),
+        Step::Explore { objective, .. } => handle_explore_step(
+            &sid,
+            &kind,
+            purpose,
+            depends_on,
+            success_condition,
+            objective,
+            state,
+        ),
+        Step::Write { path, content, .. } => handle_write_step(
+            args,
+            workdir,
+            &sid,
+            &kind,
+            purpose,
+            depends_on,
+            success_condition,
+            path,
+            content,
+            state,
+        ),
+        Step::Delete { path, .. } => handle_delete_step(
+            args,
+            workdir,
+            &sid,
+            &kind,
+            purpose,
+            depends_on,
+            success_condition,
+            path,
             state,
         ),
     }

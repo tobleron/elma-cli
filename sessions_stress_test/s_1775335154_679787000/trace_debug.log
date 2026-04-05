@@ -1,0 +1,58 @@
+trace: workspace_context_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775335154_679787000/workspace.txt
+trace: workspace_brief_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775335154_679787000/workspace_brief.txt
+trace: base_url_source=cli_or_env value=http://192.168.1.186:8080
+trace: model_behavior preferred_reasoning=none auto_separated=false auto_truncated=false finalizer=false none_clean=true json_auto=true json_none=true
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3581 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: intent_annotation=do you see the shell scripts on root folder?
+[intent: Elma is asked to locate and identify any shell scripts present in the root directory of the system.]
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4708 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4701 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4773 bytes
+[HTTP_SUCCESS] parsed response successfully
+[CLASSIFY] speech=INSTRUCT route=CHAT (entropy=1.34)
+trace: speech_act_dist=INSTRUCT:0.99 CHAT:0.00 INQUIRE:0.00
+trace: speech_act=INSTRUCT p=0.99 margin=0.99 entropy=0.00 source=json_output
+trace: workflow_dist=CHAT:0.69 WORKFLOW:0.31
+trace: workflow=CHAT p=0.69 margin=0.39 entropy=0.69 source=json_output
+trace: mode_dist=PLAN:0.31 INSPECT:0.17 EXECUTE:0.17 MASTERPLAN:0.17 DECIDE:0.17
+trace: mode=PLAN p=0.31 margin=0.14 entropy=0.69 source=json_output
+trace: route_dist=CHAT:0.56 SHELL:0.17 PLAN:0.16 MASTERPLAN:0.09 DECIDE:0.09
+trace: route=CHAT p=0.56 margin=0.38 entropy=1.34 source=speech:json_output workflow:json_output mode:json_output
+trace: planning_source=ladder_assessment ladder_level=Action
+trace: complexity=DIRECT pattern=reply_only risk=LOW
+trace: scope focus=- include=- exclude=- query=- reason=
+trace: formula=reply_only alt=capability_reply reason=Direct conversational turn
+-> answering directly
+trace: direct_reply_fast_path route=CHAT formula=reply_only
+[PLAN] DIRECT -> 1 steps
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4502 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4690 bytes
+[HTTP_SUCCESS] parsed response successfully

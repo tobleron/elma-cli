@@ -69,6 +69,26 @@ pub(crate) fn detect_duplicate_step_ratio(program: &Program) -> f64 {
             } => {
                 format!("reply:{}:{}", instructions, common.purpose)
             }
+            Step::Respond {
+                instructions,
+                common,
+                ..
+            } => format!("respond:{}:{}", instructions, common.purpose),
+            Step::Explore {
+                objective, common, ..
+            } => format!("explore:{}:{}", objective, common.purpose),
+            Step::Write {
+                path,
+                content,
+                common,
+                ..
+            } => format!(
+                "write:{}:{}:{}",
+                path,
+                content.chars().take(50).collect::<String>(),
+                common.purpose
+            ),
+            Step::Delete { path, common, .. } => format!("delete:{}:{}", path, common.purpose),
         };
 
         *step_signatures.entry(signature).or_insert(0) += 1;

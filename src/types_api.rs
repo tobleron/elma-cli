@@ -239,15 +239,9 @@ pub(crate) struct EvidenceModeDecision {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub(crate) struct ExpertResponderAdvice {
+pub(crate) struct ExpertAdvisorAdvice {
     #[serde(default)]
-    pub(crate) style: String,
-    #[serde(default)]
-    pub(crate) focus: String,
-    #[serde(default)]
-    pub(crate) include_raw_output: bool,
-    #[serde(default)]
-    pub(crate) reason: String,
+    pub(crate) expert_advice: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

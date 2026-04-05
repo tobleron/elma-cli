@@ -1,7 +1,8 @@
 # Task 074: Model Capability Profiles For Local LLMs
 
 ## Priority
-**P1 - LOCAL-MODEL OPTIMIZATION**
+**P2 - EFFICIENCY & OBSERVABILITY (Tier B)**
+**Depends on:** Tier A stability (tasks 065-069)
 
 ## Objective
 Give Elma explicit per-model capability profiles so local small models are not treated like generic providers with identical reasoning, context, formatting, and JSON behavior.

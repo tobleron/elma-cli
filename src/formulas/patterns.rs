@@ -260,21 +260,11 @@ pub fn match_formula_to_request(
 ) -> FormulaSelection {
     // Simple matching logic (can be enhanced with ML later)
     let (formula, confidence, reason) = match (complexity, risk) {
-        ("DIRECT", "LOW") => {
-            if user_intent.contains("greet") || user_intent.contains("who are you") {
-                (
-                    FormulaPattern::reply_only(),
-                    0.95,
-                    "Simple conversational turn",
-                )
-            } else {
-                (
-                    FormulaPattern::inspect_reply(),
-                    0.85,
-                    "Direct request needing evidence",
-                )
-            }
-        }
+        ("DIRECT", "LOW") => (
+            FormulaPattern::reply_only(),
+            0.85,
+            "Direct request needing evidence",
+        ),
         ("INVESTIGATE", _) => {
             if user_intent.contains("summarize") || user_intent.contains("overview") {
                 (

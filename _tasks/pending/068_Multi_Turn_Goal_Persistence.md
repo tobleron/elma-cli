@@ -1,11 +1,11 @@
 # Task 068: Multi-Turn Goal Persistence
 
 ## Priority
-**P0-4.2 - CRITICAL (PILLAR 4: RELIABILITY TASKS)**
-**Blocked by:** P0-1, P0-2, P0-3
+**P1 - RELIABILITY CORE (Tier A)**
+**Was Blocked by:** P0-1, P0-2, P0-3 — **NOW UNBLOCKED** (P0 pillars substantially complete per Task 058)
 
 ## Status
-**PENDING** — Blocked on P0-1, P0-2, P0-3
+**PENDING** — Ready to start
 
 ## Renumbering Note
 - **Old:** Task 014

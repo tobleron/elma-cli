@@ -177,7 +177,7 @@ impl ParameterBands {
             // Response units: modest creativity
             "elma"
             | "summarizer"
-            | "expert_responder"
+            | "expert_advisor"
             | "result_presenter"
             | "formatter"
             | "claim_checker"
@@ -212,7 +212,11 @@ impl Step {
             | Step::Decide { id, .. }
             | Step::Summarize { id, .. }
             | Step::Edit { id, .. }
-            | Step::Reply { id, .. } => id,
+            | Step::Reply { id, .. }
+            | Step::Respond { id, .. }
+            | Step::Explore { id, .. }
+            | Step::Write { id, .. }
+            | Step::Delete { id, .. } => id,
         }
     }
 
@@ -228,6 +232,10 @@ impl Step {
             Step::Summarize { .. } => "summarize",
             Step::Edit { .. } => "edit",
             Step::Reply { .. } => "reply",
+            Step::Respond { .. } => "respond",
+            Step::Explore { .. } => "explore",
+            Step::Write { .. } => "write",
+            Step::Delete { .. } => "delete",
         }
     }
 
@@ -242,7 +250,11 @@ impl Step {
             | Step::Decide { common, .. }
             | Step::Summarize { common, .. }
             | Step::Edit { common, .. }
-            | Step::Reply { common, .. } => &common.purpose,
+            | Step::Reply { common, .. }
+            | Step::Respond { common, .. }
+            | Step::Explore { common, .. }
+            | Step::Write { common, .. }
+            | Step::Delete { common, .. } => &common.purpose,
         }
     }
 }

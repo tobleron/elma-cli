@@ -1,7 +1,8 @@
 # Task 089: Budget-Aware Orchestration And Aggressive Context Conservation
 
 ## Priority
-**P1 - SIGNATURE ELMA CAPABILITY**
+**P2 - EFFICIENCY & OBSERVABILITY (Tier B)**
+**Depends on:** Tasks 087 + 088 (Telemetry + Forecasting)
 
 ## Objective
 Make token budget a live orchestration input, so Elma can proactively conserve context on small local models by choosing smaller workflows, compressing narrative aggressively when necessary, and protecting the main objective instead of spending the context window carelessly.

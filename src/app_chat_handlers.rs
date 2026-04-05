@@ -37,7 +37,7 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
 
     // Update base URL in all profiles
     runtime.profiles.elma_cfg.base_url = new_base_url.to_string();
-    runtime.profiles.expert_responder_cfg.base_url = new_base_url.to_string();
+    runtime.profiles.expert_advisor_cfg.base_url = new_base_url.to_string();
     runtime.profiles.router_cfg.base_url = new_base_url.to_string();
     runtime.profiles.speech_act_cfg.base_url = new_base_url.to_string();
     runtime.profiles.mode_router_cfg.base_url = new_base_url.to_string();
@@ -58,7 +58,7 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
     if let Some(model_id) = new_model_id {
         runtime.model_id = model_id.to_string();
         runtime.profiles.elma_cfg.model = model_id.to_string();
-        runtime.profiles.expert_responder_cfg.model = model_id.to_string();
+        runtime.profiles.expert_advisor_cfg.model = model_id.to_string();
         runtime.profiles.router_cfg.model = model_id.to_string();
         runtime.profiles.speech_act_cfg.model = model_id.to_string();
         runtime.profiles.mode_router_cfg.model = model_id.to_string();

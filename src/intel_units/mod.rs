@@ -7,8 +7,12 @@
 
 mod intel_units_classifier;
 mod intel_units_core;
+pub(crate) mod intel_units_maestro;
 mod intel_units_repair;
 mod intel_units_responder;
+
+// Re-export maestro types for external use
+pub(crate) use intel_units_maestro::{MaestroInstruction, MaestroOutput, MaestroUnit};
 
 // Re-export all intel units for backward compatibility
 pub(crate) use intel_units_classifier::*;

@@ -1,0 +1,19 @@
+repo_root: /Users/r2/elma-cli
+cwd: /Users/r2/elma-cli
+user: r2
+shell: /bin/zsh
+shell_name: zsh
+term: xterm
+tty: not a tty
+os: ProductName:		macOS | ProductVersion:		26.3.1 | ProductVersionExtra:	(a) | BuildVersion:		25D771280a
+tools: rg:yes, git:yes, cargo:yes, python3:yes, node:yes, jq:yes, fd:no
+git_branch: main
+git_status: 5 changed file(s)
+  D AUDIT_REPORT.md
+   D _tasks/EXECUTION_LADDER_PLAN.md
+   D _tasks/IMPLEMENTATION_STATUS_VERIFICATION.md
+git_recent:
+  08589a0 analyzer: require both size AND drag to trigger refactors
+  f4c04b5 task 058 continuation: surgical refactor completion
+  bacc0e7 fix efficiency-role tags on split files: depth.rs->util-pure, tests->ignored
+project_type: Rust (elma-cli)

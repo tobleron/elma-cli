@@ -10,6 +10,57 @@ use crate::*;
 // Re-export level validation functions to maintain the same public API
 pub use crate::program_policy_level::*;
 
+/// Deterministic risk level based on step types in a program
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ProgramRisk {
+    Low,
+    Medium,
+    High,
+}
+
+pub(crate) fn compute_program_risk(program: &Program) -> ProgramRisk {
+    let mut max_risk = ProgramRisk::Low;
+    for step in &program.steps {
+        let step_risk = step_risk_level(step);
+        match (step_risk, &max_risk) {
+            (ProgramRisk::High, _) => {
+                max_risk = ProgramRisk::High;
+                break;
+            }
+            (ProgramRisk::Medium, ProgramRisk::Low) => {
+                max_risk = ProgramRisk::Medium;
+            }
+            _ => {}
+        }
+    }
+    max_risk
+}
+
+fn step_risk_level(step: &Step) -> ProgramRisk {
+    match step {
+        Step::Read { .. }
+        | Step::Search { .. }
+        | Step::Select { .. }
+        | Step::Decide { .. }
+        | Step::Plan { .. }
+        | Step::MasterPlan { .. }
+        | Step::Respond { .. }
+        | Step::Explore { .. }
+        | Step::Reply { .. }
+        | Step::Summarize { .. } => ProgramRisk::Low,
+        Step::Shell { cmd, .. } => {
+            if command_is_readonly(cmd) {
+                ProgramRisk::Low
+            } else {
+                ProgramRisk::Medium
+            }
+        }
+        Step::Write { .. } => ProgramRisk::Medium,
+        Step::Edit { .. } => ProgramRisk::High,
+        Step::Delete { .. } => ProgramRisk::High,
+    }
+}
+
 pub(crate) fn program_safety_check(cmd: &str) -> bool {
     is_command_sane(cmd) && is_command_allowed(cmd)
 }
@@ -157,6 +208,10 @@ pub(crate) fn program_signature(program: &Program) -> String {
                 format!("edit:{}:{}", spec.operation.trim(), spec.path.trim())
             }
             Step::Reply { .. } => "reply".to_string(),
+            Step::Respond { .. } => "respond".to_string(),
+            Step::Explore { .. } => "explore".to_string(),
+            Step::Write { path, .. } => format!("write:{}", path.trim()),
+            Step::Delete { path, .. } => format!("delete:{}", path.trim()),
         })
         .collect::<Vec<_>>()
         .join(" | ")
@@ -226,6 +281,22 @@ pub(crate) fn evaluate_program_for_scenario(
                 }
             }
             Step::Reply { .. } => has_reply = true,
+            Step::Respond { .. } => has_reply = true,
+            Step::Explore { .. } => has_search = true,
+            Step::Write { path, .. } => {
+                has_edit = true;
+                executable_in_tune = false;
+                if path.trim().is_empty() {
+                    shape_errors.push(format!("step {sid} missing write path"));
+                }
+            }
+            Step::Delete { path, .. } => {
+                has_edit = true;
+                executable_in_tune = false;
+                if path.trim().is_empty() {
+                    shape_errors.push(format!("step {sid} missing delete path"));
+                }
+            }
         }
     }
 

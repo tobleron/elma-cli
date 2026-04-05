@@ -81,6 +81,10 @@ pub(crate) fn step_kind(step: &Step) -> &'static str {
         Step::Summarize { .. } => "summarize",
         Step::Edit { .. } => "edit",
         Step::Reply { .. } => "reply",
+        Step::Respond { .. } => "respond",
+        Step::Explore { .. } => "explore",
+        Step::Write { .. } => "write",
+        Step::Delete { .. } => "delete",
     }
 }
 
@@ -115,6 +119,10 @@ pub(crate) fn step_detail(step: &Step) -> String {
         Step::Reply { instructions, .. } => {
             format!("Reply: \"{}\"", instructions.trim())
         }
+        Step::Respond { instructions, .. } => format!("Respond: \"{}\"", instructions.trim()),
+        Step::Explore { objective, .. } => format!("Explore: \"{}\"", objective.trim()),
+        Step::Write { path, .. } => format!("Write to \"{}\"", path.trim()),
+        Step::Delete { path, .. } => format!("Delete \"{}\"", path.trim()),
     }
 }
 
@@ -130,7 +138,11 @@ pub(crate) fn step_purpose(step: &Step) -> String {
         | Step::Decide { common, .. }
         | Step::Summarize { common, .. }
         | Step::Edit { common, .. }
-        | Step::Reply { common, .. } => common,
+        | Step::Reply { common, .. }
+        | Step::Respond { common, .. }
+        | Step::Explore { common, .. }
+        | Step::Write { common, .. }
+        | Step::Delete { common, .. } => common,
     };
 
     if !common.purpose.trim().is_empty() {
@@ -192,7 +204,11 @@ pub(crate) fn step_id(step: &Step) -> &str {
         | Step::Decide { id, .. }
         | Step::Summarize { id, .. }
         | Step::Edit { id, .. }
-        | Step::Reply { id, .. } => id,
+        | Step::Reply { id, .. }
+        | Step::Respond { id, .. }
+        | Step::Explore { id, .. }
+        | Step::Write { id, .. }
+        | Step::Delete { id, .. } => id,
     }
 }
 

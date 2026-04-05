@@ -1,0 +1,161 @@
+AGENTS.md
+Cargo.lock
+Cargo.toml
+GEMINI.md
+KOLOSAL.md
+QWEN.md
+TEST_PLAN.md
+_dev-system/
+│   ├── ARCHITECTURE.md
+│   ├── README.md
+│   ├── analysis/
+│   ├── analyzer/
+│   ├── analyzer_state.json
+│   ├── config/
+│   ├── plans/
+│   ├── tmp/
+_dev-tasks/
+│   ├── D001_Aggregate_Completed_Tasks.md
+_scripts/
+│   ├── export_defaults.sh
+│   ├── run_analyzer.sh
+│   ├── test_grammar_injection.sh
+_stress_testing/
+│   ├── H001_Sloppy_Chat_Greeting.md
+│   ├── H002_Sloppy_Casual_Shell_Request.md
+│   ├── H003_Sloppy_Multi_Instruction_Bounded.md
+│   ├── README.md
+│   ├── S000A_Chat_Baseline.md
+│   ├── S000B_Shell_Primitive.md
+│   ├── S000C_Read_Primitive.md
+│   ├── S000D_Search_Primitive.md
+│   ├── S000E_Sequential_Logic.md
+│   ├── S000F_Select_Primitive.md
+│   ├── S000G_Summarize_Primitive.md
+│   ├── S000H_Decide_Primitive.md
+│   ├── S000I_Edit_Primitive.md
+│   ├── S001_Connectivity_And_Formatting.md
+│   ├── S002_Recursive_Discovery.md
+│   ├── S003_Multi_File_Refactor.md
+│   ├── S004_Logical_Troubleshooting.md
+│   ├── S005_High_Intensity_Master_Planning.md
+│   ├── S006_Global_Architecture_Audit.md
+│   ├── S007_Full_System_Refactoring.md
+│   ├── S008_Workflow_Endurance.md
+│   ├── _claude_code_src/
+_tasks/
+│   ├── TASKS.md
+│   ├── active/
+│   ├── completed/
+│   ├── pending/
+│   ├── postponed/
+config/
+│   ├── Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf/
+│   ├── Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf/
+│   ├── README.md
+│   ├── balanced.toml
+│   ├── defaults/
+│   ├── gemma3_12b_it.toml
+│   ├── global.toml
+│   ├── grammar_mapping.toml
+│   ├── grammars/
+│   ├── granite-4.0-h-micro-UD-Q8_KL.gguf/
+│   ├── granite-4.0-h-micro-UD-Q8_K_XL.gguf/
+│   ├── granite-4.0-h-micro-UD-Q8_K_XL.gguf.DISABLED/
+│   ├── llama_3.2_3b_instruct_q6_k_l.gguf.DISABLED/
+│   ├── profiles.toml
+docs/
+│   ├── ARCHITECTURE/
+│   ├── PLANNING_AND_TASKS/
+│   ├── README.md
+│   ├── STANDARDS_AND_TOOLS/
+│   ├── _pending_integration/
+findings.txt
+probe_parsing.sh
+probe_path.rs
+reliability_probe.sh
+run_intention_scenarios.sh
+run_sloppy_tests_cli.sh
+run_stress_cli.sh
+run_stress_tests.sh
+run_stress_tests_cli.sh
+scenarios/
+│   ├── execution_ladder/
+│   ├── intention/
+│   ├── json_tune/
+│   ├── performance_test_001.md
+│   ├── performance_test_results_001.md
+│   ├── stress/
+│   ├── tune/
+sessions_stress_test/
+│   ├── s_1775328347_794892000/
+smoke_llamacpp.sh
+src/
+│   ├── app.rs
+│   ├── app_bootstrap.rs
+│   ├── app_bootstrap_core.rs
+│   ├── app_bootstrap_modes.rs
+│   ├── app_bootstrap_profiles.rs
+│   ├── app_chat.rs
+│   ├── app_chat_builders_advanced.rs
+│   ├── app_chat_builders_audit.rs
+│   ├── app_chat_builders_basic.rs
+│   ├── app_chat_builders_probes.rs
+│   ├── app_chat_core.rs
+│   ├── app_chat_fast_paths.rs
+│   ├── app_chat_handlers.rs
+│   ├── app_chat_helpers.rs
+│   ├── app_chat_loop.rs
+│   ├── app_chat_orchestrator.rs
+│   ├── app_chat_orchestrator_tests.rs
+│   ├── app_chat_patterns.rs
+│   ├── app_chat_trace.rs
+│   ├── config_healthcheck.rs
+│   ├── decomposition.rs
+│   ├── defaults.rs
+│   ├── defaults_core.rs
+│   ├── defaults_evidence.rs
+│   ├── defaults_evidence_core.rs
+│   ├── defaults_router.rs
+│   ├── evaluation.rs
+│   ├── evaluation_response.rs
+│   ├── evaluation_routing.rs
+│   ├── evaluation_workflow.rs
+│   ├── execution.rs
+│   ├── execution_ladder/
+│   ├── execution_steps.rs
+│   ├── execution_steps_compat.rs
+│   ├── execution_steps_edit.rs
+│   ├── execution_steps_read.rs
+│   ├── execution_steps_search.rs
+│   ├── execution_steps_selectors.rs
+│   ├── execution_steps_shell.rs
+│   ├── execution_steps_shell_exec.rs
+│   ├── execution_steps_shell_preflight.rs
+│   ├── formulas/
+│   ├── guardrails.rs
+│   ├── guardrails_refinement.rs
+│   ├── intel_narrative.rs
+│   ├── intel_narrative_planning.rs
+│   ├── intel_narrative_steps.rs
+│   ├── intel_narrative_utils.rs
+│   ├── intel_trait.rs
+│   ├── intel_units/
+│   ├── json_error_handler/
+│   ├── json_grammar.rs
+│   ├── json_parser.rs
+│   ├── json_parser_extract.rs
+│   ├── json_tuning.rs
+│   ├── main.rs
+│   ├── metrics.rs
+│   ├── models_api.rs
+│   ├── optimization.rs
+│   ├── optimization_eval.rs
+│   ├── optimization_tune.rs
+│   ├── orchestration.rs
+│   ├── orchestration_core.rs
+│   ├── orchestration_helpers/
+│   ├── orchestration_loop.rs
+│   ├── orchestration_loop_helpers.rs
+│   ├── orchestration_loop_reviewers.rs
+... (57 more entries omitted)

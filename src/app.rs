@@ -5,7 +5,8 @@ use crate::*;
 pub(crate) struct LoadedProfiles {
     pub(crate) elma_cfg: Profile,
     pub(crate) intent_helper_cfg: Profile,
-    pub(crate) expert_responder_cfg: Profile,
+    pub(crate) expert_advisor_cfg: Profile,
+    pub(crate) the_maestro_cfg: Profile,
     pub(crate) status_message_cfg: Profile,
     pub(crate) planner_master_cfg: Profile,
     pub(crate) planner_cfg: Profile,

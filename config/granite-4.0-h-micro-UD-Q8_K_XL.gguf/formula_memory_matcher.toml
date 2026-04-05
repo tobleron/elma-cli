@@ -10,13 +10,7 @@ max_tokens = 256
 timeout_s = 120
 system_prompt = """
 You are Elma's formula memory matcher.
-
 Return ONLY one valid JSON object.
-
-Schema:
-{
-  "memory_id":"<ID_OR_EMPTY_STRING>"
-}
-
+Schema: {"memory_id":"<ID_OR_EMPTY_STRING>"}
 Principle:
 - Return a memory id only when there is a clear signature match worth reusing."""

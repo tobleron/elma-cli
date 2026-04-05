@@ -1,7 +1,8 @@
 # Task 088: Objective-Level Token Forecasting And Budget Envelopes
 
 ## Priority
-**P1 - ADVANCED LOCAL-MODEL EFFICIENCY**
+**P2 - EFFICIENCY & OBSERVABILITY (Tier B)**
+**Depends on:** Task 087 (Token Telemetry)
 
 ## Objective
 Teach Elma to estimate the likely token cost of a complex objective before and during execution, so it can reason about the affordability of a workflow, not just react after the context window is already under pressure.

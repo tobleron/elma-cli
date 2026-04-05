@@ -1,7 +1,7 @@
 # Task 069: Runtime Profile Validation And Config Healthcheck
 
 ## Priority
-**P1 - OPERATIONAL HARDENING**
+**P1 - RELIABILITY CORE (Tier A)**
 
 ## Objective
 Add startup validation for profiles, prompts, grammars, and related config so Elma fails early and clearly when the runtime configuration is inconsistent.
@@ -17,12 +17,16 @@ Recent CLI issues showed that config shape mismatches and profile drift can brea
 - Report actionable startup diagnostics instead of late failures.
 - Persist a startup health summary in the session when useful.
 
-## Deliverables
-- A runtime config healthcheck path.
-- Early validation errors with clear explanations.
-- Tests covering mixed-schema and missing-asset failures.
+## Status
+**DONE** — Implemented and verified
 
-## Acceptance Criteria
-- Bad config states fail early and clearly.
-- Healthy startup produces a concise validation summary.
-- `cargo build` and `cargo test` remain green.
+## Progress Notes
+- Created `src/config_healthcheck.rs` module with full validation pipeline
+- Validates all 44 loaded profiles for: temperature range, top_p range, max_tokens, repeat_penalty, system_prompt non-empty
+- Validates global.toml base_url is parseable
+- Validates grammar file references in grammar_mapping.toml exist on disk
+- Validates cross-profile consistency (base_url agreement)
+- Integrated into `app_bootstrap_core.rs` — runs after `sync_and_upgrade_profiles`
+- Errors halt startup with clear diagnostics; warnings print but continue
+- 8 unit tests added, all passing
+- `cargo build` clean, `cargo test` 220 passed, `cargo fmt` clean

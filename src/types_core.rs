@@ -619,4 +619,39 @@ pub(crate) enum Step {
         #[serde(flatten)]
         common: StepCommon,
     },
+    /// Respond — answer grounded in executed step evidence
+    #[serde(rename = "respond")]
+    Respond {
+        id: String,
+        #[serde(default)]
+        instructions: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    /// Explore — map unfamiliar code, form hypotheses, test them
+    #[serde(rename = "explore")]
+    Explore {
+        id: String,
+        #[serde(default)]
+        objective: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    /// Write — create new file content
+    #[serde(rename = "write")]
+    Write {
+        id: String,
+        path: String,
+        content: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    /// Delete — remove file
+    #[serde(rename = "delete")]
+    Delete {
+        id: String,
+        path: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
 }

@@ -334,6 +334,8 @@ pub(crate) async fn execute_and_evaluate_program(
         decision,
         &reply_instructions,
         &step_results,
+        "",
+        "",
     )
     .await
     .unwrap_or_else(|_| EvidenceModeDecision {
@@ -354,7 +356,7 @@ pub(crate) async fn execute_and_evaluate_program(
         chat_url,
         &resources.elma_cfg,
         &resources.evidence_mode_cfg,
-        &resources.expert_responder_cfg,
+        &resources.expert_advisor_cfg,
         &resources.result_presenter_cfg,
         &resources.claim_checker_cfg,
         &resources.formatter_cfg,
@@ -365,6 +367,8 @@ pub(crate) async fn execute_and_evaluate_program(
         decision,
         &step_results,
         &reply_instructions,
+        "",
+        "",
     )
     .await
     {

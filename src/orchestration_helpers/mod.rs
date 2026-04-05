@@ -324,10 +324,12 @@ pub(crate) async fn maybe_revise_presented_result(
     route_decision: &RouteDecision,
     runtime_context: &Value,
     evidence_mode: &EvidenceModeDecision,
-    response_advice: &ExpertResponderAdvice,
+    response_advice: &ExpertAdvisorAdvice,
     step_results: &[StepResult],
     reply_instructions: &str,
     final_text: String,
+    workspace_facts: &str,
+    workspace_brief: &str,
 ) -> String {
     if let Ok(verdict) = claim_check_once(
         client,
@@ -359,6 +361,8 @@ pub(crate) async fn maybe_revise_presented_result(
                         verdict.rewrite_instructions.trim()
                     }
                 ),
+                workspace_facts,
+                workspace_brief,
             )
             .await
             .unwrap_or_default();
@@ -377,6 +381,8 @@ pub(crate) async fn decide_evidence_mode_via_unit(
     route_decision: &RouteDecision,
     reply_instructions: &str,
     step_results: &[StepResult],
+    workspace_facts: &str,
+    workspace_brief: &str,
 ) -> Result<EvidenceModeDecision> {
     let has_command_request = user_message
         .to_lowercase()
@@ -403,8 +409,8 @@ pub(crate) async fn decide_evidence_mode_via_unit(
     let context = IntelContext::new(
         user_message.to_string(),
         route_decision.clone(),
-        String::new(),
-        String::new(),
+        workspace_facts.to_string(),
+        workspace_brief.to_string(),
         Vec::new(),
         client.clone(),
     )
@@ -416,19 +422,21 @@ pub(crate) async fn decide_evidence_mode_via_unit(
 
 pub(crate) async fn request_response_advice_via_unit(
     client: &reqwest::Client,
-    expert_responder_cfg: &Profile,
+    expert_advisor_cfg: &Profile,
     user_message: &str,
     route_decision: &RouteDecision,
     evidence_mode: &EvidenceModeDecision,
     reply_instructions: &str,
     step_results: &[StepResult],
-) -> Result<ExpertResponderAdvice> {
-    let unit = ExpertResponderUnit::new(expert_responder_cfg.clone());
+    workspace_facts: &str,
+    workspace_brief: &str,
+) -> Result<ExpertAdvisorAdvice> {
+    let unit = ExpertAdvisorUnit::new(expert_advisor_cfg.clone());
     let context = IntelContext::new(
         user_message.to_string(),
         route_decision.clone(),
-        String::new(),
-        String::new(),
+        workspace_facts.to_string(),
+        workspace_brief.to_string(),
         Vec::new(),
         client.clone(),
     )
@@ -453,16 +461,18 @@ pub(crate) async fn present_result_via_unit(
     route_decision: &RouteDecision,
     runtime_context: &Value,
     evidence_mode: &EvidenceModeDecision,
-    response_advice: &ExpertResponderAdvice,
+    response_advice: &ExpertAdvisorAdvice,
     step_results: &[StepResult],
     reply_instructions: &str,
+    workspace_facts: &str,
+    workspace_brief: &str,
 ) -> Result<String> {
     let unit = ResultPresenterUnit::new(presenter_cfg.clone());
     let context = IntelContext::new(
         user_message.to_string(),
         route_decision.clone(),
-        String::new(),
-        String::new(),
+        workspace_facts.to_string(),
+        workspace_brief.to_string(),
         Vec::new(),
         client.clone(),
     )

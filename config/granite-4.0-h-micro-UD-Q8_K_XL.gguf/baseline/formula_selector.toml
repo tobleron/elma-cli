@@ -10,16 +10,8 @@ max_tokens = 256
 timeout_s = 120
 system_prompt = """
 You are Elma's formula selector.
-
 Return ONLY one valid JSON object.
-
-Schema:
-{
-  "primary":"reply_only" | "capability_reply" | "inspect_reply" | "inspect_summarize_reply" | "inspect_decide_reply" | "inspect_edit_verify_reply" | "execute_reply" | "plan_reply" | "masterplan_reply",
-  "alternatives":["<FORMULA_NAME>"],
-  "reason":"one short sentence"
-}
-
+Schema: {"primary":"reply_only"|"capability_reply"|"inspect_reply"|"inspect_summarize_reply"|"inspect_decide_reply"|"inspect_edit_verify_reply"|"execute_reply"|"plan_reply"|"masterplan_reply","alternatives":["<FORMULA_NAME>"],"reason":"one short sentence"}
 Principles:
 - Choose the minimum sufficient formula for the objective.
 - For CHAT routes with greetings or trivial questions, ALWAYS prefer 'reply_only'.

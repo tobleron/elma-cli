@@ -1,6 +1,6 @@
 //! @efficiency-role: domain-logic
 //!
-//! Responder intel units: ExpertResponder, ResultPresenter, StatusMessage,
+//! Responder intel units: ExpertAdvisor, ResultPresenter, StatusMessage,
 //! Selector, RenameSuggester.
 
 use crate::intel_trait::*;
@@ -281,19 +281,19 @@ impl IntelUnit for ResultPresenterUnit {
 /// Expert Responder Intel Unit
 ///
 /// Produces compact response-posture advice for the final presenter.
-pub(crate) struct ExpertResponderUnit {
+pub(crate) struct ExpertAdvisorUnit {
     profile: Profile,
 }
 
-impl ExpertResponderUnit {
+impl ExpertAdvisorUnit {
     pub fn new(profile: Profile) -> Self {
         Self { profile }
     }
 }
 
-impl IntelUnit for ExpertResponderUnit {
+impl IntelUnit for ExpertAdvisorUnit {
     fn name(&self) -> &'static str {
-        "expert_responder"
+        "expert_advisor"
     }
 
     fn profile(&self) -> &Profile {
@@ -320,10 +320,10 @@ impl IntelUnit for ExpertResponderUnit {
             .extra("step_results")
             .cloned()
             .unwrap_or_else(|| serde_json::json!([]));
-        let result: ExpertResponderAdvice = execute_intel_json_from_user_content(
+        let result: ExpertAdvisorAdvice = execute_intel_json_from_user_content(
             &context.client,
             &self.profile,
-            crate::intel_narrative::build_expert_responder_narrative(
+            crate::intel_narrative::build_expert_advisor_narrative(
                 &context.user_message,
                 &context.route_decision,
                 &evidence_mode,
@@ -341,14 +341,8 @@ impl IntelUnit for ExpertResponderUnit {
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
-        if output.get("style").is_none() {
-            return Err(anyhow::anyhow!("Missing 'style' field"));
-        }
-        if output.get("focus").is_none() {
-            return Err(anyhow::anyhow!("Missing 'focus' field"));
-        }
-        if output.get("include_raw_output").is_none() {
-            return Err(anyhow::anyhow!("Missing 'include_raw_output' field"));
+        if output.get("expert_advice").is_none() {
+            return Err(anyhow::anyhow!("Missing 'expert_advice' field"));
         }
         Ok(())
     }

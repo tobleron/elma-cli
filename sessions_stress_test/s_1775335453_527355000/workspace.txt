@@ -1,0 +1,8 @@
+cwd: /Users/r2/elma-cli
+user: r2
+shell: /bin/zsh
+os: macOS
+tools: rg:yes, git:yes, cargo:yes, python3:yes, node:yes, jq:yes, fd:no
+git_branch: main
+git_status: 140 file(s) changed
+project_type: Rust (elma-cli)

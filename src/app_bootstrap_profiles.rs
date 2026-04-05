@@ -41,9 +41,10 @@ fn load_agent_config_with_fallback(path: &PathBuf) -> Result<Profile> {
 pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
     Ok(LoadedProfiles {
         elma_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("_elma.config"))?,
-        expert_responder_cfg: load_agent_config_with_fallback(
-            &model_cfg_dir.join("expert_responder.toml"),
+        expert_advisor_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("expert_advisor.toml"),
         )?,
+        the_maestro_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("the_maestro.toml"))?,
         status_message_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("status_message_generator.toml"),
         )?,
@@ -183,8 +184,15 @@ pub(crate) fn sync_and_upgrade_profiles(
     )?;
     sync_managed_profile(
         args,
-        &model_cfg_dir.join("expert_responder.toml"),
-        &mut profiles.expert_responder_cfg,
+        &model_cfg_dir.join("expert_advisor.toml"),
+        &mut profiles.expert_advisor_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("the_maestro.toml"),
+        &mut profiles.the_maestro_cfg,
         base_url,
         model_id,
     )?;

@@ -1,7 +1,8 @@
 # Task 076: Trace Observability And Session Review Tools
 
 ## Priority
-**P1 - MAINTAINABILITY**
+**P2 - EFFICIENCY & OBSERVABILITY (Tier B)**
+**Depends on:** Tier A stability (tasks 065-069)
 
 ## Objective
 Make failed or suspicious sessions easier to inspect so Elma can be debugged like a premium tool rather than a black box of logs and artifacts.

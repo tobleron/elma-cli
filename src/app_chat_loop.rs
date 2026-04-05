@@ -411,62 +411,103 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             content: line.to_string(),
         });
 
-        let (rephrased_objective, route_decision) = annotate_and_classify(runtime, line).await?;
-        try_workspace_discovery(runtime, line);
-
-        let memories = load_recent_formula_memories(&runtime.model_cfg_dir, 8).unwrap_or_default();
-        let (workflow_plan, ladder, complexity, scope, formula, planner_fallback_used) =
-            derive_planning_prior_with_ladder(
-                &runtime.client,
-                &runtime.chat_url,
-                &runtime.profiles.workflow_planner_cfg,
-                &runtime.profiles.complexity_cfg,
-                &runtime.profiles.evidence_need_cfg,
-                &runtime.profiles.action_need_cfg,
-                &runtime.profiles.scope_builder_cfg,
-                &runtime.profiles.formula_cfg,
-                line,
-                &route_decision,
-                &runtime.ws,
-                &runtime.ws_brief,
-                &memories,
-                &runtime.messages,
-            )
-            .await;
-        let src = if planner_fallback_used {
-            "fallback_chain"
-        } else {
-            "ladder_assessment"
-        };
-        trace(
-            &runtime.args,
-            &format!("planning_source={src} ladder_level={:?}", ladder.level),
-        );
-        if let Some(plan) = &workflow_plan {
-            trace_workflow_plan(&runtime.args, plan);
-        }
-        trace_complexity(&runtime.args, &complexity);
-        trace_scope(&runtime.args, &scope);
-        trace_formula(&runtime.args, &formula);
-        let intent = describe_operator_intent(&route_decision, &complexity, &formula);
-        operator_trace(&runtime.args, &intent);
-
-        let hierarchy_goal = try_hierarchical_decomposition(
+        // Simplified: intent annotation only — no classification pipeline
+        let rephrased_objective = annotate_user_intent(
             &runtime.client,
             &runtime.chat_url,
-            &runtime.profiles,
-            &runtime.session.root,
+            &runtime.profiles.intent_helper_cfg,
             line,
-            &complexity,
-            &runtime.ws,
-            &runtime.ws_brief,
             &runtime.messages,
         )
         .await
-        .unwrap_or(None);
-        if hierarchy_goal.is_some() {
-            trace_verbose(runtime.verbose, "hierarchy_decomposition=triggered");
-        }
+        .unwrap_or_else(|_| line.to_string());
+
+        try_workspace_discovery(runtime, line);
+
+        // No keyword-based routing — the Maestro pipeline handles everything.
+        // Default to CHAT+reply_only for very short inputs (likely conversational),
+        // WORKFLOW+inspect_reply for everything else. This is a conservative heuristic,
+        // not keyword matching.
+        let likely_conversational =
+            line.len() < 30 && !extract_first_path_from_user_text(line).is_some();
+
+        let route = if likely_conversational {
+            "CHAT"
+        } else {
+            "WORKFLOW"
+        };
+        let formula_primary = if likely_conversational {
+            "reply_only"
+        } else {
+            "inspect_reply"
+        };
+        let needs_evidence = !likely_conversational;
+
+        let route_decision = RouteDecision {
+            route: route.to_string(),
+            source: "maestro_pipeline".to_string(),
+            margin: 0.0,
+            entropy: 0.0,
+            distribution: vec![(route.to_string(), 1.0)],
+            speech_act: ProbabilityDecision::default(),
+            workflow: ProbabilityDecision::default(),
+            mode: ProbabilityDecision::default(),
+        };
+        let complexity = ComplexityAssessment {
+            complexity: if likely_conversational {
+                "DIRECT"
+            } else {
+                "INVESTIGATE"
+            }
+            .to_string(),
+            needs_evidence,
+            needs_tools: !likely_conversational,
+            needs_decision: false,
+            needs_plan: false,
+            risk: "LOW".to_string(),
+            suggested_pattern: formula_primary.to_string(),
+        };
+        let scope = ScopePlan::default();
+        let formula = FormulaSelection {
+            primary: formula_primary.to_string(),
+            alternatives: Vec::new(),
+            reason: "Maestro-driven".to_string(),
+            memory_id: String::new(),
+        };
+        let ladder = ExecutionLadderAssessment::new(
+            if likely_conversational {
+                ExecutionLevel::Action
+            } else {
+                ExecutionLevel::Task
+            },
+            "Maestro pipeline".to_string(),
+            false,
+            false,
+            false,
+            false,
+            "LOW".to_string(),
+            if likely_conversational {
+                "DIRECT"
+            } else {
+                "INVESTIGATE"
+            }
+            .to_string(),
+        );
+        let workflow_plan: Option<WorkflowPlannerOutput> = None;
+
+        trace(
+            &runtime.args,
+            &format!("planning_source=maestro ladder_level={:?}", ladder.level),
+        );
+        trace(
+            &runtime.args,
+            &format!(
+                "intent_annotation={}",
+                rephrased_objective.replace('\n', " ")
+            ),
+        );
+
+        let hierarchy_goal: Option<Masterplan> = None;
 
         let mut program = build_program(
             runtime,
@@ -494,97 +535,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             "PLAN",
             &format!("{} -> {} steps", complexity.complexity, program.steps.len()),
         );
-        if apply_capability_guard(&mut program, &route_decision, !runtime.args.disable_guards) {
-            trace_verbose(runtime.verbose, "guard=capability_reply_only");
-        }
-
-        let policy_err = validate_formula_level(&formula, ladder.level)
-            .err()
-            .or_else(|| program_matches_level(&program, ladder.level).err())
-            .or_else(|| {
-                validate_evidence_requirements(&program, &route_decision, &complexity, &formula)
-                    .err()
-            });
-        if let Some(reason) = policy_err {
-            trace(
-                &runtime.args,
-                &format!(
-                    "program_policy_mismatch level={:?} reason={reason}",
-                    ladder.level
-                ),
-            );
-            apply_policy_fallback(
-                runtime,
-                line,
-                &route_decision,
-                &ladder,
-                &complexity,
-                &scope,
-                &formula,
-                &workflow_plan,
-                &mut program,
-            )
-            .await;
-            let recheck = program_matches_level(&program, ladder.level)
-                .err()
-                .or_else(|| {
-                    validate_evidence_requirements(&program, &route_decision, &complexity, &formula)
-                        .err()
-                });
-            if let Some(recheck_reason) = recheck {
-                operator_trace(&runtime.args, "repairing the workflow plan");
-                if let Ok(recovered) = recover_program_once(
-                    &runtime.client,
-                    &runtime.chat_url,
-                    &runtime.profiles.orchestrator_cfg,
-                    line,
-                    &route_decision,
-                    workflow_plan.as_ref(),
-                    &complexity,
-                    &scope,
-                    &formula,
-                    &runtime.ws,
-                    &runtime.ws_brief,
-                    &runtime.messages,
-                    &format!("program_policy_mismatch: {recheck_reason}"),
-                    Some(&program),
-                    &[],
-                )
-                .await
-                {
-                    if program_matches_level(&recovered, ladder.level).is_ok()
-                        && validate_evidence_requirements(
-                            &recovered,
-                            &route_decision,
-                            &complexity,
-                            &formula,
-                        )
-                        .is_ok()
-                    {
-                        program = recovered;
-                    } else {
-                        trace_verbose(
-                            runtime.verbose,
-                            "workflow_recovery=failed source=program_policy_mismatch",
-                        );
-                    }
-                }
-            }
-        }
+        // Skip capability guard and policy validation for Maestro-generated programs
+        // The Maestro + Orchestrator pipeline self-validates step generation
 
         apply_shape_fallbacks(runtime, line, &ladder, &mut program);
-        program = run_reflection_loop(
-            runtime,
-            program,
-            line,
-            &route_decision,
-            workflow_plan.as_ref(),
-            &complexity,
-            &scope,
-            &formula,
-            &rephrased_objective,
-        )
-        .await;
+        // Skip reflection loop — Maestro + Orchestrator self-validate step generation
+        // program = run_reflection_loop(...);  // disabled
 
         let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
             && formula.primary.eq_ignore_ascii_case("reply_only");

@@ -10,17 +10,8 @@ max_tokens = 512
 timeout_s = 120
 system_prompt = """
 You are Elma's scope builder.
-
 Return ONLY one valid JSON object.
-
-Schema:
-{
-  "focus_paths":["..."],
-  "include_globs":["..."],
-  "exclude_globs":["..."],
-  "query_terms":["..."]
-}
-
+Schema: {"focus_paths":["..."],"include_globs":["..."],"exclude_globs":["..."],"query_terms":["..."]}
 Principles:
 - Return the smallest scope that still supports responsible execution.
 - Prefer precise paths and query terms over broad globs."""

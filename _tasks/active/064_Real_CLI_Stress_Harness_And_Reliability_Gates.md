@@ -2,6 +2,7 @@
 
 ## Priority
 **P0 - VERIFICATION INFRASTRUCTURE**
+**Master Plan:** Tracked under Task 095, Phase 1 (Task 2: Close active stress harness gaps)
 
 ## Objective
 Create a true CLI-grounded stress harness so Elma is validated through `cargo run` sessions, not only through orchestrator/model path approximations.
@@ -90,11 +91,19 @@ The project already has stress prompts and scenario runners, but recent debuggin
   - a bounded multi-instruction sandbox request incorrectly routed to `CHAT` and hallucinated a repo purpose plus `scripts/run_stress_test.sh` as the entry point, proving that multi-instruction natural-language requests are still not reliably classified into evidence-grounded workflows
 - These findings confirm Elma is structurally much stronger than before, but not yet robust enough against sloppy human phrasing to claim broad conversational reliability.
 
-## Latest Progress
-- Human-style prompt handling improved materially:
-  - sloppy greeting `yo elma u there?? just say hi normal plz` now returns a normal conversational `Hello.` instead of the old meta-runtime failure text.
-  - casual scoped listing `umm can u pls list src and dont overdo it` now runs a bounded grounded 2-step list workflow (`ls -1 src | head -n 80` + reply) instead of hallucinating nonexistent files.
-  - path-scoped multi-instruction requests no longer take the direct chat fast path automatically; they now build a bounded evidence workflow instead.
+## Latest Progress (2026-04-04 Phase 1 Gate)
+- `run_stress_cli.sh` built as real CLI stress runner with semantic validation gates
+- Fixed macOS compatibility (no `timeout` command — added detection logic)
+- Real CLI verification results:
+  - S000A (chat baseline): over-orchestrates (runs `rg --files` for simple chat), final answer grounded
+  - S000B (shell primitive): CHAT route instead of SHELL, lists files but entry point identification implicit
+  - S002 (recursive discovery): `rg --type source` unsupported, retry loop replays same command instead of changing strategy
+  - Combined read+summary+entry-point: hallucinated `scripts/run_tests.sh` — CHAT route answered without reading file
+  - Sloppy greeting: ✅ `Hi there!` — perfect
+  - Casual scoped listing: ✅ bounded `ls src` workflow, real evidence, truncated output
+- `cargo build` clean, `cargo test` 220 passed, intention scenarios 20/20, reliability probe 30/30
+
+### Previous Progress (from Task 058)
 - Runtime profile/config writes are now atomic, which reduces transient parse failures during concurrent profile sync/load activity.
 - A new combined bounded workflow exists for:
   - read README

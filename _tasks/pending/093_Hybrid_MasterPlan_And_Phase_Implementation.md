@@ -1,7 +1,7 @@
 # Task 093: Hybrid MasterPlan And Phase Implementation
 
 ## Priority
-**P0 - RELIABILITY / CAPABILITY GAP**
+**P1 - RELIABILITY CORE (Tier A)**
 
 ## Problem
 Elma currently supports:

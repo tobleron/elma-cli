@@ -72,8 +72,8 @@ pub(crate) fn compute_all_prompt_hashes(profiles: &LoadedProfiles) -> HashMap<St
         compute_prompt_hash(&profiles.critic_cfg.system_prompt),
     );
     hashes.insert(
-        "expert_responder".to_string(),
-        compute_prompt_hash(&profiles.expert_responder_cfg.system_prompt),
+        "expert_advisor".to_string(),
+        compute_prompt_hash(&profiles.expert_advisor_cfg.system_prompt),
     );
 
     hashes
@@ -144,7 +144,7 @@ pub(crate) struct TuneResources {
     pub(crate) evidence_compactor_cfg: Profile,
     pub(crate) artifact_classifier_cfg: Profile,
     pub(crate) evidence_mode_cfg: Profile,
-    pub(crate) expert_responder_cfg: Profile,
+    pub(crate) expert_advisor_cfg: Profile,
     pub(crate) outcome_verifier_cfg: Profile,
     pub(crate) memory_gate_cfg: Profile,
     pub(crate) result_presenter_cfg: Profile,

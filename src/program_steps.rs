@@ -16,6 +16,10 @@ pub(crate) fn step_kind(s: &Step) -> &'static str {
         Step::Summarize { .. } => "summarize",
         Step::Edit { .. } => "edit",
         Step::Reply { .. } => "reply",
+        Step::Respond { .. } => "respond",
+        Step::Explore { .. } => "explore",
+        Step::Write { .. } => "write",
+        Step::Delete { .. } => "delete",
     }
 }
 
@@ -29,6 +33,10 @@ pub(crate) fn step_id(s: &Step) -> &str {
         Step::Summarize { id, .. } => id,
         Step::Edit { id, .. } => id,
         Step::Reply { id, .. } => id,
+        Step::Respond { id, .. }
+        | Step::Explore { id, .. }
+        | Step::Write { id, .. }
+        | Step::Delete { id, .. } => id,
     }
 }
 
@@ -44,6 +52,10 @@ pub(crate) fn step_common(s: &Step) -> &StepCommon {
         Step::Summarize { common, .. } => common,
         Step::Edit { common, .. } => common,
         Step::Reply { common, .. } => common,
+        Step::Respond { common, .. }
+        | Step::Explore { common, .. }
+        | Step::Write { common, .. }
+        | Step::Delete { common, .. } => common,
     }
 }
 
@@ -63,6 +75,10 @@ pub(crate) fn step_purpose(s: &Step) -> String {
         Step::Summarize { .. } => "summarize".to_string(),
         Step::Edit { .. } => "edit".to_string(),
         Step::Reply { .. } => "answer".to_string(),
+        Step::Respond { .. } => "respond".to_string(),
+        Step::Explore { .. } => "explore".to_string(),
+        Step::Write { .. } => "write".to_string(),
+        Step::Delete { .. } => "delete".to_string(),
     }
 }
 
@@ -154,6 +170,22 @@ pub(crate) fn program_step_json(step: &Step) -> serde_json::Value {
                 "instructions".to_string(),
                 serde_json::json!(instructions.trim()),
             );
+        }
+        Step::Respond { instructions, .. } => {
+            obj.insert(
+                "instructions".to_string(),
+                serde_json::json!(instructions.trim()),
+            );
+        }
+        Step::Explore { objective, .. } => {
+            obj.insert("objective".to_string(), serde_json::json!(objective.trim()));
+        }
+        Step::Write { path, content, .. } => {
+            obj.insert("path".to_string(), serde_json::json!(path.trim()));
+            obj.insert("content".to_string(), serde_json::json!(content));
+        }
+        Step::Delete { path, .. } => {
+            obj.insert("path".to_string(), serde_json::json!(path.trim()));
         }
     }
     serde_json::Value::Object(obj)

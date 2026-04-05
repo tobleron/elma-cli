@@ -1,0 +1,9 @@
+repo_root: /Users/r2/elma-cli
+cwd: /Users/r2/elma-cli
+user: r2
+shell: /bin/zsh
+shell_name: zsh
+term: xterm
+tty: not a tty
+os: ProductName:		macOS | ProductVersion:		26.3.1 | ProductVersionExtra:	(a) | BuildVersion:		25D771280a
+tools: rg:yes, git:yes, cargo:yes, python3:yes, node:yes, jq:yes, fd:no

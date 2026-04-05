@@ -344,10 +344,10 @@ Output: Only the repaired JSON."#
 // Expert Responder - Response Posture Advice
 // ============================================================================
 
-pub(crate) fn default_expert_responder_config(base_url: &str, model: &str) -> Profile {
+pub(crate) fn default_expert_advisor_config(base_url: &str, model: &str) -> Profile {
     Profile {
         version: 1,
-        name: "expert_responder".to_string(),
+        name: "expert_advisor".to_string(),
         base_url: base_url.to_string(),
         model: model.to_string(),
         temperature: 0.7,
@@ -356,14 +356,14 @@ pub(crate) fn default_expert_responder_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: canonical_system_prompt("expert_responder")
+        system_prompt: canonical_system_prompt("expert_advisor")
             .unwrap_or("Determine the best response posture for the user's situation.")
             .to_string(),
     }
 }
 
 /// Expert Responder: produce compact advice on how Elma should respond
-pub(crate) async fn expert_responder_advice(
+pub(crate) async fn expert_advisor_advice(
     client: &reqwest::Client,
     chat_url: &Url,
     cfg: &Profile,
@@ -395,7 +395,7 @@ pub(crate) async fn expert_responder_advice(
     Ok(extract_response_text(&resp).trim().to_string())
 }
 
-pub(crate) fn parse_expert_responder_style(helper_response: &str) -> &str {
+pub(crate) fn parse_expert_advisor_style(helper_response: &str) -> &str {
     let response_upper = helper_response.to_uppercase();
     if response_upper.contains("CAUTIOUS") {
         "cautious"

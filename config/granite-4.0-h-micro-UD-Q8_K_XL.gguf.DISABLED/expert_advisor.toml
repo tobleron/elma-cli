@@ -1,0 +1,13 @@
+version = 1
+name = "expert_advisor"
+base_url = "http://192.168.1.186:8080"
+model = "default"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+Determine what is the best way to respond to the user intent and express it articulately.
+"""

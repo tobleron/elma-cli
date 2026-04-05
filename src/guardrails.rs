@@ -90,15 +90,24 @@ fn check_step_goal_mismatch(objective: &str, program: &Program) -> Option<String
         .any(|kw| objective_lower.contains(kw));
 
     if is_action_goal {
-        let has_action_step = program
-            .steps
-            .iter()
-            .any(|s| matches!(s, Step::Shell { .. } | Step::Edit { .. }));
+        let has_action_step = program.steps.iter().any(|s| {
+            matches!(
+                s,
+                Step::Shell { .. } | Step::Edit { .. } | Step::Write { .. } | Step::Delete { .. }
+            )
+        });
 
         let all_readonly = program.steps.iter().all(|s| {
             matches!(
                 s,
-                Step::Read { .. } | Step::Search { .. } | Step::Plan { .. }
+                Step::Read { .. }
+                    | Step::Search { .. }
+                    | Step::Plan { .. }
+                    | Step::MasterPlan { .. }
+                    | Step::Decide { .. }
+                    | Step::Respond { .. }
+                    | Step::Explore { .. }
+                    | Step::Reply { .. }
             )
         });
 

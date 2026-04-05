@@ -1,0 +1,181 @@
+trace: workspace_context_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775335598_617152000/workspace.txt
+trace: workspace_brief_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775335598_617152000/workspace_brief.txt
+trace: base_url_source=cli_or_env value=http://192.168.1.186:8080
+trace: model_behavior preferred_reasoning=none auto_separated=false auto_truncated=false finalizer=false none_clean=true json_auto=true json_none=true
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3463 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: intent_annotation=cwd
+[intent: Elma should change the current working directory based on the user's "cwd" command.]
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4512 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4775 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4609 bytes
+[HTTP_SUCCESS] parsed response successfully
+[CLASSIFY] speech=INSTRUCT route=SHELL (entropy=0.62)
+trace: speech_act_dist=INSTRUCT:0.99 CHAT:0.00 INQUIRE:0.00
+trace: speech_act=INSTRUCT p=0.99 margin=0.99 entropy=0.00 source=json_output
+trace: workflow_dist=CHAT:0.70 WORKFLOW:0.30
+trace: workflow=CHAT p=0.70 margin=0.40 entropy=0.70 source=json_output
+trace: mode_dist=EXECUTE:0.98 INSPECT:0.00 PLAN:0.00 MASTERPLAN:0.00 DECIDE:0.00
+trace: mode=EXECUTE p=0.98 margin=0.98 entropy=0.00 source=json_output
+trace: route_dist=SHELL:0.79 CHAT:0.35 PLAN:0.00 MASTERPLAN:0.00 DECIDE:0.00
+trace: route=SHELL p=0.79 margin=0.44 entropy=0.62 source=speech:json_output workflow:json_output mode:json_output
+[INTEL_EXECUTE] unit=complexity_assessment model=granite-4.0-h-micro-UD-Q8_K_XL.gguf
+[INTEL_HTTP_START] url=http://192.168.1.186:8080 timeout=45s
+[INTEL_HTTP_URL] final_url=http://192.168.1.186:8080/v1/chat/completions
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4793 bytes
+[HTTP_SUCCESS] parsed response successfully
+[INTEL_HTTP_DONE] unit=complexity_assessment received response
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3887 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3880 bytes
+[HTTP_SUCCESS] parsed response successfully
+[GRAMMAR] injected grammar for profile=workflow_planner
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 7341 bytes
+[HTTP_SUCCESS] parsed response successfully
+[GRAMMAR] injected grammar for profile=scope_builder
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4928 bytes
+[HTTP_SUCCESS] parsed response successfully
+[GRAMMAR] injected grammar for profile=formula_selector
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 10249 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: planning_source=ladder_assessment ladder_level=Action
+trace: workflow_planner objective=Return the current working directory path complexity=DIRECT risk=LOW reason=The user requested the current working directory, which is straightforward to retrieve.
+trace: complexity=DIRECT pattern=execute_reply risk=LOW
+trace: scope focus=- include=- exclude=- query=- reason=Fallback scope after parse repair
+trace: formula=execute_reply alt=- reason=The direct objective is to provide the current working directory path, which can be achieved with a simple execute_reply formula.
+-> running a terminal action and preparing the answer
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 11569 bytes
+[HTTP_SUCCESS] parsed response successfully
+[PLAN] DIRECT -> 2 steps
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4482 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: reflection_confidence=0.95 concerns=1 missing=0 attempt=1
+[REFLECT] confidence=95%
+trace: strategy_chain_selected primary=Direct fallbacks=1
+note: Retry 1/2 (temp=0.2, strategy=Direct)
+trace: orchestration_retry_attempt id=1 strategy=Direct temp=0.20 use_initial=true
+trace: step id=s1 type=shell purpose=retrieve current directory depends_on=-
+-> retrieve current directory
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3006 bytes
+[HTTP_SUCCESS] parsed response successfully
+→ executing
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4336 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: preflight id=s1 status=accept reason=The command 'pwd' is safe, directly achieves the objective of providing the current working directory path, and aligns with the platform specifications.
+trace: shell_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775335598_617152000/shell/001.sh
+-> pwd
+trace: shell_output_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775335598_617152000/shell/001.out
+trace: exec_exit_code=0
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3753 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: step id=r1 type=reply purpose=inform depends_on=s1
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3893 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: sufficiency_status=ok reason=The workflow correctly executed 'pwd' and provided the current working directory path as requested.
+[GRAMMAR] injected grammar for profile=critic
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4083 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: critic_status=ok reason=The workflow successfully retrieves and communicates the current working directory path as requested.
+note: Retry 1 succeeded
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4693 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 5860 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 5990 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3829 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4568 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: memory_gate_status=save reason=The workflow successfully retrieved and communicated the current working directory path (/Users/r2/elma-cli) as requested.
+trace: formula_memory_saved=/Users/r2/elma-cli/config/granite-4.0-h-micro-UD-Q8_K_XL.gguf/formula_memory/fm_1775335621.json

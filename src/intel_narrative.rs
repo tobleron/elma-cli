@@ -176,7 +176,7 @@ PRESENTATION RULES:
     )
 }
 
-pub(crate) fn build_expert_responder_narrative(
+pub(crate) fn build_expert_advisor_narrative(
     user_message: &str,
     route_decision: &RouteDecision,
     evidence_mode: &Value,

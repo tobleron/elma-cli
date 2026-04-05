@@ -1,7 +1,8 @@
 # Task 087: llama.cpp Runtime Token Telemetry
 
 ## Priority
-**P1 - TOKEN-AWARE LOCAL RUNTIME FOUNDATION**
+**P2 - EFFICIENCY & OBSERVABILITY (Tier B)**
+**Depends on:** Tier A stability (tasks 065-069)
 
 ## Objective
 Give Elma a first-class runtime view of token consumption and remaining context capacity when running against llama.cpp-compatible local endpoints, so orchestration decisions can be grounded in actual budget signals instead of blind approximation.

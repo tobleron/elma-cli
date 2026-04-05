@@ -2,6 +2,7 @@
 
 ## Priority
 **P0 - CRITICAL** (Prevents context pollution across iterations)
+**Master Plan:** Tracked under Task 095, active sub-task (multi-turn verification remaining)
 
 ## Problem Statement
 
