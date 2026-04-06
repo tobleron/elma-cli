@@ -23,14 +23,8 @@ pub(crate) async fn request_program_or_repair(
     let orch_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: orchestrator_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-            },
+            ChatMessage::simple("system", &orchestrator_cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt.to_string()),
         ],
         temperature: orchestrator_cfg.temperature,
         top_p: orchestrator_cfg.top_p,
@@ -40,6 +34,7 @@ pub(crate) async fn request_program_or_repair(
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar,
+    tools: None,
     };
     let (program, json_text) = chat_json_with_repair_text_timeout(
         client,
@@ -78,29 +73,20 @@ pub(crate) async fn request_recovery_program(
     let recovery_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: format!(
-                    "{}\n\nRECOVERY MODE:\n\
-                    - A previous workflow attempt failed or was unusable.\n\
-                    - Return ONLY one valid Program JSON object.\n\
-                    - Do not output reply-only for a non-CHAT route unless asking one concise clarifying question is the only safe next step.\n\
-                    - Use current_program_steps and observed_step_results to repair the workflow, not to restate or hallucinate completion.\n\
-                    - DO NOT repeat steps that are already marked as successful ('ok': true) in observed_step_results.\n\
-                    - DO NOT repeat previously FAILED commands (see list below).\n\
-                    - If the task asks to choose, rank, prioritize, or select workspace items, inspect evidence first, then decide or summarize, then reply.\n\
-                    - If a select step exists or should exist, later shell steps that consume that selection should normally reference it directly with a placeholder such as {{sel1|shell_words}}.\n\
-                    - If the task asks to show file contents, inspect the selected files before replying.\n\
-                    - Prefer the smallest valid program that can still satisfy the request.\n\n\
-                    PREVIOUSLY FAILED COMMANDS (DO NOT REPEAT - USE DIFFERENT APPROACH):\n{}\n",
-                    orchestrator_cfg.system_prompt,
-                    failed_commands_str
-                ),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-            },
+            ChatMessage::simple("system", &format!(
+                "{}\n\nRECOVERY MODE:\n\
+                - A previous workflow attempt failed or was unusable.\n\
+                - Return ONLY one valid Program JSON object.\n\
+                - Do not output reply-only for a non-CHAT route unless asking one concise clarifying question is the only safe next step.\n\
+                - Use current_program_steps and observed_step_results to repair the workflow, not to restate or hallucinate completion.\n\
+                - DO NOT repeat previously FAILED commands (see list below).\n\
+                - If the task asks to choose, rank, prioritize, or select workspace items, inspect evidence first, then decide or summarize, then reply.\n\
+                - Prefer the smallest valid program that can still satisfy the request.\n\n\
+                PREVIOUSLY FAILED COMMANDS (DO NOT REPEAT):\n{}\n",
+                orchestrator_cfg.system_prompt,
+                failed_commands_str
+            )),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature: 0.0,
         top_p: 1.0,
@@ -110,6 +96,7 @@ pub(crate) async fn request_recovery_program(
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar: None,
+        tools: None,
     };
     chat_json_with_repair_timeout(
         client,
@@ -142,14 +129,8 @@ pub(crate) async fn request_critic_verdict(
     let critic_req = ChatCompletionRequest {
         model: critic_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: critic_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: narrative, // Plain text narrative, not JSON
-            },
+            ChatMessage::simple("system", &critic_cfg.system_prompt),
+            ChatMessage::simple("user", &narrative),
         ],
         temperature: critic_cfg.temperature,
         top_p: critic_cfg.top_p,
@@ -159,6 +140,7 @@ pub(crate) async fn request_critic_verdict(
         repeat_penalty: Some(critic_cfg.repeat_penalty),
         reasoning_format: Some(critic_cfg.reasoning_format.clone()),
         grammar: None,
+        tools: None,
     };
     chat_json_with_repair_for_profile_timeout(
         client,
@@ -188,14 +170,8 @@ pub(crate) async fn request_reviewer_verdict(
     let reviewer_req = ChatCompletionRequest {
         model: reviewer_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: reviewer_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: narrative,
-            },
+            ChatMessage::simple("system", &reviewer_cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &narrative),
         ],
         temperature: reviewer_cfg.temperature,
         top_p: reviewer_cfg.top_p,
@@ -205,6 +181,7 @@ pub(crate) async fn request_reviewer_verdict(
         repeat_penalty: Some(reviewer_cfg.repeat_penalty),
         reasoning_format: Some(reviewer_cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
     chat_json_with_repair_for_profile_timeout(
         client,
@@ -236,14 +213,8 @@ pub(crate) async fn request_risk_review(
     let risk_req = ChatCompletionRequest {
         model: risk_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: risk_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: narrative,
-            },
+            ChatMessage::simple("system", &risk_cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &narrative),
         ],
         temperature: risk_cfg.temperature,
         top_p: risk_cfg.top_p,
@@ -253,6 +224,7 @@ pub(crate) async fn request_risk_review(
         repeat_penalty: Some(risk_cfg.repeat_penalty),
         reasoning_format: Some(risk_cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
     chat_json_with_repair_for_profile_timeout(
         client,
@@ -276,22 +248,16 @@ pub(crate) async fn request_chat_final_text(
     let reply_req = ChatCompletionRequest {
         model: elma_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: system_content.to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally and directly. Do not mention internal workflow, step state, or missing steps.",
-                    line,
-                    if reply_instructions.trim().is_empty() {
-                        "Reply naturally and helpfully."
-                    } else {
-                        reply_instructions.trim()
-                    }
-                ),
-            },
+            ChatMessage::simple("system", &system_content),
+            ChatMessage::simple("user", &format!(
+                "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally and directly. Do not mention internal workflow, step state, or missing steps.",
+                line,
+                if reply_instructions.trim().is_empty() {
+                    "Reply naturally and helpfully."
+                } else {
+                    reply_instructions.trim()
+                }
+            )),
         ],
         temperature: elma_cfg.temperature,
         top_p: elma_cfg.top_p,
@@ -301,6 +267,7 @@ pub(crate) async fn request_chat_final_text(
         repeat_penalty: Some(elma_cfg.repeat_penalty),
         reasoning_format: Some(elma_cfg.reasoning_format.clone()),
         grammar: None,
+        tools: None,
     };
     let parsed = chat_once_with_timeout(client, chat_url, &reply_req, elma_cfg.timeout_s).await?;
     let usage_total = parsed.usage.as_ref().and_then(|u| u.total_tokens);

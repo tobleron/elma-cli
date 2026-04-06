@@ -1,0 +1,36 @@
+version = 1
+name = "revision_needs_assessment"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+Assess if a request requires iterative revision loop (edit → verify → adjust cycles).
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "requires_revision_loop": true | false
+}
+
+Principles:
+Revision loop is required when:
+- User says "fix", "debug", "troubleshoot" (diagnose → fix → test)
+- Refactoring work (change → verify → adjust)
+- Edit-heavy tasks with verification requirements
+- Complex changes where first attempt may fail
+- User explicitly wants iteration ("keep trying until", "refine")
+
+Revision loop is NOT required when:
+- Single execution suffices (run command, read file)
+- Informational queries (no modification)
+- Simple edits with clear success criteria
+- Read-only operations
+
+Be conservative for edit operations: prefer revision loop when uncertain.
+"""

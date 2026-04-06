@@ -1,0 +1,21 @@
+version = 1
+name = "action_needs_classifier"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 64
+timeout_s = 120
+system_prompt = """
+Does this task need decision or planning?
+
+Return JSON:
+{"needs_decision": true/false, "needs_plan": true/false}
+
+- needs_decision: true if must choose/select/rank
+- needs_plan: true if needs step-by-step plan
+
+Nothing else. Just the JSON.
+"""

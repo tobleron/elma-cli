@@ -372,14 +372,8 @@ pub(crate) async fn expert_advisor_advice(
     let req = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: response_narrative.to_string(),
-            },
+            ChatMessage::simple("system", &cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &response_narrative.to_string()),
         ],
         temperature: cfg.temperature,
         top_p: cfg.top_p,
@@ -389,6 +383,7 @@ pub(crate) async fn expert_advisor_advice(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
 
     let resp = chat_once(client, chat_url, &req).await?;

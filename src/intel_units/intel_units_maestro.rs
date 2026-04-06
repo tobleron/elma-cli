@@ -91,13 +91,23 @@ impl IntelUnit for MaestroUnit {
 
         // Find JSON object in text (strip markdown code fences)
         let cleaned = extract_json_from_text(&raw_text);
-        let result: MaestroOutput = serde_json::from_str(&cleaned).map_err(|e| {
-            anyhow::anyhow!(
-                "Maestro JSON parse error: {}. Raw: {}",
-                e,
+
+        // Accept both {"steps": [{num, instruction}]} AND flat {num, instruction}
+        // Small models often drop the outer wrapper
+        let result: MaestroOutput = if let Ok(steps_wrapper) = serde_json::from_str::<MaestroOutput>(&cleaned) {
+            steps_wrapper
+        } else if let Ok(single_instr) = serde_json::from_str::<MaestroInstruction>(&cleaned) {
+            // Model returned a single instruction without wrapper — wrap it
+            MaestroOutput { steps: vec![single_instr] }
+        } else if let Ok(instr_array) = serde_json::from_str::<Vec<MaestroInstruction>>(&cleaned) {
+            // Model returned a bare array of instructions
+            MaestroOutput { steps: instr_array }
+        } else {
+            return Err(anyhow::anyhow!(
+                "Maestro JSON parse error: could not parse as {{\"steps\": [...]}} or [{{\"num\":..., \"instruction\":...}}]. Raw: {}",
                 &cleaned.chars().take(300).collect::<String>()
-            )
-        })?;
+            ));
+        };
 
         Ok(IntelOutput::success(
             self.name(),

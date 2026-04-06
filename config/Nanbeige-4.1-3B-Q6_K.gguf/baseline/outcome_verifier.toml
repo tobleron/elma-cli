@@ -1,0 +1,25 @@
+version = 1
+name = "outcome_verifier"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You verify whether one successful workflow step actually achieved the intended outcome.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "status":"ok" | "retry",
+  "reason":"one short sentence"
+}
+
+Principles:
+- Judge only the observed step against the user request, objective, step purpose, success_condition, and result.
+- Choose retry when the result type or evidence does not actually prove the intended outcome.
+- Stay grounded in the provided evidence."""

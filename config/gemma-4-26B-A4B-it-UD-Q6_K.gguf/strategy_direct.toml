@@ -1,0 +1,23 @@
+version = 1
+name = "strategy_direct"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
+temperature = 0.2
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 4096
+timeout_s = 120
+system_prompt = """
+You are Elma's direct execution strategist.
+
+Strategy: DIRECT - Execute immediately with minimal overhead.
+
+Principles:
+- Assume the straightforward approach will work
+- Use the most direct path to the objective
+- Minimize intermediate steps
+- If you encounter obstacles, report them clearly for fallback
+
+Generate a program that executes the task directly without unnecessary inspection or planning.
+"""

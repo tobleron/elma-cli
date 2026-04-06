@@ -18,6 +18,7 @@ pub(crate) async fn build_program(
     complexity: &ComplexityAssessment,
     scope: &ScopePlan,
     formula: &FormulaSelection,
+    tui: &mut crate::ui_tui::TerminalUI,
 ) -> Program {
     build_program_with_temp(
         runtime,
@@ -28,6 +29,7 @@ pub(crate) async fn build_program(
         scope,
         formula,
         runtime.profiles.orchestrator_cfg.temperature,
+        tui,
     )
     .await
 }
@@ -41,62 +43,47 @@ pub(crate) async fn build_program_with_temp(
     _scope: &ScopePlan,
     _formula: &FormulaSelection,
     _temperature: f64,
+    tui: &mut crate::ui_tui::TerminalUI,
 ) -> Program {
-    // Maestro → Orchestrator pipeline handles everything now
-    match crate::orchestration_core::build_program_from_maestro(runtime, line).await {
-        Ok(program) => {
+    // Tool-calling pipeline: model plans and executes tools directly (no Maestro)
+    match crate::orchestration_core::run_tool_calling_pipeline(runtime, line, tui).await {
+        Ok((answer, iterations, tool_calls, stopped_by_max)) => {
             trace(
                 &runtime.args,
                 &format!(
-                    "maestro_pipeline_generated_steps count={}",
-                    program.steps.len()
+                    "tool_calling_pipeline: answer_len={} iterations={} tool_calls={} stopped={}",
+                    answer.len(),
+                    iterations,
+                    tool_calls,
+                    stopped_by_max,
                 ),
             );
-            program
+            // Return as a single Respond step for the execution framework
+            Program {
+                objective: line.to_string(),
+                steps: vec![
+                    Step::Respond {
+                        id: "r1".to_string(),
+                        instructions: answer,
+                        common: StepCommon {
+                            purpose: "respond to user".to_string(),
+                            depends_on: vec![],
+                            success_condition: "user receives answer".to_string(),
+                            parent_id: None,
+                            depth: None,
+                            unit_type: None,
+                        },
+                    },
+                ],
+            }
         }
         Err(e) => {
             trace(
                 &runtime.args,
-                &format!("maestro_pipeline_failed error={}", e),
+                &format!("tool_calling_pipeline_failed error={}", e),
             );
-            // Smart fallback: if request mentions a path, create a shell step
-            if let Some(path) = extract_first_path_from_user_text(line) {
-                trace(
-                    &runtime.args,
-                    &format!("maestro_fallback_shell path={path}"),
-                );
-                Program {
-                    objective: line.to_string(),
-                    steps: vec![
-                        Step::Shell {
-                            id: "s1".to_string(),
-                            cmd: format!("ls -1 '{}'", path),
-                            common: StepCommon {
-                                purpose: "list directory contents".to_string(),
-                                depends_on: vec![],
-                                success_condition: "directory listing returned".to_string(),
-                                parent_id: None,
-                                depth: None,
-                                unit_type: None,
-                            },
-                        },
-                        Step::Respond {
-                            id: "s2".to_string(),
-                            instructions: format!("Present the directory listing for {}.", path),
-                            common: StepCommon {
-                                purpose: "present findings".to_string(),
-                                depends_on: vec!["s1".to_string()],
-                                success_condition: "user receives file list".to_string(),
-                                parent_id: None,
-                                depth: None,
-                                unit_type: None,
-                            },
-                        },
-                    ],
-                }
-            } else {
-                build_direct_reply_program(line)
-            }
+            // Fallback: direct reply
+            build_direct_reply_program(line)
         }
     }
 }

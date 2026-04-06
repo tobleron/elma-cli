@@ -5,6 +5,7 @@
 use crate::app::{AppRuntime, LoadedProfiles};
 use crate::app_bootstrap_modes::*;
 use crate::app_bootstrap_profiles::*;
+use crate::ui_colors::*;
 use crate::*;
 
 pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
@@ -80,12 +81,12 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
             eprintln!("  config   {}", model_cfg_dir.display());
             eprintln!("  action   {} tuning before chat startup", tune_mode);
         } else {
-            eprintln!("{}", ansi_orange("First-time model setup"));
-            eprintln!("{} {}", ansi_grey("  model   "), model_id);
-            eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
+            eprintln!("{}", warn_yellow("First-time model setup"));
+            eprintln!("{} {}", meta_comment("  model   "), model_id);
+            eprintln!("{} {}", meta_comment("  config  "), model_cfg_dir.display());
             eprintln!(
                 "{} {} {}",
-                ansi_grey("  action  "),
+                meta_comment("  action  "),
                 tune_mode,
                 "tuning before chat startup"
             );
@@ -136,9 +137,9 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
                         eprintln!("  changed units: {}", units.join(", "));
                         eprintln!("  action: auto-tuning to update profiles");
                     } else {
-                        eprintln!("{}", ansi_orange("Prompt changes detected"));
-                        eprintln!("{} {}", ansi_grey("  changed units:"), units.join(", "));
-                        eprintln!("{} auto-tuning to update profiles", ansi_grey("  action: "));
+                        eprintln!("{}", warn_yellow("Prompt changes detected"));
+                        eprintln!("{} {}", meta_comment("  changed units:"), units.join(", "));
+                        eprintln!("{} auto-tuning to update profiles", meta_comment("  action: "));
                     }
 
                     // Trigger auto-tune
@@ -208,10 +209,7 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         &model_id,
         chat_url.as_str(),
     );
-    let messages = vec![ChatMessage {
-        role: "system".to_string(),
-        content: system_content.clone(),
-    }];
+    let messages = vec![ChatMessage::simple("system", &system_content.clone())];
 
     let goal_state = load_goal_state(&session.root).unwrap_or_default();
     if goal_state.has_active_goal() {

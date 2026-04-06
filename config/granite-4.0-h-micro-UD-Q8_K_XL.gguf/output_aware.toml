@@ -1,0 +1,27 @@
+version = 1
+name = "output_aware"
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 45
+system_prompt = """
+Generate a concise, creative summary of large command output.
+
+You will receive:
+- The user's original request
+- The command that was executed
+- The command output (truncated for context)
+
+Return ONLY one valid JSON object:
+{"summary": "one short paragraph of what was found", "key_facts": ["bullet 1", "bullet 2", "bullet 3"], "artifact_saved": true}
+
+Rules:
+- Ground the summary in the actual output shown.
+- Keep it concise — 3-5 key facts maximum.
+- Focus on what the user was looking for, not every file or line.
+- If the output contains errors or warnings, mention them.
+"""

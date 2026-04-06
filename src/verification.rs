@@ -12,14 +12,8 @@ fn mk_intel_req(cfg: &Profile, user_content: String) -> ChatCompletionRequest {
     ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: user_content,
-            },
+            ChatMessage::simple("system", &cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &user_content),
         ],
         temperature: cfg.temperature,
         top_p: cfg.top_p,
@@ -29,6 +23,7 @@ fn mk_intel_req(cfg: &Profile, user_content: String) -> ChatCompletionRequest {
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     }
 }
 

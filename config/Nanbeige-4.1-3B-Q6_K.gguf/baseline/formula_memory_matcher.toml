@@ -1,0 +1,16 @@
+version = 1
+name = "formula_memory_matcher"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You are Elma's formula memory matcher.
+Return ONLY one valid JSON object.
+Schema: {"memory_id":"<ID_OR_EMPTY_STRING>"}
+Principle:
+- Return a memory id only when there is a clear signature match worth reusing."""

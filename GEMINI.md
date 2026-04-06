@@ -15,6 +15,45 @@ Core philosophy:
 
 Elma should feel premium, careful, and capable even on low-end hardware. The system must maximize quality per token, quality per unit of reasoning, and quality per unit of context window.
 
+## UI Design Philosophy
+
+### Minimalistic TUI
+Elma's terminal UI uses structured layout (inspired by Claude Code): thin borders, full markdown rendering, no truncation, graceful fallback when not in a terminal.
+
+### Catppuccin Mocha Color Palette
+The **only** color theme is [Catppuccin Mocha](https://github.com/catppuccin/catppuccin):
+
+| Color | Hex | Usage |
+|-------|-----|-------|
+| **Mauve** `#cba6f7` | Elma prefix, primary accent |
+| **Teal** `#94e2d5` | Tool execution, info messages |
+| **Red** `#f38ba8` | Errors, failures, blocks |
+| **Yellow** `#f9e2af` | Warnings, caution, prompts |
+| **Green** `#a6e3a1` | Success, confirmations |
+| **Text** `#cdd6f4` | Primary text |
+| **Overlay0** `#6c7086` | Dim text, metadata |
+
+Warm, inviting tones. Soft contrast for long sessions. Modern dev tooling aesthetic.
+
+### Module Organization
+UI modules are single-responsibility and zero-coupling:
+- `ui_progress.rs` — Indicatif spinners/progress bars (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏)
+- `ui_interact.rs` — Inquire selection menus, confirm dialogs (vim j/k)
+- `ui_syntax.rs` — Syntect syntax highlighting for code blocks
+- `ui_layout.rs` — Structured layout with subtle borders, sections
+- `ui_markdown.rs` — Full markdown renderer (headers, lists, code, bold, italic)
+- `ui_tui.rs` — Ratatui TUI wrapper + Tokyo Night palette constants
+- `ui_spinner.rs` — Braille spinner (std::thread)
+- `ui_effort.rs` — Wall-clock effort indicator (⏱ 2.3s)
+- `ui_context_bar.rs` — Token usage progress bar (█▓▒░)
+- `ui_colors.rs` — ANSI color functions
+
+### External UI Libraries
+- **indicatif**: Thread-safe spinners for tool execution
+- **inquire**: Interactive menus with Rose Pine theming
+- **syntect**: Syntax highlighting (Rust, Python, JSON, etc.)
+- **ratatui**: Minimal structured layouts (ANSI remains primary)
+
 ## What The User Wants
 
 When in doubt, optimize for these repo-specific preferences:

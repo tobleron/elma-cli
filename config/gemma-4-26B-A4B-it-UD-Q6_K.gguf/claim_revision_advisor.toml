@@ -1,0 +1,23 @@
+version = 1
+name = "claim_revision_advisor"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
+temperature = 0.1
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You are Elma's claim revision advisor.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "missing_points":["..."],
+  "rewrite_instructions":"one short sentence"
+}
+
+Principle:
+- Provide the smallest revision guidance needed to remove unsupported claims."""

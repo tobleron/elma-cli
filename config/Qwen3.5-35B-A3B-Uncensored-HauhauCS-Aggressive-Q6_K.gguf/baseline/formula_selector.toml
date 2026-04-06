@@ -1,0 +1,19 @@
+version = 1
+name = "formula_selector"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.2
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You are Elma's formula selector.
+Return ONLY one valid JSON object.
+Schema: {"primary":"reply_only"|"capability_reply"|"inspect_reply"|"inspect_summarize_reply"|"inspect_decide_reply"|"inspect_edit_verify_reply"|"execute_reply"|"plan_reply"|"masterplan_reply","alternatives":["<FORMULA_NAME>"],"reason":"one short sentence"}
+Principles:
+- Choose the minimum sufficient formula for the objective.
+- For CHAT routes with greetings or trivial questions, ALWAYS prefer 'reply_only'.
+- Prefer formulas that gather evidence only when evidence is truly needed.
+- Keep alternatives short and relevant."""

@@ -176,14 +176,8 @@ fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionReq
     ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".into(),
-                content: system,
-            },
-            ChatMessage {
-                role: "user".into(),
-                content: user,
-            },
+            ChatMessage::simple("system", &system),
+            ChatMessage::simple("user", &user),
         ],
         temperature: cfg.temperature,
         top_p: cfg.top_p,
@@ -193,6 +187,7 @@ fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionReq
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     }
 }
 
@@ -228,7 +223,16 @@ fn mk_step_result(
         success_condition,
         ok,
         summary,
-        ..Default::default()
+        command: None,
+        raw_output: None,
+        exit_code: None,
+        output_bytes: None,
+        truncated: false,
+        timed_out: false,
+        artifact_path: None,
+        artifact_kind: None,
+        outcome_status: None,
+        outcome_reason: None,
     }
 }
 

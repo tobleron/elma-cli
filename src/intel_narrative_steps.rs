@@ -294,8 +294,8 @@ mod tests {
         let step_results = vec![StepResult {
             id: "s1".to_string(),
             exit_code: Some(0),
-            raw_output: Some("file1\nfile2".to_string()),
-            ..Default::default()
+            raw_output: Some("file1\nfile2".to_string())
+        , ..Default::default()
         }];
 
         let result = step_result_text(&step, &step_results);
@@ -309,8 +309,8 @@ mod tests {
         let step_results = vec![StepResult {
             id: "s1".to_string(),
             exit_code: Some(2),
-            raw_output: Some("error: not found".to_string()),
-            ..Default::default()
+            raw_output: Some("error: not found".to_string())
+        , ..Default::default()
         }];
 
         let result = step_result_text(&step, &step_results);
@@ -334,8 +334,8 @@ mod tests {
             purpose: "List all files".to_string(),
             ok: true,
             exit_code: Some(0),
-            raw_output: Some("file1.txt\nfile2.txt".to_string()),
-            ..Default::default()
+            raw_output: Some("file1.txt\nfile2.txt".to_string())
+        , ..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_sufficiency_narrative(
@@ -365,8 +365,8 @@ mod tests {
             purpose: "List all files".to_string(),
             ok: true,
             exit_code: Some(0),
-            raw_output: Some("file1.txt\nfile2.txt".to_string()),
-            ..Default::default()
+            raw_output: Some("file1.txt\nfile2.txt".to_string())
+        , ..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_reviewer_narrative(
@@ -390,8 +390,8 @@ mod tests {
             ok: true,
             summary: "Command succeeded".to_string(),
             raw_output: Some("file1.txt\nfile2.txt".to_string()),
-            exit_code: Some(0),
-            ..Default::default()
+            exit_code: Some(0)
+        , ..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_claim_check_narrative(

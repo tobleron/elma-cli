@@ -1,0 +1,35 @@
+version = 1
+name = "evidence_chain_assessment"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+Assess if a request requires an evidence chain (multiple evidence-gathering steps).
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "requires_evidence_chain": true | false
+}
+
+Principles:
+Evidence chain is required when:
+- User asks to "find where X is defined" (search → read → reply)
+- User wants comparison of multiple files/configs (read multiple → compare)
+- Request needs lookup followed by transformation (read → summarize)
+- Multiple sources must be consulted before answering
+
+Evidence chain is NOT required when:
+- Single file read is sufficient
+- Direct command execution without prior inspection
+- User already provided all necessary context
+- Simple greeting or capability check
+
+Be conservative: if uncertain, prefer evidence chain.
+"""

@@ -2,18 +2,115 @@
 //!
 //! Core Orchestration Module
 //!
-//! Provides core orchestration function for program generation,
-//! recovery, criticism, and final answer generation.
+//! Tool-calling pipeline: Maestro sets context → model calls tools directly → final answer.
 
 use crate::app::AppRuntime;
 use crate::app_chat_fast_paths::build_direct_reply_program;
 use crate::formulas::{select_optimal_formula, FormulaPattern, FormulaScores};
-use crate::intel_units::{MaestroOutput, MaestroUnit};
+use crate::tool_loop::run_tool_loop;
 use crate::tools::ToolRegistry;
 use crate::*;
 
 // ============================================================================
-// New: Single-instruction orchestration (Maestro → Orchestrator pipeline)
+// Tool-Calling Orchestration (no Maestro — model plans itself)
+// ============================================================================
+
+/// Build a system prompt for tool calling without any intermediate planner.
+/// The model has full context (workspace, conversation, tools) and plans directly.
+fn build_tool_calling_system_prompt(
+    runtime: &AppRuntime,
+    line: &str,
+) -> String {
+    // Include conversation excerpt for continuity
+    let conversation = if runtime.messages.is_empty() {
+        String::new()
+    } else {
+        let last_msgs: Vec<String> = runtime.messages.iter().rev().take(6).rev()
+            .map(|m| format!("{}: {}", m.role, m.content.chars().take(300).collect::<String>()))
+            .collect();
+        format!("\nRECENT CONVERSATION:\n{}", last_msgs.join("\n"))
+    };
+
+    format!(
+        r#"You are Elma — a local-first AI assistant that helps users with their requests.
+
+IMPORTANT IDENTITY: You are Elma, NOT a "maestro", "orchestrator", or "system". You are an AI assistant. If anyone asks who you are, answer clearly: "I am Elma."
+
+WORKSPACE FACTS:
+{}
+
+WORKSPACE BRIEF:
+{}
+{}
+
+TOOLS AVAILABLE:
+- shell: Execute any shell command. THIS IS YOUR PRIMARY TOOL. Use: `ls`, `ls -la`, `find . -name "*.sh"`, `cat file`, `tree -L 2`, `rg "pattern"`, `head`, `wc -l`, etc.
+- read: Read a specific file's contents (when you already know the path)
+- search: Search FILE CONTENTS with ripgrep — NOT for finding files by name. Use `shell` with `find` or `ls` for discovering files.
+- respond: Provide your final answer to the user
+
+HOW TO INVESTIGATE:
+1. FIRST use `shell` to list/discover — e.g. `find . -name "*.sh"` or `ls -la path/`
+2. THEN use `read` or `search` to examine specific files you found
+3. Use `respond` when you have the answer
+
+CRITICAL RULES:
+- To find files by name or extension: use `shell` with `find` or `ls`, NOT `search`
+- `search` searches INSIDE files for text patterns — it does NOT find files by name
+- If you already ran a command that showed files (like `ls -ltr`), use THAT OUTPUT — don't search again
+- Always ground your answer in actual tool output, not assumptions
+- If a command fails, try a different approach
+- Always use `respond` when you have the answer
+- For conversational requests, respond directly without using tools"#,
+        runtime.ws.trim(),
+        runtime.ws_brief.trim(),
+        conversation
+    )
+}
+
+/// Run the tool-calling pipeline: model plans and executes tools directly.
+/// Returns (final_answer, iterations_used, tool_calls_made, stopped_by_max).
+pub(crate) async fn run_tool_calling_pipeline(
+    runtime: &AppRuntime,
+    line: &str,
+    tui: &mut crate::ui_tui::TerminalUI,
+) -> Result<(String, usize, usize, bool)> {
+    let system_prompt = build_tool_calling_system_prompt(runtime, line);
+    trace(&runtime.args, "tool_calling: direct model planning (no Maestro)");
+
+    let result = run_tool_loop(
+        &runtime.args,
+        &runtime.client,
+        &runtime.chat_url,
+        &runtime.model_id,
+        &system_prompt,
+        line,
+        &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        &runtime.session,
+        0.2, // temperature — low for reliability
+        2048,
+        tui,
+    )
+    .await?;
+
+    Ok((
+        result.final_answer,
+        result.iterations,
+        result.tool_calls_made,
+        result.stopped_by_max,
+    ))
+}
+
+/// Compute risk deterministically from the tool-calling result metadata.
+pub(crate) fn compute_program_risk(
+    _tool_calls_made: usize,
+    _iterations: usize,
+) -> ProgramRisk {
+    ProgramRisk::Low
+}
+
+// ============================================================================
+// Legacy compatibility — keep for non-tool-calling paths
 // ============================================================================
 
 /// Transform a single Maestro instruction into 1-3 structured JSON steps.
@@ -107,23 +204,16 @@ Output ONLY valid JSON object with a "steps" array, like:
     let orch_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: "You are Elma's step composer. Transform English instructions into 1-3 structured JSON steps for Elma's execution pipeline.
+            ChatMessage::simple("system", r#"You are Elma's step composer. Transform English instructions into 1-3 structured JSON steps for Elma's execution pipeline.
 
 Step types available: shell, read, search, edit, explore, write, delete, select, decide, plan, masterplan, summarize, reply, respond.
 
 Output ONLY valid JSON with a steps array:
-{\"steps\":[{\"id\":\"s1\",\"type\":\"shell\",\"cmd\":\"ls -1\",\"purpose\":\"list files\",\"depends_on\":[],\"success_condition\":\"files listed\"}]}
+{"steps":[{"id":"s1","type":"shell","cmd":"ls -1","purpose":"list files","depends_on":[],"success_condition":"files listed"}]}
 
 Each step needs: id, type, purpose, depends_on (array of step IDs), success_condition.
-Shell steps need: cmd. Read steps need: path. Search steps need: query and paths. Edit steps need: path, operation, find, replace. Reply/Respond steps need: instructions."
-                    .to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt.clone(),
-            },
+Shell steps need: cmd. Read steps need: path. Search steps need: query and paths. Edit steps need: path, operation, find, replace. Reply/Respond steps need: instructions."#),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature: orchestrator_cfg.temperature,
         top_p: orchestrator_cfg.top_p,
@@ -133,6 +223,7 @@ Shell steps need: cmd. Read steps need: path. Search steps need: query and paths
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar: None,
+        tools: None,
     };
 
     // Call LLM directly with our custom system prompt (not the profile's)

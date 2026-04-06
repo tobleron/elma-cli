@@ -357,14 +357,8 @@ A Program JSON must contain a "steps" array of objects with "id", "type", "cmd" 
     let req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: orchestrator_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            ChatMessage::simple("system", &orchestrator_cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature: temp,
         top_p: orchestrator_cfg.top_p,
@@ -374,6 +368,7 @@ A Program JSON must contain a "steps" array of objects with "id", "type", "cmd" 
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar: Some(crate::json_program_grammar()),
+    tools: None,
     };
 
     let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;

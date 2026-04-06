@@ -36,35 +36,30 @@ pub(crate) fn print_final_output(
     ctx_max: Option<u64>,
     final_usage_total: Option<u64>,
     final_text: &str,
+    effort_timer: Option<&crate::ui_effort::EffortTimer>,
 ) {
     // Task 014: Truncate output to prevent infinite repetition bugs
     let truncated_text = truncate_output(final_text);
     print_elma_message(args, &truncated_text);
 
-    if let Some(ctx) = ctx_max {
-        if let Some(total) = final_usage_total {
-            let pct = (total as f64 / ctx as f64) * 100.0;
-            let used_k = {
-                let k = ((total as f64) / 1000.0).round() as u64;
-                if total > 0 {
-                    k.max(1)
-                } else {
-                    0
-                }
-            };
-            let ctx_k = ((ctx as f64) / 1000.0).round() as u64;
-            let line = format!("ctx: {used_k}k/{ctx_k}k [{pct:.1}%]");
-            println!(
-                "{}",
-                if args.no_color {
-                    line
-                } else {
-                    ansi_grey(&line)
-                }
-            );
-        }
+    // Intel unit failure count (Tokyo Night Red — for model reliability tracking)
+    let total_failures = crate::ui_state::get_total_intel_failures();
+    if total_failures > 0 {
+        let counts = crate::ui_state::get_intel_failure_counts();
+        let summary: Vec<String> = counts.iter()
+            .map(|(unit, count)| format!("{}×{}", unit, count))
+            .collect();
+        let line = format!("intel: {} failures ({})", total_failures, summary.join(", "));
+        eprintln!("{}", if args.no_color {
+            line
+        } else {
+            error_red(&line)
+        });
     }
-    println!();
+
+    // Task 133: Status bar is handled by TUI — this function is a no-op
+    // when running in TUI mode. Kept for compatibility with non-TUI paths.
+    let _ = (args, ctx_max, final_usage_total, final_text, effort_timer);
 }
 
 pub(crate) fn refresh_runtime_workspace(runtime: &mut AppRuntime) -> Result<()> {

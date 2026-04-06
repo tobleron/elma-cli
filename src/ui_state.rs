@@ -3,12 +3,15 @@
 //! UI - State Management
 
 use crate::*;
+use std::collections::HashMap;
 
 static TRACE_LOG_PATH: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 static REASONING_DISPLAY: OnceLock<Mutex<(bool, bool)>> = OnceLock::new();
 static JSON_OUTPUTTER_PROFILE: OnceLock<Mutex<Option<Profile>>> = OnceLock::new();
 static FINAL_ANSWER_EXTRACTOR_PROFILE: OnceLock<Mutex<Option<Profile>>> = OnceLock::new();
 static MODEL_BEHAVIOR_PROFILE: OnceLock<Mutex<Option<ModelBehaviorProfile>>> = OnceLock::new();
+/// Tracks intel unit failures: (unit_name -> [(error_message, count)])
+static INTEL_FAILURE_COUNTS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 
 pub(crate) fn trace_log_state() -> &'static Mutex<Option<PathBuf>> {
     TRACE_LOG_PATH.get_or_init(|| Mutex::new(None))
@@ -70,4 +73,36 @@ pub(crate) fn json_outputter_profile() -> Option<Profile> {
 
 pub(crate) fn final_answer_extractor_profile() -> Option<Profile> {
     final_answer_extractor_state().lock().ok()?.clone()
+}
+
+/// Increment the failure counter for an intel unit.
+pub(crate) fn increment_intel_failure_count(unit_name: &str, _error: &str) {
+    if let Ok(mut counts) = INTEL_FAILURE_COUNTS.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+        *counts.entry(unit_name.to_string()).or_insert(0) += 1;
+    }
+}
+
+/// Get the total failure count across all intel units.
+pub(crate) fn get_total_intel_failures() -> usize {
+    INTEL_FAILURE_COUNTS
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|m| m.values().sum())
+        .unwrap_or(0)
+}
+
+/// Get per-unit failure counts.
+pub(crate) fn get_intel_failure_counts() -> HashMap<String, usize> {
+    INTEL_FAILURE_COUNTS
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|m| m.clone())
+        .unwrap_or_default()
+}
+
+/// Reset the failure counters (called at session start).
+pub(crate) fn reset_intel_failure_counts() {
+    if let Ok(mut counts) = INTEL_FAILURE_COUNTS.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+        counts.clear();
+    }
 }

@@ -1,0 +1,24 @@
+version = 1
+name = "strategy_plan_then_execute"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
+temperature = 0.2
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 4096
+timeout_s = 120
+system_prompt = """
+You are Elma's planning strategist.
+
+Strategy: PLAN_THEN_EXECUTE - Create detailed plan before acting.
+
+Principles:
+- Break the objective into ordered, sequential steps
+- Identify dependencies between steps
+- Define clear success conditions for each step
+- Consider edge cases and error handling
+- Then execute the plan step by step
+
+Generate a program that includes a Plan step with detailed breakdown before execution steps.
+"""

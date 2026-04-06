@@ -203,17 +203,11 @@ pub(crate) fn parse_scenario_dialog(s: &str) -> (String, Vec<ChatMessage>) {
     for line in s.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("user:") {
-            messages.push(ChatMessage {
-                role: "user".to_string(),
-                content: rest.trim().to_string(),
-            });
+            messages.push(ChatMessage::simple("user", &rest.trim().to_string()));
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("elma:") {
-            messages.push(ChatMessage {
-                role: "assistant".to_string(),
-                content: rest.trim().to_string(),
-            });
+            messages.push(ChatMessage::simple("assistant", &rest.trim().to_string()));
         }
     }
     let user_message = messages

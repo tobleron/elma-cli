@@ -1,0 +1,17 @@
+version = 1
+model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
+base_url = "http://192.168.1.186:8080"
+n_probs = 64
+supports_logprobs = false
+routes = [
+    "CHAT",
+    "WORKFLOW",
+    "INSPECT",
+    "EXECUTE",
+    "PLAN",
+    "MASTERPLAN",
+    "DECIDE",
+    "CAPABILITY_CHECK",
+    "INFO_REQUEST",
+    "ACTION_REQUEST",
+]

@@ -223,3 +223,32 @@ user: hi
 assistant: hey
 user: are there any shell scripts on root folder?
 ```
+
+---
+
+## Session Issues Fixed (Post-Phase G)
+
+**Issue 1: JSON repair always runs, even when parse succeeds**
+- **Fix:** `orchestration_helpers/mod.rs` — `request_program_or_repair` now tries `parse_json_loose` first and only calls repair if it actually fails
+- **Impact:** Eliminates wasted LLM call and wrong recovery path when valid JSON is declared broken
+
+**Issue 2: "Retry" trace is misleading**
+- **Fix:** `orchestration_retry.rs` — Renamed "Retry N/M" → "Strategy attempt N/M" and trace key `orchestration_retry_attempt` → `orchestration_strategy_attempt`
+- **Impact:** Trace now accurately describes what's happening — this is a strategy chain attempt, not a retry of a previous attempt
+
+**Issue 3: Result presenter hallucinates fake output when no evidence exists**
+- **Fix:** `prompt_constants.rs` — Added HONESTY RULE to result presenter: explicitly forbids inventing file listings, command output, or fake content when no evidence-gathering steps were executed
+- **Impact:** When no shell/read/search steps ran, presenter states honestly what happened instead of fabricating output
+
+**Issue 4 (Deferred): Orchestrator ignores user's actual command**
+- `ls -ltr` → generated `ls -1 src/` instead
+- Root cause: Maestro instruction overrides user message in orchestrator prompt
+- Requires discussion before fix
+
+## JSON Repair Fix (Corrected Implementation)
+
+**Problem:** `parse_json_loose` in `routing_parse.rs` always runs `validate_no_repetition_loop` FIRST, which can falsely flag valid 3B model output as a repetition loop. Then it falls through to the LLM-based JSON repair specialist, which wastes an LLM call and often declares valid JSON broken.
+
+**Fix:** Added `serde_json::from_str` as a fast path at the TOP of `parse_json_loose`. If serde_json natively parses the JSON, we trust it completely and skip ALL custom validation (repetition check, custom parser, repair). The standard library is deterministic — no LLM repair needed.
+
+**File:** `src/routing_parse.rs` — `parse_json_loose` function

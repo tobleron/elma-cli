@@ -3,6 +3,7 @@
 //! UI - Trace and Display Functions
 
 use crate::*;
+use crate::ui_colors::*;
 
 /// Display an ultra-concise status message about what Elma is doing
 pub(crate) fn show_status_message(args: &Args, status: &str) {
@@ -12,7 +13,7 @@ pub(crate) fn show_status_message(args: &Args, status: &str) {
         if args.no_color {
             eprintln!("{}", line);
         } else {
-            eprintln!("{}", ansi_dim_gray(&line));
+            eprintln!("{}", info_cyan(&line));
         }
     }
 }
@@ -93,7 +94,7 @@ pub(crate) fn maybe_display_reasoning_trace(resp: &ChatCompletionResponse) {
         if no_color {
             eprintln!("{rendered}");
         } else {
-            eprintln!("{}", ansi_paler_yellow(&rendered));
+            eprintln!("{}", warn_yellow(&rendered));
         }
     }
 }
@@ -113,10 +114,10 @@ pub(crate) fn show_process_step_verbose(verbose: bool, category: &str, msg: &str
     append_trace_log_line(&line);
     if verbose {
         match category {
-            "CLASSIFY" => eprintln!("{}", ansi_bright_silver(&line)),
-            "PLAN" => eprintln!("{}", ansi_soft_blue(&line)),
-            "REFLECT" => eprintln!("{}", ansi_soft_rose(&line)),
-            _ => eprintln!("{}", ansi_dim_gray(&line)),
+            "CLASSIFY" => eprintln!("{}", meta_comment(&line)),
+            "PLAN" => eprintln!("{}", info_cyan(&line)),
+            "REFLECT" => eprintln!("{}", elma_accent(&line)),
+            _ => eprintln!("{}", meta_comment(&line)),
         }
     }
 }
@@ -129,7 +130,7 @@ pub(crate) fn show_intel_summary(verbose: bool, summary: &str) {
     let line = format!("note: {}", summary);
     append_trace_log_line(&line);
     if verbose {
-        eprintln!("{}", ansi_soft_gold(&line));
+        eprintln!("{}", warn_yellow(&line));
     }
 }
 
@@ -143,58 +144,37 @@ pub(crate) fn calibration_progress(args: &Args, msg: &str) {
 }
 
 pub(crate) fn operator_trace(args: &Args, msg: &str) {
-    let line = format!("-> {msg}");
+    let line = format!("→ {msg}");
     append_trace_log_line(&line);
     if !(args.tune || args.calibrate) || args.debug_trace {
         if args.no_color {
             eprintln!("{line}");
         } else {
-            eprintln!("{}", ansi_soft_gold(&line));
+            eprintln!("{}", info_cyan(&line));
         }
     }
 }
 
 pub(crate) fn shell_command_trace(args: &Args, cmd: &str) {
     let compact = cmd.replace('\n', " ");
-    let line = format!("-> {compact}");
+    let line = format!("→ {compact}");
     append_trace_log_line(&line);
     if !(args.tune || args.calibrate) || args.debug_trace {
         if args.no_color {
             eprintln!("{line}");
         } else {
-            eprintln!("{}", ansi_soft_green(&line));
+            eprintln!("{}", warn_yellow(&line));
         }
     }
 }
 
+/// Fallback message printer for when TUI is not available (command handlers).
+/// Uses plain println — the TUI will override these when active.
 pub(crate) fn print_elma_message(args: &Args, text: &str) {
-    println!(
-        "{}",
-        if args.no_color {
-            format!("Elma: {text}")
-        } else {
-            ansi_orange(&format!("Elma: {text}"))
-        }
-    );
-}
-
-pub(crate) fn prompt_line(prompt: &str) -> Result<Option<String>> {
-    print!("{prompt}");
-    io::stdout().flush().ok();
-    let mut line = String::new();
-    let n = io::stdin().read_line(&mut line)?;
-    if n == 0 {
-        return Ok(None);
-    }
-    let line = line.trim_end_matches(['\n', '\r']).to_string();
-    Ok(Some(line))
-}
-
-pub(crate) fn user_prompt_label(args: &Args) -> String {
     if args.no_color {
-        "> ".to_string()
+        println!("● {}", text);
     } else {
-        ansi_pale_yellow("> ")
+        println!("{} {}", elma_accent("●"), text);
     }
 }
 

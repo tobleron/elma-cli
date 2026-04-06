@@ -28,14 +28,8 @@ pub async fn run_refinement_phase(
     let req = ChatCompletionRequest {
         model: refinement_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: refinement_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            ChatMessage::simple("system", &refinement_cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature: refinement_cfg.temperature,
         top_p: refinement_cfg.top_p,
@@ -45,6 +39,7 @@ pub async fn run_refinement_phase(
         repeat_penalty: Some(refinement_cfg.repeat_penalty),
         reasoning_format: Some(refinement_cfg.reasoning_format.clone()),
         grammar: Some(crate::json_program_grammar()),
+    tools: None,
     };
 
     let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;

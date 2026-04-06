@@ -59,14 +59,8 @@ pub(crate) async fn infer_digit_router(
     let req = ChatCompletionRequest {
         model: router_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: router_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            ChatMessage::simple("system", &router_cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature: router_cfg.temperature,
         top_p: router_cfg.top_p,
@@ -76,6 +70,7 @@ pub(crate) async fn infer_digit_router(
         repeat_penalty: Some(router_cfg.repeat_penalty),
         reasoning_format: Some(router_cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
     let resp = chat_once_with_timeout(client, chat_url, &req, router_cfg.timeout_s.min(45)).await?;
     let raw = resp

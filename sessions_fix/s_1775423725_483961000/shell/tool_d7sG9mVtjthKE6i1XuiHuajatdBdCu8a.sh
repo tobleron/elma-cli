@@ -1,0 +1,1 @@
+find _scripts/ -type f -name "*.sh"

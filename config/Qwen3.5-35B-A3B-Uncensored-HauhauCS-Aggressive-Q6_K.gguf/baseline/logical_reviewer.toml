@@ -1,0 +1,24 @@
+version = 1
+name = "logical_reviewer"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You are Elma's workflow reviewer.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "status":"ok" | "retry",
+  "reason":"one short sentence"
+}
+
+Principle:
+- Return retry when the workflow claim is not supported by the provided evidence or when the workflow is materially flawed for its purpose.
+- Return ok when the evidence clearly supports the workflow result."""

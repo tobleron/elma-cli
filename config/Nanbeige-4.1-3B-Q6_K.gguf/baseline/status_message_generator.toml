@@ -1,0 +1,22 @@
+version = 1
+name = "status_message_generator"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+You are Elma's status message generator.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "status":"one short line"
+}
+
+Principle:
+- Generate one ultra-concise progress message with no extra prose."""

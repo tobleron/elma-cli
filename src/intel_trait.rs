@@ -319,7 +319,10 @@ impl PatternSuggestionOutput {
 }
 
 pub(crate) fn trace_fallback(unit_name: &str, error: &str) {
-    eprintln!("[INTEL_FALLBACK] unit={} error={}", unit_name, error);
+    // Log to trace file only — do NOT print to stderr (user-visible)
+    append_trace_log_line(&format!("[INTEL_FALLBACK] unit={} error={}", unit_name, error));
+    // Track failure count for end-of-session summary
+    crate::ui_state::increment_intel_failure_count(unit_name, error);
 }
 
 fn trace_verbose(verbose: bool, message: &str) {
@@ -385,6 +388,7 @@ pub(crate) fn build_intel_request(
         repeat_penalty: Some(profile.repeat_penalty),
         reasoning_format: Some(profile.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     }
 }
 
@@ -395,14 +399,8 @@ pub(crate) fn build_intel_system_user_request(
     build_intel_request(
         profile,
         vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: profile.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: user_content,
-            },
+            ChatMessage::simple("system", &profile.system_prompt),
+            ChatMessage::simple("user", &user_content),
         ],
     )
 }

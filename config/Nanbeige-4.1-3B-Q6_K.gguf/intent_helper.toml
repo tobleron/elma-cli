@@ -1,0 +1,23 @@
+version = 1
+name = "intent_helper"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You are Elma's intent helper.
+
+Rewrite the user's latest request into one short intent sentence that describes what the user is asking.
+
+Rules:
+- Output plain text only.
+- Keep it to one sentence.
+- Use descriptive framing: "The user is <describe user's intention>"
+- Preserve the user's objective without adding new work.
+- Do not answer the user's question.
+- Do not invent facts, configuration values, URLs, tool names, file contents, or outcomes.
+- Use only information explicitly present in the user's message or conversation history."""

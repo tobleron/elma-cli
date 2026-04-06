@@ -1,0 +1,15 @@
+version = 1
+name = "self_question"
+base_url = "http://192.168.1.186:8080"
+model = "Nanbeige-4.1-3B-Q6_K.gguf"
+temperature = 0.1
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+Generate clarifying questions.
+
+Ask questions that help understand user intent.
+"""

@@ -93,7 +93,7 @@ async fn apply_policy_fallback(
 }
 
 /// Returns true if the command was handled (should continue loop), false if not a command.
-async fn handle_chat_command(runtime: &mut AppRuntime, line: &str) -> Result<bool> {
+async fn handle_chat_command(runtime: &mut AppRuntime, line: &str, tui: &mut crate::ui_tui::TerminalUI) -> Result<bool> {
     if line.is_empty() {
         return Ok(true);
     }
@@ -106,7 +106,10 @@ async fn handle_chat_command(runtime: &mut AppRuntime, line: &str) -> Result<boo
         "/exit" | "/quit" => Ok(false),
         "/reset" => {
             runtime.messages.truncate(1);
-            eprintln!("(history reset)");
+            crate::permission_gate::reset_permission_cache();
+            crate::command_budget::reset_budget();
+            crate::shell_preflight::clear_confirmation_cache();
+            tui.add_message(crate::ui_tui::MessageRole::Assistant, "(history reset, permission cache cleared, command budget reset, confirmation cache cleared)".to_string());
             handled!()
         }
         "/snapshot" => {
@@ -123,7 +126,7 @@ async fn handle_chat_command(runtime: &mut AppRuntime, line: &str) -> Result<boo
         }
         "/reset-goals" => {
             runtime.goal_state.clear();
-            eprintln!("(goals reset)");
+            tui.add_message(crate::ui_tui::MessageRole::Assistant, "(goals reset)".to_string());
             handled!()
         }
         "/tools" => {
@@ -132,7 +135,7 @@ async fn handle_chat_command(runtime: &mut AppRuntime, line: &str) -> Result<boo
         }
         "/verbose" => {
             runtime.verbose = !runtime.verbose;
-            eprintln!("(verbose {})", if runtime.verbose { "on" } else { "off" });
+            tui.add_message(crate::ui_tui::MessageRole::Assistant, format!("(verbose {})", if runtime.verbose { "on" } else { "off" }).to_string());
             handled!()
         }
         _ => {
@@ -309,6 +312,7 @@ async fn run_reflection_loop(
     scope: &ScopePlan,
     formula: &FormulaSelection,
     rephrased_objective: &str,
+    tui: &mut crate::ui_tui::TerminalUI,
 ) -> Program {
     let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
         && formula.primary.eq_ignore_ascii_case("reply_only");
@@ -380,6 +384,7 @@ async fn run_reflection_loop(
                 scope,
                 formula,
                 temp,
+                tui,
             )
             .await;
         } else {
@@ -393,23 +398,37 @@ async fn run_reflection_loop(
 }
 
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
-    loop {
-        let prompt = user_prompt_label(&runtime.args);
-        let Some(line) = prompt_line(&prompt)? else {
-            break;
+    let mut tui = crate::ui_tui::TerminalUI::new()
+        .context("Failed to initialize Terminal UI")?;
+
+    // Initial update for the status bar
+    tui.update_status(
+        runtime.model_id.clone(),
+        0,
+        runtime.ctx_max.unwrap_or(0),
+        0, // tokens_in
+        0, // tokens_out
+        "⏱ 0.0s".to_string(),
+    );
+
+    let res = loop {
+        let line_opt = tui.run_input_loop()?;
+        let Some(line) = line_opt else {
+            break Ok(());
         };
         let line = line.trim();
-        if !handle_chat_command(runtime, line).await? {
-            break;
+        if !handle_chat_command(runtime, line, &mut tui).await? {
+            break Ok(());
         }
         if line.starts_with('/') {
             continue;
         }
 
-        runtime.messages.push(ChatMessage {
-            role: "user".to_string(),
-            content: line.to_string(),
-        });
+        // Task 107: Start effort timer for this turn
+        let turn_timer = crate::ui_effort::EffortTimer::start();
+
+        tui.add_message(crate::ui_tui::MessageRole::User, line.to_string());
+        runtime.messages.push(ChatMessage::simple("user", &line.to_string()));
 
         // Simplified: intent annotation only — no classification pipeline
         let rephrased_objective = annotate_user_intent(
@@ -517,6 +536,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &complexity,
             &scope,
             &formula,
+            &mut tui,
         )
         .await;
         if route_decision.route.eq_ignore_ascii_case("CHAT")
@@ -533,18 +553,24 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         show_process_step_verbose(
             runtime.verbose,
             "PLAN",
-            &format!("{} -> {} steps", complexity.complexity, program.steps.len()),
+            &format!("{} → {} steps", complexity.complexity, program.steps.len()),
         );
         // Skip capability guard and policy validation for Maestro-generated programs
         // The Maestro + Orchestrator pipeline self-validates step generation
 
         apply_shape_fallbacks(runtime, line, &ladder, &mut program);
         // Skip reflection loop — Maestro + Orchestrator self-validate step generation
-        // program = run_reflection_loop(...);  // disabled
+        // program = build_program_with_temp(...);  // disabled
 
         let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
             && formula.primary.eq_ignore_ascii_case("reply_only");
-        let mut loop_outcome = if is_trivial {
+
+        // Tool-calling pipeline produces a single Respond step with pre-built answer.
+        // Detect this and skip the legacy orchestration retry chain.
+        let is_tool_calling_result = program.steps.len() == 1
+            && matches!(&program.steps[0], Step::Respond { instructions, .. } if !instructions.trim().is_empty());
+
+        let mut loop_outcome = if is_trivial || is_tool_calling_result {
             AutonomousLoopOutcome {
                 program: program.clone(),
                 step_results: vec![],
@@ -581,19 +607,53 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             loop_outcome.reasoning_clean,
         );
 
-        let (final_text, final_usage_total) = resolve_final_text(
-            runtime,
-            line,
-            &route_decision,
-            &step_results,
-            &mut final_reply,
-        )
-        .await?;
-        print_final_output(
-            &runtime.args,
-            runtime.ctx_max,
-            final_usage_total,
-            &final_text,
+        // Tool-calling pipeline already produced the final answer in the Respond step.
+        // Skip resolve_final_text which would call the presenter LLM with empty step_results
+        // and cause it to hallucinate a completely different (wrong) answer.
+        let (final_text, final_usage_total) = if is_tool_calling_result {
+            let answer = match &program.steps[0] {
+                Step::Respond { instructions, .. } => instructions.clone(),
+                _ => String::new(),
+            };
+            trace(
+                &runtime.args,
+                &format!("tool_calling_answer_used length={}", answer.len()),
+            );
+            (answer, None)
+        } else {
+            resolve_final_text(
+                runtime,
+                line,
+                &route_decision,
+                &step_results,
+                &mut final_reply,
+            )
+            .await?
+        };
+        if !final_text.is_empty() {
+            tui.add_message(crate::ui_tui::MessageRole::Assistant, final_text.clone());
+            runtime.messages.push(ChatMessage::simple("assistant", &final_text));
+        }
+        // Estimate tokens from message content (~4 chars per token)
+        let mut tokens_in: u64 = 0;
+        let mut tokens_out: u64 = 0;
+        for msg in &runtime.messages {
+            let est = crate::ui_tui::TerminalUI::estimate_tokens(&msg.content);
+            if msg.role == "assistant" {
+                tokens_out += est;
+            } else {
+                tokens_in += est;
+            }
+        }
+        // Use API-reported tokens if available, otherwise use estimates
+        let ctx_tokens = final_usage_total.unwrap_or(tokens_in + tokens_out);
+        tui.update_status(
+            runtime.model_id.clone(),
+            ctx_tokens,
+            runtime.ctx_max.unwrap_or(0),
+            tokens_in,
+            tokens_out,
+            turn_timer.format(),
         );
         maybe_save_formula_memory(
             &runtime.args,
@@ -613,15 +673,13 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         )
         .await?;
         if !final_text.is_empty() {
-            runtime.messages.push(ChatMessage {
-                role: "assistant".to_string(),
-                content: final_text,
-            });
+            runtime.messages.push(ChatMessage::simple("assistant", &final_text));
         }
         if has_edit_result(&step_results) {
             refresh_runtime_workspace(runtime)?;
         }
         let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
-    }
-    Ok(())
+    };
+    tui.cleanup()?;
+    res
 }

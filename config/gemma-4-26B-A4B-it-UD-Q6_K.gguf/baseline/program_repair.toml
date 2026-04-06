@@ -1,0 +1,15 @@
+version = 1
+name = "program_repair"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
+temperature = 0.1
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 2048
+timeout_s = 120
+system_prompt = """
+Repair failed programs.
+
+Fix issues while preserving original intent.
+"""

@@ -1,0 +1,1 @@
+cat src/*.rs | head -c 80000

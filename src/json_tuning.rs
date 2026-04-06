@@ -168,12 +168,13 @@ fn build_chat_request(model: &str, user_message: &str, temperature: f32) -> Chat
     ChatCompletionRequest {
         model: model.to_string(),
         messages: vec![
-            ChatMessage { role: "system".to_string(), content: "Return ONLY valid JSON. No prose, no explanations, no markdown fences. Just raw JSON.".to_string() },
-            ChatMessage { role: "user".to_string(), content: user_message.to_string() },
+            ChatMessage::simple("system", "Return ONLY valid JSON. No prose, no explanations, no markdown fences. Just raw JSON."),
+            ChatMessage::simple("user", user_message),
         ],
         temperature: temperature as f64, top_p: 0.95, stream: false, max_tokens: 2048,
         n_probs: None, repeat_penalty: Some(1.1), reasoning_format: Some("none".to_string()),
         grammar: None,
+        tools: None,
     }
 }
 

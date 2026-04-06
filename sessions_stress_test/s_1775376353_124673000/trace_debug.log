@@ -1,0 +1,83 @@
+trace: workspace_context_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775376353_124673000/workspace.txt
+trace: workspace_brief_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775376353_124673000/workspace_brief.txt
+trace: base_url_source=cli_or_env value=http://192.168.1.186:8080
+trace: model_behavior preferred_reasoning=none auto_separated=false auto_truncated=false finalizer=false none_clean=true json_auto=true json_none=true
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3750 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: planning_source=maestro ladder_level=Task
+trace: intent_annotation=The user is inquiring about the assistant's identity, capabilities, and requesting the current project structure by executing the tree command.
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 11625 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(45)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 12869 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 5280 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: maestro_pipeline_failed error=JSON parsing failed after model-based repair
+[PLAN] INVESTIGATE -> 1 steps
+trace: strategy_chain_selected primary=InspectFirst fallbacks=2
+note: Strategy attempt 1/2 (temp=0.1, strategy=InspectFirst)
+trace: orchestration_strategy_attempt id=1 strategy=InspectFirst temp=0.10 use_initial=false
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 13305 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: step id=p1 type=plan purpose=Inspection of the environment to collect required information before formulating the final response. depends_on=-
+-> Inspection of the environment to collect required information before formulating the final response.
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 11985 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: plan_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775376353_124673000/plans/plan_001.md
+trace: step id=s1 type=shell purpose=Obtain the current project directory layout to answer the user's request for the project structure. depends_on=-
+-> Obtain the current project directory layout to answer the user's request for the project structure.
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 3129 bytes
+[HTTP_SUCCESS] parsed response successfully
+→ Gathering project directory layout
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 4291 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: preflight id=s1 status=accept reason=The tree command is safe to execute on macOS with zsh shell, and will provide the requested project structure information.
+trace: shell_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775376353_124673000/shell/001.sh
+-> tree
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Some(120)s
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 7981 bytes
+[HTTP_SUCCESS] parsed response successfully
+[HTTP_START] model=granite-4.0-h-micro-UD-Q8_K_XL.gguf url=http://192.168.1.186:8080/v1/chat/completions timeout=Nones
+[HTTP_ATTEMPT] attempt=1/3
+[HTTP_SEND] sending POST request...
+[HTTP_RESPONSE] status=200 OK
+[HTTP_BODY] received 15955 bytes
+[HTTP_SUCCESS] parsed response successfully
+trace: repair_semantics id=shell status=reject reason=The repaired command using ripgrep (rg) does not provide the same concise directory layout as the original tree command, thus failing to preserve the original task semantics.
+trace: shell_output_saved=/Users/r2/elma-cli/sessions_stress_test/s_1775376353_124673000/shell/001.out
+trace: exec_exit_code=1

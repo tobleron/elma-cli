@@ -87,14 +87,8 @@ mod tests {
     #[test]
     fn test_format_conversation_excerpt_skips_first() {
         let messages = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: "System prompt".to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: "Hello".to_string(),
-            },
+            ChatMessage::simple("system", &"System prompt".to_string()),
+            ChatMessage::simple("user", &"Hello".to_string()),
         ];
         let result = format_conversation_excerpt(&messages, 5);
         assert!(result.contains("user"));

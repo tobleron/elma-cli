@@ -46,14 +46,8 @@ pub async fn reflect_on_program(
     let prompt = build_reflection_prompt(program, priors, workspace, objective);
 
     let messages = vec![
-        ChatMessage {
-            role: "system".to_string(),
-            content: cfg.system_prompt.clone(),
-        },
-        ChatMessage {
-            role: "user".to_string(),
-            content: prompt,
-        },
+        ChatMessage::simple("system", &cfg.system_prompt.clone()),
+        ChatMessage::simple("user", &prompt),
     ];
 
     let request = ChatCompletionRequest {
@@ -67,6 +61,7 @@ pub async fn reflect_on_program(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;

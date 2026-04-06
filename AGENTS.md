@@ -1,5 +1,58 @@
 This file provides universal guidance for agents working in this repository.
 
+## UI Design Philosophy
+
+### Minimalistic TUI
+Elma's terminal UI follows a structured layout system inspired by Claude Code's design:
+- **Section-based output**: Thin borders (`━`, `─`), not heavy boxes
+- **Information-dense**: Every character serves a purpose
+- **No chrome**: No decorative borders or visual noise
+- **Full content**: Never truncate output — complete markdown is always rendered
+- **Graceful fallback**: When not in a terminal (piped/scripted), output degrades to plain text
+- **Markdown rendering**: Headers, bold, italic, lists, code blocks, blockquotes, horizontal rules — all rendered in-terminal
+
+### Catppuccin Mocha Color Palette
+The **only** color theme used throughout Elma is [Catppuccin Mocha](https://github.com/catppuccin/catppuccin):
+
+| Color | Hex | Semantic Usage |
+|-------|-----|---------------|
+| **Mauve** `#cba6f7` | Elma prefix, primary accent, prompts |
+| **Teal** `#94e2d5` | Tool execution, informational messages |
+| **Red** `#f38ba8` | Errors, failures, destructive blocks |
+| **Yellow** `#f9e2af` | Warnings, caution commands, shell commands |
+| **Green** `#a6e3a1` | Success, confirmations, fast operations |
+| **Text** `#cdd6f4` | Primary text, normal output |
+| **Overlay0** `#6c7086` | Dim text, timestamps, metadata |
+
+**Design choice:** Catppuccin Mocha over Tokyo Night and Rose Pine for warm, inviting tones (not cold/clinical), soft contrast for long sessions, and a modern aesthetic popular in dev tooling. Each color has specific meaning — mauve means "Elma is speaking", teal means "something is happening", red means "something broke", yellow means "pay attention", green means "all good".
+
+### Module Organization
+UI modules are focused and independent:
+
+| Module | Purpose | Dependencies |
+|--------|---------|-------------|
+| `ui_layout.rs` | Structured layout: borders, sections, status line | crossterm, ui_colors |
+| `ui_markdown.rs` | Full markdown rendering: headers, lists, code blocks | ui_colors, ui_syntax |
+| `ui_colors.rs` | ANSI color functions (Tokyo Night) | None |
+| `ui_tui.rs` | Ratatui TUI wrapper + Tokyo Night palette | ratatui, crossterm |
+| `ui_progress.rs` | Indicatif spinners and progress bars | indicatif |
+| `ui_interact.rs` | Inquire selection menus and confirmations | inquire |
+| `ui_syntax.rs` | Syntect syntax highlighting for code blocks | syntect |
+| `ui_spinner.rs` | Braille spinner (std::thread fallback) | None |
+| `ui_effort.rs` | Wall-clock effort indicator | None |
+| `ui_context_bar.rs` | Token usage progress bar | None |
+| `ui_trace.rs` | Trace output formatting | None |
+
+**Design rule:** Each UI module has a single responsibility and zero coupling to other UI modules. Color consistency is maintained through shared Rose Pine constants in `ui_tui.rs`.
+
+### Ratatui Integration
+Ratatui is used **minimally** — only for structured layout when rendering complex turn responses. The simple ANSI-based output (`eprintln!`) remains the primary path for most output. Ratatui is an enhancement, not a replacement.
+
+### Additional UI Libraries
+- **indicatif**: Thread-safe spinners and progress bars for tool execution and multi-step operations
+- **inquire**: Interactive selection menus with vim-mode (j/k navigation) and Rose Pine themed prompts
+- **syntect**: Language-aware syntax highlighting for code blocks (Rust, Python, JSON, etc.) with ANSI output
+
 ## Elma CLI Philosophy
 
 Elma is a local-first autonomous CLI agent designed to deliver the highest reliability and practical usefulness possible on constrained local models.

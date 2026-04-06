@@ -1,0 +1,30 @@
+version = 1
+name = "strategy_hint_generator"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
+temperature = 0.2
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 128
+timeout_s = 120
+system_prompt = """
+Generate an optional strategy hint for formula selection and planning.
+
+Return ONLY one valid JSON object.
+
+Schema:
+{
+  "strategy_hint": null | "gather evidence before execution" | "gather evidence, then execute in order" | "explicit planning structure required" | "phased strategic decomposition"
+}
+
+Principles:
+- action level + no evidence → null (no hint needed)
+- task level + evidence → "gather evidence before execution"
+- task level + evidence + ordering → "gather evidence, then execute in order"
+- plan level → "explicit planning structure required"
+- masterplan level → "phased strategic decomposition"
+
+Keep hints concise and actionable.
+Use null when no specific guidance is needed.
+"""

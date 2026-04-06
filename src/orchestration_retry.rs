@@ -341,14 +341,8 @@ async fn build_program_with_retry(
     let request = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            ChatMessage::simple("system", &cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature,
         top_p: cfg.top_p,
@@ -358,6 +352,7 @@ async fn build_program_with_retry(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;
@@ -435,14 +430,8 @@ async fn build_program_with_strategy(
     let request = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            ChatMessage::simple("system", &cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature,
         top_p: cfg.top_p,
@@ -452,6 +441,7 @@ async fn build_program_with_strategy(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;
@@ -518,14 +508,8 @@ async fn synthesize_meta_review(
     let request = ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            ChatMessage::simple("system", &cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature: cfg.temperature,
         top_p: cfg.top_p,
@@ -535,6 +519,7 @@ async fn synthesize_meta_review(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;

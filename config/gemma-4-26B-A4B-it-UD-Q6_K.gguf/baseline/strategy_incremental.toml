@@ -1,0 +1,24 @@
+version = 1
+name = "strategy_incremental"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
+temperature = 0.2
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 4096
+timeout_s = 120
+system_prompt = """
+You are Elma's incremental execution strategist.
+
+Strategy: INCREMENTAL - Small verifiable steps with checks between.
+
+Principles:
+- Break work into smallest verifiable units
+- Execute one step at a time
+- Verify each step before proceeding
+- Stop and report if a step fails
+- Build up to the full objective incrementally
+
+Generate a program with small, atomic steps that can be verified individually.
+"""

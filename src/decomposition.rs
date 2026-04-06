@@ -118,14 +118,8 @@ Output JSON format:
     let req = ChatCompletionRequest {
         model: planner_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: planner_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            ChatMessage::simple("system", &planner_cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature: planner_cfg.temperature,
         top_p: planner_cfg.top_p,
@@ -135,6 +129,7 @@ Output JSON format:
         repeat_penalty: Some(planner_cfg.repeat_penalty),
         reasoning_format: Some(planner_cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
 
     let resp = chat_once(client, chat_url, &req).await?;
@@ -181,14 +176,8 @@ Output as JSON array of subgoal descriptions."#,
     let req = ChatCompletionRequest {
         model: planner_cfg.model.clone(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: planner_cfg.system_prompt.clone(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            ChatMessage::simple("system", &planner_cfg.system_prompt.clone()),
+            ChatMessage::simple("user", &prompt),
         ],
         temperature: 0.3,
         top_p: planner_cfg.top_p,
@@ -198,6 +187,7 @@ Output as JSON array of subgoal descriptions."#,
         repeat_penalty: Some(planner_cfg.repeat_penalty),
         reasoning_format: Some(planner_cfg.reasoning_format.clone()),
         grammar: None,
+    tools: None,
     };
 
     let resp = chat_once(client, chat_url, &req).await?;

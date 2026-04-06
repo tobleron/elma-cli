@@ -2,6 +2,7 @@
 //!
 //! App Bootstrap - Mode Handling and Banners
 
+use crate::ui_colors::*;
 use crate::*;
 
 pub(crate) fn validate_mode_flags(args: &Args) -> Result<()> {
@@ -161,20 +162,20 @@ pub(crate) fn emit_startup_banner(
         return;
     }
 
-    eprintln!("{}", ansi_orange("Elma"));
-    eprintln!("{} {target}", ansi_grey("  target  "));
-    eprintln!("{} {model_id}", ansi_grey("  model   "));
-    eprintln!("{} {}", ansi_grey("  config  "), model_cfg_dir.display());
-    eprintln!("{} {session_name}", ansi_grey("  session "));
+    eprintln!("{}", elma_accent("Elma"));
+    eprintln!("{} {target}", meta_comment("  target  "));
+    eprintln!("{} {model_id}", meta_comment("  model   "));
+    eprintln!("{} {}", meta_comment("  config  "), model_cfg_dir.display());
+    eprintln!("{} {session_name}", meta_comment("  session "));
     if tuned {
         eprintln!(
             "{} {}",
-            ansi_soft_green("  status  "),
+            warn_yellow("  status  "),
             "✓ tuned (using cached results)"
         );
     }
     eprintln!(
         "{} /exit  /reset  /snapshot  /rollback <id>  /tune\n",
-        ansi_grey("  commands")
+        meta_comment("  commands")
     );
 }

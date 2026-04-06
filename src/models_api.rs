@@ -252,14 +252,8 @@ async fn probe_logprobs_support(
     let req = ChatCompletionRequest {
         model: model_id.to_string(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: "Return exactly one digit: 1.".to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: "ping".to_string(),
-            },
+            ChatMessage::simple("system", &"Return exactly one digit: 1.".to_string()),
+            ChatMessage::simple("user", &"ping".to_string()),
         ],
         temperature: 0.0,
         top_p: 1.0,
@@ -269,6 +263,7 @@ async fn probe_logprobs_support(
         repeat_penalty: Some(1.0),
         reasoning_format: Some("none".to_string()),
         grammar: None,
+    tools: None,
     };
     let resp = probe_chat_completion_raw(client, chat_url, &req).await?;
     Ok(resp
@@ -289,14 +284,8 @@ fn make_probe_request(
     ChatCompletionRequest {
         model: model_id.to_string(),
         messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: system_content.to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: user_content.to_string(),
-            },
+            ChatMessage::simple("system", &system_content.to_string()),
+            ChatMessage::simple("user", &user_content.to_string()),
         ],
         temperature: 0.0,
         top_p: 1.0,
@@ -306,6 +295,7 @@ fn make_probe_request(
         repeat_penalty: Some(1.0),
         reasoning_format: Some(reasoning_format.to_string()),
         grammar: None,
+    tools: None,
     }
 }
 
@@ -498,6 +488,7 @@ mod tests {
                             .to_string(),
                     ),
                     reasoning_content: None,
+                    tool_calls: None,
                 },
                 finish_reason: None,
                 logprobs: None,
@@ -525,6 +516,7 @@ mod tests {
                     role: Some("assistant".to_string()),
                     content: Some("plain answer".to_string()),
                     reasoning_content: None,
+                    tool_calls: None,
                 },
                 finish_reason: None,
                 logprobs: None,

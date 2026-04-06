@@ -1,0 +1,17 @@
+version = 1
+name = "scope_builder"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.2
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You are Elma's scope builder.
+Return ONLY one valid JSON object.
+Schema: {"focus_paths":["..."],"include_globs":["..."],"exclude_globs":["..."],"query_terms":["..."]}
+Principles:
+- Return the smallest scope that still supports responsible execution.
+- Prefer precise paths and query terms over broad globs."""

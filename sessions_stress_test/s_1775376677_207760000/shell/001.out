@@ -1,0 +1,5926 @@
+.
+├── _dev-system
+│   ├── analysis
+│   │   └── FSM_LOCKING_ANALYSIS.md
+│   ├── analyzer
+│   │   ├── Cargo.lock
+│   │   ├── Cargo.toml
+│   │   ├── src
+│   │   ├── target
+│   │   ├── test_manual_resolver
+│   │   └── tests
+│   ├── analyzer_state.json
+│   ├── ARCHITECTURE.md
+│   ├── config
+│   │   ├── deprecated
+│   │   └── efficiency.json
+│   ├── plans
+│   │   └── metadata.json
+│   ├── README.md
+│   └── tmp
+│       ├── D001_067092_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_1c9ec2_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_1d3592_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_31d72a_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_6069d7_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_a2a2bc_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_ba74bf_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_cfbfd9_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_efd00c_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_f4e684_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_ff4126_Surgical_Refactor_SRC_BACKEND
+│       ├── D001_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_0dcf7c_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_17d66a_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_45f7a2_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_531dbd_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_5ce07a_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_810fdf_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_815f1e_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_8ddf40_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_918208_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_a660fc_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_c3cba1_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_c7d6cc_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_dc8ab6_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_f69c20_Surgical_Refactor_SRC_BACKEND
+│       ├── D002_Surgical_Refactor_SRC_BACKEND
+│       ├── D003_c816f5_Surgical_Refactor_SRC_BACKEND
+│       ├── D003_Merge_Folders_BACKEND
+│       ├── D004_0c9ec7_Surgical_Refactor_SRC_INTEL_UNITS_BACKEND
+│       ├── D004_509776_Surgical_Refactor_SRC_INTEL_UNITS_BACKEND
+│       ├── D004_570fc0_Surgical_Refactor_SRC_INTEL_UNITS_BACKEND
+│       ├── D004_72ea0d_Surgical_Refactor_SRC_BACKEND
+│       ├── D004_739591_Surgical_Refactor_SRC_BACKEND
+│       ├── D004_74674f_Surgical_Refactor_SRC_BACKEND
+│       ├── D004_f0e757_Surgical_Refactor_SRC_BACKEND
+│       ├── D005_5e50f7_Surgical_Refactor_SRC_JSON_ERROR_HANDLER_BACKEND
+│       ├── D005_878cb4_Surgical_Refactor_SRC_JSON_ERROR_HANDLER_BACKEND
+│       ├── D005_eac20c_Surgical_Refactor_SRC_JSON_ERROR_HANDLER_BACKEND
+│       ├── D005_fa7e2e_Surgical_Refactor_SRC_JSON_ERROR_HANDLER_BACKEND
+│       ├── D006_014ea3_Surgical_Refactor_SRC_TOOLS_BACKEND
+│       ├── D006_1fead3_Surgical_Refactor_SRC_TOOLS_BACKEND
+│       ├── D006_2222fa_Surgical_Refactor_SRC_JSON_ERROR_HANDLER_BACKEND
+│       ├── D006_587f78_Surgical_Refactor_SRC_TOOLS_BACKEND
+│       ├── D006_Surgical_Refactor_SRC_FRONTEND
+│       ├── D007_3694ec_Merge_Folders_BACKEND
+│       ├── D007_5d77b2_Merge_Folders_BACKEND
+│       ├── D007_9eff0d_Merge_Folders_BACKEND
+│       ├── D008_Surgical_Refactor_SRC_FRONTEND
+│       ├── D010_Surgical_Refactor_SRC_BACKEND
+│       └── task_generator_tests
+├── _dev-tasks
+│   └── D001_Aggregate_Completed_Tasks.md
+├── _scripts
+│   ├── export_defaults.sh
+│   ├── run_analyzer.sh
+│   └── test_grammar_injection.sh
+├── _stress_testing
+│   ├── _claude_code_src
+│   │   ├── assistant
+│   │   ├── bootstrap
+│   │   ├── bridge
+│   │   ├── buddy
+│   │   ├── cli
+│   │   ├── commands
+│   │   ├── commands.ts
+│   │   ├── components
+│   │   ├── constants
+│   │   ├── context
+│   │   ├── context.ts
+│   │   ├── coordinator
+│   │   ├── cost-tracker.ts
+│   │   ├── costHook.ts
+│   │   ├── dialogLaunchers.tsx
+│   │   ├── entrypoints
+│   │   ├── history.ts
+│   │   ├── hooks
+│   │   ├── ink
+│   │   ├── ink.ts
+│   │   ├── interactiveHelpers.tsx
+│   │   ├── keybindings
+│   │   ├── logging
+│   │   ├── main.tsx
+│   │   ├── memdir
+│   │   ├── migrations
+│   │   ├── moreright
+│   │   ├── native-ts
+│   │   ├── outputStyles
+│   │   ├── plugins
+│   │   ├── projectOnboardingState.ts
+│   │   ├── query
+│   │   ├── query.ts
+│   │   ├── QueryEngine.ts
+│   │   ├── remote
+│   │   ├── replLauncher.tsx
+│   │   ├── schemas
+│   │   ├── screens
+│   │   ├── server
+│   │   ├── services
+│   │   ├── setup.ts
+│   │   ├── skills
+│   │   ├── state
+│   │   ├── Task.ts
+│   │   ├── tasks
+│   │   ├── tasks.ts
+│   │   ├── Tool.ts
+│   │   ├── tools
+│   │   ├── tools.ts
+│   │   ├── types
+│   │   ├── upstreamproxy
+│   │   ├── utils
+│   │   ├── vim
+│   │   └── voice
+│   ├── _opencode_for_testing
+│   │   ├── AUDIT_REPORT.md
+│   │   ├── cmd
+│   │   ├── go.mod
+│   │   ├── go.sum
+│   │   ├── install
+│   │   ├── internal
+│   │   ├── LICENSE
+│   │   ├── main.go
+│   │   ├── opencode-schema.json
+│   │   ├── README.md
+│   │   ├── scripts
+│   │   └── sqlc.yaml
+│   ├── H001_Sloppy_Chat_Greeting.md
+│   ├── H002_Sloppy_Casual_Shell_Request.md
+│   ├── H003_Sloppy_Multi_Instruction_Bounded.md
+│   ├── README.md
+│   ├── S000A_Chat_Baseline.md
+│   ├── S000B_Shell_Primitive.md
+│   ├── S000C_Read_Primitive.md
+│   ├── S000D_Search_Primitive.md
+│   ├── S000E_Sequential_Logic.md
+│   ├── S000F_Select_Primitive.md
+│   ├── S000G_Summarize_Primitive.md
+│   ├── S000H_Decide_Primitive.md
+│   ├── S000I_Edit_Primitive.md
+│   ├── S001_Connectivity_And_Formatting.md
+│   ├── S002_Recursive_Discovery.md
+│   ├── S003_Multi_File_Refactor.md
+│   ├── S004_Logical_Troubleshooting.md
+│   ├── S005_High_Intensity_Master_Planning.md
+│   ├── S006_Global_Architecture_Audit.md
+│   ├── S007_Full_System_Refactoring.md
+│   └── S008_Workflow_Endurance.md
+├── _tasks
+│   ├── active
+│   │   ├── 023_Expert_Responder_Transient_Context.md
+│   │   ├── 064_Real_CLI_Stress_Harness_And_Reliability_Gates.md
+│   │   └── 095_Incremental_Upgrade_Master_Plan.md
+│   ├── completed
+│   │   ├── _CONCISE_SUMMARY.md
+│   │   ├── 057_Standardize_Intel_Units_JSON_DONE_SUPERSEDED.md
+│   │   ├── 058_Incremental_Stability_Master_Plan_DONE.md
+│   │   ├── 059_CLI_UI_Basic_Enhancements_DONE.md
+│   │   ├── 061_Role_Based_Temperature_And_Retry_Strategy_Calibration_DONE.md
+│   │   ├── 062_Final_Answer_Presentation_And_Formatting_Reliability_DONE.md
+│   │   ├── T001_Terminology_Broke_Classification_RESOLVED.md
+│   │   ├── T001_verify_and_delete_obsolete_intel_units.md
+│   │   ├── T044_Eliminate_Critic_JSON.md
+│   │   ├── T045_Fix_Info_Instruction_Classification.md
+│   │   └── T059_Troubleshoot_Direct_Shell_Path_And_Runtime_Stalls_DONE.md
+│   ├── pending
+│   │   ├── 064_Cleanup_Dead_Code_And_Legacy_Modules.md
+│   │   ├── 065_Improve_Crash_Reporting.md
+│   │   ├── 066_Limit_Summarize_Step_Output.md
+│   │   ├── 067_Iterative_Program_Refinement.md
+│   │   ├── 068_Multi_Turn_Goal_Persistence.md
+│   │   ├── 069_Runtime_Profile_Validation_And_Config_Healthcheck.md
+│   │   ├── 070_Hierarchical_Evidence_Compaction.md
+│   │   ├── 071_Rolling_Conversation_Summary.md
+│   │   ├── 072_Specialized_FS_Intel.md
+│   │   ├── 074_Model_Capability_Profiles_For_Local_LLMs.md
+│   │   ├── 076_Trace_Observability_And_Session_Review_Tools.md
+│   │   ├── 082_Implement_Config_Orchestrator_Tool.md
+│   │   ├── 087_LlamaCpp_Runtime_Token_Telemetry.md
+│   │   ├── 088_Objective_Level_Token_Forecasting_And_Budget_Envelopes.md
+│   │   ├── 089_Budget_Aware_Orchestration_And_Aggressive_Context_Conservation.md
+│   │   ├── 093_Hybrid_MasterPlan_And_Phase_Implementation.md
+│   │   ├── 094_Snapshot_Coverage_For_Shell_Mutations_And_Rollback_Integrity.md
+│   │   ├── 096_Chat_Classification_Pipeline_Rebuild.md
+│   │   └── 097_Tool_Arsenal_Refinement_And_Expansion.md
+│   ├── postponed
+│   │   ├── 006_Add_Fetch_Step_Type_Disabled.md
+│   │   ├── 024_Decouple_Model_Profile_Mapping.md
+│   │   ├── 073_Platform_Capability_Detection.md
+│   │   ├── 075_Offline_First_Network_Policy_And_Web_Fallbacks.md
+│   │   ├── 077_Cross_Scenario_Correlation.md
+│   │   ├── 078_Long_Term_Tactical_Memory.md
+│   │   ├── 079_Predictive_Failure_Detection.md
+│   │   ├── 080_Constraint_Relaxation_And_Creative_Problem_Solving.md
+│   │   ├── 081_Analogy_Based_Reasoning_Engine.md
+│   │   ├── 083_Document_Architecture_Abstractions.md
+│   │   ├── 084_Refine_Drag_Formula_Weights.md
+│   │   ├── 085_Autonomous_Prompt_Evolution.md
+│   │   ├── 086_Stress_Test_Sloppy_Human_Prompts_And_Intent_Helper_AB.md
+│   │   ├── 090_Model_Behavior_Mapping_And_Tuning_Graph.md
+│   │   ├── 091_Comprehensive_Per_Model_Tuning_Lifecycle.md
+│   │   └── 092_Model_Reliability_Scoring_And_Upgrade_Advice.md
+│   └── TASKS.md
+├── AGENTS.md
+├── Cargo.lock
+├── Cargo.toml
+├── config
+│   ├── balanced.toml
+│   ├── defaults
+│   │   ├── action_need_assessor.toml
+│   │   ├── action_needs_classifier.toml
+│   │   ├── action_type.toml
+│   │   ├── artifact_classifier.toml
+│   │   ├── calibration_judge.toml
+│   │   ├── claim_checker.toml
+│   │   ├── claim_revision_advisor.toml
+│   │   ├── command_preflight.toml
+│   │   ├── command_repair.toml
+│   │   ├── command_reviser.toml
+│   │   ├── complexity_assessor.toml
+│   │   ├── complexity_classifier.toml
+│   │   ├── critic.toml
+│   │   ├── decider.toml
+│   │   ├── efficiency_program_repair.toml
+│   │   ├── efficiency_reviewer.toml
+│   │   ├── evidence_chain_assessment.toml
+│   │   ├── evidence_compactor.toml
+│   │   ├── evidence_mode.toml
+│   │   ├── evidence_need_assessor.toml
+│   │   ├── evidence_needs_classifier.toml
+│   │   ├── execution_mode_setter.toml
+│   │   ├── execution_program_repair.toml
+│   │   ├── execution_sufficiency.toml
+│   │   ├── expert_advisor.toml
+│   │   ├── final_answer_extractor.toml
+│   │   ├── formatter.toml
+│   │   ├── formula_memory_matcher.toml
+│   │   ├── formula_selector.toml
+│   │   ├── gate_why.toml
+│   │   ├── gate.toml
+│   │   ├── intent_helper.toml
+│   │   ├── intention_tune.toml
+│   │   ├── intention.toml
+│   │   ├── json_converter.toml
+│   │   ├── json_outputter.toml
+│   │   ├── json_repair_intel.toml
+│   │   ├── json_repair.toml
+│   │   ├── level_assessment.toml
+│   │   ├── logical_program_repair.toml
+│   │   ├── logical_reviewer.toml
+│   │   ├── memory_gate.toml
+│   │   ├── meta_review.toml
+│   │   ├── mode_router.toml
+│   │   ├── model_behavior.toml
+│   │   ├── orchestrator.toml
+│   │   ├── ordering_needs_assessment.toml
+│   │   ├── outcome_verifier.toml
+│   │   ├── pattern_suggester.toml
+│   │   ├── phases_needs_assessment.toml
+│   │   ├── planner_master.toml
+│   │   ├── planner.toml
+│   │   ├── program_repair.toml
+│   │   ├── refinement.toml
+│   │   ├── reflection.toml
+│   │   ├── rephrase_intention.toml
+│   │   ├── result_presenter.toml
+│   │   ├── revision_needs_assessment.toml
+│   │   ├── risk_classifier.toml
+│   │   ├── risk_reviewer.toml
+│   │   ├── router.toml
+│   │   ├── scope_builder.toml
+│   │   ├── selector.toml
+│   │   ├── self_question.toml
+│   │   ├── speech_act.toml
+│   │   ├── status_message_generator.toml
+│   │   ├── strategy_direct.toml
+│   │   ├── strategy_hint_generator.toml
+│   │   ├── strategy_incremental.toml
+│   │   ├── strategy_inspect_first.toml
+│   │   ├── strategy_plan_then_execute.toml
+│   │   ├── strategy_safe_mode.toml
+│   │   ├── summarizer.toml
+│   │   ├── task_semantics_guard.toml
+│   │   ├── text_generator.toml
+│   │   ├── the_maestro.toml
+│   │   ├── tooler.toml
+│   │   ├── verify_checker.toml
+│   │   ├── workflow_complexity_planner.toml
+│   │   ├── workflow_planner.toml
+│   │   └── workflow_reason_planner.toml
+│   ├── gemma3_12b_it.toml
+│   ├── global.toml
+│   ├── grammar_mapping.toml
+│   ├── grammars
+│   │   ├── complexity_choice_1of4.json.gbnf
+│   │   ├── critic_verdict.json.gbnf
+│   │   ├── formula_selector.json.gbnf
+│   │   ├── mode_router_choice_1of5.json.gbnf
+│   │   ├── README.md
+│   │   ├── risk_review_verdict.json.gbnf
+│   │   ├── scope_builder.json.gbnf
+│   │   ├── selector.json.gbnf
+│   │   ├── speech_act_choice_1of3.json.gbnf
+│   │   ├── workflow_gate_choice_1of2.json.gbnf
+│   │   └── workflow_planner.json.gbnf
+│   ├── granite-4.0-h-micro-UD-Q8_K_XL.gguf
+│   │   ├── _elma.config
+│   │   ├── action_need_assessor.toml
+│   │   ├── action_needs_classifier.toml
+│   │   ├── action_type.toml
+│   │   ├── artifact_classifier.toml
+│   │   ├── baseline
+│   │   ├── calibration_judge.toml
+│   │   ├── claim_checker.toml
+│   │   ├── claim_revision_advisor.toml
+│   │   ├── command_preflight.toml
+│   │   ├── command_repair.toml
+│   │   ├── command_reviser.toml
+│   │   ├── complexity_assessor.toml
+│   │   ├── complexity_classifier.toml
+│   │   ├── critic.toml
+│   │   ├── decider.toml
+│   │   ├── efficiency_program_repair.toml
+│   │   ├── efficiency_reviewer.toml
+│   │   ├── evidence_chain_assessment.toml
+│   │   ├── evidence_compactor.toml
+│   │   ├── evidence_mode.toml
+│   │   ├── evidence_need_assessor.toml
+│   │   ├── evidence_needs_classifier.toml
+│   │   ├── execution_mode_setter.toml
+│   │   ├── execution_program_repair.toml
+│   │   ├── execution_sufficiency.toml
+│   │   ├── expert_advisor.toml
+│   │   ├── final_answer_extractor.toml
+│   │   ├── formatter.toml
+│   │   ├── formula_memory
+│   │   ├── formula_memory_matcher.toml
+│   │   ├── formula_selector.toml
+│   │   ├── gate_why.toml
+│   │   ├── gate.toml
+│   │   ├── intent_helper.toml
+│   │   ├── intention_tune.toml
+│   │   ├── intention.toml
+│   │   ├── json_converter.toml
+│   │   ├── json_outputter.toml
+│   │   ├── json_repair_intel.toml
+│   │   ├── json_repair.toml
+│   │   ├── level_assessment.toml
+│   │   ├── logical_program_repair.toml
+│   │   ├── logical_reviewer.toml
+│   │   ├── memory_gate.toml
+│   │   ├── meta_review.toml
+│   │   ├── mode_router.toml
+│   │   ├── model_behavior.toml
+│   │   ├── orchestrator.toml
+│   │   ├── ordering_needs_assessment.toml
+│   │   ├── outcome_verifier.toml
+│   │   ├── pattern_suggester.toml
+│   │   ├── phases_needs_assessment.toml
+│   │   ├── planner_master.toml
+│   │   ├── planner.toml
+│   │   ├── program_repair.toml
+│   │   ├── refinement.toml
+│   │   ├── reflection.toml
+│   │   ├── rephrase_intention.toml
+│   │   ├── result_presenter.toml
+│   │   ├── revision_needs_assessment.toml
+│   │   ├── risk_classifier.toml
+│   │   ├── risk_reviewer.toml
+│   │   ├── router_calibration.toml
+│   │   ├── router.toml
+│   │   ├── scope_builder.toml
+│   │   ├── selector.toml
+│   │   ├── self_question.toml
+│   │   ├── speech_act.toml
+│   │   ├── status_message_generator.toml
+│   │   ├── strategy_direct.toml
+│   │   ├── strategy_hint_generator.toml
+│   │   ├── strategy_incremental.toml
+│   │   ├── strategy_inspect_first.toml
+│   │   ├── strategy_plan_then_execute.toml
+│   │   ├── strategy_safe_mode.toml
+│   │   ├── summarizer.toml
+│   │   ├── task_semantics_guard.toml
+│   │   ├── text_generator.toml
+│   │   ├── the_maestro.toml
+│   │   ├── tooler.toml
+│   │   ├── verify_checker.toml
+│   │   ├── workflow_complexity_planner.toml
+│   │   ├── workflow_planner.toml
+│   │   └── workflow_reason_planner.toml
+│   ├── granite-4.0-h-micro-UD-Q8_K_XL.gguf.DISABLED
+│   │   ├── _elma.config
+│   │   ├── action_need_assessor.toml
+│   │   ├── action_needs_classifier.toml
+│   │   ├── action_type.toml
+│   │   ├── artifact_classifier.toml
+│   │   ├── baseline
+│   │   ├── calibration_judge.toml
+│   │   ├── claim_checker.toml
+│   │   ├── claim_revision_advisor.toml
+│   │   ├── command_preflight.toml
+│   │   ├── command_repair.toml
+│   │   ├── command_reviser.toml
+│   │   ├── complexity_assessor.toml
+│   │   ├── complexity_classifier.toml
+│   │   ├── critic.toml
+│   │   ├── decider.toml
+│   │   ├── efficiency_program_repair.toml
+│   │   ├── efficiency_reviewer.toml
+│   │   ├── evidence_chain_assessment.toml
+│   │   ├── evidence_compactor.toml
+│   │   ├── evidence_mode.toml
+│   │   ├── evidence_need_assessor.toml
+│   │   ├── evidence_needs_classifier.toml
+│   │   ├── execution_mode_setter.toml
+│   │   ├── execution_program_repair.toml
+│   │   ├── execution_sufficiency.toml
+│   │   ├── expert_advisor.toml
+│   │   ├── final_answer_extractor.toml
+│   │   ├── formatter.toml
+│   │   ├── formula_memory_matcher.toml
+│   │   ├── formula_selector.toml
+│   │   ├── gate_why.toml
+│   │   ├── gate.toml
+│   │   ├── intent_helper.toml
+│   │   ├── intention_tune.toml
+│   │   ├── intention.toml
+│   │   ├── json_converter.toml
+│   │   ├── json_outputter.toml
+│   │   ├── json_repair.toml
+│   │   ├── level_assessment.toml
+│   │   ├── logical_program_repair.toml
+│   │   ├── logical_reviewer.toml
+│   │   ├── memory_gate.toml
+│   │   ├── meta_review.toml
+│   │   ├── mode_router.toml
+│   │   ├── model_behavior.toml
+│   │   ├── orchestrator.toml
+│   │   ├── ordering_needs_assessment.toml
+│   │   ├── outcome_verifier.toml
+│   │   ├── pattern_suggester.toml
+│   │   ├── phases_needs_assessment.toml
+│   │   ├── planner_master.toml
+│   │   ├── planner.toml
+│   │   ├── program_repair.toml
+│   │   ├── refinement.toml
+│   │   ├── reflection.toml
+│   │   ├── rephrase_intention.toml
+│   │   ├── result_presenter.toml
+│   │   ├── revision_needs_assessment.toml
+│   │   ├── risk_classifier.toml
+│   │   ├── risk_reviewer.toml
+│   │   ├── router_calibration.toml
+│   │   ├── router.toml
+│   │   ├── scope_builder.toml
+│   │   ├── selector.toml
+│   │   ├── self_question.toml
+│   │   ├── speech_act.toml
+│   │   ├── status_message_generator.toml
+│   │   ├── strategy_direct.toml
+│   │   ├── strategy_hint_generator.toml
+│   │   ├── strategy_incremental.toml
+│   │   ├── strategy_inspect_first.toml
+│   │   ├── strategy_plan_then_execute.toml
+│   │   ├── strategy_safe_mode.toml
+│   │   ├── summarizer.toml
+│   │   ├── task_semantics_guard.toml
+│   │   ├── text_generator.toml
+│   │   ├── tooler.toml
+│   │   ├── tune
+│   │   ├── verify_checker.toml
+│   │   ├── workflow_complexity_planner.toml
+│   │   ├── workflow_planner.toml
+│   │   └── workflow_reason_planner.toml
+│   ├── granite-4.0-h-micro-UD-Q8_KL.gguf
+│   │   ├── _elma.config
+│   │   ├── action_need_assessor.toml
+│   │   ├── action_needs_classifier.toml
+│   │   ├── action_type.toml
+│   │   ├── artifact_classifier.toml
+│   │   ├── baseline
+│   │   ├── calibration_judge.toml
+│   │   ├── claim_checker.toml
+│   │   ├── claim_revision_advisor.toml
+│   │   ├── command_preflight.toml
+│   │   ├── command_repair.toml
+│   │   ├── command_reviser.toml
+│   │   ├── complexity_assessor.toml
+│   │   ├── complexity_classifier.toml
+│   │   ├── critic.toml
+│   │   ├── decider.toml
+│   │   ├── efficiency_program_repair.toml
+│   │   ├── efficiency_reviewer.toml
+│   │   ├── evidence_chain_assessment.toml
+│   │   ├── evidence_compactor.toml
+│   │   ├── evidence_mode.toml
+│   │   ├── evidence_need_assessor.toml
+│   │   ├── evidence_needs_classifier.toml
+│   │   ├── execution_mode_setter.toml
+│   │   ├── execution_program_repair.toml
+│   │   ├── execution_sufficiency.toml
+│   │   ├── expert_advisor.toml
+│   │   ├── final_answer_extractor.toml
+│   │   ├── formatter.toml
+│   │   ├── formula_memory
+│   │   ├── formula_memory_matcher.toml
+│   │   ├── formula_selector.toml
+│   │   ├── gate_why.toml
+│   │   ├── gate.toml
+│   │   ├── intent_helper.toml
+│   │   ├── intention_tune.toml
+│   │   ├── intention.toml
+│   │   ├── json_converter.toml
+│   │   ├── json_outputter.toml
+│   │   ├── json_repair_intel.toml
+│   │   ├── json_repair.toml
+│   │   ├── level_assessment.toml
+│   │   ├── logical_program_repair.toml
+│   │   ├── logical_reviewer.toml
+│   │   ├── memory_gate.toml
+│   │   ├── meta_review.toml
+│   │   ├── mode_router.toml
+│   │   ├── model_behavior.toml
+│   │   ├── orchestrator.toml
+│   │   ├── ordering_needs_assessment.toml
+│   │   ├── outcome_verifier.toml
+│   │   ├── pattern_suggester.toml
+│   │   ├── phases_needs_assessment.toml
+│   │   ├── planner_master.toml
+│   │   ├── planner.toml
+│   │   ├── program_repair.toml
+│   │   ├── refinement.toml
+│   │   ├── reflection.toml
+│   │   ├── rephrase_intention.toml
+│   │   ├── result_presenter.toml
+│   │   ├── revision_needs_assessment.toml
+│   │   ├── risk_classifier.toml
+│   │   ├── risk_reviewer.toml
+│   │   ├── router_calibration.toml
+│   │   ├── router.toml
+│   │   ├── scope_builder.toml
+│   │   ├── selector.toml
+│   │   ├── self_question.toml
+│   │   ├── speech_act.toml
+│   │   ├── status_message_generator.toml
+│   │   ├── strategy_direct.toml
+│   │   ├── strategy_hint_generator.toml
+│   │   ├── strategy_incremental.toml
+│   │   ├── strategy_inspect_first.toml
+│   │   ├── strategy_plan_then_execute.toml
+│   │   ├── strategy_safe_mode.toml
+│   │   ├── summarizer.toml
+│   │   ├── task_semantics_guard.toml
+│   │   ├── text_generator.toml
+│   │   ├── tooler.toml
+│   │   ├── verify_checker.toml
+│   │   ├── workflow_complexity_planner.toml
+│   │   ├── workflow_planner.toml
+│   │   └── workflow_reason_planner.toml
+│   ├── Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf
+│   │   ├── action_need_assessor.toml
+│   │   ├── action_needs_classifier.toml
+│   │   ├── action_type.toml
+│   │   ├── artifact_classifier.toml
+│   │   ├── baseline
+│   │   ├── calibration_judge.toml
+│   │   ├── claim_checker.toml
+│   │   ├── claim_revision_advisor.toml
+│   │   ├── command_preflight.toml
+│   │   ├── command_repair.toml
+│   │   ├── command_reviser.toml
+│   │   ├── complexity_assessor.toml
+│   │   ├── complexity_classifier.toml
+│   │   ├── critic.toml
+│   │   ├── decider.toml
+│   │   ├── efficiency_program_repair.toml
+│   │   ├── efficiency_reviewer.toml
+│   │   ├── evidence_chain_assessment.toml
+│   │   ├── evidence_mode.toml
+│   │   ├── evidence_need_assessor.toml
+│   │   ├── evidence_needs_classifier.toml
+│   │   ├── execution_mode_setter.toml
+│   │   ├── execution_program_repair.toml
+│   │   ├── execution_sufficiency.toml
+│   │   ├── expert_advisor.toml
+│   │   ├── final_answer_extractor.toml
+│   │   ├── formatter.toml
+│   │   ├── formula_memory_matcher.toml
+│   │   ├── formula_selector.toml
+│   │   ├── gate_why.toml
+│   │   ├── gate.toml
+│   │   ├── intent_helper.toml
+│   │   ├── intention_tune.toml
+│   │   ├── intention.toml
+│   │   ├── json_converter.toml
+│   │   ├── json_outputter.toml
+│   │   ├── json_repair_intel.toml
+│   │   ├── json_repair.toml
+│   │   ├── level_assessment.toml
+│   │   ├── logical_program_repair.toml
+│   │   ├── logical_reviewer.toml
+│   │   ├── memory_gate.toml
+│   │   ├── meta_review.toml
+│   │   ├── mode_router.toml
+│   │   ├── model_behavior.toml
+│   │   ├── orchestrator.toml
+│   │   ├── ordering_needs_assessment.toml
+│   │   ├── outcome_verifier.toml
+│   │   ├── pattern_suggester.toml
+│   │   ├── phases_needs_assessment.toml
+│   │   ├── planner_master.toml
+│   │   ├── planner.toml
+│   │   ├── program_repair.toml
+│   │   ├── refinement.toml
+│   │   ├── reflection.toml
+│   │   ├── rephrase_intention.toml
+│   │   ├── result_presenter.toml
+│   │   ├── revision_needs_assessment.toml
+│   │   ├── risk_classifier.toml
+│   │   ├── risk_reviewer.toml
+│   │   ├── router_calibration.toml
+│   │   ├── router.toml
+│   │   ├── scope_builder.toml
+│   │   ├── selector.toml
+│   │   ├── self_question.toml
+│   │   ├── speech_act.toml
+│   │   ├── status_message_generator.toml
+│   │   ├── strategy_direct.toml
+│   │   ├── strategy_hint_generator.toml
+│   │   ├── strategy_incremental.toml
+│   │   ├── strategy_inspect_first.toml
+│   │   ├── strategy_plan_then_execute.toml
+│   │   ├── strategy_safe_mode.toml
+│   │   ├── summarizer.toml
+│   │   ├── task_semantics_guard.toml
+│   │   ├── text_generator.toml
+│   │   ├── tooler.toml
+│   │   ├── verify_checker.toml
+│   │   ├── workflow_complexity_planner.toml
+│   │   ├── workflow_planner.toml
+│   │   └── workflow_reason_planner.toml
+│   ├── llama_3.2_3b_instruct_q6_k_l.gguf.DISABLED
+│   │   ├── _elma.config
+│   │   ├── action_need_assessor.toml
+│   │   ├── action_needs_classifier.toml
+│   │   ├── action_type.toml
+│   │   ├── artifact_classifier.toml
+│   │   ├── baseline
+│   │   ├── calibration_judge.toml
+│   │   ├── claim_checker.toml
+│   │   ├── claim_revision_advisor.toml
+│   │   ├── command_preflight.toml
+│   │   ├── command_repair.toml
+│   │   ├── command_reviser.toml
+│   │   ├── complexity_assessor.toml
+│   │   ├── complexity_classifier.toml
+│   │   ├── critic.toml
+│   │   ├── decider.toml
+│   │   ├── efficiency_program_repair.toml
+│   │   ├── efficiency_reviewer.toml
+│   │   ├── evidence_chain_assessment.toml
+│   │   ├── evidence_compactor.toml
+│   │   ├── evidence_mode.toml
+│   │   ├── evidence_need_assessor.toml
+│   │   ├── evidence_needs_classifier.toml
+│   │   ├── execution_mode_setter.toml
+│   │   ├── execution_program_repair.toml
+│   │   ├── execution_sufficiency.toml
+│   │   ├── expert_advisor.toml
+│   │   ├── final_answer_extractor.toml
+│   │   ├── formatter.toml
+│   │   ├── formula_memory
+│   │   ├── formula_memory_matcher.toml
+│   │   ├── formula_selector.toml
+│   │   ├── gate_why.toml
+│   │   ├── gate.toml
+│   │   ├── intent_helper.toml
+│   │   ├── intention_tune.toml
+│   │   ├── intention.toml
+│   │   ├── json_converter.toml
+│   │   ├── json_outputter.toml
+│   │   ├── json_repair.toml
+│   │   ├── level_assessment.toml
+│   │   ├── logical_program_repair.toml
+│   │   ├── logical_reviewer.toml
+│   │   ├── memory_gate.toml
+│   │   ├── meta_review.toml
+│   │   ├── mode_router.toml
+│   │   ├── model_behavior.toml
+│   │   ├── orchestrator.toml
+│   │   ├── ordering_needs_assessment.toml
+│   │   ├── outcome_verifier.toml
+│   │   ├── pattern_suggester.toml
+│   │   ├── phases_needs_assessment.toml
+│   │   ├── planner_master.toml
+│   │   ├── planner.toml
+│   │   ├── program_repair.toml
+│   │   ├── refinement.toml
+│   │   ├── reflection.toml
+│   │   ├── rephrase_intention.toml
+│   │   ├── result_presenter.toml
+│   │   ├── revision_needs_assessment.toml
+│   │   ├── risk_classifier.toml
+│   │   ├── risk_reviewer.toml
+│   │   ├── router_calibration.toml
+│   │   ├── router.toml
+│   │   ├── scope_builder.toml
+│   │   ├── selector.toml
+│   │   ├── self_question.toml
+│   │   ├── speech_act.toml
+│   │   ├── status_message_generator.toml
+│   │   ├── strategy_direct.toml
+│   │   ├── strategy_hint_generator.toml
+│   │   ├── strategy_incremental.toml
+│   │   ├── strategy_inspect_first.toml
+│   │   ├── strategy_plan_then_execute.toml
+│   │   ├── strategy_safe_mode.toml
+│   │   ├── summarizer.toml
+│   │   ├── task_semantics_guard.toml
+│   │   ├── text_generator.toml
+│   │   ├── tooler.toml
+│   │   ├── tune
+│   │   ├── verify_checker.toml
+│   │   ├── workflow_complexity_planner.toml
+│   │   ├── workflow_planner.toml
+│   │   └── workflow_reason_planner.toml
+│   ├── profiles.toml
+│   ├── Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf
+│   │   ├── _elma.config
+│   │   ├── action_need_assessor.toml
+│   │   ├── action_needs_classifier.toml
+│   │   ├── action_type.toml
+│   │   ├── artifact_classifier.toml
+│   │   ├── baseline
+│   │   ├── calibration_judge.toml
+│   │   ├── claim_checker.toml
+│   │   ├── claim_revision_advisor.toml
+│   │   ├── command_preflight.toml
+│   │   ├── command_repair.toml
+│   │   ├── command_reviser.toml
+│   │   ├── complexity_assessor.toml
+│   │   ├── complexity_classifier.toml
+│   │   ├── critic.toml
+│   │   ├── decider.toml
+│   │   ├── efficiency_program_repair.toml
+│   │   ├── efficiency_reviewer.toml
+│   │   ├── evidence_chain_assessment.toml
+│   │   ├── evidence_compactor.toml
+│   │   ├── evidence_mode.toml
+│   │   ├── evidence_need_assessor.toml
+│   │   ├── evidence_needs_classifier.toml
+│   │   ├── execution_mode_setter.toml
+│   │   ├── execution_program_repair.toml
+│   │   ├── execution_sufficiency.toml
+│   │   ├── expert_advisor.toml
+│   │   ├── final_answer_extractor.toml
+│   │   ├── formatter.toml
+│   │   ├── formula_memory_matcher.toml
+│   │   ├── formula_selector.toml
+│   │   ├── gate_why.toml
+│   │   ├── gate.toml
+│   │   ├── intent_helper.toml
+│   │   ├── intention_tune.toml
+│   │   ├── intention.toml
+│   │   ├── json_converter.toml
+│   │   ├── json_outputter.toml
+│   │   ├── json_repair_intel.toml
+│   │   ├── json_repair.toml
+│   │   ├── level_assessment.toml
+│   │   ├── logical_program_repair.toml
+│   │   ├── logical_reviewer.toml
+│   │   ├── memory_gate.toml
+│   │   ├── meta_review.toml
+│   │   ├── mode_router.toml
+│   │   ├── model_behavior.toml
+│   │   ├── orchestrator.toml
+│   │   ├── ordering_needs_assessment.toml
+│   │   ├── outcome_verifier.toml
+│   │   ├── pattern_suggester.toml
+│   │   ├── phases_needs_assessment.toml
+│   │   ├── planner_master.toml
+│   │   ├── planner.toml
+│   │   ├── program_repair.toml
+│   │   ├── refinement.toml
+│   │   ├── reflection.toml
+│   │   ├── rephrase_intention.toml
+│   │   ├── result_presenter.toml
+│   │   ├── revision_needs_assessment.toml
+│   │   ├── risk_classifier.toml
+│   │   ├── risk_reviewer.toml
+│   │   ├── router_calibration.toml
+│   │   ├── router.toml
+│   │   ├── scope_builder.toml
+│   │   ├── selector.toml
+│   │   ├── self_question.toml
+│   │   ├── speech_act.toml
+│   │   ├── status_message_generator.toml
+│   │   ├── strategy_direct.toml
+│   │   ├── strategy_hint_generator.toml
+│   │   ├── strategy_incremental.toml
+│   │   ├── strategy_inspect_first.toml
+│   │   ├── strategy_plan_then_execute.toml
+│   │   ├── strategy_safe_mode.toml
+│   │   ├── summarizer.toml
+│   │   ├── task_semantics_guard.toml
+│   │   ├── text_generator.toml
+│   │   ├── tooler.toml
+│   │   ├── verify_checker.toml
+│   │   ├── workflow_complexity_planner.toml
+│   │   ├── workflow_planner.toml
+│   │   └── workflow_reason_planner.toml
+│   └── README.md
+├── docs
+│   ├── _pending_integration
+│   │   └── DEV_TASK_CONFLICT_REPORT.md
+│   ├── ARCHITECTURE
+│   │   ├── ARCHITECTURE_DECISION.md
+│   │   ├── ARCHITECTURE.md
+│   │   ├── claude_code_analysis_report.md
+│   │   └── README.md
+│   ├── PLANNING_AND_TASKS
+│   │   ├── EXECUTION_LADDER_PLAN.md
+│   │   ├── IMPLEMENTATION_NOTES.md
+│   │   ├── IMPLEMENTATION_STATUS_VERIFICATION.md
+│   │   ├── INTEL_UNITS_INVENTORY.md
+│   │   ├── README.md
+│   │   ├── REPRIORITIZED_ROADMAP.md
+│   │   └── TASKS.md
+│   ├── README.md
+│   ├── STANDARDS_AND_TOOLS
+│   │   ├── INTEL_UNIT_STANDARD.md
+│   │   ├── JSON_TEMPERATURE_TUNING.md
+│   │   └── README.md
+│   └── SUGGESTIONS_04042026_1130.md
+├── findings.txt
+├── GEMINI.md
+├── KOLOSAL.md
+├── probe_parsing.sh
+├── probe_path.rs
+├── QWEN.md
+├── reliability_probe.sh
+├── run_intention_scenarios.sh
+├── run_sloppy_tests_cli.sh
+├── run_stress_cli.sh
+├── run_stress_tests_cli.sh
+├── run_stress_tests.sh
+├── scenarios
+│   ├── execution_ladder
+│   │   ├── ladder_001_action_cargo_test.md
+│   │   ├── ladder_002_task_read_summarize.md
+│   │   ├── ladder_003_task_evidence_chain.md
+│   │   ├── ladder_004_plan_refactor.md
+│   │   ├── ladder_005_masterplan_migration.md
+│   │   ├── ladder_006_overbuild_rejection.md
+│   │   ├── ladder_007_underbuild_rejection.md
+│   │   └── README.md
+│   ├── intention
+│   │   ├── manifest.toml
+│   │   ├── README.md
+│   │   ├── scenario_001_greeting.md
+│   │   ├── scenario_002_shell_task.md
+│   │   ├── scenario_003_planning.md
+│   │   ├── scenario_004_ambiguous.md
+│   │   ├── scenario_005_research.md
+│   │   ├── scenario_006_file_create_edit.md
+│   │   ├── scenario_007_search_and_grep.md
+│   │   ├── scenario_008_git_basic.md
+│   │   ├── scenario_009_git_conflict.md
+│   │   ├── scenario_010_network_curl.md
+│   │   ├── scenario_011_ssh_remote.md
+│   │   ├── scenario_012_json_jq.md
+│   │   ├── scenario_013_logs_summarize.md
+│   │   ├── scenario_014_confirmations.md
+│   │   ├── scenario_015_multi_intent.md
+│   │   ├── scenario_016_workflow_natural_language.md
+│   │   ├── scenario_017_permissions_sudo.md
+│   │   ├── scenario_018_package_install.md
+│   │   ├── scenario_019_performance_tuning.md
+│   │   └── scenario_020_data_cleanup.md
+│   ├── json_tune
+│   │   ├── json_001_low_simple_object.md
+│   │   ├── json_002_low_array.md
+│   │   ├── json_003_medium_nested.md
+│   │   ├── json_004_medium_program.md
+│   │   ├── json_005_hard_complex.md
+│   │   ├── json_006_hard_validation.md
+│   │   └── manifest.toml
+│   ├── performance_test_001.md
+│   ├── performance_test_results_001.md
+│   ├── stress
+│   │   ├── manifest.toml
+│   │   ├── README.md
+│   │   ├── stress_001_capability_list_files.md
+│   │   ├── stress_002_indirect_request_list_files.md
+│   │   ├── stress_003_project_summary.md
+│   │   ├── stress_004_cargo_summary.md
+│   │   ├── stress_005_code_search_symbol.md
+│   │   ├── stress_006_cleanup_review.md
+│   │   ├── stress_007_cleanup_help_decide.md
+│   │   ├── stress_008_config_compare.md
+│   │   ├── stress_009_plan_add_profile.md
+│   │   ├── stress_010_masterplan_autonomy.md
+│   │   ├── stress_011_decide_cargolock.md
+│   │   ├── stress_012_execute_cargo_test.md
+│   │   ├── stress_013_write_gitignore.md
+│   │   ├── stress_014_generated_dirs.md
+│   │   └── stress_015_capability_cleanup.md
+│   └── tune
+│       ├── quick_001_capability_check.md
+│       ├── quick_002_execute_list_files.md
+│       ├── quick_003_inspect_project.md
+│       ├── quick_004_plan_request.md
+│       ├── quick_005_decide_request.md
+│       ├── quick_manifest.toml
+│       └── README.md
+├── sessions
+│   ├── s_1775145740_101557000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775151941_439997000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775152565_811378000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775152643_489493000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775152742_569819000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775152892_654389000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775153772_776823000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775153854_310873000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775155127_372616000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775155333_699118000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775155939_446090000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775156175_381615000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775156635_647088000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775157571_616933000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775157998_142462000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── error.json
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── session_status.json
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775158531_97836000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775159579_475439000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775160069_120115000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775160252_754356000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775160480_375511000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775160555_243839000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775160811_710911000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775161298_602305000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775161534_182953000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── error.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── session_status.json
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775161765_483267000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775162025_691894000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775162286_891671000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775176535_54686000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775176560_799725000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775176888_185599000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775176961_392420000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177072_643839000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177141_348329000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177221_106242000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177321_535535000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177355_732092000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177517_570099000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177572_49696000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177651_97035000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177757_371678000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177799_888181000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177909_14240000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775177957_128313000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775178206_506521000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775178258_951023000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775178343_273744000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775178451_589098000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775178453_374325000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775178627_663133000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775178654_730080000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775178823_299571000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180099_640241000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180129_699507000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180220_136277000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180309_799739000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180490_127803000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180670_253059000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180722_393257000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180752_123085000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180842_316556000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775180932_351206000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181022_384275000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181202_671682000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181262_601217000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181412_849425000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181502_926747000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181623_94379000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181683_97065000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181803_405075000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775181923_358879000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182103_658893000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182223_473908000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182313_682903000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182403_781327000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182570_993627000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182601_5373000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182661_94585000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182751_345759000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775182871_247625000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775183051_576323000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775183141_558893000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775183321_654785000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775183411_812225000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775183561_879495000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775183651_943508000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775183802_110154000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775208385_260128000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775208385_277047000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775208568_328690000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775208686_953747000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775208838_648190000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209005_987805000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209250_676492000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209405_453770000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209644_149995000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209719_778266000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209764_161063000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209820_756199000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209861_277690000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209918_299176000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775209999_529358000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775210134_362931000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775210442_530243000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775210511_309287000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775210612_365607000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775210694_240191000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775210778_257086000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775210855_169531000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775211454_531891000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775211641_745344000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775211709_13568000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775211725_345895000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775211760_248253000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775211883_617848000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775211994_537357000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212295_532690000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212579_739316000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212694_579242000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212916_511744000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212916_511871000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212946_697826000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212946_871165000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212960_36389000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775212966_867617000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213091_515647000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213107_371555000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213202_961261000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213262_756456000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213262_777437000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213270_628878000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213279_805228000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213327_997721000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213338_11894000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213456_779018000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213570_922694000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775213861_995846000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775214006_72879000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775214135_532610000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775214213_294886000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775214271_92504000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775214546_387958000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775214696_226096000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215197_850356000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215261_766523000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215389_30146000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215440_585429000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215461_885163000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215517_172501000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215647_624886000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215930_904529000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775215971_525092000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775216085_32139000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775216211_433288000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775228810_826377000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775228877_718362000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775229166_809671000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775229255_221080000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775229357_123702000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775229438_948647000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775229532_790745000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775229703_415533000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775229944_396162000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775230063_480636000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775230298_313702000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775230395_391606000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775230887_366969000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775231120_899679000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775231232_96457000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775231437_863852000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775231492_672364000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775231592_405773000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775231814_577203000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775232367_207560000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775232680_902800000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── masterplans
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775232688_130593000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775232867_476043000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775233000_504855000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775233100_327570000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775233237_558373000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775233438_885189000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775233498_55324000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775233625_407468000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775233783_789584000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234135_407232000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234216_142128000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234280_810439000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234443_477911000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234503_530875000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234563_585917000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234653_905165000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234713_733806000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234737_849136000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234803_985146000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234924_6911000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775234930_845829000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235044_315773000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235134_183996000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235224_352504000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235320_6054000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235404_589084000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235554_593729000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235734_919401000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235824_820334000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775235914_961384000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236020_777740000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236035_54352000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── error.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── session_status.json
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236050_634647000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236140_907048000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236200_995435000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236261_117857000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236351_390532000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236381_312069000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236471_870558000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236485_761251000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236515_901751000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236561_991573000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236652_199638000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236712_138824000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236733_594174000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236802_343838000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236832_799574000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775236935_77836000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775237075_480742000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775237126_770927000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775237179_335461000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775239486_566142000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775239610_152917000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775239674_860478000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775239744_764861000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775239814_953774000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775240234_534525000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775242026_816492000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775242732_367055000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775245230_226920000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775245637_410401000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775245696_528789000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775245856_212533000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775245886_503570000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246147_158135000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246174_560687000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246266_102085000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246294_189716000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246331_317576000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246532_445559000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246566_600992000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246593_426199000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246701_959672000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246803_628507000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246861_738621000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246951_624209000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775246979_795314000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247107_25308000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247134_565091000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247283_322435000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247326_549791000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247353_593946000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247401_521431000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247474_353895000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247499_604480000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247620_180183000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247648_180506000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247910_901988000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775247936_559560000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248105_583514000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248131_464935000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248307_175354000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248333_472091000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248420_878996000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248447_679450000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248508_292374000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248568_259404000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248598_437663000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248629_171840000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775248973_174208000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249159_344654000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249167_211206000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249175_720316000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249192_787022000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249501_952467000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249501_967253000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249628_673572000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249628_684161000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249929_350772000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249929_358097000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249929_359936000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775249929_362207000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250095_701496000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250105_788380000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250139_770685000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250151_651879000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250215_991632000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250322_119016000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250408_915863000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250422_733363000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775250467_540462000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251463_945070000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251493_996024000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251590_367817000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251620_482255000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251680_780480000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251828_14275000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251854_832994000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251915_171950000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775251977_789673000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252007_948647000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252358_647284000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252386_758741000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252447_15762000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252616_119545000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252674_316791000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252734_426140000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252849_4080000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775252879_89752000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775253066_101979000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775253124_576454000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775253184_630692000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775253292_340486000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775253321_233902000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775253895_816370000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775253957_277312000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254047_462356000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254151_849353000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254285_453491000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254358_713133000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254426_960102000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254529_248598000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254617_228324000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254694_9998000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254824_364130000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775254894_37702000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255028_380355000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255276_777025000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255368_600600000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255428_794863000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255603_436191000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255695_361813000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255781_432209000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255811_499413000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775255841_637438000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775256112_746828000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775256191_380187000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775257282_9081000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775263108_658339000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775263397_305851000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775333038_92067000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335892_949017000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775339800_155402000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775370090_82166000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775371298_724779000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775372045_414741000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775372800_508036000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775373665_841681000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775374662_923857000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── error.json
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── session_status.json
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   └── s_1775374990_48032000
+│       ├── artifacts
+│       ├── decisions
+│       ├── plans
+│       ├── reasoning_audit.jsonl
+│       ├── shell
+│       ├── snapshots
+│       ├── trace_debug.log
+│       ├── tune
+│       ├── workspace_brief.txt
+│       └── workspace.txt
+├── sessions_stress_test
+│   ├── s_1775328347_794892000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775328408_328739000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775328438_787668000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775328533_827220000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775328583_13379000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775328604_612054000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775329848_951867000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335079_160751000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335134_385044000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335154_679787000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335273_413597000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335423_760517000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335453_527355000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335526_758066000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335573_89442000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335598_617152000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775335621_963877000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775366771_22112000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775366790_461435000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775366839_925675000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775367547_762665000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775367913_524028000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775368006_522223000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775369572_683786000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775369599_617088000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775369666_414473000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775369762_559251000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775369893_979174000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775369911_44452000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775370394_341664000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775370546_171850000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775370731_694743000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775370970_777946000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775371123_275480000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775371160_644146000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775371239_167657000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775371761_906799000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775371788_709333000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775371805_542430000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775375812_40222000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775376353_124673000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   ├── s_1775376516_119479000
+│   │   ├── artifacts
+│   │   ├── decisions
+│   │   ├── goal_state.json
+│   │   ├── plans
+│   │   ├── reasoning_audit.jsonl
+│   │   ├── shell
+│   │   ├── snapshots
+│   │   ├── trace_debug.log
+│   │   ├── tune
+│   │   ├── workspace_brief.txt
+│   │   └── workspace.txt
+│   └── s_1775376677_207760000
+│       ├── artifacts
+│       ├── decisions
+│       ├── plans
+│       ├── reasoning_audit.jsonl
+│       ├── shell
+│       ├── snapshots
+│       ├── trace_debug.log
+│       ├── tune
+│       ├── workspace_brief.txt
+│       └── workspace.txt
+├── smoke_llamacpp.sh
+├── src
+│   ├── app_bootstrap_core.rs
+│   ├── app_bootstrap_modes.rs
+│   ├── app_bootstrap_profiles.rs
+│   ├── app_bootstrap.rs
+│   ├── app_chat_builders_advanced.rs
+│   ├── app_chat_builders_audit.rs
+│   ├── app_chat_builders_basic.rs
+│   ├── app_chat_builders_probes.rs
+│   ├── app_chat_core.rs
+│   ├── app_chat_fast_paths.rs
+│   ├── app_chat_handlers.rs
+│   ├── app_chat_helpers.rs
+│   ├── app_chat_loop.rs
+│   ├── app_chat_orchestrator_tests.rs
+│   ├── app_chat_orchestrator.rs
+│   ├── app_chat_patterns.rs
+│   ├── app_chat_trace.rs
+│   ├── app_chat.rs
+│   ├── app.rs
+│   ├── config_healthcheck.rs
+│   ├── decomposition.rs
+│   ├── defaults_core.rs
+│   ├── defaults_evidence_core.rs
+│   ├── defaults_evidence.rs
+│   ├── defaults_router.rs
+│   ├── defaults.rs
+│   ├── evaluation_response.rs
+│   ├── evaluation_routing.rs
+│   ├── evaluation_workflow.rs
+│   ├── evaluation.rs
+│   ├── execution_ladder
+│   │   ├── depth.rs
+│   │   └── mod.rs
+│   ├── execution_steps_compat.rs
+│   ├── execution_steps_edit.rs
+│   ├── execution_steps_read.rs
+│   ├── execution_steps_search.rs
+│   ├── execution_steps_selectors.rs
+│   ├── execution_steps_shell_exec.rs
+│   ├── execution_steps_shell_preflight.rs
+│   ├── execution_steps_shell.rs
+│   ├── execution_steps.rs
+│   ├── execution.rs
+│   ├── formulas
+│   │   ├── mod.rs
+│   │   ├── patterns.rs
+│   │   └── scores.rs
+│   ├── guardrails_refinement.rs
+│   ├── guardrails.rs
+│   ├── intel_narrative_planning.rs
+│   ├── intel_narrative_steps.rs
+│   ├── intel_narrative_utils.rs
+│   ├── intel_narrative.rs
+│   ├── intel_trait.rs
+│   ├── intel_units
+│   │   ├── intel_units_classifier.rs
+│   │   ├── intel_units_core.rs
+│   │   ├── intel_units_maestro.rs
+│   │   ├── intel_units_repair.rs
+│   │   ├── intel_units_responder.rs
+│   │   └── mod.rs
+│   ├── json_error_handler
+│   │   ├── mod.rs
+│   │   ├── schemas_verdicts.rs
+│   │   └── schemas.rs
+│   ├── json_grammar.rs
+│   ├── json_parser_extract.rs
+│   ├── json_parser.rs
+│   ├── json_tuning.rs
+│   ├── main.rs
+│   ├── metrics.rs
+│   ├── models_api.rs
+│   ├── optimization_eval.rs
+│   ├── optimization_tune.rs
+│   ├── optimization.rs
+│   ├── orchestration_core.rs
+│   ├── orchestration_helpers
+│   │   ├── grounding.rs
+│   │   └── mod.rs
+│   ├── orchestration_loop_helpers.rs
+│   ├── orchestration_loop_reviewers.rs
+│   ├── orchestration_loop_verdicts.rs
+│   ├── orchestration_loop.rs
+│   ├── orchestration_planning.rs
+│   ├── orchestration_retry_tests.rs
+│   ├── orchestration_retry.rs
+│   ├── orchestration.rs
+│   ├── paths.rs
+│   ├── profile_sets.rs
+│   ├── program_policy_level.rs
+│   ├── program_policy_tests.rs
+│   ├── program_policy.rs
+│   ├── program_steps.rs
+│   ├── program_utils.rs
+│   ├── program.rs
+│   ├── prompt_constants.rs
+│   ├── refinement.rs
+│   ├── reflection.rs
+│   ├── routing_calc.rs
+│   ├── routing_infer.rs
+│   ├── routing_parse.rs
+│   ├── routing.rs
+│   ├── scenarios.rs
+│   ├── session_error.rs
+│   ├── session_hierarchy.rs
+│   ├── session_paths.rs
+│   ├── session_seq.rs
+│   ├── session_write.rs
+│   ├── session.rs
+│   ├── snapshot.rs
+│   ├── storage.rs
+│   ├── strategy.rs
+│   ├── text_utils.rs
+│   ├── thinking_content.rs
+│   ├── tool_discovery.rs
+│   ├── tools
+│   │   └── discovery.rs
+│   ├── tools.rs
+│   ├── tune_runtime.rs
+│   ├── tune_scenario_helpers.rs
+│   ├── tune_scenario.rs
+│   ├── tune_setup.rs
+│   ├── tune_summary.rs
+│   ├── tune.rs
+│   ├── tuning_support.rs
+│   ├── types_api.rs
+│   ├── types_core_impl.rs
+│   ├── types_core.rs
+│   ├── types_hierarchy.rs
+│   ├── types.rs
+│   ├── ui_chat.rs
+│   ├── ui_colors.rs
+│   ├── ui_state.rs
+│   ├── ui_trace.rs
+│   ├── ui.rs
+│   ├── verification_evidence.rs
+│   ├── verification.rs
+│   ├── workspace_tree.rs
+│   └── workspace.rs
+├── target
+│   ├── CACHEDIR.TAG
+│   ├── debug
+│   │   ├── build
+│   │   ├── deps
+│   │   ├── elma-cli
+│   │   ├── elma-cli.d
+│   │   ├── examples
+│   │   └── incremental
+│   ├── doc
+│   │   ├── adler2
+│   │   ├── ahash
+│   │   ├── aho_corasick
+│   │   ├── alloc_no_stdlib
+│   │   ├── alloc_stdlib
+│   │   ├── atomic_waker
+│   │   ├── base64
+│   │   ├── bit_set
+│   │   ├── bit_vec
+│   │   ├── bitflags
+│   │   ├── borrow_or_share
+│   │   ├── brotli
+│   │   ├── brotli_decompressor
+│   │   ├── bytes
+│   │   ├── cfg_if
+│   │   ├── compression_core
+│   │   ├── core_foundation
+│   │   ├── core_foundation_sys
+│   │   ├── crates.js
+│   │   ├── crc32fast
+│   │   ├── displaydoc
+│   │   ├── email_address
+│   │   ├── encoding_rs
+│   │   ├── equivalent
+│   │   ├── errno
+│   │   ├── fastrand
+│   │   ├── fnv
+│   │   ├── form_urlencoded
+│   │   ├── futures_channel
+│   │   ├── futures_core
+│   │   ├── futures_io
+│   │   ├── futures_sink
+│   │   ├── futures_task
+│   │   ├── futures_util
+│   │   ├── getrandom
+│   │   ├── h2
+│   │   ├── hashbrown
+│   │   ├── help.html
+│   │   ├── http
+│   │   ├── http_body
+│   │   ├── http_body_util
+│   │   ├── httparse
+│   │   ├── hyper
+│   │   ├── hyper_rustls
+│   │   ├── hyper_tls
+│   │   ├── hyper_util
+│   │   ├── icu_locale_core
+│   │   ├── icu_normalizer_data
+│   │   ├── icu_properties_data
+│   │   ├── icu_provider
+│   │   ├── indexmap
+│   │   ├── ipnet
+│   │   ├── iri_string
+│   │   ├── itoa
+│   │   ├── lazy_static
+│   │   ├── libc
+│   │   ├── litemap
+│   │   ├── lock_api
+│   │   ├── memchr
+│   │   ├── miniz_oxide
+│   │   ├── mio
+│   │   ├── native_tls
+│   │   ├── num_bigint
+│   │   ├── num_complex
+│   │   ├── num_integer
+│   │   ├── num_iter
+│   │   ├── num_rational
+│   │   ├── num_traits
+│   │   ├── once_cell
+│   │   ├── outref
+│   │   ├── parking_lot_core
+│   │   ├── percent_encoding
+│   │   ├── pin_project_lite
+│   │   ├── pin_utils
+│   │   ├── proc_macro2
+│   │   ├── quote
+│   │   ├── ref_cast
+│   │   ├── ref_cast_impl
+│   │   ├── regex_automata
+│   │   ├── regex_syntax
+│   │   ├── ring
+│   │   ├── rustix
+│   │   ├── rustls
+│   │   ├── rustls_pki_types
+│   │   ├── ryu
+│   │   ├── scopeguard
+│   │   ├── search.index
+│   │   ├── security_framework
+│   │   ├── security_framework_sys
+│   │   ├── serde
+│   │   ├── serde_core
+│   │   ├── serde_derive
+│   │   ├── serde_json
+│   │   ├── serde_urlencoded
+│   │   ├── settings.html
+│   │   ├── simd_adler32
+│   │   ├── slab
+│   │   ├── smallvec
+│   │   ├── socket2
+│   │   ├── src
+│   │   ├── src-files.js
+│   │   ├── stable_deref_trait
+│   │   ├── static.files
+│   │   ├── subtle
+│   │   ├── syn
+│   │   ├── sync_wrapper
+│   │   ├── synstructure
+│   │   ├── system_configuration
+│   │   ├── system_configuration_sys
+│   │   ├── tempfile
+│   │   ├── tinystr
+│   │   ├── tokio
+│   │   ├── tokio_macros
+│   │   ├── tokio_native_tls
+│   │   ├── tokio_rustls
+│   │   ├── tokio_util
+│   │   ├── tower
+│   │   ├── tower_layer
+│   │   ├── tower_service
+│   │   ├── tracing
+│   │   ├── tracing_core
+│   │   ├── trait.impl
+│   │   ├── try_lock
+│   │   ├── type.impl
+│   │   ├── unicode_ident
+│   │   ├── untrusted
+│   │   ├── utf8_iter
+│   │   ├── uuid
+│   │   ├── vsimd
+│   │   ├── want
+│   │   ├── webpki
+│   │   ├── webpki_roots
+│   │   ├── writeable
+│   │   ├── yoke
+│   │   ├── yoke_derive
+│   │   ├── zerocopy
+│   │   ├── zerofrom
+│   │   ├── zerofrom_derive
+│   │   ├── zeroize
+│   │   ├── zerotrie
+│   │   ├── zerovec
+│   │   ├── zerovec_derive
+│   │   └── zmij
+│   └── release
+│       ├── build
+│       ├── deps
+│       ├── elma-cli
+│       ├── elma-cli.d
+│       ├── examples
+│       └── incremental
+├── TEST_PLAN.md
+└── tests
+    └── run_test_plan.sh
+
+3083 directories, 2841 files

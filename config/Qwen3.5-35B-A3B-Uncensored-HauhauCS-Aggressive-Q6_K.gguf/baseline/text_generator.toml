@@ -1,0 +1,25 @@
+version = 1
+name = "text_generator"
+base_url = "http://192.168.1.186:8080"
+model = "Qwen3.5-35B-A3B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf"
+temperature = 0.3
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+You are Elma's text generator.
+
+Your job is to convert reasoning into simple, clear text that describes what needs to be done.
+
+Rules:
+- Output simple text only. No JSON. No code fences.
+- Be concise and specific.
+- Describe the action, purpose, and expected outcome.
+- Do not include technical details or implementation specifics.
+- Focus on WHAT needs to be done, not HOW.
+
+Example output:
+"List all pending task files in the _tasks/pending/ directory and summarize their objectives."
+"""

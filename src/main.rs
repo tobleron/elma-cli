@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! @efficiency-role: orchestrator
 
 pub(crate) use anyhow::{Context, Result};
@@ -33,6 +34,8 @@ mod app_chat_orchestrator;
 mod app_chat_orchestrator_tests;
 mod app_chat_patterns;
 mod app_chat_trace;
+mod auto_compact; // Task 114: Auto-Compact (Context Window Management)
+mod command_budget; // Task 121: Command Budget & Rate Limiting
 mod decomposition; // Task 023: Hierarchical decomposition
 mod defaults;
 mod defaults_core;
@@ -58,6 +61,7 @@ mod execution_steps_shell_preflight;
 mod formulas;
 mod guardrails; // State-aware guardrails for context drift (Task 011)
 mod guardrails_refinement; // Guardrails refinement phase (Task 011)
+mod hook_system; // Tasks 123, 124, 125: Extensible hook framework
 mod intel_narrative; // Narrative transformation for intel units
 mod intel_narrative_planning; // Planning-related narrative functions
 mod intel_narrative_steps; // Step-related narrative functions and helpers
@@ -85,6 +89,7 @@ mod orchestration_planning;
 mod orchestration_retry;
 mod orchestration_retry_tests;
 mod paths;
+mod permission_gate; // Task 117: Permission Gate for Destructive Commands
 mod profile_sets;
 mod program;
 mod program_policy;
@@ -106,12 +111,17 @@ mod session_hierarchy;
 mod session_paths;
 mod session_seq;
 mod session_write;
+mod shell_preflight; // Task 116: Destructive Command Detection & Preflight
 mod snapshot;
 mod storage;
+mod streaming_tool_executor; // Task 115: Streaming Tool Execution
 mod strategy; // Multi-strategy planning with fallback chains (Task 010)
 mod text_utils;
 mod thinking_content;
+mod tool_calling;
 mod tool_discovery;
+mod tool_loop;
+mod tool_result_storage; // Task 113: Tool Result Budget & Disk Persistence
 mod tools;
 mod tune;
 mod tune_runtime;
@@ -128,8 +138,17 @@ mod types_hierarchy;
 mod ui;
 mod ui_chat;
 mod ui_colors;
+mod ui_context_bar; // Task 099: Context Window Usage Visualizer
+mod ui_effort; // Task 107: Visual Effort Indicator
+mod ui_interact; // Task 110: Inquire Interaction Integration
+mod ui_layout; // Structured layout with borders and sections
+mod ui_markdown; // Terminal markdown renderer
+mod ui_progress; // Task 109: Indicatif Progress Integration
+mod ui_spinner; // Task 101: Verb-Driven Loading Spinners
 mod ui_state;
+mod ui_syntax; // Task 111: Syntect Syntax Highlighting
 mod ui_trace;
+mod ui_tui; // Task 133: Ratatui TUI with Gruvbox + Persistent Status Bar
 mod verification;
 mod verification_evidence;
 mod workspace;

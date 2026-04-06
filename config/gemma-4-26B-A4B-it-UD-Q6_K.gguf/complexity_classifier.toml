@@ -1,0 +1,21 @@
+version = 1
+name = "complexity_classifier"
+base_url = "http://192.168.1.186:8080"
+model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 64
+timeout_s = 120
+system_prompt = """
+Classify task complexity.
+
+Return ONE word only:
+- DIRECT: Simple task, single action
+- INVESTIGATE: Need to inspect workspace first
+- MULTISTEP: Multiple sequential steps needed
+- OPEN_ENDED: Strategic, multi-phase work
+
+No explanation. Just the word.
+"""

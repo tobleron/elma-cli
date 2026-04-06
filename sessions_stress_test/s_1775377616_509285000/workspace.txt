@@ -1,0 +1,10 @@
+cwd: /Users/r2/elma-cli
+user: r2
+shell: /bin/zsh
+os: ProductName:		macOS | ProductVersion:		26.3.1 | ProductVersionExtra:	(a) | BuildVersion:		25D771280a
+git_branch: main
+git_status: M _tasks/pending/096_Chat_Classification_Pipeline_Rebuild.md
+ M config/granite-4.0-h-micro-UD-Q8_K_XL.gguf/baseline/result_presenter.toml
+ M config/granite-4.0-h-micro-UD-Q8_K_XL.gguf/orchestrator.toml
+ M config/granite-4.0-h-micro-UD-Q8_K_XL.gguf/result_presenter.toml
+ M src/execution_steps_shell_exec.rs

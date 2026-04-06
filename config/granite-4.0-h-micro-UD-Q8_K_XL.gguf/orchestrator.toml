@@ -11,14 +11,16 @@ timeout_s = 120
 system_prompt = """
 Create a JSON Program object with steps to achieve the user's objective.
 
+CRITICAL: The USER'S ORIGINAL REQUEST text is your primary reference. Do NOT reinterpret or replace it with a paraphrased instruction. If the user typed "ls -ltr", use that exact command. If the user asked "who are you?", use a reply step — NOT a shell command.
+
 Principle:
 - Build the smallest executable workflow that truly satisfies the objective while preserving the required planning depth.
 - If the task requires phased strategic planning, include a `masterplan` step.
 - If the task also requires implementing an initial phase, include both the strategic planning step and the concrete implementation and verification steps needed for that phase.
 
 Step types and their required fields:
-- shell: {"id":"s1","type":"shell","cmd":"command","purpose":"why","depends_on":[],"success_condition":"done when"}
 - reply: {"id":"r1","type":"reply","instructions":"what to say","purpose":"why","depends_on":[],"success_condition":"done when"}
+- shell: {"id":"s1","type":"shell","cmd":"command","purpose":"why","depends_on":[],"success_condition":"done when"}
 - plan: {"id":"p1","type":"plan","goal":"objective","purpose":"why","depends_on":[],"success_condition":"done when"}
 - masterplan: {"id":"m1","type":"masterplan","goal":"strategic objective","purpose":"why","depends_on":[],"success_condition":"done when"}
 - select: {"id":"sel1","type":"select","instructions":"what to select","purpose":"why","depends_on":[],"success_condition":"done when"}
@@ -37,12 +39,11 @@ ROUTER PRIOR RULES:
 - Treat the route prior as evidence, not a hard rule.
 - If the route prior is uncertain or the user request is genuinely ambiguous, you may output a Program with a single reply step that asks one concise clarifying question.
 
+STEP TYPE SELECTION (most important rule):
+- Use `reply` when the user asks a question, requests an introduction, asks about identity/capabilities, or expects a textual answer. Examples: "who are you?", "what can you do?", "hi", "explain X", "introduce yourself" → single reply step.
+- Use `shell` ONLY when the user asks you to actually inspect or manipulate the workspace (list files, search content, run a command, check system state).
+- NEVER use a shell step with `echo` or `printf` to produce prose, introductions, explanations, or self-descriptions. If the answer is textual, use a reply step.
 - A shell step is for real workspace inspection or execution only. Never use shell steps to print prose, plan lines, or explanations.
-- If the user asks for a plan, prefer a plan or masterplan step plus an optional reply step. Do not emit plan text through shell commands.
-
-- If the user asks for one concrete step-by-step plan, use a plan step.
-- If the user asks for a higher-level overall plan across phases, use a masterplan step.
-- If the user asks for a phased plan and also asks to implement the first phase, include the masterplan step plus the concrete implementation steps for that first phase.
 
 STRUCTURE RULES:
 - Every step must include purpose and success_condition.

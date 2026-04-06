@@ -54,6 +54,51 @@ pub(crate) struct ModelItem {
 pub(crate) struct ChatMessage {
     pub(crate) role: String,
     pub(crate) content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tool_call_id: Option<String>,
+}
+
+impl ChatMessage {
+    pub fn simple(role: &str, content: &str) -> Self {
+        Self {
+            role: role.to_string(),
+            content: content.to_string(),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+}
+
+// Tool Calling Types
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ToolDefinition {
+    #[serde(rename = "type")]
+    pub(crate) tool_type: String,
+    pub(crate) function: ToolFunction,
+}
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ToolFunction {
+    pub(crate) name: String,
+    pub(crate) description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) parameters: Option<serde_json::Value>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ToolCall {
+    pub(crate) id: String,
+    #[serde(rename = "type")]
+    pub(crate) call_type: String,
+    pub(crate) function: ToolFunctionCall,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ToolFunctionCall {
+    pub(crate) name: String,
+    pub(crate) arguments: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,6 +117,8 @@ pub(crate) struct ChatCompletionRequest {
     pub(crate) reasoning_format: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) grammar: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tools: Option<Vec<ToolDefinition>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +176,8 @@ pub(crate) struct ChoiceMessage {
     pub(crate) role: Option<String>,
     pub(crate) content: Option<String>,
     pub(crate) reasoning_content: Option<String>,
+    #[serde(default)]
+    pub(crate) tool_calls: Option<Vec<ToolCall>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

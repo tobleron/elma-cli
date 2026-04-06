@@ -17,10 +17,7 @@ pub(crate) async fn evaluate_runtime_scenario(
     let txt = std::fs::read_to_string(&scenario_path)
         .with_context(|| format!("read {}", scenario_path.display()))?;
     let (user_message, recent_messages) = parse_scenario_dialog(&txt);
-    let mut conversation_messages = vec![ChatMessage {
-        role: "system".to_string(),
-        content: String::new(),
-    }];
+    let mut conversation_messages = vec![ChatMessage::simple("system", &String::new())];
     conversation_messages.extend(recent_messages.clone());
 
     let decision = infer_route_prior(
