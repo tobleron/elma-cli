@@ -7,12 +7,12 @@
 //!
 //! Design: Minimal, cached syntax sets, graceful fallback for unknown languages.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color as SyntectColor, Style, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
 
 /// Cached highlighted snippets to avoid re-computation.
 fn highlight_cache() -> &'static Mutex<HashMap<String, String>> {
@@ -26,7 +26,7 @@ fn get_syntax_set() -> &'static SyntaxSet {
     SS.get_or_init(SyntaxSet::load_defaults_newlines)
 }
 
-/// Load the theme once. Uses base16-ocean.dark for Rose Pine compatibility.
+/// Load the theme once. Uses base16-ocean.dark for dark terminal compatibility.
 fn get_theme() -> &'static syntect::highlighting::Theme {
     use std::sync::OnceLock;
     static THEME: OnceLock<syntect::highlighting::Theme> = OnceLock::new();
@@ -60,17 +60,26 @@ fn apply_style(text: &str, style: Style) -> String {
     }
 
     // Bold
-    if style.font_style.contains(syntect::highlighting::FontStyle::BOLD) {
+    if style
+        .font_style
+        .contains(syntect::highlighting::FontStyle::BOLD)
+    {
         out.push_str("\x1b[1m");
     }
 
     // Italic
-    if style.font_style.contains(syntect::highlighting::FontStyle::ITALIC) {
+    if style
+        .font_style
+        .contains(syntect::highlighting::FontStyle::ITALIC)
+    {
         out.push_str("\x1b[3m");
     }
 
     // Underline
-    if style.font_style.contains(syntect::highlighting::FontStyle::UNDERLINE) {
+    if style
+        .font_style
+        .contains(syntect::highlighting::FontStyle::UNDERLINE)
+    {
         out.push_str("\x1b[4m");
     }
 
@@ -131,13 +140,22 @@ pub(crate) fn detect_language(code: &str) -> Option<&'static str> {
     let trimmed = code.trim();
 
     // Simple heuristic detection
-    if trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ") || trimmed.starts_with("struct ") {
+    if trimmed.starts_with("fn ")
+        || trimmed.starts_with("pub fn ")
+        || trimmed.starts_with("struct ")
+    {
         return Some("Rust");
     }
-    if trimmed.starts_with("def ") || trimmed.starts_with("class ") || trimmed.starts_with("import ") {
+    if trimmed.starts_with("def ")
+        || trimmed.starts_with("class ")
+        || trimmed.starts_with("import ")
+    {
         return Some("Python");
     }
-    if trimmed.starts_with("function ") || trimmed.starts_with("const ") || trimmed.starts_with("let ") {
+    if trimmed.starts_with("function ")
+        || trimmed.starts_with("const ")
+        || trimmed.starts_with("let ")
+    {
         return Some("JavaScript");
     }
     if trimmed.starts_with("{") || trimmed.contains("\"key\"") {
@@ -146,13 +164,17 @@ pub(crate) fn detect_language(code: &str) -> Option<&'static str> {
     if trimmed.starts_with("#include") || trimmed.starts_with("int main") {
         return Some("C");
     }
-    if trimmed.starts_with("<!DOCTYPE") || trimmed.starts_with("<html") || trimmed.starts_with("<div") {
+    if trimmed.starts_with("<!DOCTYPE")
+        || trimmed.starts_with("<html")
+        || trimmed.starts_with("<div")
+    {
         return Some("HTML");
     }
     if trimmed.starts_with("SELECT ") || trimmed.starts_with("CREATE TABLE") {
         return Some("SQL");
     }
-    if trimmed.starts_with("#!/bin/") || trimmed.starts_with("ls ") || trimmed.starts_with("find ") {
+    if trimmed.starts_with("#!/bin/") || trimmed.starts_with("ls ") || trimmed.starts_with("find ")
+    {
         return Some("Bourne Again Shell (bash)");
     }
 

@@ -7,17 +7,21 @@
 //! - Profile switching
 //! - Tool confirmation prompts
 //!
-//! Design: Tokyo Night themed, vim-mode (j/k), graceful TTY fallback.
+//! Design: Gruvbox Dark Hard themed, vim-mode (j/k), graceful TTY fallback.
 
 use inquire::{Confirm, Select, Text};
 use std::io::IsTerminal;
 
-/// Theme configuration using Tokyo Night colors.
+/// Theme configuration using Gruvbox Dark Hard colors.
 fn theme() -> inquire::ui::RenderConfig<'static> {
     inquire::ui::RenderConfig::default()
         .with_prompt_prefix(inquire::ui::Styled::new("?").with_fg(inquire::ui::Color::LightYellow))
-        .with_answered_prompt_prefix(inquire::ui::Styled::new("✓").with_fg(inquire::ui::Color::LightGreen))
-        .with_highlighted_option_prefix(inquire::ui::Styled::new("→").with_fg(inquire::ui::Color::LightCyan))
+        .with_answered_prompt_prefix(
+            inquire::ui::Styled::new("✓").with_fg(inquire::ui::Color::LightGreen),
+        )
+        .with_highlighted_option_prefix(
+            inquire::ui::Styled::new("→").with_fg(inquire::ui::Color::LightCyan),
+        )
 }
 
 /// Select one item from a list. Returns None on cancel.
@@ -27,7 +31,11 @@ pub(crate) fn select_from_list<T: std::fmt::Display + Clone + 'static>(
     options: Vec<T>,
 ) -> Option<T> {
     if !std::io::stderr().is_terminal() {
-        eprintln!("  [select] {}: {} options (non-interactive, selecting first)", message, options.len());
+        eprintln!(
+            "  [select] {}: {} options (non-interactive, selecting first)",
+            message,
+            options.len()
+        );
         return options.first().cloned();
     }
 
@@ -64,7 +72,10 @@ pub(crate) fn prompt_text(message: &str) -> Option<String> {
 /// Yes/No confirmation prompt.
 pub(crate) fn confirm(message: &str) -> bool {
     if !std::io::stderr().is_terminal() {
-        eprintln!("  [confirm] {}: defaulting to 'no' (non-interactive)", message);
+        eprintln!(
+            "  [confirm] {}: defaulting to 'no' (non-interactive)",
+            message
+        );
         return false;
     }
 
@@ -125,21 +136,27 @@ mod tests {
 
     #[test]
     fn test_select_from_list_single() {
-        if std::io::stderr().is_terminal() { return; }
+        if std::io::stderr().is_terminal() {
+            return;
+        }
         let result = select_from_list("test", vec!["only".to_string()]);
         assert_eq!(result, Some("only".to_string()));
     }
 
     #[test]
     fn test_confirm_non_tty_defaults_false() {
-        if std::io::stderr().is_terminal() { return; }
+        if std::io::stderr().is_terminal() {
+            return;
+        }
         let result = confirm("Test confirmation?");
         assert!(!result);
     }
 
     #[test]
     fn test_prompt_text_non_tty() {
-        if std::io::stderr().is_terminal() { return; }
+        if std::io::stderr().is_terminal() {
+            return;
+        }
         let result = prompt_text("Enter value:");
         assert!(result.is_none());
     }

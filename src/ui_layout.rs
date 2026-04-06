@@ -9,7 +9,7 @@
 //! - No response-level borders — content speaks for itself
 //! - Full output always shown — never truncated
 
-use crate::ui_colors::*;
+use crate::ui_theme::*;
 use std::io::IsTerminal;
 
 /// Terminal width.

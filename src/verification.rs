@@ -23,7 +23,7 @@ fn mk_intel_req(cfg: &Profile, user_content: String) -> ChatCompletionRequest {
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     }
 }
 

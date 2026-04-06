@@ -187,7 +187,7 @@ fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionReq
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     }
 }
 

@@ -58,13 +58,12 @@ impl CompactTracker {
 
     /// Update token count from current messages.
     pub(crate) fn recalculate(&mut self, messages: &[ChatMessage]) {
-        self.total_tokens = messages.iter()
+        self.total_tokens = messages
+            .iter()
             .map(|m| Self::estimate_tokens(&m.content))
             .sum();
         // Count user+assistant pairs as turns
-        self.turn_count = messages.iter()
-            .filter(|m| m.role == "user")
-            .count();
+        self.turn_count = messages.iter().filter(|m| m.role == "user").count();
     }
 
     /// Check if compact should fire.
@@ -144,7 +143,10 @@ pub(crate) fn generate_inline_summary(
         match msg.role.as_str() {
             "user" => {
                 if !current_user.is_empty() && !current_assistant.is_empty() {
-                    exchanges.push(format!("User: {}\nElma: {}", current_user, current_assistant));
+                    exchanges.push(format!(
+                        "User: {}\nElma: {}",
+                        current_user, current_assistant
+                    ));
                 }
                 current_user = msg.content.chars().take(200).collect();
                 current_assistant = String::new();
@@ -157,15 +159,24 @@ pub(crate) fn generate_inline_summary(
     }
     // Flush last exchange
     if !current_user.is_empty() && !current_assistant.is_empty() {
-        exchanges.push(format!("User: {}\nElma: {}", current_user, current_assistant));
+        exchanges.push(format!(
+            "User: {}\nElma: {}",
+            current_user, current_assistant
+        ));
     }
 
     let summary = if exchanges.is_empty() {
         "[Earlier conversation: technical tool usage]".to_string()
     } else {
         let total = exchanges.len();
-        let first = exchanges.first().map(|s| s.chars().take(100).collect::<String>()).unwrap_or_default();
-        let last = exchanges.last().map(|s| s.chars().take(100).collect::<String>()).unwrap_or_default();
+        let first = exchanges
+            .first()
+            .map(|s| s.chars().take(100).collect::<String>())
+            .unwrap_or_default();
+        let last = exchanges
+            .last()
+            .map(|s| s.chars().take(100).collect::<String>())
+            .unwrap_or_default();
         format!(
             "[Earlier conversation summary: {} exchanges total.\n\
              First: {}\n\
@@ -175,7 +186,8 @@ pub(crate) fn generate_inline_summary(
         )
     };
 
-    let old_tokens: usize = old_messages.iter()
+    let old_tokens: usize = old_messages
+        .iter()
         .map(|m| CompactTracker::estimate_tokens(&m.content))
         .sum();
     let summary_tokens = CompactTracker::estimate_tokens(&summary);

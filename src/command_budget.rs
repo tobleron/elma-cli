@@ -185,7 +185,11 @@ mod tests {
         for i in 0..MAX_CAUTION_PER_SESSION {
             budget.start_turn();
             *budget.last_command_time.lock().unwrap() = None; // Reset throttle
-            assert!(budget.check_budget(&RiskLevel::Caution).is_ok(), "Failed at iteration {}", i);
+            assert!(
+                budget.check_budget(&RiskLevel::Caution).is_ok(),
+                "Failed at iteration {}",
+                i
+            );
             budget.record_command(&RiskLevel::Caution);
         }
         // Next one should fail
@@ -201,7 +205,11 @@ mod tests {
         for i in 0..MAX_DANGER_PER_SESSION {
             budget.start_turn();
             *budget.last_command_time.lock().unwrap() = None; // Reset throttle
-            assert!(budget.check_budget(&danger).is_ok(), "Failed at iteration {}", i);
+            assert!(
+                budget.check_budget(&danger).is_ok(),
+                "Failed at iteration {}",
+                i
+            );
             budget.record_command(&danger);
         }
         // Next one should fail

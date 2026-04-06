@@ -204,7 +204,13 @@ pub(crate) async fn generate_text_from_reasoning(
         model: cfg.model.clone(),
         messages: vec![
             ChatMessage::simple("system", &cfg.system_prompt),
-            ChatMessage::simple("user", &format!("Convert this reasoning into simple action text:\n\n{}", reasoning)),
+            ChatMessage::simple(
+                "user",
+                &format!(
+                    "Convert this reasoning into simple action text:\n\n{}",
+                    reasoning
+                ),
+            ),
         ],
         temperature: cfg.temperature,
         top_p: cfg.top_p,
@@ -233,7 +239,13 @@ pub(crate) async fn convert_text_to_json(
         model: cfg.model.clone(),
         messages: vec![
             ChatMessage::simple("system", &cfg.system_prompt),
-            ChatMessage::simple("user", &format!("Convert this text to JSON matching the schema:\n\nSchema:\n{}\n\nText:\n{}", schema_description, text)),
+            ChatMessage::simple(
+                "user",
+                &format!(
+                    "Convert this text to JSON matching the schema:\n\nSchema:\n{}\n\nText:\n{}",
+                    schema_description, text
+                ),
+            ),
         ],
         temperature: cfg.temperature,
         top_p: cfg.top_p,
@@ -299,7 +311,13 @@ pub(crate) async fn repair_json(
         model: cfg.model.clone(),
         messages: vec![
             ChatMessage::simple("system", &cfg.system_prompt),
-            ChatMessage::simple("user", &format!("Original JSON:\n{}\n\nProblems to fix:\n{}", json, problems_text)),
+            ChatMessage::simple(
+                "user",
+                &format!(
+                    "Original JSON:\n{}\n\nProblems to fix:\n{}",
+                    json, problems_text
+                ),
+            ),
         ],
         temperature: cfg.temperature,
         top_p: cfg.top_p,
@@ -397,7 +415,7 @@ pub(crate) async fn annotate_user_intent(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
 
     let resp = chat_once(client, chat_url, &req).await?;

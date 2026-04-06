@@ -18,7 +18,7 @@ pub(crate) async fn build_program(
     complexity: &ComplexityAssessment,
     scope: &ScopePlan,
     formula: &FormulaSelection,
-    tui: &mut crate::ui_tui::TerminalUI,
+    tui: &mut crate::ui_terminal::TerminalUI,
 ) -> Program {
     build_program_with_temp(
         runtime,
@@ -43,7 +43,7 @@ pub(crate) async fn build_program_with_temp(
     _scope: &ScopePlan,
     _formula: &FormulaSelection,
     _temperature: f64,
-    tui: &mut crate::ui_tui::TerminalUI,
+    tui: &mut crate::ui_terminal::TerminalUI,
 ) -> Program {
     // Tool-calling pipeline: model plans and executes tools directly (no Maestro)
     match crate::orchestration_core::run_tool_calling_pipeline(runtime, line, tui).await {
@@ -61,20 +61,18 @@ pub(crate) async fn build_program_with_temp(
             // Return as a single Respond step for the execution framework
             Program {
                 objective: line.to_string(),
-                steps: vec![
-                    Step::Respond {
-                        id: "r1".to_string(),
-                        instructions: answer,
-                        common: StepCommon {
-                            purpose: "respond to user".to_string(),
-                            depends_on: vec![],
-                            success_condition: "user receives answer".to_string(),
-                            parent_id: None,
-                            depth: None,
-                            unit_type: None,
-                        },
+                steps: vec![Step::Respond {
+                    id: "r1".to_string(),
+                    instructions: answer,
+                    common: StepCommon {
+                        purpose: "respond to user".to_string(),
+                        depends_on: vec![],
+                        success_condition: "user receives answer".to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
                     },
-                ],
+                }],
             }
         }
         Err(e) => {

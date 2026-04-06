@@ -42,19 +42,27 @@ pub(crate) fn print_final_output(
     let truncated_text = truncate_output(final_text);
     print_elma_message(args, &truncated_text);
 
-    // Intel unit failure count (Tokyo Night Red — for model reliability tracking)
+    // Intel unit failure count (Gruvbox Red — for model reliability tracking)
     let total_failures = crate::ui_state::get_total_intel_failures();
     if total_failures > 0 {
         let counts = crate::ui_state::get_intel_failure_counts();
-        let summary: Vec<String> = counts.iter()
+        let summary: Vec<String> = counts
+            .iter()
             .map(|(unit, count)| format!("{}×{}", unit, count))
             .collect();
-        let line = format!("intel: {} failures ({})", total_failures, summary.join(", "));
-        eprintln!("{}", if args.no_color {
-            line
-        } else {
-            error_red(&line)
-        });
+        let line = format!(
+            "intel: {} failures ({})",
+            total_failures,
+            summary.join(", ")
+        );
+        eprintln!(
+            "{}",
+            if args.no_color {
+                line
+            } else {
+                error_red(&line)
+            }
+        );
     }
 
     // Task 133: Status bar is handled by TUI — this function is a no-op

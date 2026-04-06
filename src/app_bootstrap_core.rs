@@ -5,7 +5,7 @@
 use crate::app::{AppRuntime, LoadedProfiles};
 use crate::app_bootstrap_modes::*;
 use crate::app_bootstrap_profiles::*;
-use crate::ui_colors::*;
+use crate::ui_theme::*;
 use crate::*;
 
 pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {

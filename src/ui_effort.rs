@@ -5,7 +5,7 @@
 //! Measures and displays wall-clock time per turn.
 //! Shows a subtle effort badge after each response.
 
-use crate::ui_colors::*;
+use crate::ui_theme::*;
 use std::time::Instant;
 
 /// Simple wall-clock timer for measuring turn effort.
@@ -16,7 +16,9 @@ pub(crate) struct EffortTimer {
 impl EffortTimer {
     /// Start measuring effort time.
     pub(crate) fn start() -> Self {
-        Self { start: Instant::now() }
+        Self {
+            start: Instant::now(),
+        }
     }
 
     /// Get elapsed duration.

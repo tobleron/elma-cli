@@ -5,7 +5,7 @@
 //! Renders a Unicode progress bar showing real-time token usage.
 //! Color-coded: green < 70%, yellow 70-90%, red > 90%.
 
-use crate::ui_colors::*;
+use crate::ui_theme::*;
 
 const BAR_FULL: &str = "█";
 const BAR_75: &str = "▓";
@@ -47,7 +47,10 @@ pub(crate) fn render_context_bar(current: u64, max: u64, width: usize) -> String
     let max_display = format_tokens(max);
     let pct_display = format!("{:.1}%", pct * 100.0);
 
-    format!("{} {}/{} [{}]", bar, current_display, max_display, pct_display)
+    format!(
+        "{} {}/{} [{}]",
+        bar, current_display, max_display, pct_display
+    )
 }
 
 /// Format a token count for display.

@@ -45,7 +45,9 @@ pub(crate) trait PreToolHook: Send + Sync {
 pub(crate) struct PreflightIntegrator;
 
 impl PreToolHook for PreflightIntegrator {
-    fn name(&self) -> &str { "preflight_integrator" }
+    fn name(&self) -> &str {
+        "preflight_integrator"
+    }
 
     fn execute(&self, command: &str, workdir: &PathBuf) -> PreHookDecision {
         let result = shell_preflight::preflight_command(command, workdir);
@@ -66,7 +68,9 @@ impl PreToolHook for PreflightIntegrator {
 pub(crate) struct PermissionGateIntegrator;
 
 impl PreToolHook for PermissionGateIntegrator {
-    fn name(&self) -> &str { "permission_gate" }
+    fn name(&self) -> &str {
+        "permission_gate"
+    }
 
     fn execute(&self, command: &str, _workdir: &PathBuf) -> PreHookDecision {
         // Note: This requires args for check_permission; we skip interactive
@@ -80,14 +84,19 @@ impl PreToolHook for PermissionGateIntegrator {
 pub(crate) struct BudgetEnforcer;
 
 impl PreToolHook for BudgetEnforcer {
-    fn name(&self) -> &str { "budget_enforcer" }
+    fn name(&self) -> &str {
+        "budget_enforcer"
+    }
 
     fn execute(&self, command: &str, _workdir: &PathBuf) -> PreHookDecision {
         let budget = crate::command_budget::get_budget();
         // We don't have risk classification here without running preflight again,
         // so we rely on the command_budget check in tool_calling.rs instead.
         // This hook exists for the extensibility pattern demonstration.
-        trace_verbose(true, &format!("[budget_enforcer] status: {}", budget.status()));
+        trace_verbose(
+            true,
+            &format!("[budget_enforcer] status: {}", budget.status()),
+        );
         PreHookDecision::Allow
     }
 }
@@ -123,20 +132,28 @@ impl TrustDecayModifier {
     }
 
     pub(crate) fn reset(&self) {
-        self.destructive_count.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.destructive_count
+            .store(0, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
 impl ContextModifier for TrustDecayModifier {
-    fn name(&self) -> &str { "trust_decay" }
+    fn name(&self) -> &str {
+        "trust_decay"
+    }
 
     fn after_execution(&self, command: &str, success: bool, _output: &str) -> Option<String> {
-        if !success { return None; }
+        if !success {
+            return None;
+        }
         if shell_preflight::classify_command(command) != shell_preflight::RiskLevel::Caution {
             return None;
         }
 
-        let count = self.destructive_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let count = self
+            .destructive_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
         if count >= self.threshold {
             Some(format!(
                 "⚠️ Trust notice: {} caution-level commands have been executed this session. \
@@ -181,14 +198,19 @@ pub(crate) trait PostToolHook: Send + Sync {
 pub(crate) struct ResultVerifier;
 
 impl PostToolHook for ResultVerifier {
-    fn name(&self) -> &str { "result_verifier" }
+    fn name(&self) -> &str {
+        "result_verifier"
+    }
 
     fn execute(&self, command: &str, success: bool, output: &str) -> PostHookResult {
         let cmd = command.trim();
 
         // For rm: verify files are gone
         if let Some(args) = cmd.strip_prefix("rm ") {
-            let files: Vec<&str> = args.split_whitespace().filter(|a| !a.starts_with('-') && !a.contains('*')).collect();
+            let files: Vec<&str> = args
+                .split_whitespace()
+                .filter(|a| !a.starts_with('-') && !a.contains('*'))
+                .collect();
             let mut gone = 0;
             let mut remaining = Vec::new();
             for f in &files {
@@ -203,14 +225,21 @@ impl PostToolHook for ResultVerifier {
                 return PostHookResult {
                     hook_name: self.name().to_string(),
                     ok: false,
-                    message: Some(format!("Verification: {} file(s) deleted, but {} still exist: {}",
-                        gone, remaining.len(), remaining.join(", "))),
+                    message: Some(format!(
+                        "Verification: {} file(s) deleted, but {} still exist: {}",
+                        gone,
+                        remaining.len(),
+                        remaining.join(", ")
+                    )),
                 };
             }
             return PostHookResult {
                 hook_name: self.name().to_string(),
                 ok: true,
-                message: Some(format!("Verification: {} file(s) successfully deleted.", gone)),
+                message: Some(format!(
+                    "Verification: {} file(s) successfully deleted.",
+                    gone
+                )),
             };
         }
 
@@ -221,12 +250,15 @@ impl PostToolHook for ResultVerifier {
                 let src = Path::new(parts[0]);
                 let dest = Path::new(parts[1]);
                 let src_gone = !src.exists();
-                let dest_exists = dest.exists() || dest.parent().map(|p| p.exists()).unwrap_or(false);
+                let dest_exists =
+                    dest.exists() || dest.parent().map(|p| p.exists()).unwrap_or(false);
                 return PostHookResult {
                     hook_name: self.name().to_string(),
                     ok: src_gone,
-                    message: Some(format!("Verification: mv '{}' → '{}' — source gone: {}, destination exists: {}",
-                        parts[0], parts[1], src_gone, dest_exists)),
+                    message: Some(format!(
+                        "Verification: mv '{}' → '{}' — source gone: {}, destination exists: {}",
+                        parts[0], parts[1], src_gone, dest_exists
+                    )),
                 };
             }
         }
@@ -236,9 +268,15 @@ impl PostToolHook for ResultVerifier {
             hook_name: self.name().to_string(),
             ok: success,
             message: if success {
-                Some(format!("Verification: Command executed successfully ({} chars output)", output.len()))
+                Some(format!(
+                    "Verification: Command executed successfully ({} chars output)",
+                    output.len()
+                ))
             } else {
-                Some(format!("Verification: Command failed. Output: {}", output.chars().take(200).collect::<String>()))
+                Some(format!(
+                    "Verification: Command failed. Output: {}",
+                    output.chars().take(200).collect::<String>()
+                ))
             },
         }
     }
@@ -248,14 +286,20 @@ impl PostToolHook for ResultVerifier {
 pub(crate) struct AuditLogger;
 
 impl PostToolHook for AuditLogger {
-    fn name(&self) -> &str { "audit_logger" }
+    fn name(&self) -> &str {
+        "audit_logger"
+    }
 
     fn execute(&self, command: &str, success: bool, output: &str) -> PostHookResult {
-        trace_verbose(true, &format!("[audit] command={} success={} output_len={}",
-            command.chars().take(80).collect::<String>(),
-            success,
-            output.len()
-        ));
+        trace_verbose(
+            true,
+            &format!(
+                "[audit] command={} success={} output_len={}",
+                command.chars().take(80).collect::<String>(),
+                success,
+                output.len()
+            ),
+        );
         PostHookResult {
             hook_name: self.name().to_string(),
             ok: true,
@@ -312,7 +356,14 @@ impl HookRegistry {
                 PreHookDecision::Block(reason) => return Some(reason),
                 PreHookDecision::Modify(new_cmd) => {
                     // For now, we log modifications but don't auto-apply
-                    trace_verbose(true, &format!("[hook:{}] would modify command to: {}", hook.name(), new_cmd));
+                    trace_verbose(
+                        true,
+                        &format!(
+                            "[hook:{}] would modify command to: {}",
+                            hook.name(),
+                            new_cmd
+                        ),
+                    );
                 }
                 PreHookDecision::RequireConfirm(msg) => {
                     // Return the confirmation message — caller decides
@@ -324,22 +375,35 @@ impl HookRegistry {
     }
 
     /// Run all post-hooks after command execution.
-    pub(crate) fn run_post_hooks(&self, command: &str, success: bool, output: &str) -> Vec<PostHookResult> {
-        self.post_hooks.iter()
+    pub(crate) fn run_post_hooks(
+        &self,
+        command: &str,
+        success: bool,
+        output: &str,
+    ) -> Vec<PostHookResult> {
+        self.post_hooks
+            .iter()
             .map(|h| h.execute(command, success, output))
             .collect()
     }
 
     /// Run all context modifiers after command execution.
-    pub(crate) fn run_context_modifiers(&self, command: &str, success: bool, output: &str) -> Vec<String> {
-        self.context_modifiers.iter()
+    pub(crate) fn run_context_modifiers(
+        &self,
+        command: &str,
+        success: bool,
+        output: &str,
+    ) -> Vec<String> {
+        self.context_modifiers
+            .iter()
             .filter_map(|m| m.after_execution(command, success, output))
             .collect()
     }
 
     /// Run all context modifiers after a command error.
     pub(crate) fn run_context_modifier_errors(&self, command: &str, error: &str) -> Vec<String> {
-        self.context_modifiers.iter()
+        self.context_modifiers
+            .iter()
             .filter_map(|m| m.after_error(command, error))
             .collect()
     }

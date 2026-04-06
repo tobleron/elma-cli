@@ -17,16 +17,24 @@ use crate::*;
 
 /// Build a system prompt for tool calling without any intermediate planner.
 /// The model has full context (workspace, conversation, tools) and plans directly.
-fn build_tool_calling_system_prompt(
-    runtime: &AppRuntime,
-    line: &str,
-) -> String {
+fn build_tool_calling_system_prompt(runtime: &AppRuntime, line: &str) -> String {
     // Include conversation excerpt for continuity
     let conversation = if runtime.messages.is_empty() {
         String::new()
     } else {
-        let last_msgs: Vec<String> = runtime.messages.iter().rev().take(6).rev()
-            .map(|m| format!("{}: {}", m.role, m.content.chars().take(300).collect::<String>()))
+        let last_msgs: Vec<String> = runtime
+            .messages
+            .iter()
+            .rev()
+            .take(6)
+            .rev()
+            .map(|m| {
+                format!(
+                    "{}: {}",
+                    m.role,
+                    m.content.chars().take(300).collect::<String>()
+                )
+            })
             .collect();
         format!("\nRECENT CONVERSATION:\n{}", last_msgs.join("\n"))
     };
@@ -73,10 +81,13 @@ CRITICAL RULES:
 pub(crate) async fn run_tool_calling_pipeline(
     runtime: &AppRuntime,
     line: &str,
-    tui: &mut crate::ui_tui::TerminalUI,
+    tui: &mut crate::ui_terminal::TerminalUI,
 ) -> Result<(String, usize, usize, bool)> {
     let system_prompt = build_tool_calling_system_prompt(runtime, line);
-    trace(&runtime.args, "tool_calling: direct model planning (no Maestro)");
+    trace(
+        &runtime.args,
+        "tool_calling: direct model planning (no Maestro)",
+    );
 
     let result = run_tool_loop(
         &runtime.args,
@@ -102,10 +113,7 @@ pub(crate) async fn run_tool_calling_pipeline(
 }
 
 /// Compute risk deterministically from the tool-calling result metadata.
-pub(crate) fn compute_program_risk(
-    _tool_calls_made: usize,
-    _iterations: usize,
-) -> ProgramRisk {
+pub(crate) fn compute_program_risk(_tool_calls_made: usize, _iterations: usize) -> ProgramRisk {
     ProgramRisk::Low
 }
 
@@ -204,7 +212,9 @@ Output ONLY valid JSON object with a "steps" array, like:
     let orch_req = ChatCompletionRequest {
         model: orchestrator_cfg.model.clone(),
         messages: vec![
-            ChatMessage::simple("system", r#"You are Elma's step composer. Transform English instructions into 1-3 structured JSON steps for Elma's execution pipeline.
+            ChatMessage::simple(
+                "system",
+                r#"You are Elma's step composer. Transform English instructions into 1-3 structured JSON steps for Elma's execution pipeline.
 
 Step types available: shell, read, search, edit, explore, write, delete, select, decide, plan, masterplan, summarize, reply, respond.
 
@@ -212,7 +222,8 @@ Output ONLY valid JSON with a steps array:
 {"steps":[{"id":"s1","type":"shell","cmd":"ls -1","purpose":"list files","depends_on":[],"success_condition":"files listed"}]}
 
 Each step needs: id, type, purpose, depends_on (array of step IDs), success_condition.
-Shell steps need: cmd. Read steps need: path. Search steps need: query and paths. Edit steps need: path, operation, find, replace. Reply/Respond steps need: instructions."#),
+Shell steps need: cmd. Read steps need: path. Search steps need: query and paths. Edit steps need: path, operation, find, replace. Reply/Respond steps need: instructions."#,
+            ),
             ChatMessage::simple("user", &prompt),
         ],
         temperature: orchestrator_cfg.temperature,

@@ -94,11 +94,15 @@ impl IntelUnit for MaestroUnit {
 
         // Accept both {"steps": [{num, instruction}]} AND flat {num, instruction}
         // Small models often drop the outer wrapper
-        let result: MaestroOutput = if let Ok(steps_wrapper) = serde_json::from_str::<MaestroOutput>(&cleaned) {
+        let result: MaestroOutput = if let Ok(steps_wrapper) =
+            serde_json::from_str::<MaestroOutput>(&cleaned)
+        {
             steps_wrapper
         } else if let Ok(single_instr) = serde_json::from_str::<MaestroInstruction>(&cleaned) {
             // Model returned a single instruction without wrapper — wrap it
-            MaestroOutput { steps: vec![single_instr] }
+            MaestroOutput {
+                steps: vec![single_instr],
+            }
         } else if let Ok(instr_array) = serde_json::from_str::<Vec<MaestroInstruction>>(&cleaned) {
             // Model returned a bare array of instructions
             MaestroOutput { steps: instr_array }

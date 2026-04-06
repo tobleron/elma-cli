@@ -192,9 +192,10 @@ pub(crate) async fn request_judge_verdict(
     step_results: &[StepResult],
     final_text: &str,
 ) -> Result<CalibrationJudgeVerdict> {
-    let req = ChatCompletionRequest {
-        model: judge_cfg.model.clone(),
-        messages: vec![
+    let req =
+        ChatCompletionRequest {
+            model: judge_cfg.model.clone(),
+            messages: vec![
             ChatMessage::simple("system", &judge_cfg.system_prompt),
             ChatMessage::simple("user", &serde_json::json!({
                     "scenario_notes": scenario.notes,
@@ -206,16 +207,16 @@ pub(crate) async fn request_judge_verdict(
                     "markdown_requested": user_requested_markdown(user_message).to_string()
                 }).to_string()),
         ],
-        temperature: judge_cfg.temperature,
-        top_p: judge_cfg.top_p,
-        stream: false,
-        max_tokens: judge_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(judge_cfg.repeat_penalty),
-        reasoning_format: Some(judge_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+            temperature: judge_cfg.temperature,
+            top_p: judge_cfg.top_p,
+            stream: false,
+            max_tokens: judge_cfg.max_tokens,
+            n_probs: None,
+            repeat_penalty: Some(judge_cfg.repeat_penalty),
+            reasoning_format: Some(judge_cfg.reasoning_format.clone()),
+            grammar: None,
+            tools: None,
+        };
     chat_json_with_repair(client, chat_url, &req).await
 }
 

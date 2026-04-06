@@ -1,10 +1,14 @@
 //! @efficiency-role: domain-logic
 //! Tool Loop — continuous execution loop using native tool calling.
 
+use crate::auto_compact::{
+    apply_compact, CompactTracker, DEFAULT_COMPACT_BUFFER_TOKENS, DEFAULT_CONTEXT_WINDOW_TOKENS,
+};
 use crate::tool_calling::build_tool_definitions;
 use crate::tool_result_storage::{apply_tool_result_budget, DEFAULT_MAX_RESULT_SIZE_CHARS};
-use crate::auto_compact::{CompactTracker, apply_compact, DEFAULT_COMPACT_BUFFER_TOKENS, DEFAULT_CONTEXT_WINDOW_TOKENS};
-use crate::ui_state::{increment_intel_failure_count, reset_intel_failure_counts, get_total_intel_failures};
+use crate::ui_state::{
+    get_total_intel_failures, increment_intel_failure_count, reset_intel_failure_counts,
+};
 use crate::*;
 
 const MAX_TOOL_ITERATIONS: usize = 15;
@@ -27,10 +31,13 @@ pub(crate) async fn run_tool_loop(
     session: &SessionPaths,
     temperature: f64,
     max_tokens: u32,
-    tui: &mut crate::ui_tui::TerminalUI,
+    tui: &mut crate::ui_terminal::TerminalUI,
 ) -> Result<ToolLoopResult> {
     let tools = build_tool_definitions(workdir);
-    trace(args, &format!("tool_loop: starting max_iterations={}", MAX_TOOL_ITERATIONS));
+    trace(
+        args,
+        &format!("tool_loop: starting max_iterations={}", MAX_TOOL_ITERATIONS),
+    );
     let mut messages: Vec<ChatMessage> = vec![
         ChatMessage::simple("system", system_prompt),
         ChatMessage::simple("user", user_message),
@@ -46,24 +53,37 @@ pub(crate) async fn run_tool_loop(
         tracker.recalculate(&messages);
         let (should_compact, ctx, buf) = tracker.should_compact(None, None);
         if should_compact {
-            trace(args, &format!(
-                "auto_compact: firing (tokens={}, turns={}, ctx={}, buf={})",
-                tracker.total_tokens, tracker.turn_count, ctx, buf
-            ));
+            trace(
+                args,
+                &format!(
+                    "auto_compact: firing (tokens={}, turns={}, ctx={}, buf={})",
+                    tracker.total_tokens, tracker.turn_count, ctx, buf
+                ),
+            );
             let (new_messages, result) = apply_compact(&messages, 3); // Keep last 3 turns
             if result.ok {
                 messages = new_messages;
                 tracker.record_success();
-                trace(args, &format!(
-                    "auto_compact: succeeded (freed {} tokens)",
-                    result.tokens_freed
-                ));
+                trace(
+                    args,
+                    &format!(
+                        "auto_compact: succeeded (freed {} tokens)",
+                        result.tokens_freed
+                    ),
+                );
             } else {
                 tracker.record_failure();
                 trace(args, "auto_compact: failed (no messages to compact)");
             }
         }
-        trace(args, &format!("tool_loop: iteration {}/{}", iteration + 1, MAX_TOOL_ITERATIONS));
+        trace(
+            args,
+            &format!(
+                "tool_loop: iteration {}/{}",
+                iteration + 1,
+                MAX_TOOL_ITERATIONS
+            ),
+        );
         let req = ChatCompletionRequest {
             model: model_id.to_string(),
             messages: messages.clone(),
@@ -82,18 +102,32 @@ pub(crate) async fn run_tool_loop(
         let content = choice.message.content.clone().unwrap_or_default();
         if let Some(tool_calls) = &choice.message.tool_calls {
             if !tool_calls.is_empty() {
-                trace(args, &format!("tool_loop: {} tool call(s)", tool_calls.len()));
+                trace(
+                    args,
+                    &format!("tool_loop: {} tool call(s)", tool_calls.len()),
+                );
                 total_tool_calls += tool_calls.len();
                 for tc in tool_calls {
                     // Show the actual command for shell tools
                     let status_msg = if tc.function.name == "shell" {
-                        let cmd_preview = extract_tool_arg_preview(&tc.function.arguments, "command", 50);
+                        let cmd_preview =
+                            extract_tool_arg_preview(&tc.function.arguments, "command", 50);
                         format!("executing shell: {}", cmd_preview)
                     } else {
                         format!("executing {}", tc.function.name)
                     };
                     show_status_message(args, &status_msg);
-                    let result = tool_calling::execute_tool_call(args, tc, workdir, session, client, chat_url, user_message, Some(&mut *tui)).await;
+                    let result = tool_calling::execute_tool_call(
+                        args,
+                        tc,
+                        workdir,
+                        session,
+                        client,
+                        chat_url,
+                        user_message,
+                        Some(&mut *tui),
+                    )
+                    .await;
 
                     // respond tool = final answer, exit the loop immediately
                     if tc.function.name == "respond" {
@@ -105,7 +139,13 @@ pub(crate) async fn run_tool_loop(
                         });
                     }
 
-                    messages.push(ChatMessage { role: "assistant".to_string(), content: "".to_string(), name: None, tool_calls: Some(vec![tc.clone()]), tool_call_id: None });
+                    messages.push(ChatMessage {
+                        role: "assistant".to_string(),
+                        content: "".to_string(),
+                        name: None,
+                        tool_calls: Some(vec![tc.clone()]),
+                        tool_call_id: None,
+                    });
                     // Apply result budget — persist large outputs to disk, keep inline for small ones
                     let budgeted = apply_tool_result_budget(
                         session,
@@ -114,27 +154,64 @@ pub(crate) async fn run_tool_loop(
                         &result.content,
                         DEFAULT_MAX_RESULT_SIZE_CHARS,
                     );
-                    messages.push(ChatMessage { role: "tool".to_string(), content: budgeted.content_for_model, name: Some(tc.function.name.clone()), tool_calls: None, tool_call_id: Some(tc.id.clone()) });
+                    messages.push(ChatMessage {
+                        role: "tool".to_string(),
+                        content: budgeted.content_for_model,
+                        name: Some(tc.function.name.clone()),
+                        tool_calls: None,
+                        tool_call_id: Some(tc.id.clone()),
+                    });
                 }
                 continue;
             }
         }
         if !content.trim().is_empty() {
-            return Ok(ToolLoopResult { final_answer: content.trim().to_string(), iterations: iteration + 1, tool_calls_made: total_tool_calls, stopped_by_max: false });
+            return Ok(ToolLoopResult {
+                final_answer: content.trim().to_string(),
+                iterations: iteration + 1,
+                tool_calls_made: total_tool_calls,
+                stopped_by_max: false,
+            });
         }
     }
     trace(args, "tool_loop: max iterations reached");
-    messages.push(ChatMessage::simple("user", "You've reached the maximum number of tool calls. Please provide your final answer."));
-    let final_req = ChatCompletionRequest { model: model_id.to_string(), messages: messages.clone(), temperature: 0.0, top_p: 1.0, stream: false, max_tokens: max_tokens.min(1024), n_probs: None, repeat_penalty: None, reasoning_format: Some("none".to_string()), grammar: None, tools: None };
-    let final_resp = crate::ui_chat::chat_once_with_timeout(client, chat_url, &final_req, 60).await?;
-    let final_content = final_resp.choices.get(0).map(|c| c.message.content.clone().unwrap_or_default()).unwrap_or_else(|| "Maximum iterations reached.".to_string());
-    Ok(ToolLoopResult { final_answer: final_content.trim().to_string(), iterations: MAX_TOOL_ITERATIONS + 1, tool_calls_made: total_tool_calls, stopped_by_max: true })
+    messages.push(ChatMessage::simple(
+        "user",
+        "You've reached the maximum number of tool calls. Please provide your final answer.",
+    ));
+    let final_req = ChatCompletionRequest {
+        model: model_id.to_string(),
+        messages: messages.clone(),
+        temperature: 0.0,
+        top_p: 1.0,
+        stream: false,
+        max_tokens: max_tokens.min(1024),
+        n_probs: None,
+        repeat_penalty: None,
+        reasoning_format: Some("none".to_string()),
+        grammar: None,
+        tools: None,
+    };
+    let final_resp =
+        crate::ui_chat::chat_once_with_timeout(client, chat_url, &final_req, 60).await?;
+    let final_content = final_resp
+        .choices
+        .get(0)
+        .map(|c| c.message.content.clone().unwrap_or_default())
+        .unwrap_or_else(|| "Maximum iterations reached.".to_string());
+    Ok(ToolLoopResult {
+        final_answer: final_content.trim().to_string(),
+        iterations: MAX_TOOL_ITERATIONS + 1,
+        tool_calls_made: total_tool_calls,
+        stopped_by_max: true,
+    })
 }
 
 /// Extract a short preview of a tool argument.
 pub(crate) fn extract_tool_arg_preview(args_json: &str, field: &str, max_len: usize) -> String {
     match serde_json::from_str::<serde_json::Value>(args_json) {
-        Ok(val) => val.get(field)
+        Ok(val) => val
+            .get(field)
             .and_then(|v| v.as_str())
             .map(|s| {
                 if s.len() > max_len {

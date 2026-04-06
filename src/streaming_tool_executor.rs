@@ -35,7 +35,10 @@ pub(crate) async fn execute_tools_batch(
     user_message: &str,
 ) -> StreamingExecResult {
     if tool_calls.is_empty() {
-        return StreamingExecResult { results: vec![], any_error: false };
+        return StreamingExecResult {
+            results: vec![],
+            any_error: false,
+        };
     }
 
     // Partition into safe (parallel) and serial (unsafe)
@@ -79,7 +82,17 @@ pub(crate) async fn execute_tools_batch(
                 };
                 show_status_message(&args, &msg);
             }
-            tool_calling::execute_tool_call(&args, &tc, &workdir, &session, &client, &chat_url, &user_message, None).await
+            tool_calling::execute_tool_call(
+                &args,
+                &tc,
+                &workdir,
+                &session,
+                &client,
+                &chat_url,
+                &user_message,
+                None,
+            )
+            .await
         }));
     }
 
@@ -110,8 +123,16 @@ pub(crate) async fn execute_tools_batch(
             show_status_message(args, &format!("executing {}", tc.function.name));
         }
         let result = tool_calling::execute_tool_call(
-            args, tc, workdir, session, client, chat_url, user_message, None,
-        ).await;
+            args,
+            tc,
+            workdir,
+            session,
+            client,
+            chat_url,
+            user_message,
+            None,
+        )
+        .await;
         if !result.ok {
             any_error = true;
         }

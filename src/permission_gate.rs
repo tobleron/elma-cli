@@ -8,7 +8,7 @@
 //! - Non-interactive mode: auto-deny with guidance
 
 use crate::shell_preflight::{classify_command, RiskLevel};
-use crate::ui_colors::*;
+use crate::ui_theme::*;
 use crate::*;
 use std::collections::HashSet;
 
@@ -77,16 +77,29 @@ pub(crate) fn check_permission(args: &Args, command: &str) -> bool {
     }
 
     // Check approval cache
-    if approval_cache().lock().ok().map(|c| c.is_approved(command)).unwrap_or(false) {
+    if approval_cache()
+        .lock()
+        .ok()
+        .map(|c| c.is_approved(command))
+        .unwrap_or(false)
+    {
         return true;
     }
 
     // Non-interactive mode: auto-deny with trace message
-    if approval_cache().lock().ok().map(|c| c.non_interactive).unwrap_or(false) {
-        trace(args, &format!(
-            "permission_gate: DENIED (non-interactive mode): {}",
-            command
-        ));
+    if approval_cache()
+        .lock()
+        .ok()
+        .map(|c| c.non_interactive)
+        .unwrap_or(false)
+    {
+        trace(
+            args,
+            &format!(
+                "permission_gate: DENIED (non-interactive mode): {}",
+                command
+            ),
+        );
         return false;
     }
 

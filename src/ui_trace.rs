@@ -2,8 +2,8 @@
 //!
 //! UI - Trace and Display Functions
 
+use crate::ui_theme::*;
 use crate::*;
-use crate::ui_colors::*;
 
 /// Display an ultra-concise status message about what Elma is doing
 pub(crate) fn show_status_message(args: &Args, status: &str) {

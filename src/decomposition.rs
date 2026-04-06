@@ -129,7 +129,7 @@ Output JSON format:
         repeat_penalty: Some(planner_cfg.repeat_penalty),
         reasoning_format: Some(planner_cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
 
     let resp = chat_once(client, chat_url, &req).await?;
@@ -187,7 +187,7 @@ Output as JSON array of subgoal descriptions."#,
         repeat_penalty: Some(planner_cfg.repeat_penalty),
         reasoning_format: Some(planner_cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
 
     let resp = chat_once(client, chat_url, &req).await?;

@@ -5,7 +5,7 @@
 //! Animated Braille spinner with context-aware verbs.
 //! Runs in a background std::thread (works in both sync and async contexts).
 
-use crate::ui_colors::*;
+use crate::ui_theme::*;
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -123,7 +123,12 @@ impl Spinner {
             );
             let _ = std::io::stderr().flush();
         } else {
-            eprintln!("  {} {} completed ({:.1}s)", color_fn(icon), self.verb.as_str(), elapsed.as_secs_f32());
+            eprintln!(
+                "  {} {} completed ({:.1}s)",
+                color_fn(icon),
+                self.verb.as_str(),
+                elapsed.as_secs_f32()
+            );
         }
 
         elapsed

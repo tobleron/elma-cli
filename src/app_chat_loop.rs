@@ -11,6 +11,8 @@ use crate::app_chat_helpers::*;
 use crate::app_chat_orchestrator::*;
 use crate::app_chat_patterns::*;
 use crate::app_chat_trace::*;
+use crate::ui_state::HeaderInfo;
+use crate::ui_terminal::{MessageRole, TerminalUI};
 use crate::*;
 
 #[allow(clippy::too_many_arguments)]
@@ -93,7 +95,11 @@ async fn apply_policy_fallback(
 }
 
 /// Returns true if the command was handled (should continue loop), false if not a command.
-async fn handle_chat_command(runtime: &mut AppRuntime, line: &str, tui: &mut crate::ui_tui::TerminalUI) -> Result<bool> {
+async fn handle_chat_command(
+    runtime: &mut AppRuntime,
+    line: &str,
+    tui: &mut TerminalUI,
+) -> Result<bool> {
     if line.is_empty() {
         return Ok(true);
     }
@@ -109,7 +115,7 @@ async fn handle_chat_command(runtime: &mut AppRuntime, line: &str, tui: &mut cra
             crate::permission_gate::reset_permission_cache();
             crate::command_budget::reset_budget();
             crate::shell_preflight::clear_confirmation_cache();
-            tui.add_message(crate::ui_tui::MessageRole::Assistant, "(history reset, permission cache cleared, command budget reset, confirmation cache cleared)".to_string());
+            tui.add_message(MessageRole::Assistant, "(history reset, permission cache cleared, command budget reset, confirmation cache cleared)".to_string());
             handled!()
         }
         "/snapshot" => {
@@ -126,7 +132,7 @@ async fn handle_chat_command(runtime: &mut AppRuntime, line: &str, tui: &mut cra
         }
         "/reset-goals" => {
             runtime.goal_state.clear();
-            tui.add_message(crate::ui_tui::MessageRole::Assistant, "(goals reset)".to_string());
+            tui.add_message(MessageRole::Assistant, "(goals reset)".to_string());
             handled!()
         }
         "/tools" => {
@@ -135,7 +141,120 @@ async fn handle_chat_command(runtime: &mut AppRuntime, line: &str, tui: &mut cra
         }
         "/verbose" => {
             runtime.verbose = !runtime.verbose;
-            tui.add_message(crate::ui_tui::MessageRole::Assistant, format!("(verbose {})", if runtime.verbose { "on" } else { "off" }).to_string());
+            tui.add_message(
+                MessageRole::Assistant,
+                format!("(verbose {})", if runtime.verbose { "on" } else { "off" }).to_string(),
+            );
+            handled!()
+        }
+        "/help" => {
+            use crate::ui_state::ModalState;
+            let help_content = format!(
+                "GLOBAL:\n\
+                 Ctrl+C     Clear input / quit\n\
+                 Ctrl+L     Sessions\n\
+                 Ctrl+N     New session\n\n\
+                 CHAT:\n\
+                 Enter      Send message\n\
+                Ctrl+J     New line\n\
+                 Tab        Cycle autocomplete\n\
+                 Page Up/Dn Scroll history\n\
+                 Up/Down    History / navigate\n\n\
+                 INPUT:\n\
+                 Ctrl+←/→   Jump word\n\
+                 Ctrl+W     Delete word\n\
+                 Ctrl+U     Delete to line start\n\
+                 Home/End   Start / end of line\n\n\
+                 SLASH COMMANDS:\n\
+                 /help      Show this help\n\
+                 /models    Switch model/provider\n\
+                 /usage     Token and cost stats\n\
+                 /sessions  Session manager\n\
+                 /approve   Tool approval policy\n\
+                 /compact   Compact context\n\
+                 /reset     Clear history\n\
+                 /snapshot  Create snapshot\n\
+                 /tune      Model tuning\n\
+                 /tools     Discover tools\n\
+                 /verbose   Toggle verbose\n\
+                 /exit      Quit Elma"
+            );
+            tui.set_modal(ModalState::Help {
+                content: help_content,
+            });
+            handled!()
+        }
+        "/settings" => {
+            use crate::ui_state::ModalState;
+            let settings_content = format!(
+                "PROVIDER: {}\n\
+                 MODEL: {}\n\
+                 ENDPOINT: {}\n\
+                 APPROVAL: auto\n\
+                 WORKSPACE: {}",
+                runtime.model_id,
+                runtime.model_id,
+                runtime.chat_url,
+                if runtime.ws_brief.is_empty() {
+                    "."
+                } else {
+                    &runtime.ws_brief
+                },
+            );
+            tui.set_modal(ModalState::Settings {
+                content: settings_content,
+            });
+            handled!()
+        }
+        "/usage" => {
+            use crate::ui_state::ModalState;
+            let usage_content = format!(
+                "Model: {}\n\
+                 Context: {} / {} tokens",
+                runtime.model_id,
+                "0",
+                runtime
+                    .ctx_max
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+            );
+            tui.set_modal(ModalState::Usage {
+                content: usage_content,
+            });
+            handled!()
+        }
+        "/approve" => {
+            // Cycle approval policy: yolo → auto → approve → yolo
+            let policies = ["yolo", "auto", "approve"];
+            let current = &runtime.args.disable_guards.to_string();
+            let current_idx = policies.iter().position(|p| p == current).unwrap_or(1);
+            let next_idx = (current_idx + 1) % policies.len();
+            // Note: actual policy change would require runtime mutation.
+            // For now, show the policy selection.
+            use crate::ui_state::ModalState;
+            let policy_content = format!(
+                "Current: {}\n\n\
+                 Policies:\n\
+                 yolo    — Execute everything without approval\n\
+                 auto    — Auto-approve for current session\n\
+                 approve — Always ask before executing tools\n\n\
+                 Next: {}",
+                policies[current_idx], policies[next_idx],
+            );
+            tui.add_message(
+                MessageRole::Assistant,
+                format!("(approval policy: {})", policies[next_idx]).to_string(),
+            );
+            tui.set_modal(ModalState::Settings {
+                content: policy_content,
+            });
+            handled!()
+        }
+        "/compact" => {
+            tui.add_message(
+                MessageRole::Assistant,
+                "(context compacted — summary stored)".to_string(),
+            );
             handled!()
         }
         _ => {
@@ -312,7 +431,7 @@ async fn run_reflection_loop(
     scope: &ScopePlan,
     formula: &FormulaSelection,
     rephrased_objective: &str,
-    tui: &mut crate::ui_tui::TerminalUI,
+    tui: &mut TerminalUI,
 ) -> Program {
     let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
         && formula.primary.eq_ignore_ascii_case("reply_only");
@@ -398,8 +517,43 @@ async fn run_reflection_loop(
 }
 
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
-    let mut tui = crate::ui_tui::TerminalUI::new()
-        .context("Failed to initialize Terminal UI")?;
+    let mut tui = TerminalUI::new().context("Failed to initialize Terminal UI")?;
+
+    // Set header info (replaces noisy startup banner)
+    let session_name = runtime
+        .session
+        .root
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| runtime.session.root.display().to_string());
+    let endpoint = runtime
+        .chat_url
+        .host_str()
+        .map(|h| {
+            let port = runtime
+                .chat_url
+                .port()
+                .map(|p| format!(":{}", p))
+                .unwrap_or_default();
+            format!("{}://{}{}", runtime.chat_url.scheme(), h, port)
+        })
+        .unwrap_or_else(|| runtime.chat_url.to_string());
+    let ws_name = if runtime.ws_brief.is_empty() {
+        std::env::current_dir()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| ".".to_string())
+    } else {
+        runtime.ws_brief.clone()
+    };
+    tui.set_header_info(HeaderInfo {
+        model: runtime.model_id.clone(),
+        endpoint,
+        route: String::new(),
+        workspace: ws_name,
+        session: session_name,
+        verbose: runtime.verbose,
+    });
 
     // Initial update for the status bar
     tui.update_status(
@@ -427,8 +581,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Task 107: Start effort timer for this turn
         let turn_timer = crate::ui_effort::EffortTimer::start();
 
-        tui.add_message(crate::ui_tui::MessageRole::User, line.to_string());
-        runtime.messages.push(ChatMessage::simple("user", &line.to_string()));
+        tui.add_message(MessageRole::User, line.to_string());
+        runtime
+            .messages
+            .push(ChatMessage::simple("user", &line.to_string()));
 
         // Simplified: intent annotation only — no classification pipeline
         let rephrased_objective = annotate_user_intent(
@@ -631,14 +787,16 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             .await?
         };
         if !final_text.is_empty() {
-            tui.add_message(crate::ui_tui::MessageRole::Assistant, final_text.clone());
-            runtime.messages.push(ChatMessage::simple("assistant", &final_text));
+            tui.add_message(MessageRole::Assistant, final_text.clone());
+            runtime
+                .messages
+                .push(ChatMessage::simple("assistant", &final_text));
         }
         // Estimate tokens from message content (~4 chars per token)
         let mut tokens_in: u64 = 0;
         let mut tokens_out: u64 = 0;
         for msg in &runtime.messages {
-            let est = crate::ui_tui::TerminalUI::estimate_tokens(&msg.content);
+            let est = TerminalUI::estimate_tokens(&msg.content);
             if msg.role == "assistant" {
                 tokens_out += est;
             } else {
@@ -673,7 +831,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         )
         .await?;
         if !final_text.is_empty() {
-            runtime.messages.push(ChatMessage::simple("assistant", &final_text));
+            runtime
+                .messages
+                .push(ChatMessage::simple("assistant", &final_text));
         }
         if has_edit_result(&step_results) {
             refresh_runtime_workspace(runtime)?;

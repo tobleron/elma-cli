@@ -39,7 +39,7 @@ pub async fn run_refinement_phase(
         repeat_penalty: Some(refinement_cfg.repeat_penalty),
         reasoning_format: Some(refinement_cfg.reasoning_format.clone()),
         grammar: Some(crate::json_program_grammar()),
-    tools: None,
+        tools: None,
     };
 
     let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;

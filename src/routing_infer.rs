@@ -70,7 +70,7 @@ pub(crate) async fn infer_digit_router(
         repeat_penalty: Some(router_cfg.repeat_penalty),
         reasoning_format: Some(router_cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
     let resp = chat_once_with_timeout(client, chat_url, &req, router_cfg.timeout_s.min(45)).await?;
     let raw = resp

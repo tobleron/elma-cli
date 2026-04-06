@@ -2,56 +2,95 @@ This file provides universal guidance for agents working in this repository.
 
 ## UI Design Philosophy
 
-### Minimalistic TUI
-Elma's terminal UI follows a structured layout system inspired by Claude Code's design:
-- **Section-based output**: Thin borders (`━`, `─`), not heavy boxes
-- **Information-dense**: Every character serves a purpose
-- **No chrome**: No decorative borders or visual noise
-- **Full content**: Never truncate output — complete markdown is always rendered
-- **Graceful fallback**: When not in a terminal (piped/scripted), output degrades to plain text
-- **Markdown rendering**: Headers, bold, italic, lists, code blocks, blockquotes, horizontal rules — all rendered in-terminal
+### Screen Architecture
+Elma's terminal UI is a custom crossterm + ANSI renderer with a 5-frame layout:
 
-### Catppuccin Mocha Color Palette
-The **only** color theme used throughout Elma is [Catppuccin Mocha](https://github.com/catppuccin/catppuccin):
+```
+┌──────────────────────────────────────────────────┐  ← FRAME 1: Header strip (1 row)
+  Elma  WORKFLOW · elma-cli · s4a2    qwen3:4b · localhost
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ← faint separator
+
+  > list files in src                             ← FRAME 2: Transcript (scrollable)
+  
+  ● Here are the files I found...
+  
+  ◦ SHELL  ls src/
+  ✓ SHELL completed (0.3s)
+  
+  → executing shell: cargo test -q                  ← FRAME 3: Activity rail (1 row)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ← FRAME 4: Composer/footer
+  > type here             qwen3:4b · 45% ctx · ⏱ 2.1s
+  ████░░░░░░ 4.1k/8.0k [51.3%]                     ← FRAME 4c: Context bar (optional)
+└──────────────────────────────────────────────────┘
+```
+
+- **No ratatui** — pure crossterm raw mode + ANSI escape codes
+- **No per-message boxes** — spacing and prefix hierarchy create visual structure
+- **Gruvbox Dark Hard only** — no Catppuccin, Tokyo Night, or Rose Pine
+- **Span-based rendering** internally → wrap → serialize to ANSI
+- **Full redraw on state change** — no high-frequency repaint loop
+
+### Gruvbox Dark Hard Color Palette
+The **only** color theme used throughout Elma is [Gruvbox Dark Hard](https://github.com/morhetz/gruvbox):
 
 | Color | Hex | Semantic Usage |
 |-------|-----|---------------|
-| **Mauve** `#cba6f7` | Elma prefix, primary accent, prompts |
-| **Teal** `#94e2d5` | Tool execution, informational messages |
-| **Red** `#f38ba8` | Errors, failures, destructive blocks |
-| **Yellow** `#f9e2af` | Warnings, caution commands, shell commands |
-| **Green** `#a6e3a1` | Success, confirmations, fast operations |
-| **Text** `#cdd6f4` | Primary text, normal output |
-| **Overlay0** `#6c7086` | Dim text, timestamps, metadata |
-
-**Design choice:** Catppuccin Mocha over Tokyo Night and Rose Pine for warm, inviting tones (not cold/clinical), soft contrast for long sessions, and a modern aesthetic popular in dev tooling. Each color has specific meaning — mauve means "Elma is speaking", teal means "something is happening", red means "something broke", yellow means "pay attention", green means "all good".
+| **Yellow** `#fabd2f` | Prompts, tool names, warnings, H headers |
+| **Red** `#fb4934` | Errors, failures, destructive blocks |
+| **Green** `#b8bb26` | Success, confirmations, safe operations |
+| **Blue** `#83a598` | Tool execution, informational messages, bullets |
+| **Purple** `#d3869b` | Elma prefix, inline code, assistant dot |
+| **Aqua** `#8ec07c` | Secondary accent, activity rail |
+| **Orange** `#fe8019` | Highlights, important markers |
+| **Fg** `#ebdbb2` | Primary text, normal output |
+| **Gray** `#928374` | Metadata, dim text, separators |
 
 ### Module Organization
 UI modules are focused and independent:
 
 | Module | Purpose | Dependencies |
 |--------|---------|-------------|
-| `ui_layout.rs` | Structured layout: borders, sections, status line | crossterm, ui_colors |
-| `ui_markdown.rs` | Full markdown rendering: headers, lists, code blocks | ui_colors, ui_syntax |
-| `ui_colors.rs` | ANSI color functions (Tokyo Night) | None |
-| `ui_tui.rs` | Ratatui TUI wrapper + Tokyo Night palette | ratatui, crossterm |
-| `ui_progress.rs` | Indicatif spinners and progress bars | indicatif |
-| `ui_interact.rs` | Inquire selection menus and confirmations | inquire |
-| `ui_syntax.rs` | Syntect syntax highlighting for code blocks | syntect |
-| `ui_spinner.rs` | Braille spinner (std::thread fallback) | None |
-| `ui_effort.rs` | Wall-clock effort indicator | None |
-| `ui_context_bar.rs` | Token usage progress bar | None |
-| `ui_trace.rs` | Trace output formatting | None |
+| `ui_theme.rs` | Gruvbox RGB constants + ANSI helpers | ui_colors |
+| `ui_terminal.rs` | TerminalUI struct, crossterm I/O, event loop | ui_render, ui_state, crossterm |
+| `ui_render.rs` | Full-screen rendering from UIState | ui_theme, ui_wrap, ui_markdown, ui_state |
+| `ui_state.rs` | Global state + UI state model (TranscriptItem, etc.) | None |
+| `ui_wrap.rs` | ANSI-safe text wrapping | unicode-width |
+| `ui_modal.rs` | Modal overlay rendering | ui_theme, ui_wrap, ui_state |
+| `ui_markdown.rs` | Full markdown + syntax-highlighted code blocks | ui_colors, ui_syntax |
+| `ui_colors.rs` | Gruvbox ANSI color functions | None |
+| `ui_syntax.rs` | Syntect syntax highlighting | syntect |
+| `ui_progress.rs` | Indicatif spinners and progress bars | indicatif, ui_colors |
+| `ui_interact.rs` | Inquire selection menus | inquire |
+| `ui_spinner.rs` | Braille spinner (std::thread fallback) | ui_colors |
+| `ui_effort.rs` | Wall-clock effort indicator | ui_colors |
+| `ui_context_bar.rs` | Token usage progress bar | ui_colors |
+| `ui_layout.rs` | Terminal width, HR rendering | crossterm, ui_colors |
+| `ui_trace.rs` | Trace output formatting | ui_colors |
 
-**Design rule:** Each UI module has a single responsibility and zero coupling to other UI modules. Color consistency is maintained through shared Rose Pine constants in `ui_tui.rs`.
+**Design rule:** Each UI module has a single responsibility. Color consistency is maintained through `ui_colors.rs` (Gruvbox Dark Hard). No ratatui in the active chat path.
 
-### Ratatui Integration
-Ratatui is used **minimally** — only for structured layout when rendering complex turn responses. The simple ANSI-based output (`eprintln!`) remains the primary path for most output. Ratatui is an enhancement, not a replacement.
+### Rendering Pipeline
+1. `UIState` is the source of truth for what's on screen
+2. `render_screen(state, width, height, input)` → `ScreenBuffer{lines, cursor_row, cursor_col}`
+3. Terminal draws lines via crossterm cursor positioning
+4. Only redraws when: input changes, transcript changes, status changes, resize, scroll, modal open/close
+
+### Transcript Item Types
+- `User` — prefix: `> ` (dim)
+- `Assistant` — prefix: `● ` (purple dot), full markdown rendering
+- `ToolStart` — prefix: `◦ NAME command` (yellow name, dim command)
+- `ToolResult` — `✓ NAME (duration)` or `✗ NAME`, indented output
+- `MetaEvent` — `[CATEGORY] message` (colored by category: PLAN=blue, CLASSIFY=gray, REFLECT=purple)
+- `Warning` — compact boxed alert with red border
+- `Thinking` — prefix: `~ ` (dim, hidden by default)
+- `System` — dim system messages
 
 ### Additional UI Libraries
-- **indicatif**: Thread-safe spinners and progress bars for tool execution and multi-step operations
-- **inquire**: Interactive selection menus with vim-mode (j/k navigation) and Rose Pine themed prompts
-- **syntect**: Language-aware syntax highlighting for code blocks (Rust, Python, JSON, etc.) with ANSI output
+- **crossterm**: Raw terminal mode, alternate screen, events, cursor positioning
+- **unicode-width**: Accurate display width for wrapping and layout
+- **indicatif**: Thread-safe spinners and progress bars for non-TUI paths
+- **inquire**: Interactive selection menus with vim-mode (j/k navigation)
+- **syntect**: Language-aware syntax highlighting for code blocks with ANSI output
 
 ## Elma CLI Philosophy
 

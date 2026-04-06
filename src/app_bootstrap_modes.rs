@@ -2,7 +2,6 @@
 //!
 //! App Bootstrap - Mode Handling and Banners
 
-use crate::ui_colors::*;
 use crate::*;
 
 pub(crate) fn validate_mode_flags(args: &Args) -> Result<()> {
@@ -128,54 +127,19 @@ pub(crate) async fn handle_special_modes(
     Ok(true)
 }
 
+/// Emit startup banner to stderr.
+///
+/// Note: In interactive chat mode, this info is displayed in the header strip
+/// instead. This function is kept for non-interactive / scripted modes.
 pub(crate) fn emit_startup_banner(
-    args: &Args,
-    chat_url: &Url,
-    model_id: &str,
-    model_cfg_dir: &Path,
-    session: &SessionPaths,
-    tuned: bool,
+    _args: &Args,
+    _chat_url: &Url,
+    _model_id: &str,
+    _model_cfg_dir: &Path,
+    _session: &SessionPaths,
+    _tuned: bool,
 ) {
-    let target = chat_url
-        .host_str()
-        .map(|host| {
-            let port = chat_url.port().map(|p| format!(":{p}")).unwrap_or_default();
-            format!("{}://{host}{port}", chat_url.scheme())
-        })
-        .unwrap_or_else(|| chat_url.to_string());
-    let session_name = session
-        .root
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| session.root.display().to_string());
-
-    if args.no_color {
-        eprintln!("Elma");
-        eprintln!("  target   {target}");
-        eprintln!("  model    {model_id}");
-        eprintln!("  config   {}", model_cfg_dir.display());
-        eprintln!("  session  {session_name}");
-        if tuned {
-            eprintln!("  status   ✓ tuned (using cached results)");
-        }
-        eprintln!("  commands /exit  /reset  /snapshot  /rollback <id>  /tune\n");
-        return;
-    }
-
-    eprintln!("{}", elma_accent("Elma"));
-    eprintln!("{} {target}", meta_comment("  target  "));
-    eprintln!("{} {model_id}", meta_comment("  model   "));
-    eprintln!("{} {}", meta_comment("  config  "), model_cfg_dir.display());
-    eprintln!("{} {session_name}", meta_comment("  session "));
-    if tuned {
-        eprintln!(
-            "{} {}",
-            warn_yellow("  status  "),
-            "✓ tuned (using cached results)"
-        );
-    }
-    eprintln!(
-        "{} /exit  /reset  /snapshot  /rollback <id>  /tune\n",
-        meta_comment("  commands")
-    );
+    // Banner migrated to header strip in interactive mode.
+    // Non-interactive paths may call this, but we suppress output to avoid
+    // duplicating what the header already shows.
 }

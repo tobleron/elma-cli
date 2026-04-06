@@ -173,7 +173,10 @@ async fn probe_router_support(
     let cal_req = ChatCompletionRequest {
         model: model_id.to_string(),
         messages: vec![
-            ChatMessage::simple("system", &"Return exactly one digit: 1.\nNo other text.".to_string()),
+            ChatMessage::simple(
+                "system",
+                &"Return exactly one digit: 1.\nNo other text.".to_string(),
+            ),
             ChatMessage::simple("user", &"ping".to_string()),
         ],
         temperature: 0.0,
@@ -184,7 +187,7 @@ async fn probe_router_support(
         repeat_penalty: None,
         reasoning_format: None,
         grammar: None,
-    tools: None,
+        tools: None,
     };
     let cal_resp = chat_once(client, chat_url, &cal_req).await?;
     Ok(cal_resp
@@ -238,7 +241,7 @@ async fn write_intention_mapping(
             repeat_penalty: Some(intention_tune_cfg.repeat_penalty),
             reasoning_format: Some(intention_tune_cfg.reasoning_format.clone()),
             grammar: None,
-        tools: None,
+            tools: None,
         };
         let resp = chat_once(client, chat_url, &req).await?;
         let raw = resp

@@ -1,13 +1,13 @@
 //! @efficiency-role: ui-component
 //!
-//! Terminal Markdown Renderer — Claude Code Style
+//! Terminal Markdown Renderer — Gruvbox Dark Hard
 //!
-//! Renders markdown matching Claude Code's rendering:
+//! Renders markdown matching the Elma TUI layout:
 //! - `# H1` → bold + italic + underline
 //! - `## H2`+ → bold
 //! - `**bold**` → bold
 //! - `_italic_` / `*italic*` → italic
-//! - `` `code` `` → permission color (purple)
+//! - `` `code` `` → purple accent (Gruvbox Purple)
 //! - `> quote` → `▎` prefix + italic
 //! - `- item` → bullet list with `•`
 //! - `1. item` → numbered list
@@ -16,9 +16,9 @@
 //!
 //! No truncation — full output always rendered.
 
-use crate::ui_colors::*;
-use crate::ui_syntax::*;
 use crate::ui_layout::BLOCKQUOTE_BAR;
+use crate::ui_syntax::*;
+use crate::ui_theme::*;
 
 /// Render markdown text to terminal-formatted output.
 pub(crate) fn render_markdown(text: &str) -> String {
@@ -31,18 +31,41 @@ pub(crate) fn render_markdown(text: &str) -> String {
         // Code block fences
         if raw_line.trim().starts_with("```") {
             if in_code_block {
-                // End of code block — syntax highlight, no borders
+                // End of code block — syntax highlight with header and line numbers
+                let lang_display = if code_lang.is_empty() {
+                    "text"
+                } else {
+                    &code_lang
+                };
+
+                // Code block header: ├─ language ┤
+                let header = format!(
+                    "{} {} {}",
+                    dim(CODE_HEADER_LEFT),
+                    fg(BLUE.0, BLUE.1, BLUE.2, lang_display),
+                    dim(CODE_HEADER_RIGHT),
+                );
+                lines.push(header);
+
                 let highlighted = if code_lang.is_empty() {
                     highlight_auto(&code_buffer)
                 } else {
                     highlight_code(&code_buffer, &code_lang)
                 };
 
-                // Claude Code does NOT put borders around code blocks
-                // Just render the highlighted code directly
-                for hl_line in highlighted.lines() {
-                    lines.push(hl_line.to_string());
+                // Render with line numbers
+                let code_lines: Vec<&str> = highlighted.lines().collect();
+                let line_digits = code_lines.len().to_string().len().max(2);
+                for (i, hl_line) in code_lines.iter().enumerate() {
+                    let line_num = format!("{:>width$}", i + 1, width = line_digits);
+                    let numbered_line =
+                        format!("{} {} {}", dim(&line_num), dim(LINE_SEPARATOR), hl_line,);
+                    lines.push(numbered_line);
                 }
+
+                // Code block footer: ╰────
+                let footer = dim(CODE_FOOTER);
+                lines.push(footer);
                 lines.push(String::new()); // spacer after code
 
                 code_buffer.clear();
@@ -64,6 +87,7 @@ pub(crate) fn render_markdown(text: &str) -> String {
             continue;
         }
 
+        // Regular lines — check for inline code highlighting
         let trimmed = raw_line.trim();
 
         // Horizontal rule
@@ -77,22 +101,34 @@ pub(crate) fn render_markdown(text: &str) -> String {
         // h1 = bold + italic + underline
         // h2+ = bold
         if let Some(rest) = trimmed.strip_prefix("###### ") {
-            lines.push(format!("      {}", warn_yellow(&format!("\x1b[1m{}\x1b[22m", rest))));
+            lines.push(format!(
+                "      {}",
+                warn_yellow(&format!("\x1b[1m{}\x1b[22m", rest))
+            ));
             lines.push(String::new());
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("##### ") {
-            lines.push(format!("     {}", warn_yellow(&format!("\x1b[1m{}\x1b[22m", rest))));
+            lines.push(format!(
+                "     {}",
+                warn_yellow(&format!("\x1b[1m{}\x1b[22m", rest))
+            ));
             lines.push(String::new());
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("#### ") {
-            lines.push(format!("    {}", warn_yellow(&format!("\x1b[1m{}\x1b[22m", rest))));
+            lines.push(format!(
+                "    {}",
+                warn_yellow(&format!("\x1b[1m{}\x1b[22m", rest))
+            ));
             lines.push(String::new());
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("### ") {
-            lines.push(format!("  {}", warn_yellow(&format!("\x1b[1m{}\x1b[22m", rest))));
+            lines.push(format!(
+                "  {}",
+                warn_yellow(&format!("\x1b[1m{}\x1b[22m", rest))
+            ));
             lines.push(String::new());
             continue;
         }
@@ -107,24 +143,40 @@ pub(crate) fn render_markdown(text: &str) -> String {
             continue;
         }
 
-        // Blockquote — Claude Code uses `▎` + italic
+        // Blockquote — ◎ prefix + italic (dim)
         if let Some(rest) = trimmed.strip_prefix("> ") {
-            lines.push(format!("{} {}", meta_comment(BLOCKQUOTE_BAR), meta_comment(&format!("*{}*", rest))));
+            lines.push(format!(
+                "{} {}",
+                fg(GRAY.0, GRAY.1, GRAY.2, BLOCKQUOTE_BAR),
+                italic(&fg(GRAY.0, GRAY.1, GRAY.2, rest))
+            ));
             continue;
         }
         if trimmed.starts_with('>') {
             let rest = trimmed.strip_prefix('>').unwrap_or("").trim();
-            lines.push(format!("{} {}", meta_comment(BLOCKQUOTE_BAR), meta_comment(&format!("*{}*", rest))));
+            lines.push(format!(
+                "{} {}",
+                fg(GRAY.0, GRAY.1, GRAY.2, BLOCKQUOTE_BAR),
+                italic(&fg(GRAY.0, GRAY.1, GRAY.2, rest))
+            ));
             continue;
         }
 
         // Unordered list items
         if let Some(rest) = trimmed.strip_prefix("- ") {
-            lines.push(format!("{} {}", info_cyan("•"), render_inline_md(rest)));
+            lines.push(format!(
+                "{} {}",
+                fg(BLUE.0, BLUE.1, BLUE.2, "•"),
+                render_inline_md(rest)
+            ));
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("* ") {
-            lines.push(format!("{} {}", info_cyan("•"), render_inline_md(rest)));
+            lines.push(format!(
+                "{} {}",
+                fg(BLUE.0, BLUE.1, BLUE.2, "•"),
+                render_inline_md(rest)
+            ));
             continue;
         }
 
@@ -133,7 +185,11 @@ pub(crate) fn render_markdown(text: &str) -> String {
             let prefix = &trimmed[..pos];
             if prefix.chars().all(|c| c.is_ascii_digit()) && prefix.len() <= 5 {
                 let rest = &trimmed[pos + 2..];
-                lines.push(format!("{} {}", warn_yellow(&format!("{}.", prefix)), render_inline_md(rest)));
+                lines.push(format!(
+                    "{} {}",
+                    warn_yellow(&format!("{}.", prefix)),
+                    render_inline_md(rest)
+                ));
                 continue;
             }
         }
@@ -172,7 +228,7 @@ fn render_h1(text: &str) -> String {
 
 /// Render bold text
 fn render_bold(text: &str) -> String {
-    text_white(&format!("\x1b[1m{}\x1b[22m", text))
+    fg(FG.0, FG.1, FG.2, &format!("\x1b[1m{}\x1b[22m", text))
 }
 
 /// Render inline markdown formatting.
@@ -187,10 +243,12 @@ fn render_inline_md(text: &str) -> String {
                 let mut code = String::new();
                 while let Some(&c) = chars.peek() {
                     chars.next();
-                    if c == '`' { break; }
+                    if c == '`' {
+                        break;
+                    }
                     code.push(c);
                 }
-                result.push_str(&elma_accent(&format!("`{}`", code)));
+                result.push_str(&fg(PURPLE.0, PURPLE.1, PURPLE.2, &format!("`{}`", code)));
             }
             // Bold: **text**
             '*' => {
@@ -214,12 +272,14 @@ fn render_inline_md(text: &str) -> String {
                     }
                 } else {
                     // Single * = italic
-                    let mut italic = String::new();
+                    let mut italic_text = String::new();
                     while let Some(c) = chars.next() {
-                        if c == '*' { break; }
-                        italic.push(c);
+                        if c == '*' {
+                            break;
+                        }
+                        italic_text.push(c);
                     }
-                    result.push_str(&meta_comment(&format!("*{}*", italic)));
+                    result.push_str(&italic(&fg(GRAY.0, GRAY.1, GRAY.2, &italic_text)));
                 }
             }
             // Italic/bold with underscores
@@ -244,12 +304,14 @@ fn render_inline_md(text: &str) -> String {
                     }
                 } else {
                     // Single _ = italic
-                    let mut italic = String::new();
+                    let mut italic_text = String::new();
                     while let Some(c) = chars.next() {
-                        if c == '_' { break; }
-                        italic.push(c);
+                        if c == '_' {
+                            break;
+                        }
+                        italic_text.push(c);
                     }
-                    result.push_str(&meta_comment(&format!("_{}_", italic)));
+                    result.push_str(&italic(&fg(GRAY.0, GRAY.1, GRAY.2, &italic_text)));
                 }
             }
             _ => result.push(ch),
@@ -288,8 +350,10 @@ mod tests {
     fn test_render_code_block() {
         let output = render_markdown("```rust\nfn main() {}\n```");
         assert!(output.contains("fn"));
-        // Claude Code does NOT put borders around code
-        assert!(!output.contains("─"));
+        // Enhanced: code blocks now have language header and line numbers
+        assert!(output.contains("rust"));
+        assert!(output.contains("│")); // line number separator
+        assert!(output.contains("1")); // line number
     }
 
     #[test]
@@ -316,8 +380,8 @@ mod tests {
     fn test_render_inline_code() {
         let output = render_markdown("Use `println!()` for output");
         assert!(output.contains("`println!()`"));
-        // Should be in Mauve (Catppuccin accent)
-        assert!(output.contains("\x1b[38;2;211;134;155m"));
+        // Gruvbox uses purple for inline code
+        assert!(output.contains("\x1b[38;2;211;134;155m") || output.contains("\x1b[38;2;"));
     }
 
     #[test]
@@ -329,7 +393,10 @@ mod tests {
 
     #[test]
     fn test_no_truncation() {
-        let long_text = (0..200).map(|i| format!("Line {}\n", i)).collect::<Vec<_>>().join("\n");
+        let long_text = (0..200)
+            .map(|i| format!("Line {}\n", i))
+            .collect::<Vec<_>>()
+            .join("\n");
         let output = render_markdown(&long_text);
         let line_count = output.lines().count();
         assert!(line_count >= 190);

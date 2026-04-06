@@ -368,7 +368,7 @@ A Program JSON must contain a "steps" array of objects with "id", "type", "cmd" 
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar: Some(crate::json_program_grammar()),
-    tools: None,
+        tools: None,
     };
 
     let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;

@@ -47,7 +47,12 @@ fn ensure_tool_results_dir(session: &SessionPaths) -> Result<PathBuf> {
 }
 
 /// Persist a tool result to disk and return the path.
-fn persist_result(session: &SessionPaths, tool_call_id: &str, tool_name: &str, content: &str) -> Result<PathBuf> {
+fn persist_result(
+    session: &SessionPaths,
+    tool_call_id: &str,
+    tool_name: &str,
+    content: &str,
+) -> Result<PathBuf> {
     let dir = ensure_tool_results_dir(session)?;
     let path = dir.join(format!("{}.txt", tool_call_id));
     let tmp_path = dir.join(format!("{}.tmp", tool_call_id));
@@ -66,14 +71,24 @@ fn persist_result(session: &SessionPaths, tool_call_id: &str, tool_name: &str, c
 
     std::fs::write(&tmp_path, &meta_content)
         .with_context(|| format!("Failed to write tool result: {}", tmp_path.display()))?;
-    std::fs::rename(&tmp_path, &path)
-        .with_context(|| format!("Failed to rename tool result: {} → {}", tmp_path.display(), path.display()))?;
+    std::fs::rename(&tmp_path, &path).with_context(|| {
+        format!(
+            "Failed to rename tool result: {} → {}",
+            tmp_path.display(),
+            path.display()
+        )
+    })?;
 
     Ok(path)
 }
 
 /// Build the `<persisted-output>` wrapper for the model.
-fn build_persisted_wrapper(tool_name: &str, original_size: usize, preview: &str, persisted_path: &PathBuf) -> String {
+fn build_persisted_wrapper(
+    tool_name: &str,
+    original_size: usize,
+    preview: &str,
+    persisted_path: &PathBuf,
+) -> String {
     format!(
         "[persisted-output]\n\
          Tool: {}\n\
@@ -85,7 +100,10 @@ fn build_persisted_wrapper(tool_name: &str, original_size: usize, preview: &str,
         tool_name,
         original_size,
         if preview.len() > PREVIEW_SIZE_CHARS {
-            format!("{}...", preview.chars().take(PREVIEW_SIZE_CHARS).collect::<String>())
+            format!(
+                "{}...",
+                preview.chars().take(PREVIEW_SIZE_CHARS).collect::<String>()
+            )
         } else {
             preview.to_string()
         },
@@ -116,15 +134,23 @@ pub(crate) fn apply_tool_result_budget(
     // Persist to disk
     match persist_result(session, tool_call_id, tool_name, content) {
         Ok(path) => {
-            trace_verbose(true, &format!(
-                "tool_result_persisted: {} ({} chars → {})",
-                tool_name,
-                content.len(),
-                path.display()
-            ));
+            trace_verbose(
+                true,
+                &format!(
+                    "tool_result_persisted: {} ({} chars → {})",
+                    tool_name,
+                    content.len(),
+                    path.display()
+                ),
+            );
             let preview = content.chars().take(PREVIEW_SIZE_CHARS).collect::<String>();
             BudgetedResult {
-                content_for_model: build_persisted_wrapper(tool_name, content.len(), &preview, &path),
+                content_for_model: build_persisted_wrapper(
+                    tool_name,
+                    content.len(),
+                    &preview,
+                    &path,
+                ),
                 persisted: true,
                 persisted_path: Some(path),
                 original_size: content.len(),
@@ -132,10 +158,20 @@ pub(crate) fn apply_tool_result_budget(
         }
         Err(e) => {
             // Fallback: truncate instead of crash
-            trace(args_placeholder(), &format!("tool_result_persist_failed: {} (falling back to truncation): {}", tool_name, e));
+            trace(
+                args_placeholder(),
+                &format!(
+                    "tool_result_persist_failed: {} (falling back to truncation): {}",
+                    tool_name, e
+                ),
+            );
             let truncated = content.chars().take(threshold_chars).collect::<String>();
             BudgetedResult {
-                content_for_model: format!("{}... [output truncated, {} total chars]", truncated, content.len()),
+                content_for_model: format!(
+                    "{}... [output truncated, {} total chars]",
+                    truncated,
+                    content.len()
+                ),
                 persisted: false,
                 persisted_path: None,
                 original_size: content.len(),
@@ -156,13 +192,17 @@ pub(crate) fn apply_aggregate_budget(
         return;
     }
 
-    trace_verbose(true, &format!(
-        "tool_result_aggregate_budget: {} chars exceeds limit {}, persisting largest first",
-        total, max_total_chars
-    ));
+    trace_verbose(
+        true,
+        &format!(
+            "tool_result_aggregate_budget: {} chars exceeds limit {}, persisting largest first",
+            total, max_total_chars
+        ),
+    );
 
     // Sort by size descending
-    let mut indexed: Vec<(usize, usize)> = tool_results.iter()
+    let mut indexed: Vec<(usize, usize)> = tool_results
+        .iter()
         .enumerate()
         .map(|(i, (_, _, c))| (i, c.len()))
         .collect();
@@ -188,9 +228,11 @@ pub(crate) fn apply_aggregate_budget(
             }
             Err(_) => {
                 // Fallback: truncate
-                tool_results[idx].2 = format!("{}... [truncated, {} total]",
+                tool_results[idx].2 = format!(
+                    "{}... [truncated, {} total]",
                     content.chars().take(PREVIEW_SIZE_CHARS).collect::<String>(),
-                    size);
+                    size
+                );
                 current_total = current_total - size + tool_results[idx].2.len();
             }
         }

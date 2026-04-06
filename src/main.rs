@@ -114,8 +114,8 @@ mod session_write;
 mod shell_preflight; // Task 116: Destructive Command Detection & Preflight
 mod snapshot;
 mod storage;
-mod streaming_tool_executor; // Task 115: Streaming Tool Execution
 mod strategy; // Multi-strategy planning with fallback chains (Task 010)
+mod streaming_tool_executor; // Task 115: Streaming Tool Execution
 mod text_utils;
 mod thinking_content;
 mod tool_calling;
@@ -136,19 +136,25 @@ mod types_core;
 mod types_core_impl;
 mod types_hierarchy;
 mod ui;
+mod ui_autocomplete; // IDE-grade TUI: Slash command and emoji autocomplete
 mod ui_chat;
 mod ui_colors;
 mod ui_context_bar; // Task 099: Context Window Usage Visualizer
 mod ui_effort; // Task 107: Visual Effort Indicator
+mod ui_input; // IDE-grade TUI: Multi-line input editor with history
 mod ui_interact; // Task 110: Inquire Interaction Integration
-mod ui_layout; // Structured layout with borders and sections
+mod ui_layout; // Structured layout utilities
 mod ui_markdown; // Terminal markdown renderer
+mod ui_modal; // Premium Terminal UI: Modal overlays
 mod ui_progress; // Task 109: Indicatif Progress Integration
+mod ui_render; // Premium Terminal UI: Full-screen rendering
 mod ui_spinner; // Task 101: Verb-Driven Loading Spinners
 mod ui_state;
 mod ui_syntax; // Task 111: Syntect Syntax Highlighting
+mod ui_terminal; // Premium Terminal UI: crossterm I/O, event loop
+mod ui_theme; // Premium Terminal UI: Gruvbox theme constants
 mod ui_trace;
-mod ui_tui; // Task 133: Ratatui TUI with Gruvbox + Persistent Status Bar
+mod ui_wrap; // Premium Terminal UI: ANSI-safe text wrapping
 mod verification;
 mod verification_evidence;
 mod workspace;

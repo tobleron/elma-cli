@@ -352,7 +352,7 @@ async fn build_program_with_retry(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;
@@ -441,7 +441,7 @@ async fn build_program_with_strategy(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;
@@ -519,7 +519,7 @@ async fn synthesize_meta_review(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;

@@ -12,12 +12,13 @@
 //! - Returns specific error guidance to model on failure
 
 use crate::*;
-use std::path::Path;
 use std::collections::HashSet;
-use std::sync::{Mutex, LazyLock};
+use std::path::Path;
+use std::sync::{LazyLock, Mutex};
 
 /// Confirmation cache: commands that have been confirmed after dry-run preview.
-static CONFIRMED_COMMANDS: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+static CONFIRMED_COMMANDS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 /// Threshold: warn about unscoped operations affecting this many files.
 const UNSCOPED_WARN_THRESHOLD: usize = 20;
@@ -26,14 +27,24 @@ const UNSCOPED_BLOCK_THRESHOLD: usize = 100;
 
 /// Protected directories that cannot be mutated by model-initiated commands.
 const PROTECTED_DIRS: &[&str] = &[
-    "sessions/", "config/", "_tasks/", "_dev-tasks/", "src/",
-    ".git/", "target/", "_claude_code_src/",
+    "sessions/",
+    "config/",
+    "_tasks/",
+    "_dev-tasks/",
+    "src/",
+    ".git/",
+    "target/",
+    "_claude_code_src/",
 ];
 
 /// Protected files that cannot be mutated.
 const PROTECTED_FILES: &[&str] = &[
-    "Cargo.toml", "Cargo.lock", "rust-toolchain.toml",
-    ".gitignore", "AGENTS.md", "QWEN.md",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    ".gitignore",
+    "AGENTS.md",
+    "QWEN.md",
 ];
 
 /// Clear the confirmation cache (called on session reset).
@@ -94,16 +105,28 @@ pub(crate) struct UnscopedResult {
 const DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
     ("rm ", "rm: removes files permanently"),
     ("rmdir ", "rmdir: removes directories permanently"),
-    ("git reset --hard", "git reset --hard: discards all uncommitted changes"),
-    ("git clean -f", "git clean: removes untracked files permanently"),
+    (
+        "git reset --hard",
+        "git reset --hard: discards all uncommitted changes",
+    ),
+    (
+        "git clean -f",
+        "git clean: removes untracked files permanently",
+    ),
     ("dd if=", "dd: low-level disk write, extremely dangerous"),
     ("> ", "redirect truncates file"),
     (">> ", "redirect appends to file"),
-    ("chmod -R 777", "chmod -R 777: opens all permissions recursively"),
+    (
+        "chmod -R 777",
+        "chmod -R 777: opens all permissions recursively",
+    ),
 ];
 
 const PIPE_DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
-    ("| while read", "pipe-to-while-loop: bulk operation on multiple files"),
+    (
+        "| while read",
+        "pipe-to-while-loop: bulk operation on multiple files",
+    ),
     ("| xargs rm", "pipe-to-xargs-rm: bulk deletion"),
     ("| xargs mv", "pipe-to-xargs-mv: bulk move"),
     ("| xargs", "pipe-to-xargs: bulk operation on multiple files"),
@@ -111,7 +134,9 @@ const PIPE_DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
 
 pub(crate) fn classify_command(command: &str) -> RiskLevel {
     let cmd = command.trim();
-    if cmd.is_empty() { return RiskLevel::Safe; }
+    if cmd.is_empty() {
+        return RiskLevel::Safe;
+    }
 
     for (pattern, reason) in PIPE_DESTRUCTIVE_PATTERNS {
         if cmd.contains(pattern) {
@@ -120,26 +145,58 @@ pub(crate) fn classify_command(command: &str) -> RiskLevel {
     }
 
     for (pattern, reason) in DESTRUCTIVE_PATTERNS {
-        if cmd.starts_with(pattern) || cmd.contains(&format!("; {}", pattern)) || cmd.contains(&format!("&& {}", pattern)) {
+        if cmd.starts_with(pattern)
+            || cmd.contains(&format!("; {}", pattern))
+            || cmd.contains(&format!("&& {}", pattern))
+        {
             return RiskLevel::Dangerous(format!("DANGEROUS: {}", reason));
         }
     }
 
-    if cmd.starts_with("mv ") { return RiskLevel::Caution; }
-    if cmd.starts_with("cp ") { return RiskLevel::Caution; }
+    if cmd.starts_with("mv ") {
+        return RiskLevel::Caution;
+    }
+    if cmd.starts_with("cp ") {
+        return RiskLevel::Caution;
+    }
     if cmd.contains("rm *") || (cmd.starts_with("rm ") && cmd.contains('*')) {
         return RiskLevel::Dangerous("rm with glob: may delete many files".to_string());
     }
 
     let safe_prefixes = [
-        "ls ", "ls\n", "ls", "cat ", "head ", "tail ", "wc ", "echo ",
-        "rg ", "grep ", "pwd", "pwd ", "whoami", "whoami ", "date",
-        "tree ", "find ", "stat ", "file ", "du ", "df ",
-        "git status", "git log", "git diff", "git branch",
-        "cargo build", "cargo test", "cargo check",
+        "ls ",
+        "ls\n",
+        "ls",
+        "cat ",
+        "head ",
+        "tail ",
+        "wc ",
+        "echo ",
+        "rg ",
+        "grep ",
+        "pwd",
+        "pwd ",
+        "whoami",
+        "whoami ",
+        "date",
+        "tree ",
+        "find ",
+        "stat ",
+        "file ",
+        "du ",
+        "df ",
+        "git status",
+        "git log",
+        "git diff",
+        "git branch",
+        "cargo build",
+        "cargo test",
+        "cargo check",
     ];
     for prefix in &safe_prefixes {
-        if cmd.starts_with(prefix) { return RiskLevel::Safe; }
+        if cmd.starts_with(prefix) {
+            return RiskLevel::Safe;
+        }
     }
 
     RiskLevel::Caution
@@ -147,17 +204,31 @@ pub(crate) fn classify_command(command: &str) -> RiskLevel {
 
 pub(crate) fn detect_unscoped(command: &str, workdir: &PathBuf) -> UnscopedResult {
     let cmd = command.trim();
-    if let Some(r) = check_find_unscoped(cmd, workdir) { return r; }
-    if let Some(r) = check_glob_unscoped(cmd, workdir) { return r; }
-    UnscopedResult { is_unscoped: false, estimated_count: 0, suggestion: None }
+    if let Some(r) = check_find_unscoped(cmd, workdir) {
+        return r;
+    }
+    if let Some(r) = check_glob_unscoped(cmd, workdir) {
+        return r;
+    }
+    UnscopedResult {
+        is_unscoped: false,
+        estimated_count: 0,
+        suggestion: None,
+    }
 }
 
 fn check_find_unscoped(cmd: &str, workdir: &PathBuf) -> Option<UnscopedResult> {
-    if !cmd.starts_with("find ") || cmd.contains("-maxdepth") { return None; }
-    if !cmd.contains(". ") && !cmd.contains("./") { return None; }
+    if !cmd.starts_with("find ") || cmd.contains("-maxdepth") {
+        return None;
+    }
+    if !cmd.contains(". ") && !cmd.contains("./") {
+        return None;
+    }
 
     let count = estimate_find_count(cmd, workdir);
-    if count < UNSCOPED_WARN_THRESHOLD { return None; }
+    if count < UNSCOPED_WARN_THRESHOLD {
+        return None;
+    }
 
     let suggestion = if cmd.contains("-name ") || cmd.contains("-iname ") {
         format!("This find command may match {} files. Consider adding `-maxdepth 1` to limit to the current directory.", count)
@@ -165,16 +236,24 @@ fn check_find_unscoped(cmd: &str, workdir: &PathBuf) -> Option<UnscopedResult> {
         format!("This find command may match {} files. Consider: (1) add `-maxdepth 1`, (2) use `-name '*.ext'`, or (3) specify a narrower path.", count)
     };
 
-    Some(UnscopedResult { is_unscoped: true, estimated_count: count, suggestion: Some(suggestion) })
+    Some(UnscopedResult {
+        is_unscoped: true,
+        estimated_count: count,
+        suggestion: Some(suggestion),
+    })
 }
 
 fn check_glob_unscoped(cmd: &str, workdir: &PathBuf) -> Option<UnscopedResult> {
-    if !cmd.contains("*") { return None; }
+    if !cmd.contains("*") {
+        return None;
+    }
     let count = match std::fs::read_dir(workdir) {
         Ok(entries) => entries.count(),
         Err(_) => return None,
     };
-    if count < UNSCOPED_WARN_THRESHOLD { return None; }
+    if count < UNSCOPED_WARN_THRESHOLD {
+        return None;
+    }
 
     if cmd.starts_with("mv ") || cmd.starts_with("cp ") {
         return Some(UnscopedResult {
@@ -219,8 +298,13 @@ fn generate_dry_run_preview(command: &str, workdir: &PathBuf) -> Option<String> 
 
 fn dry_run_rm(args: &str, workdir: &PathBuf) -> Option<String> {
     // Parse args to find files/globs
-    let parts: Vec<&str> = args.split_whitespace().filter(|a| !a.starts_with('-')).collect();
-    if parts.is_empty() { return None; }
+    let parts: Vec<&str> = args
+        .split_whitespace()
+        .filter(|a| !a.starts_with('-'))
+        .collect();
+    if parts.is_empty() {
+        return None;
+    }
 
     let mut files: Vec<String> = Vec::new();
     for pat in &parts {
@@ -245,19 +329,34 @@ fn dry_run_rm(args: &str, workdir: &PathBuf) -> Option<String> {
     }
 
     let preview = if files.len() > 20 {
-        let first: String = files.iter().take(10).cloned().collect::<Vec<_>>().join("\n  ");
-        format!("Dry-run: This would delete {} files:\n  {}\n  ... and {} more",
-            files.len(), first, files.len() - 10)
+        let first: String = files
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n  ");
+        format!(
+            "Dry-run: This would delete {} files:\n  {}\n  ... and {} more",
+            files.len(),
+            first,
+            files.len() - 10
+        )
     } else {
         let list = files.join("\n  ");
-        format!("Dry-run: This would delete {} file(s):\n  {}", files.len(), list)
+        format!(
+            "Dry-run: This would delete {} file(s):\n  {}",
+            files.len(),
+            list
+        )
     };
     Some(preview)
 }
 
 fn dry_run_mv(args: &str, workdir: &PathBuf) -> Option<String> {
     let parts: Vec<&str> = args.split_whitespace().collect();
-    if parts.len() < 2 { return None; }
+    if parts.len() < 2 {
+        return None;
+    }
 
     let (sources, dest) = (parts[0], parts[1]);
     let dest_path = resolve_path(dest, workdir);
@@ -275,10 +374,17 @@ fn dry_run_mv(args: &str, workdir: &PathBuf) -> Option<String> {
             }
         }
         if files.is_empty() {
-            return Some(format!("Dry-run: No files match '{}' in current directory.", sources));
+            return Some(format!(
+                "Dry-run: No files match '{}' in current directory.",
+                sources
+            ));
         }
-        return Some(format!("Dry-run: This would move {} file(s) to {}:\n  {}",
-            files.len(), dest_path.display(), files.join("\n  ")));
+        return Some(format!(
+            "Dry-run: This would move {} file(s) to {}:\n  {}",
+            files.len(),
+            dest_path.display(),
+            files.join("\n  ")
+        ));
     }
 
     let src = resolve_path(sources, workdir);
@@ -287,26 +393,42 @@ fn dry_run_mv(args: &str, workdir: &PathBuf) -> Option<String> {
     }
 
     if dest.ends_with('/') || dest_path.is_dir() {
-        Some(format!("Dry-run: This would move '{}' → '{}'", src.display(), dest_path.join(src.file_name()?).display()))
+        Some(format!(
+            "Dry-run: This would move '{}' → '{}'",
+            src.display(),
+            dest_path.join(src.file_name()?).display()
+        ))
     } else {
-        Some(format!("Dry-run: This would move '{}' → '{}'", src.display(), dest_path.display()))
+        Some(format!(
+            "Dry-run: This would move '{}' → '{}'",
+            src.display(),
+            dest_path.display()
+        ))
     }
 }
 
 fn dry_run_cp(args: &str, workdir: &PathBuf) -> Option<String> {
     let parts: Vec<&str> = args.split_whitespace().collect();
-    if parts.len() < 2 { return None; }
+    if parts.len() < 2 {
+        return None;
+    }
     let src = resolve_path(parts[0], workdir);
     let dest = resolve_path(parts[1], workdir);
     if !src.exists() {
         return Some(format!("Dry-run: Source '{}' does not exist.", parts[0]));
     }
-    Some(format!("Dry-run: This would copy '{}' → '{}'", src.display(), dest.display()))
+    Some(format!(
+        "Dry-run: This would copy '{}' → '{}'",
+        src.display(),
+        dest.display()
+    ))
 }
 
 /// Simple glob matching for single-component patterns (no path traversal).
 fn glob_match(pattern: &str, name: &str) -> bool {
-    if pattern == "*" { return true; }
+    if pattern == "*" {
+        return true;
+    }
     if pattern.contains('*') {
         let parts: Vec<&str> = pattern.split('*').collect();
         if parts.len() == 2 {
@@ -318,7 +440,11 @@ fn glob_match(pattern: &str, name: &str) -> bool {
 
 fn resolve_path(path: &str, workdir: &PathBuf) -> PathBuf {
     let p = Path::new(path);
-    if p.is_absolute() { p.to_path_buf() } else { workdir.join(p) }
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        workdir.join(p)
+    }
 }
 
 /// Preflight validation: validate paths before executing destructive commands.
@@ -328,7 +454,10 @@ pub(crate) fn preflight_command(command: &str, workdir: &PathBuf) -> PreflightRe
     if let RiskLevel::Dangerous(reason) = &risk {
         return PreflightResult {
             risk: risk.clone(),
-            error_guidance: Some(format!("Command blocked: {}. Use a safer approach or be more specific.", reason)),
+            error_guidance: Some(format!(
+                "Command blocked: {}. Use a safer approach or be more specific.",
+                reason
+            )),
             dry_run_preview: None,
         };
     }
@@ -387,23 +516,54 @@ pub(crate) fn preflight_command(command: &str, workdir: &PathBuf) -> PreflightRe
         }
     }
 
-    PreflightResult { risk, error_guidance: None, dry_run_preview: None }
+    PreflightResult {
+        risk,
+        error_guidance: None,
+        dry_run_preview: None,
+    }
 }
 
 fn check_protected_paths(command: &str) -> Option<String> {
     let cmd = command.trim();
-    let read_only = ["ls ", "cat ", "head ", "tail ", "wc ", "echo ", "rg ", "grep ", "find ", "tree ", "stat ", "file ", "du ", "df ", "less ", "more ", "bat "];
+    let read_only = [
+        "ls ", "cat ", "head ", "tail ", "wc ", "echo ", "rg ", "grep ", "find ", "tree ", "stat ",
+        "file ", "du ", "df ", "less ", "more ", "bat ",
+    ];
     for prefix in &read_only {
-        if cmd.starts_with(prefix) { return None; }
+        if cmd.starts_with(prefix) {
+            return None;
+        }
     }
 
-    let mutation_prefixes = ["rm ", "mv ", "cp ", "chmod ", "chown ", "touch ", "mkdir -p ", "rmdir ", "tee ", ">", ">>", "git reset ", "git clean ", "git checkout "];
-    let is_mutation = mutation_prefixes.iter().any(|p| cmd.starts_with(*p) || cmd.contains(*p));
-    if !is_mutation { return None; }
+    let mutation_prefixes = [
+        "rm ",
+        "mv ",
+        "cp ",
+        "chmod ",
+        "chown ",
+        "touch ",
+        "mkdir -p ",
+        "rmdir ",
+        "tee ",
+        ">",
+        ">>",
+        "git reset ",
+        "git clean ",
+        "git checkout ",
+    ];
+    let is_mutation = mutation_prefixes
+        .iter()
+        .any(|p| cmd.starts_with(*p) || cmd.contains(*p));
+    if !is_mutation {
+        return None;
+    }
 
     for protected in PROTECTED_DIRS {
         let dir_name = protected.trim_end_matches('/');
-        if cmd.contains(protected) || cmd.contains(&format!("{}/", dir_name)) || cmd.contains(&format!(" {}", dir_name)) {
+        if cmd.contains(protected)
+            || cmd.contains(&format!("{}/", dir_name))
+            || cmd.contains(&format!(" {}", dir_name))
+        {
             return Some(format!(
                 "Cannot modify protected path: '{}'.\n\n\
                 The '{}' directory is critical to Elma's operation and cannot be mutated.\n\
@@ -434,11 +594,18 @@ fn check_protected_paths(command: &str) -> Option<String> {
 fn suggest_scoped_alternative(command: &str) -> String {
     let cmd = command.trim();
     if cmd.starts_with("find ") && (cmd.contains("./") || cmd.contains(". ")) {
-        return format!("find . -maxdepth 1{}", cmd.strip_prefix("find .").unwrap_or(""));
+        return format!(
+            "find . -maxdepth 1{}",
+            cmd.strip_prefix("find .").unwrap_or("")
+        );
     }
     if cmd.contains('*') {
-        if cmd.starts_with("mv ") { return "Use `find . -name 'PATTERN' -exec mv {} dest/ \\;`".to_string(); }
-        if cmd.starts_with("rm ") { return "Use `find . -name 'PATTERN' -delete`".to_string(); }
+        if cmd.starts_with("mv ") {
+            return "Use `find . -name 'PATTERN' -exec mv {} dest/ \\;`".to_string();
+        }
+        if cmd.starts_with("rm ") {
+            return "Use `find . -name 'PATTERN' -delete`".to_string();
+        }
     }
     "Add `-maxdepth` or specific file patterns to limit scope".to_string()
 }
@@ -463,11 +630,19 @@ fn preflight_mv(args: &str, workdir: &PathBuf) -> PreflightResult {
         };
     }
     let dest_path = resolve_path(dest, workdir);
-    let parent = if dest.ends_with('/') || dest_path.is_dir() { &dest_path } else { dest_path.parent().unwrap_or(&dest_path) };
+    let parent = if dest.ends_with('/') || dest_path.is_dir() {
+        &dest_path
+    } else {
+        dest_path.parent().unwrap_or(&dest_path)
+    };
     if !parent.exists() {
         return PreflightResult {
             risk: RiskLevel::Dangerous("destination_not_found".to_string()),
-            error_guidance: Some(format!("Destination directory '{}' does not exist. Create it with `mkdir -p {}`.", parent.display(), parent.display())),
+            error_guidance: Some(format!(
+                "Destination directory '{}' does not exist. Create it with `mkdir -p {}`.",
+                parent.display(),
+                parent.display()
+            )),
             dry_run_preview: None,
         };
     }
@@ -502,7 +677,10 @@ fn preflight_cp(args: &str, workdir: &PathBuf) -> PreflightResult {
         if !dest_path.exists() {
             return PreflightResult {
                 risk: RiskLevel::Dangerous("destination_not_found".to_string()),
-                error_guidance: Some(format!("Destination directory '{}' does not exist.", dest_path.display())),
+                error_guidance: Some(format!(
+                    "Destination directory '{}' does not exist.",
+                    dest_path.display()
+                )),
                 dry_run_preview: None,
             };
         }
@@ -518,20 +696,28 @@ fn preflight_rm(args: &str, workdir: &PathBuf) -> PreflightResult {
     if args.contains("*") && !args.contains("--") {
         return PreflightResult {
             risk: RiskLevel::Dangerous("rm with glob".to_string()),
-            error_guidance: Some("rm with wildcard (*) detected. Use `find` first to see what would be deleted.".to_string()),
+            error_guidance: Some(
+                "rm with wildcard (*) detected. Use `find` first to see what would be deleted."
+                    .to_string(),
+            ),
             dry_run_preview: generate_dry_run_preview(&format!("rm {}", args), workdir),
         };
     }
     if args.contains("-r") || args.contains("-R") || args.contains("--recursive") {
         return PreflightResult {
             risk: RiskLevel::Dangerous("rm -r".to_string()),
-            error_guidance: Some("rm -r (recursive delete) is dangerous. Use `ls -R` first to verify contents.".to_string()),
+            error_guidance: Some(
+                "rm -r (recursive delete) is dangerous. Use `ls -R` first to verify contents."
+                    .to_string(),
+            ),
             dry_run_preview: generate_dry_run_preview(&format!("rm {}", args), workdir),
         };
     }
     let parts: Vec<&str> = args.split_whitespace().collect();
     for file in &parts {
-        if file.starts_with('-') { continue; }
+        if file.starts_with('-') {
+            continue;
+        }
         let path = resolve_path(file, workdir);
         if !path.exists() {
             return PreflightResult {
@@ -563,14 +749,26 @@ mod tests {
     fn test_caution_commands() {
         assert!(matches!(classify_command("mv a b"), RiskLevel::Caution));
         assert!(matches!(classify_command("cp a b"), RiskLevel::Caution));
-        assert!(matches!(classify_command("find . -name '*.rs'"), RiskLevel::Safe)); // find is read-only
+        assert!(matches!(
+            classify_command("find . -name '*.rs'"),
+            RiskLevel::Safe
+        )); // find is read-only
     }
 
     #[test]
     fn test_dangerous_commands() {
-        assert!(matches!(classify_command("rm file.txt"), RiskLevel::Dangerous(_)));
-        assert!(matches!(classify_command("find . | while read f; do mv $f dest/; done"), RiskLevel::Dangerous(_)));
-        assert!(matches!(classify_command("git reset --hard"), RiskLevel::Dangerous(_)));
+        assert!(matches!(
+            classify_command("rm file.txt"),
+            RiskLevel::Dangerous(_)
+        ));
+        assert!(matches!(
+            classify_command("find . | while read f; do mv $f dest/; done"),
+            RiskLevel::Dangerous(_)
+        ));
+        assert!(matches!(
+            classify_command("git reset --hard"),
+            RiskLevel::Dangerous(_)
+        ));
     }
 
     #[test]
@@ -578,7 +776,11 @@ mod tests {
         let workdir = PathBuf::from("/tmp");
         let result = preflight_command("mv nonexistent_file somewhere/", &workdir);
         assert!(!result.can_execute());
-        assert!(result.error_guidance.as_ref().unwrap().contains("does not exist"));
+        assert!(result
+            .error_guidance
+            .as_ref()
+            .unwrap()
+            .contains("does not exist"));
     }
 
     #[test]
@@ -588,13 +790,20 @@ mod tests {
         std::fs::write(&src, "test").ok();
         let result = preflight_command(&format!("mv {} nonexistent_dir/", src.display()), &workdir);
         assert!(!result.can_execute());
-        assert!(result.error_guidance.as_ref().unwrap().contains("does not exist"));
+        assert!(result
+            .error_guidance
+            .as_ref()
+            .unwrap()
+            .contains("does not exist"));
         std::fs::remove_file(&src).ok();
     }
 
     #[test]
     fn test_pipe_destruct_pattern() {
-        assert!(matches!(classify_command("find . -type f | while read f; do rm \"$f\"; done"), RiskLevel::Dangerous(_)));
+        assert!(matches!(
+            classify_command("find . -type f | while read f; do rm \"$f\"; done"),
+            RiskLevel::Dangerous(_)
+        ));
     }
 
     #[test]

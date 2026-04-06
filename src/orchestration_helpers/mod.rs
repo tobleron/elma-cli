@@ -34,7 +34,7 @@ pub(crate) async fn request_program_or_repair(
         repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
         reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
         grammar,
-    tools: None,
+        tools: None,
     };
     let (program, json_text) = chat_json_with_repair_text_timeout(
         client,
@@ -181,7 +181,7 @@ pub(crate) async fn request_reviewer_verdict(
         repeat_penalty: Some(reviewer_cfg.repeat_penalty),
         reasoning_format: Some(reviewer_cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
     chat_json_with_repair_for_profile_timeout(
         client,
@@ -224,7 +224,7 @@ pub(crate) async fn request_risk_review(
         repeat_penalty: Some(risk_cfg.repeat_penalty),
         reasoning_format: Some(risk_cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
     chat_json_with_repair_for_profile_timeout(
         client,

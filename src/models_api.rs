@@ -263,7 +263,7 @@ async fn probe_logprobs_support(
         repeat_penalty: Some(1.0),
         reasoning_format: Some("none".to_string()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
     let resp = probe_chat_completion_raw(client, chat_url, &req).await?;
     Ok(resp
@@ -295,7 +295,7 @@ fn make_probe_request(
         repeat_penalty: Some(1.0),
         reasoning_format: Some(reasoning_format.to_string()),
         grammar: None,
-    tools: None,
+        tools: None,
     }
 }
 

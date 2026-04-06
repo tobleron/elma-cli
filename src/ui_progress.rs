@@ -6,9 +6,9 @@
 //! - LLM thinking phases
 //! - Tool execution phases
 //!
-//! Design: Minimal, Tokyo Night colors, graceful fallback to plain text.
+//! Design: Minimal, Gruvbox Dark Hard colors, graceful fallback to plain text.
 
-use crate::ui_colors::*;
+use crate::ui_theme::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::io::IsTerminal;
 use std::sync::OnceLock;
@@ -17,9 +17,7 @@ use std::sync::OnceLock;
 static MULTI_PROGRESS: OnceLock<MultiProgress> = OnceLock::new();
 
 fn get_multi_progress() -> &'static MultiProgress {
-    MULTI_PROGRESS.get_or_init(|| {
-        MultiProgress::with_draw_target(ProgressDrawTarget::stderr())
-    })
+    MULTI_PROGRESS.get_or_init(|| MultiProgress::with_draw_target(ProgressDrawTarget::stderr()))
 }
 
 /// Create a spinner for a single operation.
@@ -33,7 +31,7 @@ pub(crate) fn create_spinner(prefix: &str, message: &str) -> Option<ProgressBar>
     let mp = get_multi_progress();
     let pb = mp.add(ProgressBar::new_spinner());
 
-    // Tokyo Night themed Braille spinner
+    // Gruvbox Dark Hard Braille spinner
     pb.set_style(
         ProgressStyle::with_template("{spinner} {msg}")
             .unwrap()
@@ -48,7 +46,12 @@ pub(crate) fn create_spinner(prefix: &str, message: &str) -> Option<ProgressBar>
 /// Create a progress bar for multi-step operations.
 pub(crate) fn create_progress_bar(prefix: &str, total: u64) -> Option<ProgressBar> {
     if !std::io::stderr().is_terminal() {
-        eprintln!("  {} starting ({}/{} steps)...", info_cyan(prefix), 0, total);
+        eprintln!(
+            "  {} starting ({}/{} steps)...",
+            info_cyan(prefix),
+            0,
+            total
+        );
         return None;
     }
 

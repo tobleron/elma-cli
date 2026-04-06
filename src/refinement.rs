@@ -250,7 +250,7 @@ pub async fn refine_program(
         repeat_penalty: Some(cfg.repeat_penalty),
         reasoning_format: Some(cfg.reasoning_format.clone()),
         grammar: None,
-    tools: None,
+        tools: None,
     };
 
     let response = chat_once(client, chat_url, &request).await?;
