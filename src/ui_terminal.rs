@@ -48,6 +48,7 @@ pub(crate) struct TerminalUI {
     input: TextInput,
     raw_mode: bool,
     pending_draw: bool,
+    previous_screen: Option<Vec<String>>,
 }
 
 impl TerminalUI {
@@ -60,6 +61,7 @@ impl TerminalUI {
             input: TextInput::new(10), // max 10 lines
             raw_mode: true,
             pending_draw: true,
+            previous_screen: None,
         })
     }
 
@@ -248,8 +250,9 @@ impl TerminalUI {
         let screen = ui_render::render_screen(&self.state, cols, rows, &self.input);
 
         // Check if modal is active — if so, overlay.
-        if let Some(ref modal) = self.state.modal {
-            self.draw_with_modal(&screen, modal, cols, rows)?;
+        let modal = self.state.modal.clone();
+        if let Some(modal) = modal {
+            self.draw_with_modal(&screen, &modal, cols, rows)?;
         } else {
             self.draw_normal(&screen)?;
         }
@@ -257,25 +260,45 @@ impl TerminalUI {
         Ok(())
     }
 
-    fn draw_normal(&self, screen: &ScreenBuffer) -> io::Result<()> {
+    fn draw_normal(&mut self, screen: &ScreenBuffer) -> io::Result<()> {
         let mut out = io::stdout();
-        execute!(out, Clear(ClearType::All), MoveTo(0, 0))?;
-
         let (cols, rows) = size()?;
         let rows = rows as usize;
 
-        // Write lines using \r\n (raw mode needs explicit \r).
-        // The last line uses write! (no trailing newline) to prevent terminal scroll.
-        let total = screen.lines.len().min(rows);
-        for (i, line) in screen.lines.iter().enumerate() {
-            if i >= rows {
-                break;
-            }
-            if i == total - 1 {
+        // Calculate which lines changed
+        let lines_to_draw = if let Some(previous) = &self.previous_screen {
+            // Compare with previous screen, only draw changed lines
+            screen
+                .lines
+                .iter()
+                .take(rows)
+                .enumerate()
+                .filter(|(i, line)| {
+                    previous
+                        .get(*i)
+                        .map_or(true, |prev_line| prev_line != *line)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            // First draw, render everything
+            screen
+                .lines
+                .iter()
+                .take(rows)
+                .enumerate()
+                .collect::<Vec<_>>()
+        };
+
+        // Draw only changed lines
+        for (i, line) in lines_to_draw {
+            execute!(out, MoveTo(0, i as u16))?;
+            if i == rows - 1 || i == screen.lines.len() - 1 {
                 // Last line — no trailing newline to avoid scroll
                 write!(out, "{}", line)?;
             } else {
-                write!(out, "{}\r\n", line)?;
+                // Clear line and write new content
+                execute!(out, Clear(ClearType::UntilNewLine))?;
+                write!(out, "{}", line)?;
             }
         }
 
@@ -285,17 +308,20 @@ impl TerminalUI {
         execute!(out, MoveTo(cursor_col, cursor_row), Show)?;
         out.flush()?;
 
+        // Store current screen for next comparison
+        self.previous_screen = Some(screen.lines.clone());
+
         Ok(())
     }
 
     fn draw_with_modal(
-        &self,
+        &mut self,
         _screen: &ScreenBuffer,
         modal: &ModalState,
         cols: usize,
         rows: usize,
     ) -> io::Result<()> {
-        // Draw the normal screen first.
+        // When modal is active, clear and redraw everything
         let mut out = io::stdout();
         execute!(out, Clear(ClearType::All), MoveTo(0, 0))?;
 
@@ -304,6 +330,9 @@ impl TerminalUI {
         for line in &modal_lines {
             writeln!(out, "{}", line)?;
         }
+
+        // Clear previous screen cache when modal is shown
+        self.previous_screen = None;
 
         // Position cursor at bottom-center of modal for visual balance.
         let cursor_row = (rows / 2) as u16;

@@ -2,11 +2,13 @@
 //!
 //! Full-screen rendering — Gruvbox Dark Hard layout.
 //!
-//! Layout order (bottom to top):
-//!   [Status bar — 1 row, bottom of terminal]
-//!   [Input box — bordered, above status bar]
+//! Layout order (top to bottom):
+//!   [Header strip — 1 row, top of terminal]
+//!   [Activity rail — live status when processing/responding]
+//!   [Transcript area — fills most space, scrollable]
 //!   [Autocomplete dropdown — bordered box, above input when active]
-//!   [Transcript area — fills all remaining space at top]
+//!   [Input box — bordered, above context bar]
+//!   [Context bar — token usage indicator]
 
 use crate::ui_autocomplete::AutocompleteState;
 use crate::ui_input::TextInput;
@@ -37,42 +39,62 @@ pub(crate) fn render_screen(
         };
     }
 
-    // === Layout calculation (bottom-up) ===
-    // Bottom: Status bar (1 row)
-    let status_rows = 1;
+    // Calculate space needed for each section
+    let header_rows = 1;
+    let separator_rows = 1; // separator after header
 
-    // Above status: Input box (content lines + 2 borders)
     let input_content_rows = input.line_count().max(1).min(3);
     let input_box_rows = input_content_rows + 2; // top + bottom border
 
-    // Above input: Autocomplete dropdown (when active, bordered box)
+    let context_bar_rows = if state.footer.context_max > 0 { 1 } else { 0 };
+
     let dropdown_rows = if state.autocomplete.active && !state.autocomplete.matches.is_empty() {
         let items = state.autocomplete.matches.len().min(8);
-        items + 4 // items + top/bottom border + 2 padding lines
+        items + 4
     } else {
         0
     };
 
-    // Above dropdown: Activity rail / streaming state (1-2 rows)
     let activity_rows = if state.streaming.kind != StreamingKind::Idle {
-        2 // streaming state needs space
+        2
     } else if let ActivityState::Active { .. } = &state.activity {
-        1 // activity rail
+        1
     } else {
         0
     };
 
-    // Top: Transcript fills remaining space
-    let bottom_reserved = status_rows + input_box_rows + dropdown_rows + activity_rows;
-    let transcript_rows = if height > bottom_reserved {
-        height - bottom_reserved
-    } else {
-        1
-    };
+    // Calculate transcript space
+    let fixed_rows = header_rows
+        + separator_rows
+        + activity_rows
+        + dropdown_rows
+        + input_box_rows
+        + context_bar_rows;
+    let transcript_rows = height.saturating_sub(fixed_rows).max(5);
 
     let mut screen: Vec<String> = Vec::with_capacity(height);
 
-    // ===== FRAME 1: Transcript =====
+    // ===== FRAME 1: Header strip =====
+    let header_line = render_header_strip(&state.header, width);
+    screen.push(header_line);
+    screen.push(dark_gray(&"─".repeat(width)));
+
+    // ===== FRAME 2: Activity rail (right after header for visibility) =====
+    if state.streaming.kind != StreamingKind::Idle {
+        let streaming_lines = render_streaming_state(&state.streaming, width);
+        screen.extend(streaming_lines);
+    } else if let ActivityState::Active { label, message } = &state.activity {
+        // Animated spinner for activity indicator
+        let spinner = SPINNER_FRAMES[state.streaming.animation_frame % 10];
+        screen.push(format!(
+            "  {} {} {}",
+            fg(AQUA.0, AQUA.1, AQUA.2, spinner),
+            fg_bold(AQUA.0, AQUA.1, AQUA.2, label),
+            dim(message),
+        ));
+    }
+
+    // ===== FRAME 3: Transcript =====
     let transcript = render_transcript(
         &state.transcript,
         width,
@@ -81,57 +103,39 @@ pub(crate) fn render_screen(
         state.show_thinking,
     );
     screen.extend(transcript);
-    while screen.len() < transcript_rows {
+
+    // Pad transcript to exact size
+    while screen.len() < header_rows + separator_rows + activity_rows + transcript_rows {
         screen.push(String::new());
     }
 
-    // ===== FRAME 2: Activity rail / Streaming state (reserved space above transcript) =====
-    if state.streaming.kind != StreamingKind::Idle {
-        let streaming_lines = render_streaming_state(&state.streaming, width);
-        for line in &streaming_lines {
-            screen.push(line.clone());
-        }
-        while screen.len() < transcript_rows + activity_rows {
-            screen.push(String::new());
-        }
-    } else if let ActivityState::Active { label, message } = &state.activity {
-        let activity_line = format!(
-            "  {} {} {}",
-            fg(GRAY.0, GRAY.1, GRAY.2, &SPINNER_FRAMES[0]),
-            fg_bold(AQUA.0, AQUA.1, AQUA.2, label),
-            dim(message),
-        );
-        screen.push(activity_line);
-        while screen.len() < transcript_rows + activity_rows {
-            screen.push(String::new());
-        }
-    }
-
-    // ===== FRAME 4: Autocomplete dropdown (bordered box above input) =====
-    // This renders BEFORE the input box, in the reserved dropdown_rows space
+    // ===== FRAME 4: Composer =====
     if state.autocomplete.active && !state.autocomplete.matches.is_empty() {
         let dropdown_lines = render_autocomplete_dropdown(&state.autocomplete, width);
         screen.extend(dropdown_lines);
     }
 
-    // ===== FRAME 5: Input box (borders + content) =====
+    // Store where input starts for cursor calculation
+    let input_start_row = screen.len();
+
     let input_lines = render_input_box(input, width);
     screen.extend(input_lines);
 
-    // ===== FRAME 6: Status bar =====
-    let status_line = render_status_bar(&state.footer, &state.header, width);
-    screen.push(status_line);
+    // ===== FRAME 5: Context bar =====
+    if state.footer.context_max > 0 {
+        let context_bar = render_context_bar(&state.footer, width);
+        screen.push(context_bar);
+    }
 
-    // Ensure exactly `height` lines
+    // Ensure exactly height lines
+    screen.truncate(height);
     while screen.len() < height {
         screen.push(String::new());
     }
-    screen.truncate(height);
 
-    // Cursor: positioned in the input content area (skip top border = +1)
-    let input_content_start = transcript_rows + activity_rows + dropdown_rows + 1; // +1 for top border
-    let cursor_row = (input_content_start + input.cursor_row()) as u16;
-    let cursor_col = (2 + input.display_col()) as u16; // after "❯ "
+    // Cursor position: input_start_row + 1 (for top border) + cursor_row_within_input
+    let cursor_row = (input_start_row + 1 + input.cursor_row()) as u16;
+    let cursor_col = (2 + input.display_col()) as u16; // 2 for "❯ "
 
     ScreenBuffer {
         lines: screen,
@@ -166,7 +170,18 @@ fn render_transcript(
     }
 
     if all_lines.is_empty() {
-        all_lines.push(dim("  Type a message to begin..."));
+        all_lines.push(String::new());
+        all_lines.push(format!(
+            "  {}",
+            dim("Welcome to Elma - your local-first autonomous CLI agent")
+        ));
+        all_lines.push(String::new());
+        all_lines.push(format!(
+            "  {}",
+            dim("Type a message and press Enter to begin")
+        ));
+        all_lines.push(format!("  {}", dim("• Ctrl+J for multi-line input")));
+        all_lines.push(format!("  {}", dim("• Ctrl+C to cancel")));
         all_lines.push(String::new());
     }
 
@@ -288,7 +303,7 @@ fn render_user_message(content: &str, content_width: usize) -> Vec<String> {
         let prefix = if i == 0 {
             format!(
                 "{} {}",
-                fg(PROMPT_GRAY.0, PROMPT_GRAY.1, PROMPT_GRAY.2, USER_ARROW),
+                fg_bold(YELLOW.0, YELLOW.1, YELLOW.2, ">"),
                 white(raw_line)
             )
         } else {
@@ -307,11 +322,7 @@ fn render_assistant_message(content: &str, content_width: usize) -> Vec<String> 
 
     for (i, line) in rendered_lines.iter().enumerate() {
         let prefix = if i == 0 {
-            format!(
-                "{} {}",
-                fg_bold(PURPLE.0, PURPLE.1, PURPLE.2, ASSISTANT_DOT),
-                line,
-            )
+            format!("{} {}", fg_bold(AQUA.0, AQUA.1, AQUA.2, "●"), line,)
         } else {
             format!("  {}", line)
         };
@@ -321,7 +332,7 @@ fn render_assistant_message(content: &str, content_width: usize) -> Vec<String> 
     if all_lines.is_empty() {
         all_lines.push(format!(
             "{} {}",
-            fg_bold(PURPLE.0, PURPLE.1, PURPLE.2, ASSISTANT_DOT),
+            fg_bold(AQUA.0, AQUA.1, AQUA.2, "●"),
             dim("(empty)"),
         ));
     }
@@ -331,8 +342,8 @@ fn render_assistant_message(content: &str, content_width: usize) -> Vec<String> 
 fn render_tool_start(name: &str, command: &str, content_width: usize) -> Vec<String> {
     let text = format!(
         "  {} {} {}",
-        fg(GRAY.0, GRAY.1, GRAY.2, "◦"),
-        fg_bold(YELLOW.0, YELLOW.1, YELLOW.2, name),
+        fg(GRAY.0, GRAY.1, GRAY.2, "▸"),
+        fg_bold(BLUE.0, BLUE.1, BLUE.2, name),
         dim(command),
     );
     wrap_ansi(&text, content_width)
@@ -347,9 +358,9 @@ fn render_tool_result(
 ) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let (icon, color) = if success {
-        (CHECK, GREEN)
+        ("✓", GREEN)
     } else {
-        (CROSS, RED)
+        ("✗", RED)
     };
     let duration_str = duration_ms
         .map(|ms| {
@@ -364,69 +375,72 @@ fn render_tool_result(
     let header = if duration_str.is_empty() {
         format!(
             "  {} {}",
-            fg(color.0, color.1, color.2, icon),
-            fg(GRAY.0, GRAY.1, GRAY.2, name),
+            fg_bold(color.0, color.1, color.2, icon),
+            dim(name),
         )
     } else {
         format!(
             "  {} {} {}",
-            fg(color.0, color.1, color.2, icon),
-            fg(GRAY.0, GRAY.1, GRAY.2, name),
+            fg_bold(color.0, color.1, color.2, icon),
+            dim(name),
             dim(&format!("({})", duration_str)),
         )
     };
     lines.extend(wrap_ansi(&header, content_width));
 
     if !output.is_empty() {
-        let output_lines: Vec<&str> = output.lines().take(20).collect();
+        let output_lines: Vec<&str> = output.lines().take(15).collect();
         for oline in &output_lines {
-            let prefixed = format!("    {}", oline);
+            let prefixed = format!("    {}", dim(oline));
             lines.extend(wrap_ansi(&prefixed, content_width));
         }
         let total = output.lines().count();
-        if total > 20 {
-            lines.push(dim(&format!("    ... ({} more lines)", total - 20)));
+        if total > 15 {
+            lines.push(dim(&format!("    ... ({} more lines)", total - 15)));
         }
     }
+
     lines
 }
 
 fn render_meta_event(category: &str, message: &str, content_width: usize) -> Vec<String> {
+    // Make meta events more prominent with better styling
     let styled = match category {
-        "PLAN" => fg(
-            BLUE.0,
-            BLUE.1,
-            BLUE.2,
-            &format!("[{}] {}", category, message),
+        "PLAN" => format!(
+            "  {} {}",
+            fg_bold(BLUE.0, BLUE.1, BLUE.2, &format!("[{}]", category)),
+            fg(BLUE.0, BLUE.1, BLUE.2, message)
         ),
-        "CLASSIFY" => fg(
-            GRAY.0,
-            GRAY.1,
-            GRAY.2,
-            &format!("[{}] {}", category, message),
+        "CLASSIFY" => format!("  {} {}", dim(&format!("[{}]", category)), dim(message)),
+        "REFLECT" => format!(
+            "  {} {}",
+            fg_bold(PURPLE.0, PURPLE.1, PURPLE.2, &format!("[{}]", category)),
+            fg(PURPLE.0, PURPLE.1, PURPLE.2, message)
         ),
-        "REFLECT" => fg(
-            PURPLE.0,
-            PURPLE.1,
-            PURPLE.2,
-            &format!("[{}] {}", category, message),
+        "EXECUTE" => format!(
+            "  {} {}",
+            fg_bold(AQUA.0, AQUA.1, AQUA.2, &format!("[{}]", category)),
+            fg(AQUA.0, AQUA.1, AQUA.2, message)
         ),
-        _ => dim(&format!("[{}] {}", category, message)),
+        _ => format!("  {} {}", dim(&format!("[{}]", category)), dim(message)),
     };
     wrap_ansi(&styled, content_width)
 }
 
 fn render_warning_msg(message: &str, content_width: usize) -> Vec<String> {
-    let text = format!("  {} {}", red("⚠"), red(message));
+    let text = format!(
+        "  {} {}",
+        fg_bold(YELLOW.0, YELLOW.1, YELLOW.2, "⚠"),
+        fg(YELLOW.0, YELLOW.1, YELLOW.2, message)
+    );
     wrap_ansi(&text, content_width)
 }
 
 fn render_thinking(content: &str, content_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     lines.push(format!(
-        "  {} {} {}",
-        dim(EXPAND_ARROW_DOWN),
-        dark_gray("Thinking"),
+        "{} {}",
+        dark_gray("~"),
         dark_gray("(ctrl+o to collapse)"),
     ));
     lines.push(String::new());
@@ -658,41 +672,47 @@ fn render_input_box(input: &TextInput, width: usize) -> Vec<String> {
 
     for (i, line) in input.lines().iter().enumerate() {
         let prefix = if i == 0 {
-            fg(
-                PROMPT_GRAY.0,
-                PROMPT_GRAY.1,
-                PROMPT_GRAY.2,
-                &format!("{} ", USER_ARROW),
-            )
+            fg(YELLOW.0, YELLOW.1, YELLOW.2, "> ")
         } else {
             "  ".to_string()
         };
 
-        // Cursor: Gruvbox fg on border gray — visible on dark terminals
-        let line_with_cursor = if i == cursor_row {
+        // Show the text content
+        let text_content = fg(FG.0, FG.1, FG.2, line);
+
+        // Add cursor if on this line
+        let line_with_content = if i == cursor_row {
             let before = substring_to_display_width(line, cursor_col);
             let after_byte = byte_col_for_display_width(line, cursor_col);
             let after = &line[after_byte..];
-            // Gruvbox fg block cursor on bg3
+
+            // Show cursor at position
+            let cursor_char = if cursor_col >= line.len() {
+                " " // Space at end of line
+            } else {
+                &line
+                    [after_byte..after_byte + line[after_byte..].chars().next().unwrap().len_utf8()]
+            };
+
             format!(
                 "{}{}{}",
-                before,
+                fg(FG.0, FG.1, FG.2, &before),
                 fg_bg_bold(
+                    BG_HARD.0,
+                    BG_HARD.1,
+                    BG_HARD.2,
                     FG.0,
                     FG.1,
                     FG.2,
-                    BORDER_GRAY.0,
-                    BORDER_GRAY.1,
-                    BORDER_GRAY.2,
-                    BLOCK_CURSOR
+                    cursor_char
                 ),
-                after,
+                fg(FG.0, FG.1, FG.2, after),
             )
         } else {
-            line.to_string()
+            text_content
         };
 
-        lines.push(format!("{}{}", prefix, line_with_cursor));
+        lines.push(format!("{}{}", prefix, line_with_content));
     }
 
     // Bottom border — full terminal width
@@ -710,83 +730,78 @@ fn render_input_box(input: &TextInput, width: usize) -> Vec<String> {
 // FRAME 6: Status bar — Gruvbox Dark Hard
 // ============================================================================
 
-fn render_status_bar(footer: &FooterMetrics, header: &HeaderInfo, width: usize) -> String {
+fn render_header_strip(header: &HeaderInfo, width: usize) -> String {
     let mut parts: Vec<String> = Vec::new();
 
-    // Session name removed — clutter reduction
+    // Elma branding
+    parts.push(bold(&fg(PURPLE.0, PURPLE.1, PURPLE.2, "Elma")));
 
-    // Provider/model — Gruvbox blue
-    let mut model_parts: Vec<String> = Vec::new();
-    if !header.model.is_empty() {
-        model_parts.push(fg(BLUE.0, BLUE.1, BLUE.2, &header.model));
+    // Workspace (compact)
+    if !header.workspace.is_empty() {
+        parts.push(fg(AQUA.0, AQUA.1, AQUA.2, &header.workspace));
     }
+
+    // Model (compact)
+    if !header.model.is_empty() {
+        parts.push(dim(&header.model));
+    }
+
+    // Endpoint (very compact - just hostname)
     if !header.endpoint.is_empty() {
         let short_endpoint = if let Some(host) = header.endpoint.split("://").nth(1) {
-            host
+            host.split(':').next().unwrap_or(host)
         } else {
             &header.endpoint
         };
-        model_parts.push(fg(BLUE.0, BLUE.1, BLUE.2, short_endpoint));
-    }
-    if !model_parts.is_empty() {
-        parts.push(model_parts.join(&format!(" {} ", dark_gray(MIDDOT))));
+        parts.push(dim(short_endpoint));
     }
 
-    // Workspace
-    if !header.workspace.is_empty() {
-        parts.push(fg(BLUE.0, BLUE.1, BLUE.2, &header.workspace));
-    }
+    let header_text = parts.join(&dim(" · "));
 
-    // Approval policy
-    if !footer.approval_policy.is_empty() {
-        let policy_text = match footer.approval_policy.as_str() {
-            "yolo" => format!("{} {}", LIGHTNING, red("yolo")),
-            "auto" => format!("{} {}", LIGHTNING, fg(ORANGE.0, ORANGE.1, ORANGE.2, "auto")),
-            _ => format!("{} {}", LOCK, dark_gray("approve")),
-        };
-        parts.push(policy_text);
-    }
-
-    // Context usage — bold, color-coded with token counts
-    if footer.context_max > 0 {
-        let pct = footer.context_current as f64 / footer.context_max as f64 * 100.0;
-        let ctx_color = if pct > 90.0 {
-            fg(RED.0, RED.1, RED.2, &format!("{:.0}% ctx", pct))
-        } else if pct > 70.0 {
-            fg(YELLOW.0, YELLOW.1, YELLOW.2, &format!("{:.0}% ctx", pct))
-        } else {
-            fg(GREEN.0, GREEN.1, GREEN.2, &format!("{:.0}% ctx", pct))
-        };
-        parts.push(bold(&ctx_color));
-
-        // Token counts — dim gray
-        if footer.tokens_in > 0 || footer.tokens_out > 0 {
-            let token_fmt = format!(
-                "↑{} ↓{}",
-                format_tokens(footer.tokens_in),
-                format_tokens(footer.tokens_out)
-            );
-            parts.push(dim(&token_fmt));
-        }
-    }
-
-    // Effort timer — if active
-    if !footer.effort.is_empty() {
-        parts.push(footer.effort.clone());
-    }
-
-    if header.verbose {
-        parts.push(fg(ORANGE.0, ORANGE.1, ORANGE.2, "[verbose]"));
-    }
-
-    let status = parts.join(&format!(" {} ", dark_gray(MIDDOT)));
-
-    let status_dw = display_width(&status);
-    if status_dw >= width {
-        truncate_to_display_width(&status, width - 1)
+    let header_dw = display_width(&header_text);
+    if header_dw >= width {
+        truncate_to_display_width(&header_text, width - 1)
     } else {
-        status
+        format!(" {}", header_text) // Add leading space
     }
+}
+
+fn render_context_bar(footer: &FooterMetrics, width: usize) -> String {
+    if footer.context_max == 0 {
+        return String::new();
+    }
+
+    let pct = footer.context_current as f64 / footer.context_max as f64;
+
+    // Simpler bar: just show percentage with color
+    let bar_color = if pct > 0.9 {
+        RED
+    } else if pct > 0.7 {
+        YELLOW
+    } else {
+        GREEN
+    };
+
+    // Create compact bar
+    let bar_width: usize = 20; // Fixed width
+    let filled = (bar_width as f64 * pct).round() as usize;
+    let empty = bar_width.saturating_sub(filled);
+
+    let bar_text = format!(
+        "{}{}",
+        fg(bar_color.0, bar_color.1, bar_color.2, &"█".repeat(filled)),
+        dark_gray(&"░".repeat(empty))
+    );
+
+    // Tokens and percentage
+    let info = format!(
+        " {:.1}k/{:.1}k [{:.0}%]",
+        footer.context_current as f64 / 1000.0,
+        footer.context_max as f64 / 1000.0,
+        pct * 100.0
+    );
+
+    format!(" {}{}", bar_text, dim(&info))
 }
 
 // ============================================================================
@@ -860,14 +875,14 @@ mod tests {
     fn test_render_user_message() {
         let lines = render_user_message("hello world", 78);
         assert!(!lines.is_empty());
-        assert!(lines[0].contains(USER_ARROW));
+        assert!(lines[0].contains(">"));
     }
 
     #[test]
     fn test_render_assistant_message() {
         let lines = render_assistant_message("Hello **bold** world", 78);
         assert!(!lines.is_empty());
-        assert!(lines[0].contains(ASSISTANT_DOT));
+        assert!(lines[0].contains("●")); // Check for bullet character
     }
 
     #[test]
@@ -888,14 +903,14 @@ mod tests {
             route: String::new(),
             workspace: "elma-cli".to_string(),
             session: "default".to_string(),
+            workflow: String::new(),
             verbose: false,
         };
-        let line = render_status_bar(&footer, &header, 80);
-        // Session name removed from footer for cleaner UI
+        let line = render_header_strip(&header, 80);
+        assert!(line.contains("Elma"));
         assert!(line.contains("qwen3"));
-        assert!(line.contains("50% ctx"));
-        assert!(line.contains("↑500"));
-        assert!(line.contains("↓200"));
+        assert!(line.contains("elma-cli"));
+        assert!(line.contains("localhost"));
     }
 
     #[test]
@@ -911,7 +926,10 @@ mod tests {
         let state = UIState::new();
         let input = TextInput::new(10);
         let result = render_screen(&state, 80, 24, &input);
-        assert!(result.lines.iter().any(|l| l.contains("Type a message")));
+        assert!(result
+            .lines
+            .iter()
+            .any(|l| l.contains("Welcome to Elma") || l.contains("Type a message")));
     }
 
     #[test]

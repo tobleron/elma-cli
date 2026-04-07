@@ -519,6 +519,9 @@ async fn run_reflection_loop(
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     let mut tui = TerminalUI::new().context("Failed to initialize Terminal UI")?;
 
+    // Mark TUI as active to suppress stderr status messages
+    crate::ui_state::set_tui_active(true);
+
     // Set header info (replaces noisy startup banner)
     let session_name = runtime
         .session
@@ -552,6 +555,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         route: String::new(),
         workspace: ws_name,
         session: session_name,
+        workflow: String::new(),
         verbose: runtime.verbose,
     });
 
@@ -585,6 +589,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         runtime
             .messages
             .push(ChatMessage::simple("user", &line.to_string()));
+
+        // Show activity indicator while processing
+        tui.set_activity("Analyzing", "Processing your request...");
 
         // Simplified: intent annotation only — no classification pipeline
         let rephrased_objective = annotate_user_intent(
@@ -684,6 +691,8 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         let hierarchy_goal: Option<Masterplan> = None;
 
+        tui.set_activity("Planning", "Building execution plan...");
+
         let mut program = build_program(
             runtime,
             line,
@@ -706,11 +715,14 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 program = build_shell_path_probe_program(line, &path);
             }
         }
-        show_process_step_verbose(
-            runtime.verbose,
-            "PLAN",
-            &format!("{} → {} steps", complexity.complexity, program.steps.len()),
-        );
+        // Only show planning details in transcript when verbose mode is enabled
+        // Don't print to stderr - keep it in the chat area only
+        if runtime.verbose {
+            tui.push_meta_event(
+                "PLAN",
+                &format!("{} → {} steps", complexity.complexity, program.steps.len()),
+            );
+        }
         // Skip capability guard and policy validation for Maestro-generated programs
         // The Maestro + Orchestrator pipeline self-validates step generation
 
@@ -727,6 +739,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             && matches!(&program.steps[0], Step::Respond { instructions, .. } if !instructions.trim().is_empty());
 
         let mut loop_outcome = if is_trivial || is_tool_calling_result {
+            tui.set_activity("Responding", "Generating response...");
             AutonomousLoopOutcome {
                 program: program.clone(),
                 step_results: vec![],
@@ -734,6 +747,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 reasoning_clean: true,
             }
         } else {
+            tui.set_activity("Executing", "Running steps...");
             orchestrate_with_retries(
                 &runtime.args,
                 &runtime.client,
@@ -792,6 +806,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 .messages
                 .push(ChatMessage::simple("assistant", &final_text));
         }
+
+        // Clear activity indicator now that processing is complete
+        tui.clear_activity();
+
         // Estimate tokens from message content (~4 chars per token)
         let mut tokens_in: u64 = 0;
         let mut tokens_out: u64 = 0;
@@ -840,6 +858,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         }
         let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
     };
+
+    // Mark TUI as inactive
+    crate::ui_state::set_tui_active(false);
     tui.cleanup()?;
     res
 }

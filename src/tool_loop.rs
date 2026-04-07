@@ -108,15 +108,6 @@ pub(crate) async fn run_tool_loop(
                 );
                 total_tool_calls += tool_calls.len();
                 for tc in tool_calls {
-                    // Show the actual command for shell tools
-                    let status_msg = if tc.function.name == "shell" {
-                        let cmd_preview =
-                            extract_tool_arg_preview(&tc.function.arguments, "command", 50);
-                        format!("executing shell: {}", cmd_preview)
-                    } else {
-                        format!("executing {}", tc.function.name)
-                    };
-                    show_status_message(args, &status_msg);
                     let result = tool_calling::execute_tool_call(
                         args,
                         tc,

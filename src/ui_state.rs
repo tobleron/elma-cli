@@ -13,6 +13,8 @@ static FINAL_ANSWER_EXTRACTOR_PROFILE: OnceLock<Mutex<Option<Profile>>> = OnceLo
 static MODEL_BEHAVIOR_PROFILE: OnceLock<Mutex<Option<ModelBehaviorProfile>>> = OnceLock::new();
 /// Tracks intel unit failures: (unit_name -> [(error_message, count)])
 static INTEL_FAILURE_COUNTS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+/// Whether the TUI is currently active (to suppress stderr status messages)
+static TUI_ACTIVE: OnceLock<Mutex<bool>> = OnceLock::new();
 
 pub(crate) fn trace_log_state() -> &'static Mutex<Option<PathBuf>> {
     TRACE_LOG_PATH.get_or_init(|| Mutex::new(None))
@@ -112,6 +114,22 @@ pub(crate) fn reset_intel_failure_counts() {
     {
         counts.clear();
     }
+}
+
+/// Mark the TUI as active (called when entering TUI mode).
+pub(crate) fn set_tui_active(active: bool) {
+    if let Ok(mut slot) = TUI_ACTIVE.get_or_init(|| Mutex::new(false)).lock() {
+        *slot = active;
+    }
+}
+
+/// Check if the TUI is currently active.
+pub(crate) fn is_tui_active() -> bool {
+    TUI_ACTIVE
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|v| *v)
+        .unwrap_or(false)
 }
 
 // ============================================================================
@@ -221,6 +239,7 @@ pub(crate) struct HeaderInfo {
     pub route: String,
     pub workspace: String,
     pub session: String,
+    pub workflow: String,
     pub verbose: bool,
 }
 

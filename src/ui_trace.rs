@@ -2,6 +2,7 @@
 //!
 //! UI - Trace and Display Functions
 
+use crate::ui_state::is_tui_active;
 use crate::ui_theme::*;
 use crate::*;
 
@@ -9,6 +10,10 @@ use crate::*;
 pub(crate) fn show_status_message(args: &Args, status: &str) {
     let line = format!("→ {}", status);
     append_trace_log_line(&line);
+    // Suppress stderr output when TUI is active (status appears in transcript instead)
+    if is_tui_active() {
+        return;
+    }
     if args.show_process {
         if args.no_color {
             eprintln!("{}", line);
@@ -112,6 +117,7 @@ pub(crate) fn trace_verbose(verbose: bool, msg: &str) {
 pub(crate) fn show_process_step_verbose(verbose: bool, category: &str, msg: &str) {
     let line = format!("[{}] {}", category, msg);
     append_trace_log_line(&line);
+    // Only print to stderr when verbose mode is explicitly enabled
     if verbose {
         match category {
             "CLASSIFY" => eprintln!("{}", meta_comment(&line)),
