@@ -121,6 +121,7 @@ pub(crate) async fn run_autonomous_loop(
     efficiency_reviewer_cfg: &Profile,
     risk_reviewer_cfg: &Profile,
     refinement_cfg: &Profile,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<AutonomousLoopOutcome> {
     let user_message = messages
         .iter()
@@ -203,6 +204,7 @@ pub(crate) async fn run_autonomous_loop(
             &plan.current_program.objective,
             false,
             false,
+            tui.as_deref_mut(),
         )
         .await?;
         if batch_reply.is_none() {
@@ -418,6 +420,7 @@ pub(crate) async fn run_autonomous_loop(
             complexity,
             formula,
             refinement_cfg,
+            tui.as_deref_mut(),
         )
         .await?;
 

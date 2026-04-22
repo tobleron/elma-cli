@@ -1,0 +1,18 @@
+name: stress-input-during-streaming
+description: Rapid keystrokes during model streaming must be captured and displayed.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+  env:
+    FAKE_RESPONSE_DELAY_MS: "500"
+steps:
+  - input: "hello there"
+    delay_ms: 200
+  - input: "abc123test"
+    send_enter: false
+    delay_ms: 800
+  - input: ""
+    delay_ms: 500
+asserts:
+  - pattern: "abc123test"

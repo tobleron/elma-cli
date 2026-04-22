@@ -6,6 +6,8 @@ use crate::app::{AppRuntime, LoadedProfiles};
 use crate::app_bootstrap_modes::*;
 use crate::app_bootstrap_profiles::*;
 use crate::ui_theme::*;
+use crate::ui_state::{set_final_answer_extractor_profile, set_json_outputter_profile, set_model_behavior_profile, set_reasoning_display, set_trace_log_path};
+use crate::ui_trace::trace;
 use crate::*;
 
 pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {

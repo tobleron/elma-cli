@@ -291,9 +291,9 @@ run_scenario() {
   latest_session="$(ls -td "$SESSIONS_ROOT"/*/ 2>/dev/null | head -1)"
 
   # Extract final answer from CLI output
-  # Elma prints "Elma: " prefix for its messages
+  # Strip ANSI codes first, then look for "Final Answer:" line
   local final_answer
-  final_answer="$(echo "$cli_output" | sed -n '/Elma:/{s/^.*Elma: //;p}' | tail -1)"
+  final_answer="$(echo "$cli_output" | sed $'s/\x1b\\[[0-9;]*m//g' | grep "Final Answer:" | sed 's/.*Final Answer: //' | tr -d '\\' | head -1)"
 
   if [[ -z "$final_answer" ]]; then
     # Try extracting the last substantial block of output

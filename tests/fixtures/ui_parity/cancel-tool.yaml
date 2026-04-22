@@ -1,0 +1,13 @@
+---
+name: cancel-tool
+description: Test tool execution cancellation doesn't hang.
+steps:
+  - input: "run destructive tool"
+    delay_ms: 100
+    wait_for: "Tool executing"
+  - input: "\x03"  # Ctrl+C
+    delay_ms: 500
+    wait_for: "Tool cancelled"
+
+# Expected: Tool cancels, UI responsive.
+# Failure: UI hangs after tool cancel.

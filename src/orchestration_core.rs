@@ -501,6 +501,7 @@ pub(crate) async fn generate_final_answer_once(
     reply_instructions: &str,
     workspace_facts: &str,
     workspace_brief: &str,
+    tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<(String, Option<u64>)> {
     let runtime_context = serde_json::json!({
         "model_id": model_id,
@@ -546,7 +547,7 @@ pub(crate) async fn generate_final_answer_once(
             }
         });
 
-        return Ok(orchestration_helpers::maybe_format_final_text(
+        let (formatted, usage) = orchestration_helpers::maybe_format_final_text(
             client,
             chat_url,
             formatter_cfg,
@@ -554,7 +555,8 @@ pub(crate) async fn generate_final_answer_once(
             final_text,
             None,
         )
-        .await);
+        .await;
+        return Ok((formatted, usage));
     }
 
     let evidence_mode = orchestration_helpers::decide_evidence_mode_via_unit(
@@ -595,27 +597,26 @@ pub(crate) async fn generate_final_answer_once(
             line,
             step_results,
             reply_instructions,
+            tui,
         )
         .await?
     } else {
-        (
-            orchestration_helpers::present_result_via_unit(
-                client,
-                presenter_cfg,
-                line,
-                route_decision,
-                &runtime_context,
-                &evidence_mode,
-                &response_advice,
-                step_results,
-                reply_instructions,
-                workspace_facts,
-                workspace_brief,
-            )
-            .await
-            .unwrap_or_default(),
-            None,
+        let text = orchestration_helpers::present_result_via_unit(
+            client,
+            presenter_cfg,
+            line,
+            route_decision,
+            &runtime_context,
+            &evidence_mode,
+            &response_advice,
+            step_results,
+            reply_instructions,
+            workspace_facts,
+            workspace_brief,
         )
+        .await
+        .unwrap_or_default();
+        (text, None)
     };
 
     if !route_decision.route.eq_ignore_ascii_case("CHAT") && !final_text.trim().is_empty() {

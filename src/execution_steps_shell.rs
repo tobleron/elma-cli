@@ -37,6 +37,7 @@ pub(crate) async fn handle_shell_step(
     success_condition: String,
     cmd: String,
     state: &mut ExecutionState,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<()> {
     let cmd = match resolve_command_placeholders(&normalize_shell_cmd(&cmd), &state.artifacts) {
         Ok(cmd) => cmd,
@@ -110,6 +111,33 @@ pub(crate) async fn handle_shell_step(
             success_condition: success_condition.clone(),
             ok: false,
             summary: "skipped_by_calibration_policy".to_string(),
+            command: Some(cmd.clone()),
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return Ok(());
+    }
+
+    if !permission_gate::check_permission(args, &cmd, tui.as_deref_mut()).await {
+        trace(
+            args,
+            &format!("step_denied id={sid} cmd={}", cmd.replace('\n', " ")),
+        );
+        state.step_results.push(StepResult {
+            id: sid.clone(),
+            kind: kind.clone(),
+            purpose: purpose.clone(),
+            depends_on: depends_on.clone(),
+            success_condition: success_condition.clone(),
+            ok: false,
+            summary: "denied_by_user".to_string(),
             command: Some(cmd.clone()),
             raw_output: None,
             exit_code: None,

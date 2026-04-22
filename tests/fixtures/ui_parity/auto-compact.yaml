@@ -1,0 +1,14 @@
+name: auto-compact
+description: Auto compact path emits compact boundary without hanging.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "Generate a long response with many bullet points"
+    delay_ms: 1000
+  - input: "Continue with more details"
+    delay_ms: 1000
+  - input: ""
+    delay_ms: 500
+

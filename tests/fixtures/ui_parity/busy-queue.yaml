@@ -1,0 +1,24 @@
+name: busy-queue
+description: While first response is in-flight, user can type and submit next prompt which is queued.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+  env:
+    FAKE_RESPONSE_DELAY_MS: "1800"
+steps:
+  - input: "first long request"
+    delay_ms: 150
+  - input: "second queued request"
+    delay_ms: 2600
+  - input: "\u0004"
+    send_enter: false
+    delay_ms: 200
+  - input: "\u0004"
+    send_enter: false
+    delay_ms: 200
+asserts:
+  - pattern: "first long request"
+  - pattern: "second queued request"
+  - pattern: "✓ respond"
+    not: true

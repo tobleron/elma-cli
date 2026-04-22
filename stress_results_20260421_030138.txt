@@ -1,0 +1,11 @@
+=== Elma CLI Stress Results ===
+Date: 2026-04-21T01:01:38Z
+Base URL: http://192.168.1.186:8080
+Timeout: 120s
+
+[S000A_Chat_Baseline] FAIL
+[S000B_Shell_Primitive] PASS
+[S000C_Read_Primitive] PASS
+[S000D_Search_Primitive] PASS
+[S000E_Sequential_Logic] PASS
+[S000F_Select_Primitive] PASS

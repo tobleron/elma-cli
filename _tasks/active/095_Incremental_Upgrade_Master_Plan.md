@@ -7,6 +7,30 @@
 **Status:** In Progress (Phases 1-3, 5-6 complete; Phase 4 pivoting to Shell Safety)
 **Supersedes:** Task 058 (archived as completed)
 
+## Master Plan Completion Rule
+This master plan must remain in `_tasks/active/` until every phase, subtask, deferred decision, verification gate, and user sign-off item below is completed. Do not move this file to `_tasks/completed/` only because a subset of phases is done.
+
+The master plan can be archived only after:
+- [ ] Every non-postponed subtask listed under this plan is completed or deliberately superseded by a newer master plan.
+- [ ] Every postponed subtask has a recorded reason, destination, and follow-up plan.
+- [ ] All phase gates have passing build, test, probe, and real CLI verification evidence.
+- [ ] The current `_tasks/TASKS.md` index agrees with this master plan's final status.
+- [ ] The user has approved archiving this master plan.
+
+## Continuation Checklist
+- [ ] Re-read `_tasks/TASKS.md`, `AGENTS.md`, and this master plan before changing any subtask status.
+- [ ] Confirm which active or pending subtasks still belong to this master plan.
+- [ ] Update this checklist whenever a phase, gate, or subtask moves forward.
+- [ ] Keep this file active while any child task is active, pending, blocked, or waiting for verification.
+- [ ] Preserve context-management and small-local-model reliability work unless explicitly superseded.
+- [ ] Run `cargo fmt --check` before final sign-off.
+- [ ] Run `cargo build` before final sign-off.
+- [ ] Run `cargo test` before final sign-off.
+- [ ] Run relevant probes: `./probe_parsing.sh`, `./reliability_probe.sh`, `./run_intention_scenarios.sh`, and `./smoke_llamacpp.sh` where applicable.
+- [ ] Run real CLI validation for user-facing behavior before final sign-off.
+- [ ] Record final verification evidence in this file.
+- [ ] Move this master plan to `_tasks/completed/` only after every applicable checkbox above is checked and the user approves.
+
 ## Overview
 
 Task 058 delivered the initial stability foundation: grounded workspace discovery, stress harness scaffolding, JSON reliability, and human-style prompt handling fixes. This task drives the next phase: a disciplined incremental upgrade of Elma CLI through 8 phases with strict verification gates between each.
@@ -17,7 +41,7 @@ Task 058 delivered the initial stability foundation: grounded workspace discover
 - Tool result budget & disk persistence (50K char threshold)
 - Auto-compact for context window management
 - Streaming tool executor (parallel safe tools, serial shell)
-- Rose Pine color theme with 3 theme options
+- (Historical) Rose Pine theme work from older UI track; superseded for interactive parity by Task 166 Pink/Cyan token theme.
 - Intel failure counter (red, end-of-session summary)
 - Shell command display in trace (`→ executing shell: find . -name "*.sh"`)
 

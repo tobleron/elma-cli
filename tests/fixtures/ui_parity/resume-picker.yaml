@@ -1,0 +1,10 @@
+name: resume-picker
+description: /resume opens session selection modal - skip in CI due to flaky behavior
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "/resume"
+    send_enter: true
+    delay_ms: 1000

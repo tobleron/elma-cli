@@ -392,8 +392,8 @@ pub(crate) async fn annotate_user_intent(
         }
         let role = if msg.role == "user" { "User" } else { "Elma" };
         // Truncate long messages to avoid token explosion
-        let content = if msg.content.len() > 200 {
-            format!("{}...", &msg.content[..200])
+        let content = if msg.content.chars().count() > 200 {
+            format!("{}...", msg.content.chars().take(200).collect::<String>())
         } else {
             msg.content.clone()
         };

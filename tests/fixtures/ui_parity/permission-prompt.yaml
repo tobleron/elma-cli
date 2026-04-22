@@ -1,0 +1,12 @@
+name: permission-prompt
+description: Ensure permission prompt flow does not block/hang in PTY mode.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "delete everything in /tmp/test-area"
+    delay_ms: 1000
+  - input: "n"
+    delay_ms: 400
+

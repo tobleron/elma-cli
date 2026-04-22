@@ -12,3 +12,9 @@ Purpose:
 - exercise autonomy incrementally
 - verify prompt stability without risking Elma's own runtime
 - keep stress failures reproducible and safe
+
+Current active test set:
+- [`STRESS_MINIMAL_REPO_SUMMARY.md`](/Users/r2/elma-cli/_stress_testing/STRESS_MINIMAL_REPO_SUMMARY.md)
+
+Obsoleted stress scenario prompts are kept in:
+- [`obsolete/`](/Users/r2/elma-cli/_stress_testing/obsolete)

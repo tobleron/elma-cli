@@ -203,7 +203,8 @@ pub(crate) async fn execute_and_process_shell(
     let out_path = write_shell_output(&session.shell_dir, &output_path_base, &shell_preview)?;
     trace(args, &format!("shell_output_saved={}", out_path.display()));
     trace(args, &format!("exec_exit_code={code}"));
-    if emit_shell_output || code != 0 {
+    // Only print to stdout when TUI is not active (TUI handles this via transcript)
+    if !crate::ui_state::is_tui_active() && (emit_shell_output || code != 0) {
         println!("elma> exit_code={code}\n{shell_preview}");
     }
     state.artifacts.insert(format!("{sid}:raw"), output.clone());
@@ -334,7 +335,8 @@ fn handle_command_unavailable(
         ),
     );
     trace(args, &format!("exec_exit_code={}", shell_result.exit_code));
-    if emit_shell_output || shell_result.exit_code != 0 {
+    // Only print to stdout when TUI is not active (TUI handles this via transcript)
+    if !crate::ui_state::is_tui_active() && (emit_shell_output || shell_result.exit_code != 0) {
         println!(
             "elma> exit_code={}\n{shell_preview}",
             shell_result.exit_code
@@ -430,7 +432,10 @@ async fn try_command_repair(
                 let out_path = write_shell_output(&session.shell_dir, output_path_base, output)?;
                 trace(args, &format!("shell_output_saved={}", out_path.display()));
                 trace(args, &format!("exec_exit_code={}", shell_result.exit_code));
-                if emit_shell_output || shell_result.exit_code != 0 {
+                // Only print to stdout when TUI is not active (TUI handles this via transcript)
+                if !crate::ui_state::is_tui_active()
+                    && (emit_shell_output || shell_result.exit_code != 0)
+                {
                     println!("elma> exit_code={}\n{output}", shell_result.exit_code);
                 }
                 state

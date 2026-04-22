@@ -1,0 +1,12 @@
+name: file-picker
+description: Typing @ should trigger quick-open/file mention picker behavior.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "@"
+    delay_ms: 400
+  - input: ""
+    delay_ms: 400
+

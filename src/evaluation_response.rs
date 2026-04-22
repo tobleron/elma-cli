@@ -193,6 +193,7 @@ pub(crate) async fn evaluate_response_suite_impl(
             &efficiency_reviewer_cfg,
             &risk_reviewer_cfg,
             &refinement_cfg,
+            None,
         )
         .await?;
         let step_results = loop_outcome.step_results;
@@ -219,6 +220,7 @@ pub(crate) async fn evaluate_response_suite_impl(
             &reply_instructions,
             "",
             "",
+            None,
         )
         .await
         {

@@ -1,0 +1,11 @@
+---
+source: tests/ui_parity.rs
+expression: output
+---
+Error: GET /v1/models failed
+
+Caused by:
+    0: error sending request for url (http://localhost:11434/v1/models)
+    1: client error (Connect)
+    2: tcp connect error
+    3: Connection refused (os error 61)

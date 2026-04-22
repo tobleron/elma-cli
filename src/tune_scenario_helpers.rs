@@ -242,6 +242,7 @@ pub(crate) async fn execute_and_evaluate_program(
         &resources.efficiency_reviewer_cfg,
         &resources.risk_reviewer_cfg,
         &resources.refinement_cfg,
+        None,
     )
     .await?;
 
@@ -369,6 +370,7 @@ pub(crate) async fn execute_and_evaluate_program(
         &reply_instructions,
         "",
         "",
+        None,
     )
     .await
     {

@@ -1,0 +1,22 @@
+=== Elma CLI Stress Results ===
+Date: 2026-04-21T00:41:26Z
+Base URL: http://192.168.1.186:8080
+Timeout: 120s
+
+[S000A_Chat_Baseline] FAIL (cli_exit=1)
+[S000B_Shell_Primitive] FAIL (cli_exit=1)
+[S000C_Read_Primitive] FAIL (cli_exit=1)
+[S000D_Search_Primitive] FAIL (cli_exit=1)
+[S000E_Sequential_Logic] FAIL (cli_exit=1)
+[S000F_Select_Primitive] FAIL (cli_exit=1)
+[S000G_Summarize_Primitive] FAIL (cli_exit=1)
+[S000H_Decide_Primitive] FAIL (cli_exit=1)
+[S000I_Edit_Primitive] FAIL (cli_exit=1)
+[S001_Connectivity_And_Formatting] FAIL (cli_exit=1)
+[S002_Recursive_Discovery] FAIL (cli_exit=1)
+[S003_Multi_File_Refactor] FAIL (cli_exit=1)
+[S004_Logical_Troubleshooting] FAIL (cli_exit=1)
+[S005_High_Intensity_Master_Planning] FAIL (cli_exit=1)
+[S006_Global_Architecture_Audit] FAIL (cli_exit=1)
+[S007_Full_System_Refactoring] FAIL (cli_exit=1)
+[S008_Workflow_Endurance] FAIL (cli_exit=1)

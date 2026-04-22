@@ -1,0 +1,16 @@
+name: todo-toggle
+description: Ctrl-T toggles task list visibility.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "start a multi-step task"
+    delay_ms: 700
+  - input: "\u0014"
+    send_enter: false
+    delay_ms: 300
+  - input: "\u0014"
+    send_enter: false
+    delay_ms: 300
+

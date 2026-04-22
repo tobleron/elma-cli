@@ -1,0 +1,15 @@
+---
+name: permission-gate
+description: Test that dangerous commands don't cause blocking stdin hangs in TUI mode.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "run rm -rf /tmp/test"  # Dangerous command
+    delay_ms: 1000  # Allow time for permission check
+  - input: ""  # Wait for response
+    delay_ms: 500
+
+# Expected: Command is denied without hanging, or modal appears.
+# Failure: Process hangs waiting for stdin input.

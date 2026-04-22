@@ -1,6 +1,9 @@
 //! @efficiency-role: orchestrator
 
+use anyhow::Context;
+use futures::stream::StreamExt;
 use serde_json::Value;
+use std::time::Duration;
 
 use crate::*;
 
@@ -236,6 +239,181 @@ pub(crate) async fn request_risk_review(
     .await
 }
 
+pub(crate) async fn request_chat_final_text_streaming(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    elma_cfg: &Profile,
+    system_content: &str,
+    line: &str,
+    reply_instructions: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> Result<(String, Option<u64>)> {
+    use crate::claude_ui::UiEvent;
+    use futures::stream::StreamExt;
+
+    let reply_req = ChatCompletionRequest {
+        model: elma_cfg.model.clone(),
+        messages: vec![
+            ChatMessage::simple("system", &system_content),
+            ChatMessage::simple(
+                "user",
+                &format!(
+                "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally and directly.",
+                line,
+                if reply_instructions.trim().is_empty() {
+                    "Reply naturally and helpfully."
+                } else {
+                    reply_instructions.trim()
+                }
+            ),
+            ),
+        ],
+        temperature: elma_cfg.temperature,
+        top_p: elma_cfg.top_p,
+        stream: true,
+        max_tokens: elma_cfg.max_tokens,
+        n_probs: None,
+        repeat_penalty: Some(elma_cfg.repeat_penalty),
+        reasoning_format: Some(elma_cfg.reasoning_format.clone()),
+        grammar: None,
+        tools: None,
+    };
+
+    if let Some(ref mut tui) = tui {
+        tui.handle_ui_event(UiEvent::TurnStarted);
+        let _ = tui.pump_ui();
+    }
+
+    let url = chat_url.to_string();
+    let response = client
+        .post(url.clone())
+        .json(&reply_req)
+        .timeout(Duration::from_secs(elma_cfg.timeout_s))
+        .send()
+        .await
+        .context("Streaming request failed")?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("API error {}: {}", status, body);
+    }
+
+    let mut byte_stream = response.bytes_stream();
+    let mut full_content = String::new();
+    let mut full_thinking = String::new();
+    let mut buffer = String::new();
+    let mut thinking_started = false;
+
+    loop {
+        let chunk_result_opt = tokio::select! {
+            chunk = byte_stream.next() => chunk,
+            _ = tokio::time::sleep(Duration::from_millis(40)) => {
+                if let Some(ref mut t) = tui {
+                    let _ = t.pump_ui();
+                    if let Ok(Some(queued)) = t.poll_busy_submission() {
+                        t.enqueue_submission(queued);
+                    }
+                }
+                continue;
+            }
+        };
+
+        let Some(chunk_result) = chunk_result_opt else {
+            break;
+        };
+        let chunk_bytes = match chunk_result {
+            Ok(b) => b,
+            Err(e) => {
+                append_trace_log_line(&format!("[STREAM_ERROR] {}", e));
+                break;
+            }
+        };
+
+        buffer.push_str(&String::from_utf8_lossy(&chunk_bytes));
+
+        while let Some(pos) = buffer.find('\n') {
+            let line = buffer.drain(..pos + 1).collect::<String>();
+            let line = line.trim();
+            if !line.starts_with("data: ") {
+                continue;
+            }
+            let data = &line[6..];
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+
+            if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data) {
+                if let Some(choices) = chunk.get("choices").and_then(|c| c.as_array()) {
+                    for choice in choices {
+                        if let Some(delta) = choice.get("delta") {
+                            // 1. Handle Thinking / Reasoning
+                            let reasoning = delta
+                                .get("reasoning_content")
+                                .or_else(|| delta.get("reasoning"))
+                                .or_else(|| delta.get("thought"))
+                                .and_then(|v| v.as_str());
+
+                            if let Some(reason) = reasoning {
+                                if !reason.is_empty() {
+                                    if !thinking_started {
+                                        thinking_started = true;
+                                        if let Some(ref mut tui) = tui {
+                                            tui.handle_ui_event(UiEvent::ThinkingStarted);
+                                            let _ = tui.pump_ui();
+                                        }
+                                    }
+                                    full_thinking.push_str(reason);
+                                    if let Some(ref mut tui) = tui {
+                                        tui.handle_ui_event(UiEvent::ThinkingDelta(
+                                            reason.to_string(),
+                                        ));
+                                        let _ = tui.pump_ui();
+                                    }
+                                }
+                            }
+
+                            // 2. Handle Assistant Content
+                            if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                                if !content.is_empty() {
+                                    if thinking_started {
+                                        thinking_started = false;
+                                        if let Some(ref mut tui) = tui {
+                                            tui.handle_ui_event(UiEvent::ThinkingFinished);
+                                            let _ = tui.pump_ui();
+                                        }
+                                    }
+                                    full_content.push_str(content);
+                                    if let Some(ref mut tui) = tui {
+                                        tui.handle_ui_event(UiEvent::AssistantContentDelta(
+                                            content.to_string(),
+                                        ));
+                                        let _ = tui.pump_ui();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if thinking_started {
+        if let Some(ref mut tui) = tui {
+            tui.handle_ui_event(UiEvent::ThinkingFinished);
+            let _ = tui.pump_ui();
+        }
+    }
+
+    if let Some(ref mut tui) = tui {
+        tui.handle_ui_event(UiEvent::AssistantFinished);
+        let _ = tui.pump_ui();
+    }
+
+    Ok((full_content.trim().to_string(), None))
+}
+
 pub(crate) async fn request_chat_final_text(
     client: &reqwest::Client,
     chat_url: &Url,
@@ -244,42 +422,93 @@ pub(crate) async fn request_chat_final_text(
     line: &str,
     step_results: &[StepResult],
     reply_instructions: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<(String, Option<u64>)> {
-    let reply_req = ChatCompletionRequest {
-        model: elma_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &system_content),
-            ChatMessage::simple("user", &format!(
-                "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally and directly. Do not mention internal workflow, step state, or missing steps.",
-                line,
-                if reply_instructions.trim().is_empty() {
-                    "Reply naturally and helpfully."
-                } else {
-                    reply_instructions.trim()
+    // Try streaming first
+    let stream_tui = tui.as_deref_mut();
+    match request_chat_final_text_streaming(
+        client,
+        chat_url,
+        elma_cfg,
+        system_content,
+        line,
+        reply_instructions,
+        stream_tui,
+    )
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            append_trace_log_line(&format!("[STREAM_FALLBACK] {}", e));
+            if let Some(ref mut t) = tui {
+                t.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                let _ = t.pump_ui();
+            }
+            // Fallback to non-streaming
+            let reply_req = ChatCompletionRequest {
+                model: elma_cfg.model.clone(),
+                messages: vec![
+                    ChatMessage::simple("system", &system_content),
+                    ChatMessage::simple(
+                        "user",
+                        &format!(
+                            "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally.",
+                            line,
+                            if reply_instructions.trim().is_empty() {
+                                "Reply naturally."
+                            } else {
+                                reply_instructions.trim()
+                            }
+                        ),
+                    ),
+                ],
+                temperature: elma_cfg.temperature,
+                top_p: elma_cfg.top_p,
+                stream: false,
+                max_tokens: elma_cfg.max_tokens,
+                n_probs: None,
+                repeat_penalty: Some(elma_cfg.repeat_penalty),
+                reasoning_format: Some(elma_cfg.reasoning_format.clone()),
+                grammar: None,
+                tools: None,
+            };
+            let parsed = {
+                let fut = chat_once_with_timeout(client, chat_url, &reply_req, elma_cfg.timeout_s);
+                tokio::pin!(fut);
+                loop {
+                    tokio::select! {
+                        r = &mut fut => break r?,
+                        _ = tokio::time::sleep(Duration::from_millis(40)) => {
+                            if let Some(ref mut t) = tui {
+                                let _ = t.pump_ui();
+                                if let Ok(Some(queued)) = t.poll_busy_submission() {
+                                    t.enqueue_submission(queued);
+                                }
+                            }
+                        }
+                    }
                 }
-            )),
-        ],
-        temperature: elma_cfg.temperature,
-        top_p: elma_cfg.top_p,
-        stream: false,
-        max_tokens: elma_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(elma_cfg.repeat_penalty),
-        reasoning_format: Some(elma_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
-    let parsed = chat_once_with_timeout(client, chat_url, &reply_req, elma_cfg.timeout_s).await?;
-    let usage_total = parsed.usage.as_ref().and_then(|u| u.total_tokens);
-    let msg = &parsed
-        .choices
-        .get(0)
-        .context("No choices[0] in response")?
-        .message;
-    Ok((
-        msg.content.as_deref().unwrap_or("").trim().to_string(),
-        usage_total,
-    ))
+            };
+            let usage_total = parsed.usage.as_ref().and_then(|u| u.total_tokens);
+            let msg = &parsed.choices.get(0).context("No choices[0]")?.message;
+            let content = msg.content.as_deref().unwrap_or("").trim().to_string();
+
+            if let Some(ref mut t) = tui {
+                t.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+                let _ = t.pump_ui();
+                if !content.is_empty() {
+                    t.handle_ui_event(crate::claude_ui::UiEvent::AssistantContentDelta(
+                        content.clone(),
+                    ));
+                    let _ = t.pump_ui();
+                }
+                t.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished);
+                let _ = t.pump_ui();
+            }
+
+            Ok((content, usage_total))
+        }
+    }
 }
 
 pub(crate) async fn maybe_revise_presented_result(

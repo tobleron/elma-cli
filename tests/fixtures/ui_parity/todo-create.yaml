@@ -1,0 +1,12 @@
+name: todo-create
+description: Todo list appears when todo tool-like workflow is initiated.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "Create a todo list for refactoring with 3 steps"
+    delay_ms: 900
+  - input: "/tasks"
+    delay_ms: 600
+

@@ -31,6 +31,23 @@ fn gather_artifacts(
         .join("\n\n")
 }
 
+const MAX_SUMMARIZE_INPUT_CHARS: usize = 30_000;
+
+fn truncate_for_summarization(text: &str) -> (String, bool) {
+    let trimmed = text.trim();
+    if trimmed.len() <= MAX_SUMMARIZE_INPUT_CHARS {
+        return (trimmed.to_string(), false);
+    }
+    let mut truncated = trimmed[..MAX_SUMMARIZE_INPUT_CHARS].to_string();
+    let line_count = truncated.lines().count();
+    truncated.push_str(&format!(
+        "\n\n[input truncated from ~{} lines to ~{} lines for summarization]",
+        trimmed.lines().count(),
+        line_count
+    ));
+    (truncated, true)
+}
+
 pub(crate) fn normalize_selected_items_against_evidence(
     items: Vec<String>,
     _instructions: &str,
@@ -322,8 +339,9 @@ async fn handle_summarize_step(
     if text.trim().is_empty() && !depends_on.is_empty() {
         text = gather_artifacts(&depends_on, &state.artifacts);
     }
+    let (text, truncated) = truncate_for_summarization(&text);
     let req = mk_chat_req(
-        &summarizer_cfg,
+        summarizer_cfg,
         summarizer_cfg.system_prompt.clone(),
         format!("Instructions:\n{}\n\nText:\n{}", instructions.trim(), text),
     );
@@ -357,7 +375,7 @@ async fn handle_plan_step(
 ) -> Result<()> {
     let master = std::fs::read_to_string(session.plans_dir.join("_master.md")).unwrap_or_default();
     let req = mk_chat_req(
-        &planner_cfg,
+        planner_cfg,
         planner_cfg.system_prompt.clone(),
         format!("Goal:\n{goal}\n\nMaster plan (_master.md):\n{master}"),
     );
@@ -613,6 +631,7 @@ pub(crate) async fn handle_program_step(
     readonly_only: bool,
     step: Step,
     state: &mut ExecutionState,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<()> {
     let sid = step_id(&step).to_string();
     let kind = step_kind(&step).to_string();
@@ -631,8 +650,16 @@ pub(crate) async fn handle_program_step(
             purpose, dep_str
         ),
     );
-    if !matches!(step, Step::Reply { .. } | Step::Respond { .. }) {
+    let is_tool_step = !matches!(step, Step::Reply { .. } | Step::Respond { .. });
+    if is_tool_step {
         operator_trace(args, &purpose);
+        if let Some(ref mut t) = tui {
+            t.handle_ui_event(crate::claude_ui::UiEvent::ToolStarted {
+                name: kind.clone(),
+                command: purpose.clone(),
+            });
+            t.set_coordinator_status(purpose.clone(), true);
+        }
     }
 
     match step {
@@ -687,12 +714,13 @@ pub(crate) async fn handle_program_step(
                 emit_shell_output,
                 readonly_only,
                 sid,
-                kind,
+                kind.clone(),
                 purpose,
                 depends_on,
                 success_condition,
                 cmd,
                 state,
+                tui.as_deref_mut(),
             )
             .await?
         }
@@ -745,7 +773,7 @@ pub(crate) async fn handle_program_step(
             session,
             workdir,
             sid,
-            kind,
+            kind.clone(),
             purpose,
             depends_on,
             success_condition,
@@ -842,7 +870,7 @@ pub(crate) async fn handle_program_step(
             content,
             state,
         ),
-        Step::Delete { path, .. } => handle_delete_step(
+        Step::Delete { ref path, .. } => handle_delete_step(
             args,
             workdir,
             &sid,
@@ -850,10 +878,24 @@ pub(crate) async fn handle_program_step(
             purpose,
             depends_on,
             success_condition,
-            path,
+            path.clone(),
             state,
         ),
     }
+
+    if is_tool_step {
+        if let Some(ref mut t) = tui {
+            let last_result = state.step_results.last();
+            let success = last_result.map(|r| r.ok).unwrap_or(false);
+            let output = last_result.map(|r| r.summary.clone()).unwrap_or_default();
+            t.handle_ui_event(crate::claude_ui::UiEvent::ToolFinished {
+                name: kind.clone(),
+                success,
+                output,
+            });
+        }
+    }
+
     Ok(())
 }
 

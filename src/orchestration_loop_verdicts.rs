@@ -516,6 +516,7 @@ pub(crate) async fn try_refinement_if_needed(
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
     refinement_cfg: &Profile,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<()> {
     let achievement = check_objective_achievement(&merged_program.objective, step_results);
     if achievement.is_achieved || step_results.is_empty() {
@@ -576,6 +577,7 @@ pub(crate) async fn try_refinement_if_needed(
         &merged_program.objective,
         false,
         false,
+        tui.as_deref_mut(),
     )
     .await?;
     step_results.extend(refined_results);

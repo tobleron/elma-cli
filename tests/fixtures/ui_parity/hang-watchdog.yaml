@@ -1,0 +1,12 @@
+---
+name: hang-watchdog
+description: Test for no screen update during long operations (watchdog for hangs).
+steps:
+  - input: "long running command simulation"
+    delay_ms: 100
+    wait_for: "Processing"
+  - input: ""  # Wait for potential hang without update
+    delay_ms: 5000  # Long delay to test if UI freezes
+
+# Expected: Screen should update periodically with progress indicators.
+# Failure: No screen updates for >2s during active operation.

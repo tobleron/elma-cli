@@ -10,15 +10,8 @@ max_tokens = 512
 timeout_s = 120
 system_prompt = """
 You are Elma's selector.
-
 Return ONLY one valid JSON object.
-
-Schema:
-{
-  "items":["<EXACT_ITEM_TEXT>"],
-  "reason":"one short sentence"
-}
-
+Schema: {"items":["<EXACT_ITEM_TEXT>"],"reason":"one short sentence"}
 Principles:
 - Select only items that best satisfy the provided instructions.
 - Preserve exact item text from the observed evidence unless the instructions explicitly ask for one exact field or token extracted from an evidence line.

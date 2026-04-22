@@ -2,6 +2,7 @@
 //!
 //! Execution Steps - Edit Step Handling
 
+use crate::ui::ui_diff::StructuredDiff;
 use crate::*;
 
 pub(crate) fn handle_edit_step(
@@ -95,10 +96,35 @@ pub(crate) fn handle_edit_step(
         .context("edit target has no parent directory")?;
     std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
 
+    let old_content = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let mut diff_text = String::new();
     let action_summary = match operation {
         "write_file" => {
             std::fs::write(&path, spec.content.as_bytes())
                 .with_context(|| format!("write {}", path.display()))?;
+            let new_content = spec.content.clone();
+            diff_text = if old_content.is_empty() {
+                format!("New file: {}\n{}", path.display(), new_content)
+            } else {
+                let diff_viewer = StructuredDiff::new(
+                    &path.display().to_string(),
+                    &path.display().to_string(),
+                    &old_content,
+                    &new_content,
+                );
+                let diff_lines = diff_viewer.render_ratatui(80);
+                diff_lines
+                    .iter()
+                    .map(|l| {
+                        l.spans
+                            .iter()
+                            .map(|s| s.content.clone())
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
             format!("wrote {}", path.display())
         }
         "append_text" => {
@@ -109,20 +135,60 @@ pub(crate) fn handle_edit_step(
                 .with_context(|| format!("open {}", path.display()))?;
             file.write_all(spec.content.as_bytes())
                 .with_context(|| format!("append {}", path.display()))?;
+            let new_content = format!("{}{}", old_content, spec.content);
+            diff_text = if old_content.is_empty() {
+                format!("New file: {}\n{}", path.display(), new_content)
+            } else {
+                let diff_viewer = StructuredDiff::new(
+                    &path.display().to_string(),
+                    &path.display().to_string(),
+                    &old_content,
+                    &new_content,
+                );
+                let diff_lines = diff_viewer.render_ratatui(80);
+                diff_lines
+                    .iter()
+                    .map(|l| {
+                        l.spans
+                            .iter()
+                            .map(|s| s.content.clone())
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
             format!("appended {}", path.display())
         }
         "replace_text" => {
-            let original = std::fs::read_to_string(&path)
-                .with_context(|| format!("read {}", path.display()))?;
             if spec.find.is_empty() {
                 anyhow::bail!("replace_text requires non-empty find");
             }
-            let replaced = original.replace(&spec.find, &spec.replace);
-            if replaced == original {
+            let replaced = old_content.replace(&spec.find, &spec.replace);
+            if replaced == old_content {
                 anyhow::bail!("replace_text found no matches in {}", path.display());
             }
             std::fs::write(&path, replaced.as_bytes())
                 .with_context(|| format!("write {}", path.display()))?;
+            let new_content = replaced;
+            diff_text = {
+                let diff_viewer = StructuredDiff::new(
+                    &path.display().to_string(),
+                    &path.display().to_string(),
+                    &old_content,
+                    &new_content,
+                );
+                let diff_lines = diff_viewer.render_ratatui(80);
+                diff_lines
+                    .iter()
+                    .map(|l| {
+                        l.spans
+                            .iter()
+                            .map(|s| s.content.clone())
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
             format!("updated {}", path.display())
         }
         _ => unreachable!(),
@@ -159,7 +225,7 @@ pub(crate) fn handle_edit_step(
         ok: true,
         summary,
         command: None,
-        raw_output: None,
+        raw_output: Some(diff_text),
         exit_code: None,
         output_bytes: None,
         truncated: false,

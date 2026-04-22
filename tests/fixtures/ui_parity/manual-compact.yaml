@@ -1,0 +1,11 @@
+name: manual-compact
+description: /compact emits compact boundary and summary-style rows.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "Give me a short answer"
+    delay_ms: 700
+  - input: "/compact"
+    delay_ms: 700

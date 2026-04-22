@@ -53,8 +53,7 @@ static PERMISSION_CACHE: OnceLock<Mutex<ApprovalCache>> = OnceLock::new();
 
 fn approval_cache() -> &'static Mutex<ApprovalCache> {
     PERMISSION_CACHE.get_or_init(|| {
-        // Detect non-interactive mode: stdin is not a terminal
-        let non_interactive = !io::stdin().is_terminal();
+        let non_interactive = !atty::is(atty::Stream::Stdin);
         Mutex::new(ApprovalCache::new(non_interactive))
     })
 }
@@ -68,7 +67,11 @@ pub(crate) fn reset_permission_cache() {
 
 /// Check if a command requires permission gate approval.
 /// Returns true if the command is safe to execute (either no approval needed or user approved).
-pub(crate) fn check_permission(args: &Args, command: &str) -> bool {
+pub(crate) async fn check_permission(
+    args: &Args,
+    command: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> bool {
     let risk = classify_command(command);
 
     // Safe commands pass without approval
@@ -103,7 +106,29 @@ pub(crate) fn check_permission(args: &Args, command: &str) -> bool {
         return false;
     }
 
-    // Interactive mode: ask user
+    // If we have a TUI, use async permission request
+    if let Some(ref mut t) = tui {
+        let approved = t.request_permission(command).await;
+        if approved {
+            record_approval(command);
+        }
+        return approved;
+    }
+
+    // Interactive mode: ask user (blocking for now; modal integration TODO)
+    // HACK: To prevent hangs in TUI mode, check if stdin is a TTY.
+    // If not a TTY (likely PTY or pipe), deny to avoid blocking.
+    // TODO: Properly integrate with modal system.
+    if !atty::is(atty::Stream::Stdin) {
+        trace(
+            args,
+            &format!(
+                "permission_gate: DENIED (non-TTY stdin, likely TUI/PTY): {}",
+                command
+            ),
+        );
+        return false;
+    }
     ask_permission(args, command, &risk)
 }
 

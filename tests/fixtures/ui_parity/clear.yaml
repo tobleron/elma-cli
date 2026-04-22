@@ -1,0 +1,12 @@
+name: clear
+description: /clear resets visible conversation in Claude-style flow.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "hello there"
+    delay_ms: 700
+  - input: "/clear"
+    delay_ms: 700
+

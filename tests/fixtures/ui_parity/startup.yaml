@@ -1,0 +1,15 @@
+---
+name: startup
+description: Initial screen — no messages yet, prompt ready, help hints visible.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: ""        # just wait for startup
+    delay_ms: 1000
+# Expected after fixture:
+# - A welcome message (optional)
+# - A prompt line starting with "> "
+# - Footer hints like "Ctrl+J for multi-line" etc.
+# - No user/assistant messages yet

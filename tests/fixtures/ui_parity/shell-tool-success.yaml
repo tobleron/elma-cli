@@ -1,0 +1,14 @@
+name: shell-tool-success
+description: Exercise tool-start/progress/result flow for a successful shell-like request.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "list files in this folder"
+    delay_ms: 800
+  - input: ""
+    delay_ms: 400
+asserts:
+  - pattern: "✓ respond"
+    not: true

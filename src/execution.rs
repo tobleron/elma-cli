@@ -34,6 +34,7 @@ pub(crate) async fn execute_program(
     objective: &str,
     emit_shell_output: bool,
     readonly_only: bool,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<(Vec<StepResult>, Option<String>)> {
     let mut state = ExecutionState {
         step_results: Vec::new(),
@@ -69,6 +70,7 @@ pub(crate) async fn execute_program(
             readonly_only,
             step,
             &mut state,
+            tui.as_deref_mut(),
         )
         .await?;
         if state.halt {

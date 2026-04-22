@@ -1,0 +1,13 @@
+---
+name: cancel-stream
+description: Test stream cancellation doesn't leave UI frozen.
+steps:
+  - input: "simulate streaming response"
+    delay_ms: 100
+    wait_for: "Streaming"
+  - input: "\x03"  # Ctrl+C to cancel
+    delay_ms: 500
+    wait_for: "Cancelled"
+
+# Expected: Stream cancels, UI accepts new input immediately.
+# Failure: UI frozen after cancellation.

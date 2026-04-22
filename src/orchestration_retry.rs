@@ -7,12 +7,35 @@
 
 use crate::app::LoadedProfiles;
 use crate::*;
+use std::future::Future;
+
+async fn await_with_optional_tui<T, F>(
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+    future: F,
+) -> Result<T>
+where
+    F: Future<Output = Result<T>>,
+{
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            result = &mut future => return result,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(40)) => {
+                if let Some(t) = tui.as_deref_mut() {
+                    let _ = t.pump_ui();
+                    if let Ok(Some(queued)) = t.poll_busy_submission() {
+                        t.enqueue_submission(queued);
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// Retry orchestration with strategy chains and temperature escalation.
 /// Returns the best program from all attempts, or a meta-review synthesized program.
 ///
 /// Task 010: Now uses strategy fallback chains instead of just temperature escalation.
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn orchestrate_with_retries(
     args: &Args,
     client: &reqwest::Client,
@@ -32,6 +55,7 @@ pub(crate) async fn orchestrate_with_retries(
     max_retries: u32,
     temp_step: f64,
     max_temp: f64,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<AutonomousLoopOutcome> {
     use crate::defaults::get_retry_prompt_variant;
 
@@ -125,6 +149,7 @@ pub(crate) async fn orchestrate_with_retries(
                 scope,
                 formula,
                 &attempt_history,
+                tui.as_deref_mut(),
             )
             .await?
         };
@@ -184,6 +209,7 @@ pub(crate) async fn orchestrate_with_retries(
             &profiles.efficiency_reviewer_cfg,
             &profiles.risk_reviewer_cfg,
             &profiles.refinement_cfg,
+            tui.as_deref_mut(),
         )
         .await?;
 
@@ -239,6 +265,7 @@ pub(crate) async fn orchestrate_with_retries(
         ws_brief,
         route_decision,
         &attempt_history,
+        tui.as_deref_mut(),
     )
     .await?;
 
@@ -277,6 +304,7 @@ pub(crate) async fn orchestrate_with_retries(
         &profiles.efficiency_reviewer_cfg,
         &profiles.risk_reviewer_cfg,
         &profiles.refinement_cfg,
+        tui.as_deref_mut(),
     )
     .await
 }
@@ -379,6 +407,7 @@ async fn build_program_with_strategy(
     scope: &ScopePlan,
     formula: &FormulaSelection,
     attempt_history: &[(u32, Program, String)],
+    tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<Program> {
     // Get tool registry for this workspace
     let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -444,7 +473,7 @@ async fn build_program_with_strategy(
         tools: None,
     };
 
-    let response = chat_once(client, chat_url, &request).await?;
+    let response = await_with_optional_tui(tui, chat_once(client, chat_url, &request)).await?;
     let response_text = extract_response_text(&response);
 
     // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
@@ -463,6 +492,7 @@ async fn synthesize_meta_review(
     ws_brief: &str,
     route_decision: &RouteDecision,
     attempt_history: &[(u32, Program, String)],
+    tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<Program> {
     let mut prompt = String::new();
     prompt.push_str("=== TASK ===\n");
@@ -522,7 +552,7 @@ async fn synthesize_meta_review(
         tools: None,
     };
 
-    let response = chat_once(client, chat_url, &request).await?;
+    let response = await_with_optional_tui(tui, chat_once(client, chat_url, &request)).await?;
     let response_text = extract_response_text(&response);
     // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
     let json_str =

@@ -59,9 +59,11 @@ mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
 mod formulas;
+mod fs_intel; // Task 072: Specialized Filesystem Intel
 mod guardrails; // State-aware guardrails for context drift (Task 011)
 mod guardrails_refinement; // Guardrails refinement phase (Task 011)
 mod hook_system; // Tasks 123, 124, 125: Extensible hook framework
+mod input_parser; // Task 013: Smart Input Prefixes And Command Modes
 mod intel_narrative; // Narrative transformation for intel units
 mod intel_narrative_planning; // Planning-related narrative functions
 mod intel_narrative_steps; // Step-related narrative functions and helpers
@@ -98,6 +100,7 @@ mod program_policy_tests;
 mod program_steps;
 mod program_utils;
 mod prompt_constants;
+mod pubsub; // Task 019: Generic Pub/Sub Broker
 mod refinement;
 mod reflection;
 mod routing;
@@ -112,6 +115,7 @@ mod session_paths;
 mod session_seq;
 mod session_write;
 mod shell_preflight; // Task 116: Destructive Command Detection & Preflight
+mod shutdown; // Task 017: Graceful Shutdown And Panic Recovery
 mod snapshot;
 mod storage;
 mod strategy; // Multi-strategy planning with fallback chains (Task 010)
@@ -136,25 +140,34 @@ mod types_core;
 mod types_core_impl;
 mod types_hierarchy;
 mod ui;
-mod ui_autocomplete; // IDE-grade TUI: Slash command and emoji autocomplete
-mod ui_chat;
-mod ui_colors;
-mod ui_context_bar; // Task 099: Context Window Usage Visualizer
-mod ui_effort; // Task 107: Visual Effort Indicator
-mod ui_input; // IDE-grade TUI: Multi-line input editor with history
-mod ui_interact; // Task 110: Inquire Interaction Integration
-mod ui_layout; // Structured layout utilities
-mod ui_markdown; // Terminal markdown renderer
-mod ui_modal; // Premium Terminal UI: Modal overlays
-mod ui_progress; // Task 109: Indicatif Progress Integration
-mod ui_render; // Premium Terminal UI: Full-screen rendering
-mod ui_spinner; // Task 101: Verb-Driven Loading Spinners
-mod ui_state;
-mod ui_syntax; // Task 111: Syntect Syntax Highlighting
-mod ui_terminal; // Premium Terminal UI: crossterm I/O, event loop
-mod ui_theme; // Premium Terminal UI: Gruvbox theme constants
-mod ui_trace;
-mod ui_wrap; // Premium Terminal UI: ANSI-safe text wrapping
+// UI modules are now organized under the `ui` namespace.
+// Backward-compatible re-exports to preserve existing absolute paths (crate::ui_*).
+pub use ui::ui_autocomplete;
+pub use ui::ui_chat;
+pub use ui::ui_colors;
+pub use ui::ui_context_bar;
+pub use ui::ui_coordinator_status;
+pub use ui::ui_diff;
+pub use ui::ui_effort;
+pub use ui::ui_input;
+pub use ui::ui_interact;
+pub use ui::ui_layout;
+pub use ui::ui_markdown;
+pub use ui::ui_modal;
+pub use ui::ui_modal_search;
+pub use ui::ui_model_picker;
+pub use ui::ui_progress;
+pub use ui::ui_render_legacy;
+pub use ui::ui_spinner;
+pub use ui::ui_state;
+pub use ui::ui_syntax;
+pub use ui::ui_terminal;
+pub use ui::ui_theme;
+pub use ui::ui_theme::*;
+pub use ui::ui_chat::*;
+pub use ui::ui_state::*;
+pub use ui::ui_trace::*;
+mod claude_ui; // Task 169: Claude Code-style Terminal UI
 mod verification;
 mod verification_evidence;
 mod workspace;

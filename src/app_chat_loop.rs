@@ -14,6 +14,31 @@ use crate::app_chat_trace::*;
 use crate::ui_state::HeaderInfo;
 use crate::ui_terminal::{MessageRole, TerminalUI};
 use crate::*;
+use std::collections::VecDeque;
+use std::future::Future;
+
+async fn await_with_busy_queue<T, F>(
+    tui: &mut TerminalUI,
+    queued_inputs: &mut VecDeque<String>,
+    future: F,
+) -> Result<T>
+where
+    F: Future<Output = T>,
+{
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            result = &mut future => return Ok(result),
+            _ = tokio::time::sleep(std::time::Duration::from_millis(40)) => {
+                tui.pump_ui()?;
+                if let Some(queued) = tui.poll_busy_submission()? {
+                    queued_inputs.push_back(queued);
+                    tui.notify("Queued 1 message (will run after current response)");
+                }
+            }
+        }
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 async fn apply_policy_fallback(
@@ -110,6 +135,68 @@ async fn handle_chat_command(
     }
     match line {
         "/exit" | "/quit" => Ok(false),
+        "/clear" => {
+            runtime.messages.truncate(1);
+            tui.clear_messages();
+            tui.add_claude_message(crate::claude_ui::ClaudeMessage::System {
+                content: "Conversation cleared".to_string(),
+            });
+            handled!()
+        }
+        "/resume" => {
+            let sessions_root = runtime
+                .session
+                .root
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| runtime.session.root.clone());
+            let current = runtime
+                .session
+                .root
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "current".to_string());
+            let mut options: Vec<String> = std::fs::read_dir(&sessions_root)
+                .ok()
+                .into_iter()
+                .flat_map(|it| it.filter_map(|e| e.ok()))
+                .filter_map(|e| {
+                    let path = e.path();
+                    if !path.is_dir() {
+                        return None;
+                    }
+                    let name = path.file_name()?.to_string_lossy().to_string();
+                    if !name.starts_with("s_") {
+                        return None;
+                    }
+                    let marker = if name == current { " (current)" } else { "" };
+                    Some(format!("{}{}", name, marker))
+                })
+                .collect();
+            options.sort();
+            options.reverse();
+            if options.is_empty() {
+                options.push("No sessions found".to_string());
+            }
+            options.push("Esc — Back to chat".to_string());
+            tui.set_modal(crate::ui_state::ModalState::Select {
+                title: "Resume Session".to_string(),
+                options,
+            });
+            handled!()
+        }
+        "/tasks" => {
+            let lines = tui.todo_render_lines();
+            if lines.is_empty() {
+                tui.add_message(
+                    MessageRole::Assistant,
+                    "(no tasks yet — task list appears during multi-step work)".to_string(),
+                );
+            } else {
+                tui.add_message(MessageRole::Assistant, lines.join("\n"));
+            }
+            handled!()
+        }
         "/reset" => {
             runtime.messages.truncate(1);
             crate::permission_gate::reset_permission_cache();
@@ -147,6 +234,11 @@ async fn handle_chat_command(
             );
             handled!()
         }
+        "/reasoning" => {
+            let new_state = crate::toggle_show_reasoning();
+            tui.notify(&format!("Reasoning {}", if new_state { "ON" } else { "OFF" }));
+            handled!()
+        }
         "/help" => {
             use crate::ui_state::ModalState;
             let help_content = format!(
@@ -177,6 +269,7 @@ async fn handle_chat_command(
                  /tune      Model tuning\n\
                  /tools     Discover tools\n\
                  /verbose   Toggle verbose\n\
+                 /reasoning Toggle reasoning visibility\n\
                  /exit      Quit Elma"
             );
             tui.set_modal(ModalState::Help {
@@ -251,10 +344,11 @@ async fn handle_chat_command(
             handled!()
         }
         "/compact" => {
-            tui.add_message(
-                MessageRole::Assistant,
-                "(context compacted — summary stored)".to_string(),
-            );
+            tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactBoundary);
+            tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactSummary {
+                message_count: runtime.messages.len(),
+                context_preview: Some("manual compact".to_string()),
+            });
             handled!()
         }
         _ => {
@@ -569,10 +663,18 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         "⏱ 0.0s".to_string(),
     );
 
+    let mut queued_inputs: VecDeque<String> = VecDeque::new();
+
     let res = loop {
-        let line_opt = tui.run_input_loop()?;
-        let Some(line) = line_opt else {
-            break Ok(());
+        queued_inputs.extend(tui.take_queued_submissions());
+        let line = if let Some(queued) = queued_inputs.pop_front() {
+            queued
+        } else {
+            let line_opt = tui.run_input_loop()?;
+            let Some(line) = line_opt else {
+                break Ok(());
+            };
+            line.to_string()
         };
         let line = line.trim();
         if !handle_chat_command(runtime, line, &mut tui).await? {
@@ -593,15 +695,22 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Show activity indicator while processing
         tui.set_activity("Analyzing", "Processing your request...");
 
+        // Immediate redraw so user sees submitted message + busy state
+        tui.pump_ui()?;
+
         // Simplified: intent annotation only — no classification pipeline
-        let rephrased_objective = annotate_user_intent(
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.profiles.intent_helper_cfg,
-            line,
-            &runtime.messages,
+        let rephrased_objective = await_with_busy_queue(
+            &mut tui,
+            &mut queued_inputs,
+            annotate_user_intent(
+                &runtime.client,
+                &runtime.chat_url,
+                &runtime.profiles.intent_helper_cfg,
+                line,
+                &runtime.messages,
+            ),
         )
-        .await
+        .await?
         .unwrap_or_else(|_| line.to_string());
 
         try_workspace_discovery(runtime, line);
@@ -692,6 +801,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let hierarchy_goal: Option<Masterplan> = None;
 
         tui.set_activity("Planning", "Building execution plan...");
+        tui.pump_ui()?;
 
         let mut program = build_program(
             runtime,
@@ -730,6 +840,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Skip reflection loop — Maestro + Orchestrator self-validate step generation
         // program = build_program_with_temp(...);  // disabled
 
+        // Redraw after planning so user sees the plan before execution
+        tui.pump_ui()?;
+
         let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
             && formula.primary.eq_ignore_ascii_case("reply_only");
 
@@ -740,6 +853,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         let mut loop_outcome = if is_trivial || is_tool_calling_result {
             tui.set_activity("Responding", "Generating response...");
+            tui.pump_ui()?;
             AutonomousLoopOutcome {
                 program: program.clone(),
                 step_results: vec![],
@@ -748,6 +862,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             }
         } else {
             tui.set_activity("Executing", "Running steps...");
+            tui.pump_ui()?;
             orchestrate_with_retries(
                 &runtime.args,
                 &runtime.client,
@@ -767,6 +882,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 runtime.args.max_retries,
                 runtime.args.retry_temp_step,
                 runtime.args.max_retry_temp,
+                Some(&mut tui),
             )
             .await?
         };
@@ -777,9 +893,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             loop_outcome.reasoning_clean,
         );
 
-        // Tool-calling pipeline already produced the final answer in the Respond step.
-        // Skip resolve_final_text which would call the presenter LLM with empty step_results
-        // and cause it to hallucinate a completely different (wrong) answer.
+        // Clear coordinator status after execution
+        tui.set_coordinator_status("".to_string(), false);
+
+        // Extract final_text and usage (thinking is stripped by isolate_reasoning_fields)
         let (final_text, final_usage_total) = if is_tool_calling_result {
             let answer = match &program.steps[0] {
                 Step::Respond { instructions, .. } => instructions.clone(),
@@ -797,9 +914,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 &route_decision,
                 &step_results,
                 &mut final_reply,
+                Some(&mut tui),
             )
             .await?
         };
+
+        // Show assistant response (thinking is already stripped from final_text)
         if !final_text.is_empty() {
             tui.add_message(MessageRole::Assistant, final_text.clone());
             runtime
@@ -831,32 +951,32 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             tokens_out,
             turn_timer.format(),
         );
-        maybe_save_formula_memory(
-            &runtime.args,
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.profiles.memory_gate_cfg,
-            &runtime.model_id,
-            &runtime.model_cfg_dir,
-            line,
-            &route_decision,
-            &complexity,
-            &formula,
-            &scope,
-            &program,
-            &step_results,
-            reasoning_clean,
+        await_with_busy_queue(
+            &mut tui,
+            &mut queued_inputs,
+            maybe_save_formula_memory(
+                &runtime.args,
+                &runtime.client,
+                &runtime.chat_url,
+                &runtime.profiles.memory_gate_cfg,
+                &runtime.model_id,
+                &runtime.model_cfg_dir,
+                line,
+                &route_decision,
+                &complexity,
+                &formula,
+                &scope,
+                &program,
+                &step_results,
+                reasoning_clean,
+            ),
         )
-        .await?;
-        if !final_text.is_empty() {
-            runtime
-                .messages
-                .push(ChatMessage::simple("assistant", &final_text));
-        }
+        .await??;
         if has_edit_result(&step_results) {
             refresh_runtime_workspace(runtime)?;
         }
         let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
+        queued_inputs.extend(tui.take_queued_submissions());
     };
 
     // Mark TUI as inactive

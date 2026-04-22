@@ -1,0 +1,14 @@
+name: double-escape-clear
+description: Double Esc should clear prompt and show transient notification.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "draft text to clear"
+    send_enter: false
+    delay_ms: 300
+  - input: "\u001b\u001b"
+    send_enter: false
+    delay_ms: 500
+

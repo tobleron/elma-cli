@@ -1,0 +1,14 @@
+name: double-ctrl-c-exit
+description: Double Ctrl-C should exit cleanly from interactive mode.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "\u0003"
+    send_enter: false
+    delay_ms: 300
+  - input: "\u0003"
+    send_enter: false
+    delay_ms: 300
+

@@ -92,6 +92,7 @@ pub(crate) async fn resolve_final_text(
     route_decision: &RouteDecision,
     step_results: &[StepResult],
     final_reply: &mut Option<String>,
+    tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<(String, Option<u64>)> {
     let reply_instructions = final_reply.clone().unwrap_or_else(|| {
         "Respond to the user in plain terminal text. Use any step outputs as evidence.".to_string()
@@ -114,6 +115,7 @@ pub(crate) async fn resolve_final_text(
         &reply_instructions,
         &runtime.ws,
         &runtime.ws_brief,
+        tui,
     )
     .await?;
 

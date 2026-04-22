@@ -1,0 +1,14 @@
+name: graceful-exit
+description: Double Ctrl-D exits while restoring terminal cleanly.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "\u0004"
+    send_enter: false
+    delay_ms: 300
+  - input: "\u0004"
+    send_enter: false
+    delay_ms: 300
+

@@ -1,0 +1,18 @@
+name: input-during-tool-execution
+description: Input must remain responsive during long-running tool execution.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+  env:
+    FAKE_RESPONSE_DELAY_MS: "800"
+steps:
+  - input: "list files"
+    delay_ms: 200
+  - input: "test-input-456"
+    send_enter: false
+    delay_ms: 1000
+  - input: ""
+    delay_ms: 500
+asserts:
+  - pattern: "test-input-456"

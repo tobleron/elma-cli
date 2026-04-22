@@ -1,0 +1,14 @@
+name: notification
+description: Trigger a brief footer notification state.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "text to clear"
+    send_enter: false
+    delay_ms: 300
+  - input: "\u001b\u001b"
+    send_enter: false
+    delay_ms: 500
+

@@ -1,0 +1,12 @@
+name: collapsed-tool-output
+description: Ensure long-output style prompts keep transcript responsive with collapsible behavior.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "show me a very long output from a command"
+    delay_ms: 1000
+  - input: ""
+    delay_ms: 500
+

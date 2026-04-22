@@ -2,95 +2,97 @@ This file provides universal guidance for agents working in this repository.
 
 ## UI Design Philosophy
 
-### Screen Architecture
-Elma's terminal UI is a custom crossterm + ANSI renderer with a 5-frame layout:
+### Current UI Direction
+Elma's interactive terminal UI must closely mimic Claude Code's terminal interface as observed in `_stress_testing/_claude_code_src`.
 
+The active planning source for this work is:
+- `_tasks/pending/166_Claude_Code_Terminal_Parity_Master_Plan.md`
+- `_tasks/pending/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate.md`
+- `_tasks/pending/167_Claude_Code_Source_Audit_And_Golden_Terminal_Harness.md` through `_tasks/pending/178_End_To_End_Claude_Parity_Stress_Gate.md`
+
+Older UI instructions that conflict with Claude Code parity are stale. In particular:
+- Do not preserve the old five-frame Elma layout.
+- Do not preserve the old persistent header strip, activity rail, boxed composer, or context progress bar.
+- Do not preserve Gruvbox-only, Tokyo Night, Catppuccin, or Rose Pine theme assumptions.
+- Do not preserve a crossterm-only restriction if Ratatui or another Rust terminal crate gets closer to Claude Code behavior.
+
+### Claude Code Parity Target
+The default interactive UI should be sparse, message-first, and Claude-like:
+
+```text
+> user request
+
+∴ Thinking
+
+● assistant response with rendered markdown
+
+● shell (cargo test)
+  running...
+✓ shell completed
+
+> prompt
 ```
-┌──────────────────────────────────────────────────┐  ← FRAME 1: Header strip (1 row)
-  Elma  WORKFLOW · elma-cli · s4a2    qwen3:4b · localhost
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ← faint separator
 
-  > list files in src                             ← FRAME 2: Transcript (scrollable)
-  
-  ● Here are the files I found...
-  
-  ◦ SHELL  ls src/
-  ✓ SHELL completed (0.3s)
-  
-  → executing shell: cargo test -q                  ← FRAME 3: Activity rail (1 row)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ← FRAME 4: Composer/footer
-  > type here             qwen3:4b · 45% ctx · ⏱ 2.1s
-  ████░░░░░░ 4.1k/8.0k [51.3%]                     ← FRAME 4c: Context bar (optional)
-└──────────────────────────────────────────────────┘
-```
+Required user-facing patterns:
+- User rows use a `>` prompt convention.
+- Assistant rows use `●` and rich terminal markdown.
+- Thinking rows use the Claude-style `∴ Thinking` convention, collapsed by default and expanded in transcript/verbose modes.
+- Tool rows use Claude-like loader/progress/result states, not Elma-specific activity rails.
+- Slash commands open a fuzzy picker when the user types `/`.
+- File mentions open a quick-open picker when the user types `@`.
+- Bash mode is entered with `!` where supported.
+- The task/todo list appears and checkmarks automatically during multi-step work.
+- Context compaction displays a Claude-like compact summary and compact boundary.
+- Ctrl-O expands transcript/history details.
+- Ctrl-T toggles tasks.
+- Double Esc clears the prompt.
+- Double Ctrl-C or Ctrl-D exits cleanly.
 
-- **No ratatui** — pure crossterm raw mode + ANSI escape codes
-- **No per-message boxes** — spacing and prefix hierarchy create visual structure
-- **Gruvbox Dark Hard only** — no Catppuccin, Tokyo Night, or Rose Pine
-- **Span-based rendering** internally → wrap → serialize to ANSI
-- **Full redraw on state change** — no high-frequency repaint loop
+### Theme
+The default theme is a high-contrast monochrome base with Pink as the primary accent and Cyan as the complementary accent:
 
-### Gruvbox Dark Hard Color Palette
-The **only** color theme used throughout Elma is [Gruvbox Dark Hard](https://github.com/morhetz/gruvbox):
+| Token | Purpose |
+|-------|---------|
+| Black | terminal background baseline |
+| White | primary text |
+| Greys | metadata, separators, disabled text, inactive hints |
+| Pink | primary accent, prompt affordances, active selection, attention states |
+| Cyan | complementary accent, tools, file mentions, progress and informational contrast |
 
-| Color | Hex | Semantic Usage |
-|-------|-----|---------------|
-| **Yellow** `#fabd2f` | Prompts, tool names, warnings, H headers |
-| **Red** `#fb4934` | Errors, failures, destructive blocks |
-| **Green** `#b8bb26` | Success, confirmations, safe operations |
-| **Blue** `#83a598` | Tool execution, informational messages, bullets |
-| **Purple** `#d3869b` | Elma prefix, inline code, assistant dot |
-| **Aqua** `#8ec07c` | Secondary accent, activity rail |
-| **Orange** `#fe8019` | Highlights, important markers |
-| **Fg** `#ebdbb2` | Primary text, normal output |
-| **Gray** `#928374` | Metadata, dim text, separators |
+Theme implementation must be tokenized. Future themes should be able to replace Pink with another primary color, such as Orange, without rewriting renderers.
 
-### Module Organization
-UI modules are focused and independent:
+Do not hard-code active UI colors outside the canonical theme module. Active interactive UI code must not reintroduce Gruvbox/Tokyo Night/Catppuccin/Rose Pine palettes.
 
-| Module | Purpose | Dependencies |
-|--------|---------|-------------|
-| `ui_theme.rs` | Gruvbox RGB constants + ANSI helpers | ui_colors |
-| `ui_terminal.rs` | TerminalUI struct, crossterm I/O, event loop | ui_render, ui_state, crossterm |
-| `ui_render.rs` | Full-screen rendering from UIState | ui_theme, ui_wrap, ui_markdown, ui_state |
-| `ui_state.rs` | Global state + UI state model (TranscriptItem, etc.) | None |
-| `ui_wrap.rs` | ANSI-safe text wrapping | unicode-width |
-| `ui_modal.rs` | Modal overlay rendering | ui_theme, ui_wrap, ui_state |
-| `ui_markdown.rs` | Full markdown + syntax-highlighted code blocks | ui_colors, ui_syntax |
-| `ui_colors.rs` | Gruvbox ANSI color functions | None |
-| `ui_syntax.rs` | Syntect syntax highlighting | syntect |
-| `ui_progress.rs` | Indicatif spinners and progress bars | indicatif, ui_colors |
-| `ui_interact.rs` | Inquire selection menus | inquire |
-| `ui_spinner.rs` | Braille spinner (std::thread fallback) | ui_colors |
-| `ui_effort.rs` | Wall-clock effort indicator | ui_colors |
-| `ui_context_bar.rs` | Token usage progress bar | ui_colors |
-| `ui_layout.rs` | Terminal width, HR rendering | crossterm, ui_colors |
-| `ui_trace.rs` | Trace output formatting | ui_colors |
+### Implementation Posture
+Be aggressive about replacing old UI code. Binary size is not a concern for this UI track.
 
-**Design rule:** Each UI module has a single responsibility. Color consistency is maintained through `ui_colors.rs` (Gruvbox Dark Hard). No ratatui in the active chat path.
+Allowed and encouraged when they improve parity:
+- `ratatui` for retained frame rendering.
+- `crossterm` for raw mode, events, alternate screen, and terminal control.
+- `tui-textarea` or an equivalent editor layer for prompt editing.
+- `nucleo-matcher` for fuzzy command/file pickers.
+- `portable-pty`, `rexpect`, `vt100`, `strip-ansi-escapes`, and `insta` for real terminal snapshot tests.
+- `pulldown-cmark` plus `syntect` for markdown and syntax highlighting if the current markdown renderer is not enough.
+- `arboard` for clipboard-aware prompt affordances.
+- `notify-rust` for optional OS notifications after in-terminal notifications work.
 
-### Rendering Pipeline
-1. `UIState` is the source of truth for what's on screen
-2. `render_screen(state, width, height, input)` → `ScreenBuffer{lines, cursor_row, cursor_col}`
-3. Terminal draws lines via crossterm cursor positioning
-4. Only redraws when: input changes, transcript changes, status changes, resize, scroll, modal open/close
+### Hang And Terminal Safety
+The UI currently has reported hang/bad-behavior risk. Treat terminal responsiveness as P0.
 
-### Transcript Item Types
-- `User` — prefix: `> ` (dim)
-- `Assistant` — prefix: `● ` (purple dot), full markdown rendering
-- `ToolStart` — prefix: `◦ NAME command` (yellow name, dim command)
-- `ToolResult` — `✓ NAME (duration)` or `✗ NAME`, indented output
-- `MetaEvent` — `[CATEGORY] message` (colored by category: PLAN=blue, CLASSIFY=gray, REFLECT=purple)
-- `Warning` — compact boxed alert with red border
-- `Thinking` — prefix: `~ ` (dim, hidden by default)
-- `System` — dim system messages
+Never let the active interactive path:
+- mix direct `println!`/`eprintln!` output with a TUI-owned terminal;
+- block on raw stdin prompts while the TUI is active;
+- leave raw mode or alternate screen uncleared after exit or panic;
+- hide permission prompts behind stale UI state;
+- stop redrawing during model streams, tool execution, picker navigation, resize, Ctrl-C, or Ctrl-D;
+- keep old Elma chrome because it is easier than replacing it.
 
-### Additional UI Libraries
-- **crossterm**: Raw terminal mode, alternate screen, events, cursor positioning
-- **unicode-width**: Accurate display width for wrapping and layout
-- **indicatif**: Thread-safe spinners and progress bars for non-TUI paths
-- **inquire**: Interactive selection menus with vim-mode (j/k navigation)
-- **syntect**: Language-aware syntax highlighting for code blocks with ANSI output
+Interactive output should flow through one authoritative renderer/event queue. Noninteractive/script output may keep simple output paths, but those paths must be explicit and tested.
+
+### Preserved Elma Behavior
+Claude Code parity governs the visible terminal interface. It does not replace Elma's local-first, small-model-first architecture.
+
+Keep context management, compaction, token budgeting, and llama.cpp-friendly reliability work when it helps constrained local 3B models. Do not delete useful context-management tasks or modules just because Claude Code has different internals. Adapt their visible behavior to the Claude-like UI instead.
 
 ## Elma CLI Philosophy
 
@@ -111,6 +113,10 @@ Elma should feel premium, careful, and capable even on low-end hardware. The sys
 
 When in doubt, optimize for these repo-specific preferences:
 - Keep Elma optimized for small local LLMs first.
+- Make the interactive terminal look and behave like Claude Code as closely as practical in Rust.
+- Treat ugly, hanging, stale, or non-Claude UI behavior as a P0 product defect.
+- Prefer removing or quarantining conflicting legacy UI paths over preserving old Elma chrome.
+- Use the black/white/grey plus Pink/Cyan tokenized theme for the default interactive UI.
 - Do not reduce intel-unit coverage for performance without explicit approval.
 - If a model is too weak for a step, prefer adding a narrow intermediary intel unit over bloating a prompt or adding rigid heuristics.
 - Preserve autonomy, but make it honest and bounded.
@@ -124,9 +130,10 @@ When in doubt, optimize for these repo-specific preferences:
 
 Before substantial work:
 1. Read [`_tasks/TASKS.md`](_tasks/TASKS.md).
-2. Read the active master task if present, usually [`_tasks/active/058_Incremental_Stability_Master_Plan.md`](_tasks/active/058_Incremental_Stability_Master_Plan.md).
+2. Read the active master task identified by `_tasks/TASKS.md`, currently usually [`_tasks/active/095_Incremental_Upgrade_Master_Plan.md`](_tasks/active/095_Incremental_Upgrade_Master_Plan.md) if present.
 3. Check [`_dev-tasks/`](_dev-tasks/) for current structural guidance.
-4. Use root-relative paths in reasoning and edits.
+4. For interactive UI work, read [`_tasks/pending/166_Claude_Code_Terminal_Parity_Master_Plan.md`](_tasks/pending/166_Claude_Code_Terminal_Parity_Master_Plan.md) and [`_tasks/pending/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate.md`](_tasks/pending/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate.md).
+5. Use root-relative paths in reasoning and edits.
 
 If the work touches an existing active task, update that task instead of creating duplicate planning.
 
@@ -357,6 +364,13 @@ Behavior probes:
 ./run_intention_scenarios.sh
 ./smoke_llamacpp.sh
 ```
+
+UI parity probes:
+```bash
+./ui_parity_probe.sh --all
+```
+
+If `./ui_parity_probe.sh` has not been implemented yet, UI-facing work must still include real CLI or pseudo-terminal validation and must document that the parity harness is not available yet.
 
 Formatting:
 ```bash

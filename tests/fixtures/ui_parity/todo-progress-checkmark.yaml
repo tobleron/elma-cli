@@ -1,0 +1,16 @@
+name: todo-progress-checkmark
+description: Todo list supports in-progress and completion transitions.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "Track a 2-step todo and complete one item"
+    delay_ms: 900
+  - input: "/tasks"
+    delay_ms: 500
+  - input: "Mark first todo done and show tasks again"
+    delay_ms: 900
+  - input: "/tasks"
+    delay_ms: 500
+

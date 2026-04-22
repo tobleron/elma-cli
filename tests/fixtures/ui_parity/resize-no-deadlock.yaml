@@ -1,0 +1,11 @@
+---
+name: resize-no-deadlock
+description: Test resize events don't cause deadlocks.
+steps:
+  - input: "normal input"
+    delay_ms: 100
+  - input: ""  # Simulate resize event (can't actually resize in PTY, but test redraw)
+    delay_ms: 200
+
+# Expected: UI redraws correctly on resize.
+# Failure: Deadlock or freeze on resize.

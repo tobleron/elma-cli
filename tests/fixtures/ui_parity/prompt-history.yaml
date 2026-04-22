@@ -1,0 +1,15 @@
+name: prompt-history
+description: Up arrow navigates prompt history after prior submitted prompt.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "first history line"
+    delay_ms: 700
+  - input: "\u001b[A"
+    send_enter: false
+    delay_ms: 400
+  - input: ""
+    delay_ms: 300
+

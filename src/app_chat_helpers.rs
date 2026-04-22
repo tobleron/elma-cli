@@ -42,7 +42,7 @@ pub(crate) fn print_final_output(
     let truncated_text = truncate_output(final_text);
     print_elma_message(args, &truncated_text);
 
-    // Intel unit failure count (Gruvbox Red — for model reliability tracking)
+    // Intel unit failure count (warning color — model reliability tracking)
     let total_failures = crate::ui_state::get_total_intel_failures();
     if total_failures > 0 {
         let counts = crate::ui_state::get_intel_failure_counts();

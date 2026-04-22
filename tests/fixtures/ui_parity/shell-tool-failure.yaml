@@ -1,0 +1,12 @@
+name: shell-tool-failure
+description: Exercise tool row rendering for a failing shell-like request.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "run command that should fail"
+    delay_ms: 900
+  - input: ""
+    delay_ms: 400
+

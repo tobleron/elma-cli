@@ -1,0 +1,12 @@
+name: bash-mode
+description: Typing ! should enter bash mode path and accept command-style text.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "!echo hello"
+    delay_ms: 700
+  - input: ""
+    delay_ms: 300
+

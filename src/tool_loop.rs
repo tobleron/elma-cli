@@ -10,8 +10,31 @@ use crate::ui_state::{
     get_total_intel_failures, increment_intel_failure_count, reset_intel_failure_counts,
 };
 use crate::*;
+use std::future::Future;
+use std::time::Duration;
 
 const MAX_TOOL_ITERATIONS: usize = 15;
+
+async fn await_with_busy_input<T, F>(
+    tui: &mut crate::ui_terminal::TerminalUI,
+    future: F,
+) -> Result<T>
+where
+    F: Future<Output = Result<T>>,
+{
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            result = &mut future => return result,
+            _ = tokio::time::sleep(Duration::from_millis(40)) => {
+                let _ = tui.pump_ui();
+                if let Ok(Some(queued)) = tui.poll_busy_submission() {
+                    tui.enqueue_submission(queued);
+                }
+            }
+        }
+    }
+}
 
 pub(crate) struct ToolLoopResult {
     pub(crate) final_answer: String,
@@ -62,8 +85,14 @@ pub(crate) async fn run_tool_loop(
             );
             let (new_messages, result) = apply_compact(&messages, 3); // Keep last 3 turns
             if result.ok {
+                let before_count = messages.len();
                 messages = new_messages;
                 tracker.record_success();
+                tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactBoundary);
+                tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactSummary {
+                    message_count: before_count,
+                    context_preview: Some("auto compact".to_string()),
+                });
                 trace(
                     args,
                     &format!(
@@ -97,7 +126,11 @@ pub(crate) async fn run_tool_loop(
             grammar: None,
             tools: Some(tools.clone()),
         };
-        let resp = crate::ui_chat::chat_once_with_timeout(client, chat_url, &req, 120).await?;
+        let resp = await_with_busy_input(
+            tui,
+            crate::ui_chat::chat_once_with_timeout(client, chat_url, &req, 120),
+        )
+        .await?;
         let choice = resp.choices.get(0).context("No choices in response")?;
         let content = choice.message.content.clone().unwrap_or_default();
         if let Some(tool_calls) = &choice.message.tool_calls {
@@ -120,14 +153,22 @@ pub(crate) async fn run_tool_loop(
                     )
                     .await;
 
-                    // respond tool = final answer, exit the loop immediately
+                    // respond tool = final answer, exit the loop immediately (only if non-empty)
                     if tc.function.name == "respond" {
-                        return Ok(ToolLoopResult {
-                            final_answer: result.content.trim().to_string(),
-                            iterations: iteration + 1,
-                            tool_calls_made: total_tool_calls,
-                            stopped_by_max: false,
-                        });
+                        let trimmed = result.content.trim().to_string();
+                        if trimmed.is_empty() {
+                            trace(
+                                args,
+                                "tool_loop: respond returned empty answer; continuing loop",
+                            );
+                        } else {
+                            return Ok(ToolLoopResult {
+                                final_answer: trimmed,
+                                iterations: iteration + 1,
+                                tool_calls_made: total_tool_calls,
+                                stopped_by_max: false,
+                            });
+                        }
                     }
 
                     messages.push(ChatMessage {
@@ -183,13 +224,20 @@ pub(crate) async fn run_tool_loop(
         grammar: None,
         tools: None,
     };
-    let final_resp =
-        crate::ui_chat::chat_once_with_timeout(client, chat_url, &final_req, 60).await?;
-    let final_content = final_resp
+    let final_resp = await_with_busy_input(
+        tui,
+        crate::ui_chat::chat_once_with_timeout(client, chat_url, &final_req, 60),
+    )
+    .await?;
+    let mut final_content = final_resp
         .choices
         .get(0)
         .map(|c| c.message.content.clone().unwrap_or_default())
         .unwrap_or_else(|| "Maximum iterations reached.".to_string());
+    if final_content.trim().is_empty() {
+        final_content =
+            "I completed the tool loop but could not generate a final summary text.".to_string();
+    }
     Ok(ToolLoopResult {
         final_answer: final_content.trim().to_string(),
         iterations: MAX_TOOL_ITERATIONS + 1,

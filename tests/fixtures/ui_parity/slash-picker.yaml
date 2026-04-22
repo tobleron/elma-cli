@@ -1,0 +1,12 @@
+name: slash-picker
+description: Typing slash should trigger slash-command picker path and keep UI responsive.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "/"
+    delay_ms: 400
+  - input: ""
+    delay_ms: 400
+

@@ -5,7 +5,7 @@
 use crate::*;
 
 /// Session error types for structured error reporting
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SessionErrorType {
     Timeout,
@@ -159,4 +159,86 @@ pub(crate) fn install_panic_hook(session_root: Option<PathBuf>) {
             }
         }
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn session_error_factory_timeout() {
+        let err = SessionError::timeout(
+            "orchestrator",
+            "connection timeout",
+            Some("calling model".into()),
+        );
+        assert_eq!(err.error_type, SessionErrorType::Timeout);
+        assert_eq!(err.component, "orchestrator");
+        assert!(err.message.contains("timeout"));
+    }
+
+    #[test]
+    fn session_error_factory_api_error() {
+        let err =
+            SessionError::api_error("api_client", "rate limited", Some("chat completion".into()));
+        assert_eq!(err.error_type, SessionErrorType::ApiError);
+        assert_eq!(err.component, "api_client");
+    }
+
+    #[test]
+    fn session_error_factory_parse_error() {
+        let err = SessionError::parse_error("json_handler", "invalid JSON", None);
+        assert_eq!(err.error_type, SessionErrorType::ParseError);
+    }
+
+    #[test]
+    fn session_error_factory_panic() {
+        let err = SessionError::panic(
+            "runtime",
+            "index out of bounds",
+            Some("reading artifact".into()),
+        );
+        assert_eq!(err.error_type, SessionErrorType::Panic);
+        assert!(err.message.contains("bounds"));
+    }
+
+    #[test]
+    fn write_error_json_creates_file() {
+        let root = std::env::temp_dir().join(format!(
+            "elma_test_err_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        std::fs::create_dir_all(&root).ok();
+        let err = SessionError::api_error("test", "test error", None);
+        let path = write_session_error(&root, &err).unwrap();
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("api_error"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_session_status_creates_file() {
+        let root = std::env::temp_dir().join(format!(
+            "elma_test_stat_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        std::fs::create_dir_all(&root).ok();
+        let path =
+            write_session_status(&root, "error", 3, Some("test prompt"), Some("timeout")).unwrap();
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("status"));
+        assert!(content.contains("error"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

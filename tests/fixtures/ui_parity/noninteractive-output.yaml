@@ -1,0 +1,11 @@
+name: noninteractive-output
+description: Noninteractive-style command output path remains readable in harness.
+setup:
+  args:
+    - "--base-url"
+    - "http://localhost:11434/v1"
+steps:
+  - input: "/help"
+    delay_ms: 700
+  - input: "/status"
+    delay_ms: 700
