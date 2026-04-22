@@ -339,12 +339,10 @@ impl TerminalUI {
     }
 
     pub(crate) fn push_tool_start(&mut self, name: &str, command: &str) {
-        self.claude
-            .push_message(crate::claude_ui::ClaudeMessage::ToolStart {
-                name: name.to_string(),
-                input: Some(command.to_string()),
-            });
-        self.pending_draw = true;
+        self.handle_ui_event(crate::claude_ui::UiEvent::ToolStarted {
+            name: name.to_string(),
+            command: command.to_string(),
+        });
     }
 
     pub(crate) fn push_tool_finish(
@@ -352,16 +350,13 @@ impl TerminalUI {
         name: &str,
         success: bool,
         output: &str,
-        duration_ms: Option<u64>,
+        _duration_ms: Option<u64>,
     ) {
-        self.claude
-            .push_message(crate::claude_ui::ClaudeMessage::ToolResult {
-                name: name.to_string(),
-                success,
-                output: output.to_string(),
-                duration_ms,
-            });
-        self.pending_draw = true;
+        self.handle_ui_event(crate::claude_ui::UiEvent::ToolFinished {
+            name: name.to_string(),
+            success,
+            output: output.to_string(),
+        });
     }
 
     pub(crate) fn push_warning(&mut self, message: &str) {

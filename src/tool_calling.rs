@@ -125,23 +125,18 @@ pub(crate) async fn execute_tool_call(
 }
 
 fn emit_tool_progress(
-    tui: &mut Option<&mut crate::ui_terminal::TerminalUI>,
-    name: &str,
-    message: &str,
+    _tui: &mut Option<&mut crate::ui_terminal::TerminalUI>,
+    _name: &str,
+    _message: &str,
 ) {
-    if let Some(t) = tui.as_mut() {
-        t.add_claude_message(crate::claude_ui::ClaudeMessage::ToolProgress {
-            name: name.to_string(),
-            message: message.to_string(),
-        });
-    }
+    // Progress messages are now implicit via ToolTrace Running state.
 }
 
 fn emit_tool_start(tui: &mut Option<&mut crate::ui_terminal::TerminalUI>, name: &str, input: &str) {
     if let Some(t) = tui.as_mut() {
-        t.add_claude_message(crate::claude_ui::ClaudeMessage::ToolStart {
+        t.handle_ui_event(crate::claude_ui::UiEvent::ToolStarted {
             name: name.to_string(),
-            input: Some(input.to_string()),
+            command: input.to_string(),
         });
     }
 }
@@ -153,11 +148,10 @@ fn emit_tool_result(
     output: &str,
 ) {
     if let Some(t) = tui.as_mut() {
-        t.add_claude_message(crate::claude_ui::ClaudeMessage::ToolResult {
+        t.handle_ui_event(crate::claude_ui::UiEvent::ToolFinished {
             name: name.to_string(),
             success,
             output: output.to_string(),
-            duration_ms: None,
         });
     }
 }

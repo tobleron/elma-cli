@@ -311,25 +311,32 @@ impl ClaudeRenderer {
                 self.finish_content();
             }
             UiEvent::ToolStarted { name, command } => {
-                self.push_message(ClaudeMessage::ToolStart {
+                self.push_message(ClaudeMessage::ToolTrace {
                     name,
-                    input: Some(command),
+                    command,
+                    status: crate::claude_ui::claude_state::ToolTraceStatus::Running,
                 });
             }
-            UiEvent::ToolProgress { name, message } => {
-                self.push_message(ClaudeMessage::ToolProgress { name, message });
+            UiEvent::ToolProgress {
+                name: _,
+                message: _,
+            } => {
+                // Tool progress is now implicit — the trace shows "Running" state.
+                // If we wanted granular progress, we could store it in the trace.
             }
             UiEvent::ToolFinished {
                 name,
                 success,
                 output,
             } => {
-                self.push_message(ClaudeMessage::ToolResult {
-                    name,
-                    success,
-                    output,
-                    duration_ms: None,
-                });
+                self.transcript.update_last_tool_trace(
+                    &name,
+                    crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                        success,
+                        output,
+                        duration_ms: None,
+                    },
+                );
             }
             UiEvent::PermissionRequested { command } => {
                 self.push_message(ClaudeMessage::PermissionRequest {
@@ -993,29 +1000,37 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_success() {
-        let msg = ClaudeMessage::ToolResult {
-            name: "Read".to_string(),
-            success: true,
-            output: "file content".to_string(),
-            duration_ms: Some(1500),
+    fn test_tool_trace_success() {
+        let msg = ClaudeMessage::ToolTrace {
+            name: "shell".to_string(),
+            command: "cat file.txt".to_string(),
+            status: crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                success: true,
+                output: "file content".to_string(),
+                duration_ms: Some(1500),
+            },
         };
         let lines = msg.to_lines(false);
         assert!(lines[0].contains("✓"));
-        assert!(lines[0].contains("Read"));
+        assert!(lines[0].contains("shell"));
+        assert!(lines[0].contains("cat file.txt"));
     }
 
     #[test]
-    fn test_tool_failure() {
-        let msg = ClaudeMessage::ToolResult {
-            name: "Read".to_string(),
-            success: false,
-            output: "error".to_string(),
-            duration_ms: Some(100),
+    fn test_tool_trace_failure() {
+        let msg = ClaudeMessage::ToolTrace {
+            name: "shell".to_string(),
+            command: "cat missing.txt".to_string(),
+            status: crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                success: false,
+                output: "error".to_string(),
+                duration_ms: Some(100),
+            },
         };
         let lines = msg.to_lines(false);
         assert!(lines[0].contains("✗"));
-        assert!(lines[0].contains("Read"));
+        assert!(lines[0].contains("shell"));
+        assert!(lines[0].contains("cat missing.txt"));
     }
 
     #[test]

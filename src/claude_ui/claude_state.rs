@@ -21,6 +21,16 @@ use ratatui::widgets::*;
 // ============================================================================
 
 #[derive(Clone, Debug)]
+pub(crate) enum ToolTraceStatus {
+    Running,
+    Completed {
+        success: bool,
+        output: String,
+        duration_ms: Option<u64>,
+    },
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum ClaudeMessage {
     User {
         content: String,
@@ -41,6 +51,13 @@ pub(crate) enum ClaudeMessage {
         success: bool,
         output: String,
         duration_ms: Option<u64>,
+    },
+    /// Unified tool trace — replaces separate ToolStart/ToolResult/ToolProgress.
+    /// Shows command + live status indicator (spinner → checkmark/cross).
+    ToolTrace {
+        name: String,
+        command: String,
+        status: ToolTraceStatus,
     },
     PermissionRequest {
         command: String,
@@ -117,7 +134,6 @@ impl ClaudeMessage {
                 let fully_shown = expanded && reasoning_visible;
                 if fully_shown {
                     let mut lines = Vec::new();
-                    // First line: thinking indicator + content
                     lines.push(Line::from(vec![
                         Span::styled(
                             "∴",
@@ -131,7 +147,6 @@ impl ClaudeMessage {
                             Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
                     ]));
-                    // Subsequent lines: empty gutter + content
                     for line in content.lines() {
                         lines.push(Line::from(vec![
                             Span::raw("  "),
@@ -143,7 +158,6 @@ impl ClaudeMessage {
                     }
                     lines
                 } else {
-                    // Collapsed placeholder
                     vec![Line::from(vec![Span::styled(
                         "∴ Thinking",
                         Style::default().fg(theme.fg_dim.to_ratatui_color()),
@@ -151,7 +165,6 @@ impl ClaudeMessage {
                 }
             }
             ClaudeMessage::ToolStart { name, input } => {
-                // Tool start: use ▶ indicator in gutter
                 let mut spans = vec![
                     Span::styled(
                         "▶",
@@ -172,7 +185,6 @@ impl ClaudeMessage {
                 vec![Line::from(spans)]
             }
             ClaudeMessage::ToolProgress { name, message } => {
-                // Tool progress: use ◐ indicator in gutter
                 vec![Line::from(vec![
                     Span::styled(
                         "◐",
@@ -235,7 +247,6 @@ impl ClaudeMessage {
                         .add_modifier(Modifier::BOLD)
                 };
 
-                // First line: indicator in gutter
                 let first_line = if let Some(ms) = duration_ms {
                     let duration = if *ms > 1000 {
                         format!("{:.1}s", *ms as f64 / 1000.0)
@@ -261,8 +272,6 @@ impl ClaudeMessage {
                 };
 
                 let mut lines = vec![first_line];
-
-                // Subsequent lines: empty gutter
                 let output_lines: Vec<&str> = output.lines().collect();
                 let max_lines = if expanded { output_lines.len() } else { 8 };
                 for line in output_lines.iter().take(max_lines) {
@@ -285,6 +294,100 @@ impl ClaudeMessage {
                                 .add_modifier(Modifier::ITALIC),
                         ),
                     ]));
+                }
+                lines
+            }
+            ClaudeMessage::ToolTrace {
+                name,
+                command,
+                status,
+            } => {
+                let (symbol, symbol_style) = match status {
+                    ToolTraceStatus::Running => (
+                        "◐",
+                        Style::default()
+                            .fg(theme.warning.to_ratatui_color())
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    ToolTraceStatus::Completed { success: true, .. } => (
+                        "✓",
+                        Style::default()
+                            .fg(theme.success.to_ratatui_color())
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    ToolTraceStatus::Completed { success: false, .. } => (
+                        "✗",
+                        Style::default()
+                            .fg(theme.error.to_ratatui_color())
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                };
+
+                let mut lines = vec![Line::from(vec![
+                    Span::styled(symbol, symbol_style),
+                    Span::raw(" "),
+                    Span::styled(name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(" "),
+                    Span::styled(
+                        command.clone(),
+                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                    ),
+                ])];
+
+                if let ToolTraceStatus::Completed {
+                    success,
+                    output,
+                    duration_ms,
+                } = status
+                {
+                    if let Some(ms) = duration_ms {
+                        let duration = if *ms > 1000 {
+                            format!("{:.1}s", *ms as f64 / 1000.0)
+                        } else {
+                            format!("{}ms", ms)
+                        };
+                        lines[0].spans.push(Span::raw(" "));
+                        lines[0].spans.push(Span::styled(
+                            format!("({})", duration),
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ));
+                    }
+
+                    let output_lines: Vec<&str> = output.lines().collect();
+                    let max_lines = if *success {
+                        if expanded {
+                            output_lines.len()
+                        } else {
+                            8
+                        }
+                    } else {
+                        output_lines.len()
+                    };
+                    for line in output_lines.iter().take(max_lines) {
+                        lines.push(Line::from(vec![
+                            Span::raw("  "),
+                            Span::styled(
+                                line.to_string(),
+                                if *success {
+                                    Style::default().fg(theme.fg_dim.to_ratatui_color())
+                                } else {
+                                    Style::default().fg(theme.error.to_ratatui_color())
+                                },
+                            ),
+                        ]));
+                    }
+                    if output_lines.len() > max_lines {
+                        let remaining = output_lines.len() - max_lines;
+                        lines.push(Line::from(vec![
+                            Span::raw("    "),
+                            Span::styled(
+                                format!("+{} lines", remaining),
+                                Style::default()
+                                    .fg(theme.fg_dim.to_ratatui_color())
+                                    .add_modifier(Modifier::ITALIC),
+                            ),
+                        ]));
+                    }
                 }
                 lines
             }
@@ -458,6 +561,62 @@ impl ClaudeMessage {
                 }
                 lines
             }
+            ClaudeMessage::ToolTrace {
+                name,
+                command,
+                status,
+            } => {
+                let symbol = match status {
+                    ToolTraceStatus::Running => "◐",
+                    ToolTraceStatus::Completed { success: true, .. } => "✓",
+                    ToolTraceStatus::Completed { success: false, .. } => "✗",
+                };
+                let mut lines = vec![format!(
+                    "{} {} {}",
+                    info_cyan(symbol),
+                    bold(name),
+                    dim(command)
+                )];
+                if let ToolTraceStatus::Completed {
+                    success,
+                    output,
+                    duration_ms,
+                } = status
+                {
+                    if let Some(ms) = duration_ms {
+                        let duration = if *ms > 1000 {
+                            format!("{:.1}s", *ms as f64 / 1000.0)
+                        } else {
+                            format!("{}ms", ms)
+                        };
+                        lines[0] = format!(
+                            "{} {} {} ({})",
+                            info_cyan(symbol),
+                            bold(name),
+                            dim(command),
+                            meta_comment(&duration)
+                        );
+                    }
+                    let output_lines: Vec<&str> = output.lines().collect();
+                    let max_lines = if *success {
+                        if expanded {
+                            output_lines.len()
+                        } else {
+                            8
+                        }
+                    } else {
+                        output_lines.len()
+                    };
+                    for line in output_lines.iter().take(max_lines) {
+                        lines.push(format!("    {}", dim(line)));
+                    }
+                    if output_lines.len() > max_lines {
+                        let remaining = output_lines.len() - max_lines;
+                        lines.push(dim(&format!("    +{} lines", remaining)));
+                    }
+                }
+                lines
+            }
             ClaudeMessage::CompactBoundary => {
                 if expanded {
                     vec!["✻ compacted".to_string()]
@@ -545,6 +704,21 @@ impl ClaudeTranscript {
         }
     }
 
+    /// Find the last running ToolTrace with matching name and update its status.
+    pub(crate) fn update_last_tool_trace(&mut self, name: &str, status: ToolTraceStatus) {
+        for msg in self.messages.iter_mut().rev() {
+            if let ClaudeMessage::ToolTrace {
+                name: n, status: s, ..
+            } = msg
+            {
+                if n == name && matches!(s, ToolTraceStatus::Running) {
+                    *s = status;
+                    return;
+                }
+            }
+        }
+    }
+
     pub(crate) fn scroll_to_bottom(&mut self) {
         self.scroll_offset = 0;
         self.divider_index = None;
@@ -618,58 +792,8 @@ impl ClaudeTranscript {
 
     pub(crate) fn render(&self) -> Vec<String> {
         let mut lines = Vec::new();
-        let mut i = 0usize;
-        while i < self.messages.len() {
-            if !self.expanded {
-                let batch_kind = match self.messages.get(i) {
-                    Some(ClaudeMessage::ToolStart { name, .. })
-                        if name == "read" || name == "search" =>
-                    {
-                        Some("read/search")
-                    }
-                    Some(ClaudeMessage::ToolStart { name, .. }) if name == "shell" => Some("shell"),
-                    _ => None,
-                };
-                if let Some(kind) = batch_kind {
-                    let mut j = i;
-                    let mut count = 0usize;
-                    while j < self.messages.len() {
-                        match &self.messages[j] {
-                            ClaudeMessage::ToolStart { name, .. }
-                            | ClaudeMessage::ToolResult { name, .. }
-                                if (kind == "read/search"
-                                    && (name == "read" || name == "search"))
-                                    || (kind == "shell" && name == "shell") =>
-                            {
-                                count += 1;
-                                j += 1;
-                            }
-                            ClaudeMessage::ToolProgress { name, .. }
-                                if (kind == "read/search"
-                                    && (name == "read" || name == "search"))
-                                    || (kind == "shell" && name == "shell") =>
-                            {
-                                j += 1;
-                            }
-                            _ => break,
-                        }
-                    }
-                    if count > 1 {
-                        lines.push(format!(
-                            "  ● {}",
-                            dim(&format!(
-                                "{} batch ({} items) (ctrl+o to expand)",
-                                kind, count
-                            ))
-                        ));
-                        i = j;
-                        continue;
-                    }
-                }
-            }
-
-            lines.extend(self.messages[i].to_lines(self.expanded));
-            i += 1;
+        for msg in &self.messages {
+            lines.extend(msg.to_lines(self.expanded));
         }
         lines
     }
