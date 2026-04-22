@@ -514,9 +514,15 @@ impl ClaudeTranscript {
     }
 
     pub(crate) fn push(&mut self, msg: ClaudeMessage) {
-        self.messages.push(msg);
-        // Auto-scroll to bottom on new message
-        self.scroll_offset = 0;
+        self.messages.push(msg.clone());
+        // Only auto-scroll to bottom on conversational messages (user/assistant).
+        // Tool output and thinking should not disrupt the user's scroll position.
+        match msg {
+            ClaudeMessage::User { .. } | ClaudeMessage::Assistant { .. } => {
+                self.scroll_offset = 0;
+            }
+            _ => {}
+        }
     }
 
     pub(crate) fn scroll_up(&mut self, lines: usize) {
@@ -573,119 +579,39 @@ impl ClaudeTranscript {
 
     pub(crate) fn render_ratatui(&self) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
-        let theme = current_theme();
 
-        // If not expanded, show only the last few messages or a compact summary
-        if !self.expanded && self.messages.len() > 5 {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    "✻ compacted ",
-                    Style::default().fg(theme.accent_secondary.to_ratatui_color()),
-                ),
-                Span::styled(
-                    "ctrl+o history",
-                    Style::default()
-                        .fg(theme.fg_dim.to_ratatui_color())
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ]));
-            for msg in self.messages.iter().skip(self.messages.len() - 3) {
-                lines.extend(msg.to_ratatui_lines(self.expanded));
-                lines.push(Line::from(""));
+        // Count thinking blocks for filtering (only show last one in normal mode)
+        let thinking_count = self
+            .messages
+            .iter()
+            .filter(|m| matches!(m, ClaudeMessage::Thinking { .. }))
+            .count();
+        let mut thinking_seen = 0usize;
+
+        let mut i = 0usize;
+        while i < self.messages.len() {
+            let msg = &self.messages[i];
+
+            // Skip non-last thinking blocks when not expanded
+            if let ClaudeMessage::Thinking { .. } = msg {
+                thinking_seen += 1;
+                if !self.expanded && thinking_seen < thinking_count {
+                    i += 1;
+                    continue;
+                }
             }
-        } else {
-            // Count thinking blocks for filtering (only show last one in normal mode)
-            let thinking_count = self
-                .messages
-                .iter()
-                .filter(|m| matches!(m, ClaudeMessage::Thinking { .. }))
-                .count();
-            let mut thinking_seen = 0usize;
 
-            let mut i = 0usize;
-            while i < self.messages.len() {
-                let msg = &self.messages[i];
-
-                // Skip non-last thinking blocks when not expanded
-                if let ClaudeMessage::Thinking { .. } = msg {
-                    thinking_seen += 1;
-                    if !self.expanded && thinking_seen < thinking_count {
-                        i += 1;
-                        continue;
+            // Add blank line only on speaker changes (user → assistant transition)
+            if let ClaudeMessage::Assistant { .. } = msg {
+                if let Some(ClaudeMessage::User { .. }) = self.messages.get(i.wrapping_sub(1)) {
+                    if !lines.is_empty() {
+                        lines.push(Line::from(""));
                     }
                 }
-
-                // Add blank line only on speaker changes (user → assistant transition)
-                if let ClaudeMessage::Assistant { .. } = msg {
-                    if let Some(ClaudeMessage::User { .. }) = self.messages.get(i.wrapping_sub(1)) {
-                        if !lines.is_empty() {
-                            lines.push(Line::from(""));
-                        }
-                    }
-                }
-
-                if !self.expanded {
-                    let batch_kind = match self.messages.get(i) {
-                        Some(ClaudeMessage::ToolStart { name, .. })
-                            if name == "read" || name == "search" =>
-                        {
-                            Some("read/search")
-                        }
-                        Some(ClaudeMessage::ToolStart { name, .. }) if name == "shell" => {
-                            Some("shell")
-                        }
-                        _ => None,
-                    };
-                    if let Some(kind) = batch_kind {
-                        let mut j = i;
-                        let mut count = 0usize;
-                        while j < self.messages.len() {
-                            match &self.messages[j] {
-                                ClaudeMessage::ToolStart { name, .. }
-                                | ClaudeMessage::ToolResult { name, .. }
-                                    if (kind == "read/search"
-                                        && (name == "read" || name == "search"))
-                                        || (kind == "shell" && name == "shell") =>
-                                {
-                                    count += 1;
-                                    j += 1;
-                                }
-                                ClaudeMessage::ToolProgress { name, .. }
-                                    if (kind == "read/search"
-                                        && (name == "read" || name == "search"))
-                                        || (kind == "shell" && name == "shell") =>
-                                {
-                                    j += 1;
-                                }
-                                _ => break,
-                            }
-                        }
-                        if count > 1 {
-                            lines.push(Line::from(vec![
-                                Span::styled(
-                                    "  ● ",
-                                    Style::default().fg(theme.accent_secondary.to_ratatui_color()),
-                                ),
-                                Span::styled(
-                                    format!("{} batch ({} items)", kind, count),
-                                    Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                                ),
-                                Span::styled(
-                                    " (ctrl+o to expand)",
-                                    Style::default()
-                                        .fg(theme.fg_dim.to_ratatui_color())
-                                        .add_modifier(Modifier::ITALIC),
-                                ),
-                            ]));
-                            i = j;
-                            continue;
-                        }
-                    }
-                }
-
-                lines.extend(self.messages[i].to_ratatui_lines(self.expanded));
-                i += 1;
             }
+
+            lines.extend(self.messages[i].to_ratatui_lines(self.expanded));
+            i += 1;
         }
         lines
     }
