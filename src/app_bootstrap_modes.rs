@@ -2,8 +2,10 @@
 //!
 //! App Bootstrap - Mode Handling and Banners
 
+use crate::ui_state::{
+    set_final_answer_extractor_profile, set_json_outputter_profile, set_model_behavior_profile,
+};
 use crate::*;
-use crate::ui_state::{set_final_answer_extractor_profile, set_json_outputter_profile, set_model_behavior_profile};
 
 pub(crate) fn validate_mode_flags(args: &Args) -> Result<()> {
     let mode_flags = [

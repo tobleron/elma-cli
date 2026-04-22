@@ -144,6 +144,7 @@ mod ui;
 // Backward-compatible re-exports to preserve existing absolute paths (crate::ui_*).
 pub use ui::ui_autocomplete;
 pub use ui::ui_chat;
+pub use ui::ui_chat::*;
 pub use ui::ui_colors;
 pub use ui::ui_context_bar;
 pub use ui::ui_coordinator_status;
@@ -160,12 +161,11 @@ pub use ui::ui_progress;
 pub use ui::ui_render_legacy;
 pub use ui::ui_spinner;
 pub use ui::ui_state;
+pub use ui::ui_state::*;
 pub use ui::ui_syntax;
 pub use ui::ui_terminal;
 pub use ui::ui_theme;
 pub use ui::ui_theme::*;
-pub use ui::ui_chat::*;
-pub use ui::ui_state::*;
 pub use ui::ui_trace::*;
 mod claude_ui; // Task 169: Claude Code-style Terminal UI
 mod verification;

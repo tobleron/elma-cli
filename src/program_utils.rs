@@ -112,7 +112,35 @@ pub(crate) fn command_placeholder_refs(cmd: &str) -> Vec<String> {
     refs
 }
 
-pub(crate) fn run_shell_one_liner(
+pub(crate) async fn run_shell_one_liner(
+    cmd: &str,
+    workdir: &PathBuf,
+    artifact_target: Option<(&PathBuf, &str)>,
+) -> Result<ShellExecutionResult> {
+    let cmd_owned = cmd.to_string();
+    let workdir = workdir.clone();
+    let artifact_target = artifact_target.map(|(p, k)| (p.clone(), k.to_string()));
+    tokio::task::spawn_blocking(move || {
+        run_shell_one_liner_blocking(
+            &cmd_owned,
+            &workdir,
+            artifact_target.as_ref().map(|(p, k)| (p, k.as_str())),
+        )
+    })
+    .await
+    .with_context(|| "spawn_blocking for shell")?
+}
+
+/// Synchronous version for call sites that are not async.
+pub(crate) fn run_shell_one_liner_sync(
+    cmd: &str,
+    workdir: &PathBuf,
+    artifact_target: Option<(&PathBuf, &str)>,
+) -> Result<ShellExecutionResult> {
+    run_shell_one_liner_blocking(cmd, workdir, artifact_target)
+}
+
+fn run_shell_one_liner_blocking(
     cmd: &str,
     workdir: &PathBuf,
     artifact_target: Option<(&PathBuf, &str)>,

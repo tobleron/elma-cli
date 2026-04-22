@@ -151,10 +151,19 @@ impl TaskList {
             return vec![];
         }
 
-        let mut lines = vec![elma_accent("Tasks")];
+        let done = visible_tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .count();
+        let mut lines = vec![format!(
+            "{} {}/{}",
+            elma_accent("●"),
+            done,
+            visible_tasks.len()
+        )];
         lines.extend(visible_tasks.iter().map(|t| t.to_line()));
         if hidden_count > 0 {
-            lines.push(dim(&format!("  ... {} more hidden", hidden_count)));
+            lines.push(dim(&format!("  … +{}", hidden_count)));
         }
         lines
     }
@@ -172,30 +181,48 @@ impl TaskList {
         }
 
         let total = self.tasks.len();
-        let done = self.tasks.iter().filter(|t| t.status == TaskStatus::Completed).count();
-        let in_progress = self.tasks.iter().filter(|t| t.status == TaskStatus::InProgress).count();
-        let open = self.tasks.iter().filter(|t| t.status == TaskStatus::Pending).count();
-        let blocked = self.tasks.iter().filter(|t| t.status == TaskStatus::Blocked).count();
-        
-        let header_text = if blocked > 0 {
-            format!("{} tasks ({} done, {} in progress, {} open, {} blocked)", total, done, in_progress, open, blocked)
-        } else {
-            format!("{} tasks ({} done, {} in progress, {} open)", total, done, in_progress, open)
-        };
-        
-        let mut lines = vec![Line::from(Span::styled(
-            header_text,
-            Style::default()
-                .fg(theme.accent_primary.to_ratatui_color())
-                .add_modifier(Modifier::BOLD),
-        ))];
+        let done = self
+            .tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .count();
+        let in_progress = self
+            .tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::InProgress)
+            .count();
+        let open = self
+            .tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Pending)
+            .count();
+        let blocked = self
+            .tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Blocked)
+            .count();
+
+        let header_text = format!("● {}/{}", done, total);
+        let mut lines = vec![Line::from(vec![
+            Span::styled(
+                header_text,
+                Style::default()
+                    .fg(theme.accent_primary.to_ratatui_color())
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                if in_progress > 0 {
+                    format!("  {} in progress", in_progress)
+                } else {
+                    String::new()
+                },
+                Style::default().fg(theme.fg_dim.to_ratatui_color()),
+            ),
+        ])];
 
         for task in &visible_tasks {
             let (symbol, symbol_style) = match task.status {
-                TaskStatus::Pending => (
-                    "◻ ",
-                    Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                ),
+                TaskStatus::Pending => ("◻ ", Style::default().fg(theme.fg_dim.to_ratatui_color())),
                 TaskStatus::InProgress => (
                     "◼ ",
                     Style::default()
@@ -208,10 +235,7 @@ impl TaskList {
                         .fg(theme.success.to_ratatui_color())
                         .add_modifier(Modifier::DIM),
                 ),
-                TaskStatus::Blocked => (
-                    "▸ ",
-                    Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                ),
+                TaskStatus::Blocked => ("▸ ", Style::default().fg(theme.fg_dim.to_ratatui_color())),
             };
 
             let text_style = match task.status {
@@ -235,15 +259,8 @@ impl TaskList {
         }
 
         if hidden_count > 0 {
-            let hidden_in_progress = self.tasks.iter().filter(|t| t.status == TaskStatus::InProgress).count();
-            let hidden_pending = self.tasks.iter().filter(|t| t.status == TaskStatus::Pending).count();
-            let hidden_completed = self.tasks.iter().filter(|t| t.status == TaskStatus::Completed).count();
-            let summary = format!(
-                "  … +{} in progress, {} pending, {} completed",
-                hidden_in_progress, hidden_pending, hidden_completed
-            );
             lines.push(Line::from(Span::styled(
-                summary,
+                format!("  … +{}", hidden_count),
                 Style::default().fg(theme.fg_dim.to_ratatui_color()),
             )));
         }

@@ -633,6 +633,9 @@ pub(crate) async fn handle_program_step(
     state: &mut ExecutionState,
     mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<()> {
+    if let Some(t) = tui.as_deref_mut() {
+        let _ = t.pump_ui();
+    }
     let sid = step_id(&step).to_string();
     let kind = step_kind(&step).to_string();
     let purpose = step_purpose(&step);

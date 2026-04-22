@@ -54,6 +54,13 @@ In Progress
 - **Files changed**: `ui_terminal.rs`, `permission_gate.rs`, `tool_calling.rs`, `execution_steps_shell.rs`, `claude_state.rs`
 - **Verification**: `cargo build` passed, `cargo test --test ui_parity` passed (27 tests), `cargo test` full suite passed
 
+## Trackpad Scroll Fix (2026-04-22)
+- **Issue**: Trackpad 2-finger pinch/scroll was interpreted as Up/Down arrow keys, causing prompt history navigation instead of transcript scrolling
+- **Fix**: Enabled crossterm mouse capture (`EnableMouseCapture`) to receive actual scroll wheel events
+- **Implementation**: Handle `MouseEventKind::ScrollDown` / `ScrollUp` in both `run_input_loop` and `poll_busy_submission`
+- **Scroll amount**: 3 lines per wheel tick (typical terminal behavior)
+- **Cleanup**: Disable mouse capture on exit to restore terminal state
+
 ## Priority
 **P0** — Explicit blocker for Task 166 sign-off
 

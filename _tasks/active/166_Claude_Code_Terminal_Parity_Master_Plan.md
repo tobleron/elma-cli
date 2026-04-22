@@ -70,6 +70,16 @@ Pending.
   - All modals now render as Claude-style centered panes
 - **183 COMPLETED**: Input and rendering enhancements
   - Shift+Enter for multiline input
+- **Scroll Fix**: Trackpad/mouse scrolling now scrolls transcript instead of history
+  - Enabled crossterm mouse capture (`EnableMouseCapture`)
+  - Handle `MouseEventKind::ScrollDown` / `ScrollUp` in both `run_input_loop` and `poll_busy_submission`
+  - Scroll amount: 3 lines per wheel tick (matches typical terminal behavior)
+  - Disabled mouse capture on cleanup to restore terminal state
+- **Scrollbar & Scroll Refactor**: Added visual scrollbar and fixed scroll logic
+  - Refactored transcript rendering to use `Paragraph::scroll()` (ratatui-native)
+  - Added `ScrollbarState` and `Scrollbar` widget for visual scroll position feedback
+  - Fixed scroll offset calculation to properly show earlier content when scrolling up
+  - Scroll thumb style: dim color, track: border color
 - Verification evidence:
   - `cargo build` passed
   - `cargo test --test ui_parity` passed (27 tests)

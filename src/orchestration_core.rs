@@ -501,13 +501,16 @@ pub(crate) async fn generate_final_answer_once(
     reply_instructions: &str,
     workspace_facts: &str,
     workspace_brief: &str,
-    tui: Option<&mut crate::ui_terminal::TerminalUI>,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<(String, Option<u64>)> {
     let runtime_context = serde_json::json!({
         "model_id": model_id,
         "base_url": base_url,
     });
     if route_decision.route.eq_ignore_ascii_case("CHAT") && step_results.is_empty() {
+        if let Some(t) = tui.as_deref_mut() {
+            let _ = t.pump_ui();
+        }
         let evidence_mode = EvidenceModeDecision {
             mode: "COMPACT".to_string(),
             reason: "chat reply fast path".to_string(),
@@ -525,6 +528,9 @@ pub(crate) async fn generate_final_answer_once(
         )
         .await
         .unwrap_or_default();
+        if let Some(t) = tui.as_deref_mut() {
+            let _ = t.pump_ui();
+        }
         let final_text = orchestration_helpers::present_result_via_unit(
             client,
             presenter_cfg,
@@ -574,6 +580,9 @@ pub(crate) async fn generate_final_answer_once(
         mode: "COMPACT".to_string(),
         reason: "fallback".to_string(),
     });
+    if let Some(t) = tui.as_deref_mut() {
+        let _ = t.pump_ui();
+    }
     let response_advice = orchestration_helpers::request_response_advice_via_unit(
         client,
         expert_advisor_cfg,
@@ -587,6 +596,9 @@ pub(crate) async fn generate_final_answer_once(
     )
     .await
     .unwrap_or_default();
+    if let Some(t) = tui.as_deref_mut() {
+        let _ = t.pump_ui();
+    }
 
     let (mut final_text, mut usage_total) = if route_decision.route.eq_ignore_ascii_case("CHAT") {
         orchestration_helpers::request_chat_final_text(

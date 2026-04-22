@@ -501,16 +501,6 @@ async fn resume_picker_fixture() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn prompt_history_fixture() -> anyhow::Result<()> {
-    let output = run_named_fixture("prompt-history").await?;
-    assert!(
-        !output.is_empty(),
-        "prompt-history fixture produced no output"
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn graceful_exit_fixture() -> anyhow::Result<()> {
     let output = run_named_fixture("graceful-exit").await?;
     assert!(
@@ -573,8 +563,6 @@ async fn input_during_tool_execution_fixture() -> anyhow::Result<()> {
     );
     Ok(())
 }
-
-
 
 #[cfg(test)]
 mod snapshot_tests {

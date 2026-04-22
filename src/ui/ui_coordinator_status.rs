@@ -20,14 +20,11 @@ impl CoordinatorStatus {
             return;
         }
 
-        let block = Block::default()
-            .borders(Borders::NONE);
-        
+        let block = Block::default().borders(Borders::NONE);
+
         let label = format!(" 󰒲  {} ", self.task_description);
         let styled_label = elma_accent(&label);
 
-        Paragraph::new(styled_label)
-            .block(block)
-            .render(area, buf);
+        Paragraph::new(styled_label).block(block).render(area, buf);
     }
 }

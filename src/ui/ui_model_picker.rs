@@ -130,17 +130,26 @@ impl ModelPicker {
                 ListItem::new(Line::from(vec![
                     Span::styled(&model.name, style.fg(theme.fg.to_ratatui_color())),
                     Span::raw(" ("),
-                    Span::styled(format!("{} tokens", model.max_tokens), style.fg(theme.fg_dim.to_ratatui_color())),
+                    Span::styled(
+                        format!("{} tokens", model.max_tokens),
+                        style.fg(theme.fg_dim.to_ratatui_color()),
+                    ),
                     Span::raw(", temp "),
-                    Span::styled(format!("{:.1}", model.temperature), style.fg(theme.fg_dim.to_ratatui_color())),
+                    Span::styled(
+                        format!("{:.1}", model.temperature),
+                        style.fg(theme.fg_dim.to_ratatui_color()),
+                    ),
                     Span::raw(")"),
                 ]))
                 .style(style)
             })
             .collect();
 
-        let models_list = List::new(model_items)
-            .block(Block::default().title("Available Models").borders(Borders::ALL));
+        let models_list = List::new(model_items).block(
+            Block::default()
+                .title("Available Models")
+                .borders(Borders::ALL),
+        );
         f.render_widget(models_list, chunks[0]);
     }
 }

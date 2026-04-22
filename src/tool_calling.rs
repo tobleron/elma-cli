@@ -112,7 +112,7 @@ pub(crate) async fn execute_tool_call(
     match tool_name.as_str() {
         "shell" => exec_shell(args, &args_value, workdir, session, &call_id, tui).await,
         "read" => exec_read(&args_value, workdir, &call_id, tui),
-        "search" => exec_search(&args_value, workdir, &call_id, tui),
+        "search" => exec_search(&args_value, workdir, &call_id, tui).await,
         "respond" => exec_respond(&args_value, &call_id, tui),
         "update_todo_list" => exec_update_todo_list(&args_value, &call_id, tui),
         unknown => ToolExecutionResult {
@@ -137,11 +137,7 @@ fn emit_tool_progress(
     }
 }
 
-fn emit_tool_start(
-    tui: &mut Option<&mut crate::ui_terminal::TerminalUI>,
-    name: &str,
-    input: &str,
-) {
+fn emit_tool_start(tui: &mut Option<&mut crate::ui_terminal::TerminalUI>, name: &str, input: &str) {
     if let Some(t) = tui.as_mut() {
         t.add_claude_message(crate::claude_ui::ClaudeMessage::ToolStart {
             name: name.to_string(),
@@ -288,7 +284,7 @@ async fn exec_shell(
     // However, I still need to update the TUI when command execution is complete.
     emit_tool_progress(&mut tui, "shell", "executing command");
 
-    match run_shell_one_liner(&command, workdir, None) {
+    match run_shell_one_liner(&command, workdir, None).await {
         Ok(er) => {
             let success = er.exit_code == 0;
             if let Some(t) = tui.as_mut() {}
@@ -422,7 +418,7 @@ fn exec_read(
     }
 }
 
-fn exec_search(
+async fn exec_search(
     av: &serde_json::Value,
     workdir: &PathBuf,
     call_id: &str,
@@ -452,7 +448,7 @@ fn exec_search(
     emit_tool_start(&mut tui, "search", &cmd);
     emit_tool_progress(&mut tui, "search", "running ripgrep");
 
-    match run_shell_one_liner(&cmd, workdir, None) {
+    match run_shell_one_liner(&cmd, workdir, None).await {
         Ok(er) => {
             let success = er.exit_code == 0 || er.exit_code == 1; // ripgrep returns 1 for no matches, which is still a 'success' for the search
             let content = if er.exit_code == 0 {

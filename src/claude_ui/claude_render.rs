@@ -12,6 +12,7 @@ use super::claude_state::{ClaudeMessage, ClaudeTranscript, FOOTER_HINTS};
 use super::claude_stream::StreamingUI;
 use crate::ui_theme::*;
 use ratatui::prelude::*;
+use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::*;
 use std::path::PathBuf;
 
@@ -60,6 +61,7 @@ pub(crate) struct ClaudeRenderer {
     file_matches: Vec<String>,
     pub transcript_mode: TranscriptMode,
     modal_state: Option<crate::ui_state::ModalState>,
+    scrollbar_state: ScrollbarState,
 }
 
 impl ClaudeRenderer {
@@ -83,6 +85,7 @@ impl ClaudeRenderer {
             file_matches: Vec::new(),
             transcript_mode: TranscriptMode::Normal,
             modal_state: None,
+            scrollbar_state: ScrollbarState::default(),
         }
     }
 
@@ -178,10 +181,6 @@ impl ClaudeRenderer {
         self.autocomplete_state = state.cloned();
     }
 
-    pub(crate) fn set_transcript_scroll_offset(&mut self, offset: usize) {
-        self.transcript.scroll_offset = offset;
-    }
-
     pub(crate) fn show_model_picker(&mut self) {
         self.model_picker.show();
     }
@@ -201,18 +200,12 @@ impl ClaudeRenderer {
     // --- Slash Picker / File Picker / Input Mode (Task 173) ---
 
     pub(crate) fn open_slash_picker(&mut self, query: String) {
-        self.picker_state = PickerState::Slash {
-            query,
-            selected: 0,
-        };
+        self.picker_state = PickerState::Slash { query, selected: 0 };
     }
 
     pub(crate) fn open_file_picker(&mut self, query: String, workdir: &PathBuf) {
         self.file_matches = discover_workspace_files(workdir, &query);
-        self.picker_state = PickerState::File {
-            query,
-            selected: 0,
-        };
+        self.picker_state = PickerState::File { query, selected: 0 };
     }
 
     pub(crate) fn close_picker(&mut self) {
@@ -422,28 +415,21 @@ impl ClaudeRenderer {
     }
 
     /// Render modal overlay in Claude style
-    fn render_modal_claude(
-        &self,
-        f: &mut Frame,
-        modal: &crate::ui_state::ModalState,
-        area: Rect,
-    ) {
+    fn render_modal_claude(&self, f: &mut Frame, modal: &crate::ui_state::ModalState, area: Rect) {
         let theme = current_theme();
         let modal_width = (area.width * 3 / 4).min(60);
         let modal_height = (area.height * 2 / 3).min(20);
         let modal_x = (area.width - modal_width) / 2;
         let modal_y = (area.height - modal_height) / 2;
         let modal_area = Rect::new(modal_x, modal_y, modal_width, modal_height);
-        
+
         f.render_widget(ratatui::widgets::Clear, modal_area);
-        
+
         let (title, content) = match modal {
             crate::ui_state::ModalState::Confirm { title, message } => {
                 (title.clone(), message.clone())
             }
-            crate::ui_state::ModalState::Help { content } => {
-                ("Help".to_string(), content.clone())
-            }
+            crate::ui_state::ModalState::Help { content } => ("Help".to_string(), content.clone()),
             crate::ui_state::ModalState::Select { title, options } => {
                 (title.clone(), options.join("\n"))
             }
@@ -453,7 +439,11 @@ impl ClaudeRenderer {
             crate::ui_state::ModalState::Usage { content } => {
                 ("Usage".to_string(), content.clone())
             }
-            crate::ui_state::ModalState::ToolApproval { tool_name, description, selected } => {
+            crate::ui_state::ModalState::ToolApproval {
+                tool_name,
+                description,
+                selected,
+            } => {
                 let options = vec!["Yes", "Always", "No"];
                 let mut text = format!("Tool: {}\n{}", tool_name, description);
                 for (i, opt) in options.iter().enumerate() {
@@ -462,7 +452,11 @@ impl ClaudeRenderer {
                 }
                 ("Tool Approval".to_string(), text)
             }
-            crate::ui_state::ModalState::PermissionGate { command, risk_level, selected } => {
+            crate::ui_state::ModalState::PermissionGate {
+                command,
+                risk_level,
+                selected,
+            } => {
                 let options = vec!["Yes", "Always", "No"];
                 let mut text = format!("Command: {}\nRisk: {}", command, risk_level);
                 for (i, opt) in options.iter().enumerate() {
@@ -471,7 +465,12 @@ impl ClaudeRenderer {
                 }
                 ("Permission Required".to_string(), text)
             }
-            crate::ui_state::ModalState::PlanProgress { title, current, total, steps } => {
+            crate::ui_state::ModalState::PlanProgress {
+                title,
+                current,
+                total,
+                steps,
+            } => {
                 let mut text = format!("Step {}/{}", current, total);
                 for step in steps {
                     text.push_str(&format!("\n  {}", step));
@@ -485,25 +484,21 @@ impl ClaudeRenderer {
                 ("Elma".to_string(), content.clone())
             }
         };
-        
+
         let block = ratatui::widgets::Block::default()
             .title(title)
             .borders(ratatui::widgets::Borders::ALL)
             .border_style(Style::default().fg(theme.accent_primary.to_ratatui_color()));
-        
+
         let text = Paragraph::new(content)
             .block(block)
             .wrap(Wrap { trim: false });
-        
+
         f.render_widget(text, modal_area);
     }
 
     /// Render using Ratatui
-    pub(crate) fn render_ratatui(
-        &self,
-        f: &mut Frame,
-        coordinator_status: &crate::ui_coordinator_status::CoordinatorStatus,
-    ) {
+    pub(crate) fn render_ratatui(&mut self, f: &mut Frame) {
         let theme = current_theme();
         let area = f.size();
 
@@ -524,17 +519,15 @@ impl ClaudeRenderer {
             _ => 0,
         };
 
-        // Claude Code-style layout:
-        // 1. Coordinator status (optional 1 row)
-        // 2. Transcript (scrollable)
-        // 3. Task list (if visible)
-        // 4. Picker (if active)
-        // 5. Input (fixed at bottom)
-        // 6. Footer hints
+        // Claude Code-style compact layout:
+        // 1. Transcript (scrollable, takes all available space)
+        // 2. Task list (if visible)
+        // 3. Picker (if active)
+        // 4. Input (fixed at bottom)
+        // 5. Footer (1 row)
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(if coordinator_status.is_active { 1 } else { 0 }),
                 Constraint::Min(0),
                 Constraint::Length(task_height),
                 Constraint::Length(picker_height),
@@ -543,53 +536,24 @@ impl ClaudeRenderer {
             ])
             .split(area);
 
-        // Render Coordinator Status if active
-        if coordinator_status.is_active {
-            coordinator_status.render(main_chunks[0], f.buffer_mut());
-        }
+        let transcript_area = main_chunks[0];
+        let task_area = main_chunks[1];
+        let picker_area = main_chunks[2];
+        let input_area = main_chunks[3];
+        let footer_area = main_chunks[4];
 
-        let transcript_area = main_chunks[1];
-        let task_area = main_chunks[2];
-        let picker_area = main_chunks[3];
-        let input_area = main_chunks[4];
-        let footer_area = main_chunks[5];
-
-        let mut transcript_lines = self.transcript.render_ratatui();
+        let transcript_lines = self.transcript.render_ratatui();
         let total_lines = transcript_lines.len();
-        let height = transcript_area.height as usize;
-        
-        // Calculate how many lines to skip based on scroll offset
-        // scroll_offset=0 means at bottom (latest messages visible)
-        // scroll_offset>0 means user scrolled up
-        let skip_lines = if self.transcript.scroll_offset == 0 {
-            if total_lines > height {
-                total_lines - height
-            } else {
-                0
-            }
-        } else {
-            self.transcript.scroll_offset.min(total_lines.saturating_sub(1))
-        };
 
-        // Transcript - slice to show correct lines based on scroll position
-        let visible_lines: Vec<Line> = if skip_lines > 0 {
-            transcript_lines.into_iter().skip(skip_lines).collect()
-        } else {
-            transcript_lines
-        };
-        
         // Check if we need sticky header (scrolled up and have user messages)
-        let show_sticky = self.transcript.scroll_offset > 0
-            && self.transcript.last_user_message().is_some();
+        let show_sticky =
+            self.transcript.scroll_offset > 0 && self.transcript.last_user_message().is_some();
         let sticky_height = if show_sticky { 1 } else { 0 };
 
         // Split transcript area into sticky header + scrollable content
         let transcript_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(sticky_height),
-                Constraint::Min(0),
-            ])
+            .constraints([Constraint::Length(sticky_height), Constraint::Min(0)])
             .split(transcript_area);
 
         // Render sticky header if visible
@@ -630,19 +594,57 @@ impl ClaudeRenderer {
         // Split scrollable area into content + pill
         let scrollable_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(pill_height),
-            ])
+            .constraints([Constraint::Min(0), Constraint::Length(pill_height)])
             .split(scrollable_area);
 
         let content_area = scrollable_chunks[0];
         let pill_area = scrollable_chunks[1];
+        let height = content_area.height as usize;
 
-        let paragraph = Paragraph::new(visible_lines)
-            .wrap(Wrap { trim: false });
+        // Manual line slicing: compute visible window based on scroll_offset
+        // scroll_offset=0 means at bottom (latest), scroll_offset increases = scrolled up
+        let max_offset = total_lines.saturating_sub(height);
+        let start_line = if total_lines <= height {
+            0
+        } else if self.transcript.scroll_offset == 0 {
+            max_offset
+        } else {
+            max_offset
+                .saturating_sub(self.transcript.scroll_offset)
+                .min(max_offset)
+        };
+
+        // Slice visible lines from the transcript
+        let visible_lines: Vec<Line<'static>> = transcript_lines
+            .into_iter()
+            .skip(start_line)
+            .take(height)
+            .collect();
+
+        // Update scrollbar state
+        self.scrollbar_state = ScrollbarState::new(total_lines)
+            .position(start_line)
+            .viewport_content_length(height);
+
+        // Render transcript without Paragraph::scroll() — we slice lines manually
+        let paragraph = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, content_area);
+
+        // Render scrollbar on the right edge
+        if total_lines > height {
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .thumb_style(Style::default().fg(theme.fg_dim.to_ratatui_color()))
+                .track_style(Style::default().fg(theme.border.to_ratatui_color()));
+            f.render_stateful_widget(
+                scrollbar,
+                content_area.inner(&Margin {
+                    vertical: 0,
+                    horizontal: 0,
+                }),
+                &mut self.scrollbar_state,
+            );
+        }
 
         // Render new messages pill
         if show_pill {
@@ -735,7 +737,10 @@ impl ClaudeRenderer {
                             arrow,
                             Span::styled(cmd.name, name_style),
                             Span::raw("  "),
-                            Span::styled(cmd.description, Style::default().fg(theme.fg_dim.to_ratatui_color())),
+                            Span::styled(
+                                cmd.description,
+                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                            ),
                         ]));
                     }
                     lines
@@ -775,12 +780,11 @@ impl ClaudeRenderer {
                 PickerState::None => vec![],
             };
             if !picker_lines.is_empty() {
-                let picker_block = Paragraph::new(picker_lines)
-                    .block(
-                        ratatui::widgets::Block::default()
-                            .borders(ratatui::widgets::Borders::ALL)
-                            .border_style(Style::default().fg(theme.border.to_ratatui_color())),
-                    );
+                let picker_block = Paragraph::new(picker_lines).block(
+                    ratatui::widgets::Block::default()
+                        .borders(ratatui::widgets::Borders::ALL)
+                        .border_style(Style::default().fg(theme.border.to_ratatui_color())),
+                );
                 f.render_widget(picker_block, picker_area);
             }
         }
@@ -919,8 +923,7 @@ fn discover_workspace_files(workdir: &PathBuf, query: &str) -> Vec<String> {
     if let Ok(entries) = std::fs::read_dir(workdir) {
         for entry in entries.flatten() {
             if let Ok(path) = entry.path().canonicalize() {
-                if let Ok(rel) = path.strip_prefix(workdir.canonicalize().unwrap_or(path.clone()))
-                {
+                if let Ok(rel) = path.strip_prefix(workdir.canonicalize().unwrap_or(path.clone())) {
                     let rel_str = rel.to_string_lossy();
                     // Skip hidden dirs, .git, target, node_modules
                     if rel_str.starts_with('.')
@@ -976,8 +979,8 @@ mod tests {
             content: "Let me think...".to_string(),
         };
         let lines = msg.to_lines(false);
-        // When reasoning is hidden (new default), shows "(hidden — /reasoning to show)"
-        assert!(lines[0].contains("Thinking") && lines[0].contains("hidden"));
+        // When reasoning is hidden (new default), shows compact "∴ Thinking"
+        assert!(lines[0].contains("Thinking"));
     }
 
     #[test]
@@ -1020,10 +1023,16 @@ mod tests {
         let msg = ClaudeMessage::CompactBoundary;
         // When not expanded, compact boundary is hidden
         let lines_hidden = msg.to_lines(false);
-        assert!(lines_hidden.is_empty(), "CompactBoundary should be hidden when not expanded");
+        assert!(
+            lines_hidden.is_empty(),
+            "CompactBoundary should be hidden when not expanded"
+        );
         // When expanded, compact boundary is visible
         let lines_visible = msg.to_lines(true);
-        assert!(!lines_visible.is_empty(), "CompactBoundary should be visible when expanded");
+        assert!(
+            !lines_visible.is_empty(),
+            "CompactBoundary should be visible when expanded"
+        );
         assert!(lines_visible[0].contains("compacted"));
     }
 

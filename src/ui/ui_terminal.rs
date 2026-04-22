@@ -10,7 +10,10 @@ use crate::ui_state::*;
 use crate::ui_theme::*;
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+        KeyModifiers, MouseEventKind,
+    },
     execute,
     terminal::{self, size, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -58,6 +61,9 @@ pub(crate) struct TerminalUI {
     queued_submissions: VecDeque<String>,
     // Async permission request channel
     permission_tx: Option<tokio::sync::oneshot::Sender<bool>>,
+    // Async event channel: background thread reads crossterm events,
+    // all TerminalUI methods drain from here. This is the ONLY event source.
+    event_rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
 }
 
 #[cfg(unix)]
@@ -81,7 +87,7 @@ impl TerminalUI {
         let is_interactive = is_stdin_tty() && is_stdout_tty();
         let (cols, rows) = if is_interactive {
             let _ = terminal::enable_raw_mode();
-            let _ = execute!(io::stdout(), EnterAlternateScreen, Hide);
+            let _ = execute!(io::stdout(), EnterAlternateScreen, Hide, EnableMouseCapture);
             size().unwrap_or((80, 24))
         } else {
             (80, 24)
@@ -93,6 +99,28 @@ impl TerminalUI {
         } else {
             None
         };
+
+        // Spawn dedicated input reader thread — the ONLY place that reads crossterm events.
+        // All other TerminalUI methods drain events from the async channel.
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+        if is_interactive {
+            std::thread::spawn(move || {
+                loop {
+                    match crossterm::event::poll(Duration::from_millis(50)) {
+                        Ok(true) => match crossterm::event::read() {
+                            Ok(ev) => {
+                                if event_tx.send(ev).is_err() {
+                                    break; // Receiver dropped, exit thread
+                                }
+                            }
+                            Err(_) => break,
+                        },
+                        Ok(false) => continue,
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
 
         Ok(Self {
             state: UIState::new(),
@@ -114,6 +142,7 @@ impl TerminalUI {
             notification_expiry: None,
             queued_submissions: VecDeque::new(),
             permission_tx: None,
+            event_rx,
         })
     }
 
@@ -233,23 +262,23 @@ impl TerminalUI {
     /// Pumps the UI while waiting so the user can see the prompt and respond.
     pub(crate) async fn request_permission(&mut self, command: &str) -> bool {
         use crate::claude_ui::UiEvent;
-        
+
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.permission_tx = Some(tx);
-        
+
         self.handle_ui_event(UiEvent::PermissionRequested {
             command: command.to_string(),
         });
 
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
         let mut rx = rx;
-        
+
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 break false;
             }
-            
+
             tokio::select! {
                 result = &mut rx => {
                     self.permission_tx = None;
@@ -310,10 +339,11 @@ impl TerminalUI {
     }
 
     pub(crate) fn push_tool_start(&mut self, name: &str, command: &str) {
-        self.claude.push_message(crate::claude_ui::ClaudeMessage::ToolStart {
-            name: name.to_string(),
-            input: Some(command.to_string()),
-        });
+        self.claude
+            .push_message(crate::claude_ui::ClaudeMessage::ToolStart {
+                name: name.to_string(),
+                input: Some(command.to_string()),
+            });
         self.pending_draw = true;
     }
 
@@ -324,19 +354,21 @@ impl TerminalUI {
         output: &str,
         duration_ms: Option<u64>,
     ) {
-        self.claude.push_message(crate::claude_ui::ClaudeMessage::ToolResult {
-            name: name.to_string(),
-            success,
-            output: output.to_string(),
-            duration_ms,
-        });
+        self.claude
+            .push_message(crate::claude_ui::ClaudeMessage::ToolResult {
+                name: name.to_string(),
+                success,
+                output: output.to_string(),
+                duration_ms,
+            });
         self.pending_draw = true;
     }
 
     pub(crate) fn push_warning(&mut self, message: &str) {
-        self.claude.push_message(crate::claude_ui::ClaudeMessage::System {
-            content: message.to_string(),
-        });
+        self.claude
+            .push_message(crate::claude_ui::ClaudeMessage::System {
+                content: message.to_string(),
+            });
         self.pending_draw = true;
     }
 
@@ -463,10 +495,9 @@ impl TerminalUI {
         if !self.raw_mode {
             return self.draw();
         }
-        if event::poll(std::time::Duration::from_millis(1))? {
-            if let Event::Resize(_, _) = event::read()? {
-                self.previous_claude_screen = None;
-            }
+        // Process any pending input events from the channel (resize, scroll, typing)
+        if let Ok(Some(queued)) = self.poll_busy_submission() {
+            self.enqueue_submission(queued);
         }
         self.draw()
     }
@@ -505,9 +536,8 @@ impl TerminalUI {
             .set_input_cursor(self.input.cursor_row(), self.input.display_col());
         self.claude.set_task_list(self.tasks.clone());
 
-        // Sync scroll offset from UIState viewport to ClaudeTranscript
-        self.claude
-            .set_transcript_scroll_offset(self.state.viewport.scroll_offset);
+        // Note: scroll offset is managed solely by ClaudeTranscript (self.claude)
+        // to avoid dual-source-of-truth bugs. Do NOT sync from UIState.
 
         // Sync autocomplete state (only when active)
         if self.state.autocomplete.active {
@@ -517,41 +547,27 @@ impl TerminalUI {
             self.claude.set_autocomplete_state(None);
         }
 
-        // Format context as percentage with visual bar
+        // Compact status: always show context bar, append activity label when active
         let ctx_pct = if self.state.footer.context_max > 0 {
             ((self.state.footer.context_current * 100 / self.state.footer.context_max) as usize)
                 .min(100)
         } else {
             0
         };
-        let bar_width = 10;
+        let bar_width = 6;
         let filled = (ctx_pct * bar_width / 100) as usize;
-        let bar: String = format!(
-            "{}{}",
-            "█".repeat(filled),
-            "░".repeat(bar_width - filled)
-        );
-        let ctx_str = format!("{}% [{}]", ctx_pct, bar);
-
-        let base_status = format!(
-            "{}  {}",
-            self.state.footer.model, ctx_str
-        );
+        let bar = format!("{}{}", "█".repeat(filled), "░".repeat(bar_width - filled));
+        let base = format!("{}% {}  {}", ctx_pct, bar, self.state.footer.model);
         let status = match &self.state.activity {
-            ActivityState::Active { label, message } => {
-                format!("{}  |  {}: {}", base_status, label, message)
-            }
-            ActivityState::Idle => base_status,
+            ActivityState::Active { label, .. } => Some(format!("{}  {}", base, label)),
+            ActivityState::Idle => Some(base),
         };
-        self.claude.set_status_line(Some(status));
+        self.claude.set_status_line(status);
 
         // Notification with TTL expiry
         if let Some(ref note) = self.notification_line {
             let now = std::time::Instant::now();
-            let expired = self
-                .notification_expiry
-                .map(|t| now >= t)
-                .unwrap_or(false);
+            let expired = self.notification_expiry.map(|t| now >= t).unwrap_or(false);
             if expired {
                 self.notification_line = None;
                 self.notification_expiry = None;
@@ -562,7 +578,7 @@ impl TerminalUI {
 
         if let Some(terminal) = &mut self.terminal {
             terminal.draw(|f| {
-                self.claude.render_ratatui(f, &self.coordinator_status);
+                self.claude.render_ratatui(f);
             })?;
         } else {
             // Fallback for non-interactive or non-ratatui path
@@ -621,481 +637,291 @@ impl TerminalUI {
     /// Run the interactive input loop.
     /// Returns Some(input) when Enter is pressed, None when Esc is pressed.
     /// In non-interactive mode, reads a single line from stdin.
-    pub(crate) fn run_input_loop(&mut self) -> io::Result<Option<String>> {
+    pub(crate) async fn run_input_loop(&mut self) -> io::Result<Option<String>> {
         if !self.raw_mode {
             return read_line_non_interactive();
         }
         loop {
             self.draw()?;
 
-            if event::poll(std::time::Duration::from_millis(50))? {
-                if let Event::Key(KeyEvent {
-                    code,
-                    kind,
-                    modifiers,
-                    ..
-                }) = event::read()?
-                {
-                    if kind != KeyEventKind::Press {
-                        continue;
-                    }
+            let ev = if let Ok(ev) = self.event_rx.try_recv() {
+                ev
+            } else {
+                match self.event_rx.recv().await {
+                    Some(ev) => ev,
+                    None => return Ok(None),
+                }
+            };
 
-                    // If modal is active, handle modal-specific keys.
-                    if self.state.modal.is_some() {
-                        match code {
-                            KeyCode::Esc => {
+            if let Event::Mouse(mouse_event) = ev {
+                match mouse_event.kind {
+                    MouseEventKind::ScrollDown => {
+                        self.claude.scroll_down(3);
+                        self.pending_draw = true;
+                    }
+                    MouseEventKind::ScrollUp => {
+                        self.claude.scroll_up(3);
+                        self.pending_draw = true;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            if let Event::Key(KeyEvent {
+                code,
+                kind,
+                modifiers,
+                ..
+            }) = ev
+            {
+                if kind != KeyEventKind::Press {
+                    continue;
+                }
+
+                // If modal is active, handle modal-specific keys.
+                if self.state.modal.is_some() {
+                    match code {
+                        KeyCode::Esc => {
+                            self.state.clear_modal();
+                            self.pending_draw = true;
+                            continue;
+                        }
+                        KeyCode::Enter => {
+                            // For confirm modals, treat Enter as confirmation.
+                            if let Some(ModalState::Confirm { .. }) = self.state.modal {
                                 self.state.clear_modal();
                                 self.pending_draw = true;
-                                continue;
+                                let input = self.input.content_trimmed();
+                                self.input.clear();
+                                if input.is_empty() {
+                                    continue;
+                                }
+                                return Ok(Some(input));
                             }
-                            KeyCode::Enter => {
-                                // For confirm modals, treat Enter as confirmation.
-                                if let Some(ModalState::Confirm { .. }) = self.state.modal {
-                                    self.state.clear_modal();
-                                    self.pending_draw = true;
-                                    let input = self.input.content_trimmed();
-                                    self.input.clear();
-                                    if input.is_empty() {
-                                        continue;
-                                    }
-                                    return Ok(Some(input));
+                            // For tool approval, accept selected option.
+                            if let Some(ModalState::ToolApproval { selected, .. }) =
+                                &self.state.modal
+                            {
+                                match selected {
+                                    0 => { /* Yes — proceed once */ }
+                                    1 => { /* Always — auto-approve */ }
+                                    _ => { /* No — deny */ }
                                 }
-                                // For tool approval, accept selected option.
-                                if let Some(ModalState::ToolApproval { selected, .. }) =
-                                    &self.state.modal
-                                {
-                                    match selected {
-                                        0 => { /* Yes — proceed once */ }
-                                        1 => { /* Always — auto-approve */ }
-                                        _ => { /* No — deny */ }
-                                    }
-                                    self.state.clear_modal();
-                                    self.pending_draw = true;
-                                }
-                                // For permission gate, accept selected option.
-                                if let Some(ModalState::PermissionGate {
-                                    command, selected, ..
-                                }) = &self.state.modal
-                                {
-                                    match selected {
-                                        0 => {
-                                            /* Yes — approve once */
-                                            crate::permission_gate::record_approval(command);
-                                        }
-                                        1 => {
-                                            /* Always — approve and cache */
-                                            crate::permission_gate::record_approval(command);
-                                        }
-                                        _ => { /* No — deny */ }
-                                    }
-                                    self.state.clear_modal();
-                                    self.pending_draw = true;
-                                }
-                                continue;
-                            }
-                            KeyCode::Char('d') | KeyCode::Char('D') => {
-                                // D denies tool approval.
-                                if let Some(ModalState::ToolApproval { .. }) = &self.state.modal {
-                                    self.state.clear_modal();
-                                    self.pending_draw = true;
-                                }
-                                // D denies permission gate.
-                                if let Some(ModalState::PermissionGate { command, .. }) =
-                                    &self.state.modal
-                                {
-                                    // Deny without caching
-                                    self.state.clear_modal();
-                                    self.pending_draw = true;
-                                }
-                            }
-                            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                                // Y approves permission gate once.
-                                if let Some(ModalState::PermissionGate { command, .. }) =
-                                    &self.state.modal
-                                {
-                                    crate::permission_gate::record_approval(command);
-                                    self.state.clear_modal();
-                                    self.pending_draw = true;
-                                }
-                            }
-                            KeyCode::Char('a') | KeyCode::Char('A') => {
-                                // A approves permission gate always.
-                                if let Some(ModalState::PermissionGate { command, .. }) =
-                                    &self.state.modal
-                                {
-                                    crate::permission_gate::record_approval(command);
-                                    self.state.clear_modal();
-                                    self.pending_draw = true;
-                                }
-                            }
-                            KeyCode::Char('n') | KeyCode::Char('N') => {
-                                // N denies permission gate.
-                                if let Some(ModalState::PermissionGate { .. }) = &self.state.modal {
-                                    self.state.clear_modal();
-                                    self.pending_draw = true;
-                                }
-                            }
-                            KeyCode::Left => {
-                                if let Some(ModalState::ToolApproval { selected, .. }) =
-                                    &mut self.state.modal
-                                {
-                                    if *selected > 0 {
-                                        *selected -= 1;
-                                        self.pending_draw = true;
-                                    }
-                                }
-                                if let Some(ModalState::PermissionGate { selected, .. }) =
-                                    &mut self.state.modal
-                                {
-                                    if *selected > 0 {
-                                        *selected -= 1;
-                                        self.pending_draw = true;
-                                    }
-                                }
-                            }
-                            KeyCode::Right => {
-                                if let Some(ModalState::ToolApproval { selected, .. }) =
-                                    &mut self.state.modal
-                                {
-                                    *selected = (*selected + 1).min(2);
-                                    self.pending_draw = true;
-                                }
-                                if let Some(ModalState::PermissionGate { selected, .. }) =
-                                    &mut self.state.modal
-                                {
-                                    *selected = (*selected + 1).min(2);
-                                    self.pending_draw = true;
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                self.input.insert_char(c);
+                                self.state.clear_modal();
                                 self.pending_draw = true;
                             }
-                            KeyCode::Backspace => {
-                                self.input.backspace();
+                            // For permission gate, accept selected option.
+                            if let Some(ModalState::PermissionGate {
+                                command, selected, ..
+                            }) = &self.state.modal
+                            {
+                                match selected {
+                                    0 => {
+                                        /* Yes — approve once */
+                                        crate::permission_gate::record_approval(command);
+                                    }
+                                    1 => {
+                                        /* Always — approve and cache */
+                                        crate::permission_gate::record_approval(command);
+                                    }
+                                    _ => { /* No — deny */ }
+                                }
+                                self.state.clear_modal();
                                 self.pending_draw = true;
                             }
-                            _ => {}
+                            continue;
                         }
-                        continue;
-                    }
-
-                    // Handle model picker if visible
-                    if self.claude.model_picker.visible {
-                        match code {
-                            KeyCode::Esc => {
-                                self.claude.hide_model_picker();
+                        KeyCode::Char('d') | KeyCode::Char('D') => {
+                            // D denies tool approval.
+                            if let Some(ModalState::ToolApproval { .. }) = &self.state.modal {
+                                self.state.clear_modal();
                                 self.pending_draw = true;
                             }
-                            KeyCode::Enter => {
-                                // Select model
-                                if let Some(_model) = self.claude.model_picker.selected_model() {
-                                    // TODO: Switch to selected model
-                                }
-                                self.claude.hide_model_picker();
+                            // D denies permission gate.
+                            if let Some(ModalState::PermissionGate { command, .. }) =
+                                &self.state.modal
+                            {
+                                // Deny without caching
+                                self.state.clear_modal();
                                 self.pending_draw = true;
                             }
-                            KeyCode::Up => {
-                                self.claude.model_picker_select_prev();
-                                self.pending_draw = true;
-                            }
-                            KeyCode::Down => {
-                                self.claude.model_picker_select_next();
-                                self.pending_draw = true;
-                            }
-                            _ => {}
                         }
-                        continue;
-                    }
-
-                    // Handle search modal if visible
-                    if self.claude.search_modal.visible {
-                        match code {
-                            KeyCode::Esc => {
-                                self.claude.hide_search();
+                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            // Y approves permission gate once.
+                            if let Some(ModalState::PermissionGate { command, .. }) =
+                                &self.state.modal
+                            {
+                                crate::permission_gate::record_approval(command);
+                                self.state.clear_modal();
                                 self.pending_draw = true;
                             }
-                            KeyCode::Enter => {
-                                // Select result
-                                if let Some(_result) = self.claude.search_modal.selected_result() {
-                                    // TODO: Open file or jump to location
-                                }
-                                self.claude.hide_search();
-                                self.pending_draw = true;
-                            }
-                            KeyCode::Up => {
-                                self.claude.search_select_prev();
-                                self.pending_draw = true;
-                            }
-                            KeyCode::Down => {
-                                self.claude.search_select_next();
-                                self.pending_draw = true;
-                            }
-                            KeyCode::Char(c) => {
-                                let mut query = self.claude.search_modal.query.clone();
-                                query.push(c);
-                                self.claude.update_search_query(query);
-                                self.pending_draw = true;
-                            }
-                            KeyCode::Backspace => {
-                                let mut query = self.claude.search_modal.query.clone();
-                                query.pop();
-                                self.claude.update_search_query(query);
-                                self.pending_draw = true;
-                            }
-                            _ => {}
                         }
-                        continue;
+                        KeyCode::Char('a') | KeyCode::Char('A') => {
+                            // A approves permission gate always.
+                            if let Some(ModalState::PermissionGate { command, .. }) =
+                                &self.state.modal
+                            {
+                                crate::permission_gate::record_approval(command);
+                                self.state.clear_modal();
+                                self.pending_draw = true;
+                            }
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('N') => {
+                            // N denies permission gate.
+                            if let Some(ModalState::PermissionGate { .. }) = &self.state.modal {
+                                self.state.clear_modal();
+                                self.pending_draw = true;
+                            }
+                        }
+                        KeyCode::Left => {
+                            if let Some(ModalState::ToolApproval { selected, .. }) =
+                                &mut self.state.modal
+                            {
+                                if *selected > 0 {
+                                    *selected -= 1;
+                                    self.pending_draw = true;
+                                }
+                            }
+                            if let Some(ModalState::PermissionGate { selected, .. }) =
+                                &mut self.state.modal
+                            {
+                                if *selected > 0 {
+                                    *selected -= 1;
+                                    self.pending_draw = true;
+                                }
+                            }
+                        }
+                        KeyCode::Right => {
+                            if let Some(ModalState::ToolApproval { selected, .. }) =
+                                &mut self.state.modal
+                            {
+                                *selected = (*selected + 1).min(2);
+                                self.pending_draw = true;
+                            }
+                            if let Some(ModalState::PermissionGate { selected, .. }) =
+                                &mut self.state.modal
+                            {
+                                *selected = (*selected + 1).min(2);
+                                self.pending_draw = true;
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            self.input.insert_char(c);
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Backspace => {
+                            self.input.backspace();
+                            self.pending_draw = true;
+                        }
+                        _ => {}
                     }
+                    continue;
+                }
 
-                    // Handle slash/file picker if active
-                    if self.claude.is_picker_active() {
-                        match code {
-                            KeyCode::Esc => {
+                // Handle model picker if visible
+                if self.claude.model_picker.visible {
+                    match code {
+                        KeyCode::Esc => {
+                            self.claude.hide_model_picker();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Enter => {
+                            // Select model
+                            if let Some(_model) = self.claude.model_picker.selected_model() {
+                                // TODO: Switch to selected model
+                            }
+                            self.claude.hide_model_picker();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Up => {
+                            self.claude.model_picker_select_prev();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Down => {
+                            self.claude.model_picker_select_next();
+                            self.pending_draw = true;
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
+                // Handle search modal if visible
+                if self.claude.search_modal.visible {
+                    match code {
+                        KeyCode::Esc => {
+                            self.claude.hide_search();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Enter => {
+                            // Select result
+                            if let Some(_result) = self.claude.search_modal.selected_result() {
+                                // TODO: Open file or jump to location
+                            }
+                            self.claude.hide_search();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Up => {
+                            self.claude.search_select_prev();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Down => {
+                            self.claude.search_select_next();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Char(c) => {
+                            let mut query = self.claude.search_modal.query.clone();
+                            query.push(c);
+                            self.claude.update_search_query(query);
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Backspace => {
+                            let mut query = self.claude.search_modal.query.clone();
+                            query.pop();
+                            self.claude.update_search_query(query);
+                            self.pending_draw = true;
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
+                // Handle slash/file picker if active
+                if self.claude.is_picker_active() {
+                    match code {
+                        KeyCode::Esc => {
+                            self.claude.close_picker();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Enter => {
+                            if let Some(cmd) = self.claude.selected_slash_command() {
+                                // Submit slash command immediately (single Enter)
+                                self.input.set_content(cmd);
+                                self.claude.close_picker();
+                                self.input.push_to_history();
+                                let input = self.input.content_trimmed();
+                                self.input.clear();
+                                self.pending_draw = true;
+                                return Ok(Some(input));
+                            } else if let Some(file) = self.claude.selected_file() {
+                                let current = self.input.content();
+                                if current.starts_with('@') {
+                                    self.input.set_content(&format!("@{}", file));
+                                } else {
+                                    self.input.set_content(&file);
+                                }
                                 self.claude.close_picker();
                                 self.pending_draw = true;
                             }
-                            KeyCode::Enter => {
-                                if let Some(cmd) = self.claude.selected_slash_command() {
-                                    // Set content and close picker - user must press Enter again to submit
-                                    self.input.set_content(cmd);
-                                    self.claude.close_picker();
-                                    self.pending_draw = true;
-                                } else if let Some(file) = self.claude.selected_file() {
-                                    let current = self.input.content();
-                                    if current.starts_with('@') {
-                                        self.input.set_content(&format!("@{}", file));
-                                    } else {
-                                        self.input.set_content(&file);
-                                    }
-                                    self.claude.close_picker();
-                                    self.pending_draw = true;
-                                }
-                            }
-                            KeyCode::Up => {
-                                self.claude.picker_select_up();
-                                self.pending_draw = true;
-                            }
-                            KeyCode::Down => {
-                                self.claude.picker_select_down();
-                                self.pending_draw = true;
-                            }
-                            KeyCode::Char(c) => {
-                                self.input.insert_char(c);
-                                let content = self.input.content();
-                                if content.starts_with('/') {
-                                    self.claude.open_slash_picker(content[1..].to_string());
-                                } else if content.starts_with('@') && content.len() > 1 {
-                                    if let Ok(cwd) = std::env::current_dir() {
-                                        self.claude.open_file_picker(content[1..].to_string(), &cwd);
-                                    }
-                                } else {
-                                    self.claude.close_picker();
-                                }
-                                self.pending_draw = true;
-                            }
-                            KeyCode::Backspace => {
-                                self.input.backspace();
-                                let content = self.input.content();
-                                if content.starts_with('/') {
-                                    self.claude.open_slash_picker(content[1..].to_string());
-                                } else if content.starts_with('@') && content.len() > 1 {
-                                    if let Ok(cwd) = std::env::current_dir() {
-                                        self.claude.open_file_picker(content[1..].to_string(), &cwd);
-                                    }
-                                } else if content.is_empty() {
-                                    self.claude.close_picker();
-                                }
-                                self.pending_draw = true;
-                            }
-                            _ => {}
                         }
-                        continue;
-                    }
-
-                    // Handle async permission request
-                    if self.permission_tx.is_some() {
-                        match code {
-                            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                                self.resolve_permission(true);
-                                self.pending_draw = true;
-                                continue;
-                            }
-                            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                                self.resolve_permission(false);
-                                self.pending_draw = true;
-                                continue;
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    // Normal input handling.
-                    match code {
-                        KeyCode::Enter if modifiers.contains(KeyModifiers::CONTROL) => {
-                            // Ctrl+Enter: submit (or accept autocomplete first)
-                            if self.state.autocomplete.active {
-                                if let Some(label) = self.state.autocomplete.selected_label() {
-                                    self.apply_autocomplete(&label);
-                                    self.state.autocomplete.deactivate();
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                            }
-                            let input = self.input.content_trimmed();
-                            if input.is_empty() {
-                                continue;
-                            }
-                            self.input.push_to_history();
-                            self.input.clear();
-                            return Ok(Some(input));
-                        }
-                        KeyCode::Enter => {
-                            // Accept autocomplete or submit.
-                            if self.state.autocomplete.active {
-                                if let Some(label) = self.state.autocomplete.selected_label() {
-                                    self.apply_autocomplete(&label);
-                                    self.state.autocomplete.deactivate();
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                            }
-                            let input = self.input.content_trimmed();
-                            if input.is_empty() {
-                                continue;
-                            }
-                            self.input.push_to_history();
-                            self.input.clear();
-                            return Ok(Some(input));
-                        }
-                        KeyCode::Tab => {
-                            // Cycle autocomplete suggestions.
-                            if self.state.autocomplete.active
-                                && !self.state.autocomplete.matches.is_empty()
-                            {
-                                self.state.autocomplete.select_down();
-                                self.pending_draw = true;
-                            }
-                        }
-                        KeyCode::Char('j') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            // Ctrl+J: newline (multi-line input)
-                            self.input.insert_newline();
+                        KeyCode::Up => {
+                            self.claude.picker_select_up();
                             self.pending_draw = true;
                         }
-                        KeyCode::Char(c) if modifiers.contains(KeyModifiers::CONTROL) => {
-                            match c {
-                                'c' => {
-                                    // Ctrl+C: first clears input, second within window exits.
-                                    if !self.input.is_empty() {
-                                        self.input.clear();
-                                        self.ctrl_c_armed_until =
-                                            Some(Instant::now() + Duration::from_millis(1200));
-                                        self.notification_line = Some(
-                                            "Prompt cleared (Ctrl+C again to exit)".to_string(),
-                                        );
-                                        self.pending_draw = true;
-                                    } else {
-                                        let now = Instant::now();
-                                        if self
-                                            .ctrl_c_armed_until
-                                            .map(|t| now <= t)
-                                            .unwrap_or(false)
-                                        {
-                                            return Ok(None);
-                                        }
-                                        self.ctrl_c_armed_until =
-                                            Some(now + Duration::from_millis(1200));
-                                        self.notification_line =
-                                            Some("Press Ctrl+C again to exit".to_string());
-                                        self.pending_draw = true;
-                                    }
-                                }
-                                'd' => {
-                                    let now = Instant::now();
-                                    if self.ctrl_d_armed_until.map(|t| now <= t).unwrap_or(false) {
-                                        return Ok(None);
-                                    }
-                                    self.ctrl_d_armed_until =
-                                        Some(now + Duration::from_millis(1200));
-                                    self.notification_line =
-                                        Some("Press Ctrl+D again to exit".to_string());
-                                    self.pending_draw = true;
-                                }
-                                'u' => {
-                                    self.input.delete_to_line_start();
-                                    self.pending_draw = true;
-                                }
-                                'w' => {
-                                    self.input.delete_word_before();
-                                    self.pending_draw = true;
-                                }
-                                'l' => {
-                                    // Ctrl+L: open sessions modal
-                                    self.state.set_modal(ModalState::Select {
-                                        title: "Sessions".to_string(),
-                                        options: vec![
-                                            "N — New session".to_string(),
-                                            "Esc — Back to chat".to_string(),
-                                        ],
-                                    });
-                                    self.pending_draw = true;
-                                }
-                                'a' => {
-                                    // Ctrl+A: home
-                                    self.input.move_home();
-                                    self.pending_draw = true;
-                                }
-                                'e' => {
-                                    // Ctrl+E: end
-                                    self.input.move_end();
-                                    self.pending_draw = true;
-                                }
-                                'b' => {
-                                    // Ctrl+B: left
-                                    self.input.move_left();
-                                    self.pending_draw = true;
-                                }
-                                'f' => {
-                                    // Ctrl+F: right
-                                    self.input.move_right();
-                                    self.pending_draw = true;
-                                }
-                                'o' => {
-                                    // Ctrl+O: toggle transcript expanded mode
-                                    self.claude.toggle_transcript();
-                                    self.pending_draw = true;
-                                }
-                                't' => {
-                                    self.tasks.toggle();
-                                    self.pending_draw = true;
-                                }
-                                'u' => {
-                                    self.claude.scroll_up(5);
-                                    self.pending_draw = true;
-                                }
-                                'd' => {
-                                    self.claude.scroll_down(5);
-                                    self.pending_draw = true;
-                                }
-                                'k' => {
-                                    self.claude.show_search();
-                                    self.pending_draw = true;
-                                }
-                                'm' => {
-                                    self.claude.show_model_picker();
-                                    self.pending_draw = true;
-                                }
-                                _ => {}
-                            }
-                        }
-                        KeyCode::Char(c) if modifiers.contains(KeyModifiers::ALT) => {
-                            match c {
-                                // Alt+Left/Right handled via KeyCode::Left/Right with ALT below
-                                _ => {
-                                    self.input.insert_char(c);
-                                    self.pending_draw = true;
-                                }
-                            }
+                        KeyCode::Down => {
+                            self.claude.picker_select_down();
+                            self.pending_draw = true;
                         }
                         KeyCode::Char(c) => {
                             self.input.insert_char(c);
@@ -1106,24 +932,13 @@ impl TerminalUI {
                                 if let Ok(cwd) = std::env::current_dir() {
                                     self.claude.open_file_picker(content[1..].to_string(), &cwd);
                                 }
-                            } else if content == "!" {
-                                self.claude.set_input_mode(crate::claude_ui::claude_input::InputMode::Bash);
                             } else {
                                 self.claude.close_picker();
-                                if self.claude.input_mode() != &crate::claude_ui::claude_input::InputMode::Chat {
-                                    self.claude.set_input_mode(crate::claude_ui::claude_input::InputMode::Chat);
-                                }
                             }
                             self.pending_draw = true;
                         }
                         KeyCode::Backspace => {
-                            if modifiers.contains(KeyModifiers::ALT)
-                                || modifiers.contains(KeyModifiers::CONTROL)
-                            {
-                                self.input.delete_word_before();
-                            } else {
-                                self.input.backspace();
-                            }
+                            self.input.backspace();
                             let content = self.input.content();
                             if content.starts_with('/') {
                                 self.claude.open_slash_picker(content[1..].to_string());
@@ -1131,113 +946,336 @@ impl TerminalUI {
                                 if let Ok(cwd) = std::env::current_dir() {
                                     self.claude.open_file_picker(content[1..].to_string(), &cwd);
                                 }
-                            } else if content.is_empty() || content == "!" {
-                                self.claude.close_picker();
-                                self.claude.set_input_mode(crate::claude_ui::claude_input::InputMode::Chat);
-                            }
-                            self.pending_draw = true;
-                        }
-                        KeyCode::Delete => {
-                            self.input.delete();
-                            let content = self.input.content();
-                            if content.starts_with('/') {
-                                self.claude.open_slash_picker(content[1..].to_string());
-                            } else if content.starts_with('@') && content.len() > 1 {
-                                if let Ok(cwd) = std::env::current_dir() {
-                                    self.claude.open_file_picker(content[1..].to_string(), &cwd);
-                                }
-                            } else {
+                            } else if content.is_empty() {
                                 self.claude.close_picker();
                             }
                             self.pending_draw = true;
-                        }
-                        KeyCode::Left => {
-                            if modifiers.contains(KeyModifiers::CONTROL)
-                                || modifiers.contains(KeyModifiers::ALT)
-                            {
-                                self.input.move_word_left();
-                            } else {
-                                self.input.move_left();
-                            }
-                            self.pending_draw = true;
-                        }
-                        KeyCode::Right => {
-                            if modifiers.contains(KeyModifiers::CONTROL)
-                                || modifiers.contains(KeyModifiers::ALT)
-                            {
-                                self.input.move_word_right();
-                            } else {
-                                self.input.move_right();
-                            }
-                            self.pending_draw = true;
-                        }
-                        KeyCode::Home => {
-                            self.input.move_home();
-                            self.pending_draw = true;
-                        }
-                        KeyCode::End => {
-                            self.state.scroll_to_bottom();
-                            self.input.move_end();
-                            self.pending_draw = true;
-                        }
-                        KeyCode::PageUp => {
-                            self.state.scroll_up(5);
-                            self.pending_draw = true;
-                        }
-                        KeyCode::PageDown => {
-                            self.state.scroll_down(5);
-                            self.pending_draw = true;
-                        }
-                        KeyCode::Up => {
-                            if self.claude.is_picker_active() {
-                                self.claude.picker_select_up();
-                            } else if self.state.autocomplete.active {
-                                self.state.autocomplete.select_up();
-                            } else if self.input.is_in_history() {
-                                self.input.history_up();
-                            } else if self.state.viewport.scroll_offset > 0 {
-                                self.state.scroll_up(1);
-                            } else {
-                                self.input.history_up();
-                            }
-                            self.pending_draw = true;
-                        }
-                        KeyCode::Down => {
-                            if self.claude.is_picker_active() {
-                                self.claude.picker_select_down();
-                            } else if self.state.autocomplete.active {
-                                self.state.autocomplete.select_down();
-                            } else if self.input.is_in_history() {
-                                self.input.history_down();
-                            } else {
-                                self.state.scroll_down(1);
-                            }
-                            self.pending_draw = true;
-                        }
-                        KeyCode::Esc => {
-                            if self.claude.is_picker_active() {
-                                self.claude.close_picker();
-                                self.pending_draw = true;
-                            } else if self.state.autocomplete.active {
-                                self.state.autocomplete.deactivate();
-                                self.pending_draw = true;
-                            } else {
-                                let now = Instant::now();
-                                if self.esc_armed_until.map(|t| now <= t).unwrap_or(false) {
-                                    self.input.clear();
-                                    self.notification_line = Some("Prompt cleared".to_string());
-                                    self.esc_armed_until = None;
-                                    self.pending_draw = true;
-                                } else {
-                                    self.esc_armed_until = Some(now + Duration::from_millis(900));
-                                    self.notification_line =
-                                        Some("Press Esc again to clear prompt".to_string());
-                                    self.pending_draw = true;
-                                }
-                            }
                         }
                         _ => {}
                     }
+                    continue;
+                }
+
+                // Handle async permission request
+                if self.permission_tx.is_some() {
+                    match code {
+                        KeyCode::Char('y') | KeyCode::Char('Y') => {
+                            self.resolve_permission(true);
+                            self.pending_draw = true;
+                            continue;
+                        }
+                        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                            self.resolve_permission(false);
+                            self.pending_draw = true;
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Normal input handling.
+                match code {
+                    KeyCode::Enter if modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Ctrl+Enter: submit (or accept autocomplete first)
+                        if self.state.autocomplete.active {
+                            if let Some(label) = self.state.autocomplete.selected_label() {
+                                self.apply_autocomplete(&label);
+                                self.state.autocomplete.deactivate();
+                                self.pending_draw = true;
+                                continue;
+                            }
+                        }
+                        let input = self.input.content_trimmed();
+                        if input.is_empty() {
+                            continue;
+                        }
+                        self.input.push_to_history();
+                        self.input.clear();
+                        return Ok(Some(input));
+                    }
+                    KeyCode::Enter => {
+                        // Accept autocomplete or submit.
+                        if self.state.autocomplete.active {
+                            if let Some(label) = self.state.autocomplete.selected_label() {
+                                self.apply_autocomplete(&label);
+                                self.state.autocomplete.deactivate();
+                                self.pending_draw = true;
+                                continue;
+                            }
+                        }
+                        let input = self.input.content_trimmed();
+                        if input.is_empty() {
+                            continue;
+                        }
+                        self.input.push_to_history();
+                        self.input.clear();
+                        return Ok(Some(input));
+                    }
+                    KeyCode::Tab => {
+                        // Cycle autocomplete suggestions.
+                        if self.state.autocomplete.active
+                            && !self.state.autocomplete.matches.is_empty()
+                        {
+                            self.state.autocomplete.select_down();
+                            self.pending_draw = true;
+                        }
+                    }
+                    KeyCode::Char('j') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Ctrl+J: newline (multi-line input)
+                        self.input.insert_newline();
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Char(c) if modifiers.contains(KeyModifiers::CONTROL) => {
+                        match c {
+                            'c' => {
+                                // Ctrl+C: first clears input, second within window exits.
+                                if !self.input.is_empty() {
+                                    self.input.clear();
+                                    self.ctrl_c_armed_until =
+                                        Some(Instant::now() + Duration::from_millis(1200));
+                                    self.notification_line =
+                                        Some("Prompt cleared (Ctrl+C again to exit)".to_string());
+                                    self.pending_draw = true;
+                                } else {
+                                    let now = Instant::now();
+                                    if self.ctrl_c_armed_until.map(|t| now <= t).unwrap_or(false) {
+                                        return Ok(None);
+                                    }
+                                    self.ctrl_c_armed_until =
+                                        Some(now + Duration::from_millis(1200));
+                                    self.notification_line =
+                                        Some("Press Ctrl+C again to exit".to_string());
+                                    self.pending_draw = true;
+                                }
+                            }
+                            'd' => {
+                                let now = Instant::now();
+                                if self.ctrl_d_armed_until.map(|t| now <= t).unwrap_or(false) {
+                                    return Ok(None);
+                                }
+                                self.ctrl_d_armed_until = Some(now + Duration::from_millis(1200));
+                                self.notification_line =
+                                    Some("Press Ctrl+D again to exit".to_string());
+                                self.pending_draw = true;
+                            }
+                            'u' => {
+                                self.input.delete_to_line_start();
+                                self.pending_draw = true;
+                            }
+                            'w' => {
+                                self.input.delete_word_before();
+                                self.pending_draw = true;
+                            }
+                            'l' => {
+                                // Ctrl+L: open sessions modal
+                                self.state.set_modal(ModalState::Select {
+                                    title: "Sessions".to_string(),
+                                    options: vec![
+                                        "N — New session".to_string(),
+                                        "Esc — Back to chat".to_string(),
+                                    ],
+                                });
+                                self.pending_draw = true;
+                            }
+                            'a' => {
+                                // Ctrl+A: home
+                                self.input.move_home();
+                                self.pending_draw = true;
+                            }
+                            'e' => {
+                                // Ctrl+E: end
+                                self.input.move_end();
+                                self.pending_draw = true;
+                            }
+                            'b' => {
+                                // Ctrl+B: left
+                                self.input.move_left();
+                                self.pending_draw = true;
+                            }
+                            'f' => {
+                                // Ctrl+F: right
+                                self.input.move_right();
+                                self.pending_draw = true;
+                            }
+                            'o' => {
+                                // Ctrl+O: toggle transcript expanded mode
+                                self.claude.toggle_transcript();
+                                self.pending_draw = true;
+                            }
+                            't' => {
+                                self.tasks.toggle();
+                                self.pending_draw = true;
+                            }
+                            'u' => {
+                                self.claude.scroll_up(5);
+                                self.pending_draw = true;
+                            }
+                            'd' => {
+                                self.claude.scroll_down(5);
+                                self.pending_draw = true;
+                            }
+                            'k' => {
+                                self.claude.show_search();
+                                self.pending_draw = true;
+                            }
+                            'm' => {
+                                self.claude.show_model_picker();
+                                self.pending_draw = true;
+                            }
+                            _ => {}
+                        }
+                    }
+                    KeyCode::Char(c) if modifiers.contains(KeyModifiers::ALT) => {
+                        match c {
+                            // Alt+Left/Right handled via KeyCode::Left/Right with ALT below
+                            _ => {
+                                self.input.insert_char(c);
+                                self.pending_draw = true;
+                            }
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        self.input.insert_char(c);
+                        let content = self.input.content();
+                        if content.starts_with('/') {
+                            self.claude.open_slash_picker(content[1..].to_string());
+                        } else if content.starts_with('@') && content.len() > 1 {
+                            if let Ok(cwd) = std::env::current_dir() {
+                                self.claude.open_file_picker(content[1..].to_string(), &cwd);
+                            }
+                        } else if content == "!" {
+                            self.claude
+                                .set_input_mode(crate::claude_ui::claude_input::InputMode::Bash);
+                        } else {
+                            self.claude.close_picker();
+                            if self.claude.input_mode()
+                                != &crate::claude_ui::claude_input::InputMode::Chat
+                            {
+                                self.claude.set_input_mode(
+                                    crate::claude_ui::claude_input::InputMode::Chat,
+                                );
+                            }
+                        }
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Backspace => {
+                        if modifiers.contains(KeyModifiers::ALT)
+                            || modifiers.contains(KeyModifiers::CONTROL)
+                        {
+                            self.input.delete_word_before();
+                        } else {
+                            self.input.backspace();
+                        }
+                        let content = self.input.content();
+                        if content.starts_with('/') {
+                            self.claude.open_slash_picker(content[1..].to_string());
+                        } else if content.starts_with('@') && content.len() > 1 {
+                            if let Ok(cwd) = std::env::current_dir() {
+                                self.claude.open_file_picker(content[1..].to_string(), &cwd);
+                            }
+                        } else if content.is_empty() || content == "!" {
+                            self.claude.close_picker();
+                            self.claude
+                                .set_input_mode(crate::claude_ui::claude_input::InputMode::Chat);
+                        }
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Delete => {
+                        self.input.delete();
+                        let content = self.input.content();
+                        if content.starts_with('/') {
+                            self.claude.open_slash_picker(content[1..].to_string());
+                        } else if content.starts_with('@') && content.len() > 1 {
+                            if let Ok(cwd) = std::env::current_dir() {
+                                self.claude.open_file_picker(content[1..].to_string(), &cwd);
+                            }
+                        } else {
+                            self.claude.close_picker();
+                        }
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Left => {
+                        if modifiers.contains(KeyModifiers::CONTROL)
+                            || modifiers.contains(KeyModifiers::ALT)
+                        {
+                            self.input.move_word_left();
+                        } else {
+                            self.input.move_left();
+                        }
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Right => {
+                        if modifiers.contains(KeyModifiers::CONTROL)
+                            || modifiers.contains(KeyModifiers::ALT)
+                        {
+                            self.input.move_word_right();
+                        } else {
+                            self.input.move_right();
+                        }
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Home => {
+                        self.input.move_home();
+                        self.pending_draw = true;
+                    }
+                    KeyCode::End => {
+                        self.claude.scroll_to_bottom();
+                        self.input.move_end();
+                        self.pending_draw = true;
+                    }
+                    KeyCode::PageUp => {
+                        self.claude.scroll_up(5);
+                        self.pending_draw = true;
+                    }
+                    KeyCode::PageDown => {
+                        self.claude.scroll_down(5);
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Up => {
+                        // Claude Code behavior: Up/Down scroll transcript, never history
+                        if self.claude.is_picker_active() {
+                            self.claude.picker_select_up();
+                        } else if self.state.autocomplete.active {
+                            self.state.autocomplete.select_up();
+                        } else {
+                            self.claude.scroll_up(3);
+                        }
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Down => {
+                        // Claude Code behavior: Up/Down scroll transcript, never history
+                        if self.claude.is_picker_active() {
+                            self.claude.picker_select_down();
+                        } else if self.state.autocomplete.active {
+                            self.state.autocomplete.select_down();
+                        } else {
+                            self.claude.scroll_down(3);
+                        }
+                        self.pending_draw = true;
+                    }
+                    KeyCode::Esc => {
+                        if self.claude.is_picker_active() {
+                            self.claude.close_picker();
+                            self.pending_draw = true;
+                        } else if self.state.autocomplete.active {
+                            self.state.autocomplete.deactivate();
+                            self.pending_draw = true;
+                        } else {
+                            let now = Instant::now();
+                            if self.esc_armed_until.map(|t| now <= t).unwrap_or(false) {
+                                self.input.clear();
+                                self.notification_line = Some("Prompt cleared".to_string());
+                                self.esc_armed_until = None;
+                                self.pending_draw = true;
+                            } else {
+                                self.esc_armed_until = Some(now + Duration::from_millis(900));
+                                self.notification_line =
+                                    Some("Press Esc again to clear prompt".to_string());
+                                self.pending_draw = true;
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1250,14 +1288,11 @@ impl TerminalUI {
             return Ok(None);
         }
 
-        if !event::poll(std::time::Duration::from_millis(0))? {
-            return Ok(None);
-        }
-
-        // Handle picker during busy state
+        // Process all pending events from the async channel.
+        // The background input reader thread is the ONLY thing that calls
+        // crossterm::event::poll / crossterm::event::read.
         if self.claude.is_picker_active() {
-            while event::poll(std::time::Duration::from_millis(0))? {
-                let ev = event::read()?;
+            while let Ok(ev) = self.event_rx.try_recv() {
                 let Event::Key(KeyEvent {
                     code,
                     kind,
@@ -1339,10 +1374,30 @@ impl TerminalUI {
             return Ok(None);
         }
 
-        // Original busy input handling continues below...
+        while let Ok(ev) = self.event_rx.try_recv() {
+            // Handle resize
+            if let Event::Resize(_, _) = ev {
+                self.previous_claude_screen = None;
+                self.pending_draw = true;
+                continue;
+            }
 
-        while event::poll(std::time::Duration::from_millis(0))? {
-            let ev = event::read()?;
+            // Handle mouse events (trackpad scroll)
+            if let Event::Mouse(mouse_event) = ev {
+                match mouse_event.kind {
+                    MouseEventKind::ScrollDown => {
+                        self.claude.scroll_down(3);
+                        self.pending_draw = true;
+                    }
+                    MouseEventKind::ScrollUp => {
+                        self.claude.scroll_up(3);
+                        self.pending_draw = true;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
             let Event::Key(KeyEvent {
                 code,
                 kind,
@@ -1496,57 +1551,60 @@ impl TerminalUI {
                 KeyCode::Char(c) => {
                     // Transcript mode shortcuts
                     match self.claude.transcript_mode {
-                        crate::claude_ui::claude_render::TranscriptMode::Transcript => {
-                            match c {
-                                'q' => {
-                                    self.claude.transcript_mode = crate::claude_ui::claude_render::TranscriptMode::Normal;
-                                    self.claude.set_transcript_expanded(false);
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                                'g' => {
-                                    self.claude.scroll_to_bottom();
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                                'G' => {
-                                    self.claude.scroll_up(999999);
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                                'j' => {
-                                    self.claude.scroll_up(1);
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                                'k' => {
-                                    self.claude.scroll_down(1);
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                                'b' => {
-                                    self.claude.scroll_up(10);
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                                ' ' => {
-                                    self.claude.scroll_down(10);
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                                '/' => {
-                                    self.claude.transcript_mode = crate::claude_ui::claude_render::TranscriptMode::Search {
+                        crate::claude_ui::claude_render::TranscriptMode::Transcript => match c {
+                            'q' => {
+                                self.claude.transcript_mode =
+                                    crate::claude_ui::claude_render::TranscriptMode::Normal;
+                                self.claude.set_transcript_expanded(false);
+                                self.pending_draw = true;
+                                continue;
+                            }
+                            'g' => {
+                                self.claude.scroll_to_bottom();
+                                self.pending_draw = true;
+                                continue;
+                            }
+                            'G' => {
+                                self.claude.scroll_up(999999);
+                                self.pending_draw = true;
+                                continue;
+                            }
+                            'j' => {
+                                self.claude.scroll_up(1);
+                                self.pending_draw = true;
+                                continue;
+                            }
+                            'k' => {
+                                self.claude.scroll_down(1);
+                                self.pending_draw = true;
+                                continue;
+                            }
+                            'b' => {
+                                self.claude.scroll_up(10);
+                                self.pending_draw = true;
+                                continue;
+                            }
+                            ' ' => {
+                                self.claude.scroll_down(10);
+                                self.pending_draw = true;
+                                continue;
+                            }
+                            '/' => {
+                                self.claude.transcript_mode =
+                                    crate::claude_ui::claude_render::TranscriptMode::Search {
                                         query: String::new(),
                                         matches: Vec::new(),
                                         current: 0,
                                     };
-                                    self.pending_draw = true;
-                                    continue;
-                                }
-                                _ => {}
+                                self.pending_draw = true;
+                                continue;
                             }
-                        }
-                        crate::claude_ui::claude_render::TranscriptMode::Search { ref mut query, .. } => {
+                            _ => {}
+                        },
+                        crate::claude_ui::claude_render::TranscriptMode::Search {
+                            ref mut query,
+                            ..
+                        } => {
                             match c {
                                 'n' => {
                                     // Next match
@@ -1633,44 +1691,67 @@ impl TerminalUI {
                     self.pending_draw = true;
                 }
                 KeyCode::End => {
+                    self.claude.scroll_to_bottom();
                     self.input.move_end();
                     self.pending_draw = true;
                 }
                 KeyCode::PageUp => {
-                    self.state.scroll_up(5);
                     self.claude.scroll_up(5);
                     self.pending_draw = true;
                 }
                 KeyCode::PageDown => {
-                    self.state.scroll_down(5);
                     self.claude.scroll_down(5);
                     self.pending_draw = true;
                 }
                 KeyCode::Up => {
+                    // Claude Code behavior: Up/Down scroll transcript, never history
                     if self.claude.is_picker_active() {
                         self.claude.picker_select_up();
                     } else if self.state.autocomplete.active {
                         self.state.autocomplete.select_up();
-                    } else if self.input.is_in_history() {
-                        self.input.history_up();
-                    } else if self.state.viewport.scroll_offset > 0 {
-                        self.state.scroll_up(1);
-                        self.claude.scroll_up(1);
                     } else {
-                        self.input.history_up();
+                        self.claude.scroll_up(3);
                     }
                     self.pending_draw = true;
                 }
                 KeyCode::Down => {
+                    // Claude Code behavior: Up/Down scroll transcript, never history
                     if self.claude.is_picker_active() {
                         self.claude.picker_select_down();
                     } else if self.state.autocomplete.active {
                         self.state.autocomplete.select_down();
-                    } else if self.input.is_in_history() {
-                        self.input.history_down();
                     } else {
-                        self.state.scroll_down(1);
-                        self.claude.scroll_down(1);
+                        self.claude.scroll_down(3);
+                    }
+                    self.pending_draw = true;
+                }
+                KeyCode::PageUp => {
+                    self.claude.scroll_up(5);
+                    self.pending_draw = true;
+                }
+                KeyCode::PageDown => {
+                    self.claude.scroll_down(5);
+                    self.pending_draw = true;
+                }
+                KeyCode::Up => {
+                    // Claude Code behavior: Up/Down scroll transcript, never history
+                    if self.claude.is_picker_active() {
+                        self.claude.picker_select_up();
+                    } else if self.state.autocomplete.active {
+                        self.state.autocomplete.select_up();
+                    } else {
+                        self.claude.scroll_up(3);
+                    }
+                    self.pending_draw = true;
+                }
+                KeyCode::Down => {
+                    // Claude Code behavior: Up/Down scroll transcript, never history
+                    if self.claude.is_picker_active() {
+                        self.claude.picker_select_down();
+                    } else if self.state.autocomplete.active {
+                        self.state.autocomplete.select_down();
+                    } else {
+                        self.claude.scroll_down(3);
                     }
                     self.pending_draw = true;
                 }
@@ -1712,7 +1793,12 @@ impl TerminalUI {
             if let Some(ref path) = history_path {
                 self.save_history(path);
             }
-            execute!(io::stdout(), Show, LeaveAlternateScreen)?;
+            execute!(
+                io::stdout(),
+                Show,
+                LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
             terminal::disable_raw_mode()?;
             io::stdout().flush()?;
             self.raw_mode = false;

@@ -272,7 +272,7 @@ fn check_glob_unscoped(cmd: &str, workdir: &PathBuf) -> Option<UnscopedResult> {
 
 fn estimate_find_count(cmd: &str, workdir: &PathBuf) -> usize {
     let dry_cmd = format!("{} -print 2>/dev/null | wc -l", cmd);
-    match crate::run_shell_one_liner(&dry_cmd, workdir, None) {
+    match crate::run_shell_one_liner_sync(&dry_cmd, workdir, None) {
         Ok(r) => r.inline_text.trim().parse::<usize>().unwrap_or(0),
         Err(_) => 0,
     }

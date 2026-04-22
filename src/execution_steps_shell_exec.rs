@@ -131,7 +131,8 @@ pub(crate) async fn execute_and_process_shell(
         artifact_reservation
             .as_ref()
             .map(|(_, path)| (path, artifact_kind.as_str())),
-    )?;
+    )
+    .await?;
     let mut code = shell_result.exit_code;
     let mut output = shell_result.inline_text.clone();
     let mut output_path_base = path.clone();
@@ -494,7 +495,8 @@ async fn try_command_repair(
         artifact_reservation
             .as_ref()
             .map(|(_, path)| (path, artifact_kind)),
-    )?;
+    )
+    .await?;
     let code = shell_result.exit_code;
     let output = shell_result.inline_text.clone();
 

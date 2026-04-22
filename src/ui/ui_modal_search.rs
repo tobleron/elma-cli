@@ -112,11 +112,12 @@ impl SearchModal {
             .split(inner);
 
         // Query input
-        let query_block = Block::default()
-            .title("Query")
-            .borders(Borders::ALL);
+        let query_block = Block::default().title("Query").borders(Borders::ALL);
         let query_text = Paragraph::new(Line::from(vec![
-            Span::styled(">", Style::default().fg(theme.accent_primary.to_ratatui_color())),
+            Span::styled(
+                ">",
+                Style::default().fg(theme.accent_primary.to_ratatui_color()),
+            ),
             Span::raw(" "),
             Span::raw(&self.query),
         ]))
@@ -139,7 +140,10 @@ impl SearchModal {
                 ListItem::new(Line::from(vec![
                     Span::styled(&result.file, style.fg(theme.fg.to_ratatui_color())),
                     Span::raw(":"),
-                    Span::styled(result.line.to_string(), style.fg(theme.fg_dim.to_ratatui_color())),
+                    Span::styled(
+                        result.line.to_string(),
+                        style.fg(theme.fg_dim.to_ratatui_color()),
+                    ),
                     Span::raw(" "),
                     Span::styled(&result.content, style),
                 ]))
@@ -147,8 +151,8 @@ impl SearchModal {
             })
             .collect();
 
-        let results_list = List::new(result_items)
-            .block(Block::default().title("Results").borders(Borders::ALL));
+        let results_list =
+            List::new(result_items).block(Block::default().title("Results").borders(Borders::ALL));
         f.render_widget(results_list, chunks[1]);
     }
 }

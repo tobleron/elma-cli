@@ -144,23 +144,10 @@ impl ClaudeMessage {
                     lines
                 } else {
                     // Collapsed placeholder
-                    let hint = if reasoning_visible {
-                        "(ctrl+o to expand)"
-                    } else {
-                        "(hidden — /reasoning to show)"
-                    };
-                    vec![Line::from(vec![
-                        Span::styled(
-                            "∴ Thinking ",
-                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                        ),
-                        Span::styled(
-                            hint,
-                            Style::default()
-                                .fg(theme.fg_dim.to_ratatui_color())
-                                .add_modifier(Modifier::ITALIC),
-                        ),
-                    ])]
+                    vec![Line::from(vec![Span::styled(
+                        "∴ Thinking",
+                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                    )])]
                 }
             }
             ClaudeMessage::ToolStart { name, input } => {
@@ -206,42 +193,30 @@ impl ClaudeMessage {
                 ])]
             }
             ClaudeMessage::PermissionRequest { command, reason } => {
-                let mut lines = vec![Line::from(vec![
+                let mut spans = vec![
                     Span::styled(
                         "● ",
                         Style::default().fg(theme.accent_primary.to_ratatui_color()),
                     ),
-                    Span::styled(
-                        "Permission required",
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                ])];
-                if let Some(r) = reason {
-                    lines.push(Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(
-                            r.clone(),
-                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                        ),
-                    ]));
-                }
-                lines.push(Line::from(vec![
-                    Span::raw("  "),
+                    Span::styled("Allow ", Style::default().add_modifier(Modifier::BOLD)),
                     Span::styled(
                         command.clone(),
                         Style::default().add_modifier(Modifier::ITALIC),
                     ),
-                ]));
-                lines.push(Line::from(vec![
-                    Span::raw("  "),
+                    Span::styled("? ", Style::default()),
                     Span::styled(
-                        "Press y to approve, n to deny",
-                        Style::default()
-                            .fg(theme.accent_secondary.to_ratatui_color())
-                            .add_modifier(Modifier::BOLD),
+                        "[y/n]",
+                        Style::default().fg(theme.accent_secondary.to_ratatui_color()),
                     ),
-                ]));
-                lines
+                ];
+                if let Some(r) = reason {
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(
+                        r.clone(),
+                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                    ));
+                }
+                vec![Line::from(spans)]
             }
             ClaudeMessage::ToolResult {
                 name,
@@ -259,7 +234,7 @@ impl ClaudeMessage {
                         .fg(theme.error.to_ratatui_color())
                         .add_modifier(Modifier::BOLD)
                 };
-                
+
                 // First line: indicator in gutter
                 let first_line = if let Some(ms) = duration_ms {
                     let duration = if *ms > 1000 {
@@ -284,12 +259,12 @@ impl ClaudeMessage {
                         Span::styled(name.clone(), Style::default().add_modifier(Modifier::BOLD)),
                     ])
                 };
-                
+
                 let mut lines = vec![first_line];
-                
+
                 // Subsequent lines: empty gutter
                 let output_lines: Vec<&str> = output.lines().collect();
-                let max_lines = if expanded { output_lines.len() } else { 15 };
+                let max_lines = if expanded { output_lines.len() } else { 8 };
                 for line in output_lines.iter().take(max_lines) {
                     lines.push(Line::from(vec![
                         Span::raw("  "),
@@ -304,7 +279,7 @@ impl ClaudeMessage {
                     lines.push(Line::from(vec![
                         Span::raw("    "),
                         Span::styled(
-                            format!("({} more lines — ctrl+o to expand)", remaining),
+                            format!("+{} lines", remaining),
                             Style::default()
                                 .fg(theme.fg_dim.to_ratatui_color())
                                 .add_modifier(Modifier::ITALIC),
@@ -419,12 +394,7 @@ impl ClaudeMessage {
                     }
                     lines
                 } else {
-                    let hint = if reasoning_visible {
-                        "(ctrl+o to expand)"
-                    } else {
-                        "(hidden — /reasoning to show)"
-                    };
-                    vec![format!("∴ Thinking {}", hint)]
+                    vec!["∴ Thinking".to_string()]
                 }
             }
             ClaudeMessage::ToolStart { name, input } => {
@@ -477,20 +447,20 @@ impl ClaudeMessage {
                     vec![format!("{} {}", info_cyan(symbol), bold(name))]
                 };
                 let output_lines: Vec<&str> = output.lines().collect();
-                let max_lines = if expanded { output_lines.len() } else { 15 };
+                let max_lines = if expanded { output_lines.len() } else { 8 };
                 for line in output_lines.iter().take(max_lines) {
                     lines.push(format!("    {}", dim(line)));
                 }
                 if output_lines.len() > max_lines {
                     let remaining = output_lines.len() - max_lines;
-                    let line = format!("    ({} more lines — ctrl+o to expand)", remaining);
+                    let line = format!("    +{} lines", remaining);
                     lines.push(dim(&line));
                 }
                 lines
             }
             ClaudeMessage::CompactBoundary => {
                 if expanded {
-                    vec!["✻ Conversation compacted (ctrl+o for history)".to_string()]
+                    vec!["✻ compacted".to_string()]
                 } else {
                     vec![]
                 }
@@ -589,9 +559,16 @@ impl ClaudeTranscript {
     /// Count unseen assistant turns from divider_index to end
     pub(crate) fn count_unseen_assistant_turns(&self) -> usize {
         let idx = self.divider_index.unwrap_or(0);
-        self.messages.iter().skip(idx).filter(|m| {
-            matches!(m, ClaudeMessage::Assistant { .. } | ClaudeMessage::Thinking { .. })
-        }).count()
+        self.messages
+            .iter()
+            .skip(idx)
+            .filter(|m| {
+                matches!(
+                    m,
+                    ClaudeMessage::Assistant { .. } | ClaudeMessage::Thinking { .. }
+                )
+            })
+            .count()
     }
 
     pub(crate) fn render_ratatui(&self) -> Vec<Line<'static>> {
@@ -602,30 +579,33 @@ impl ClaudeTranscript {
         if !self.expanded && self.messages.len() > 5 {
             lines.push(Line::from(vec![
                 Span::styled(
-                    "✻ Conversation compacted ",
+                    "✻ compacted ",
                     Style::default().fg(theme.accent_secondary.to_ratatui_color()),
                 ),
                 Span::styled(
-                    "(ctrl+o for history)",
+                    "ctrl+o history",
                     Style::default()
                         .fg(theme.fg_dim.to_ratatui_color())
                         .add_modifier(Modifier::ITALIC),
                 ),
             ]));
-            lines.push(Line::from(""));
             for msg in self.messages.iter().skip(self.messages.len() - 3) {
                 lines.extend(msg.to_ratatui_lines(self.expanded));
                 lines.push(Line::from(""));
             }
         } else {
             // Count thinking blocks for filtering (only show last one in normal mode)
-            let thinking_count = self.messages.iter().filter(|m| matches!(m, ClaudeMessage::Thinking { .. })).count();
+            let thinking_count = self
+                .messages
+                .iter()
+                .filter(|m| matches!(m, ClaudeMessage::Thinking { .. }))
+                .count();
             let mut thinking_seen = 0usize;
-            
+
             let mut i = 0usize;
             while i < self.messages.len() {
                 let msg = &self.messages[i];
-                
+
                 // Skip non-last thinking blocks when not expanded
                 if let ClaudeMessage::Thinking { .. } = msg {
                     thinking_seen += 1;
@@ -634,14 +614,16 @@ impl ClaudeTranscript {
                         continue;
                     }
                 }
-                
-                // Add blank line before assistant messages (Claude Code spacing)
+
+                // Add blank line only on speaker changes (user → assistant transition)
                 if let ClaudeMessage::Assistant { .. } = msg {
-                    if !lines.is_empty() && !lines.last().map(|l| l.spans.is_empty()).unwrap_or(true) {
-                        lines.push(Line::from(""));
+                    if let Some(ClaudeMessage::User { .. }) = self.messages.get(i.wrapping_sub(1)) {
+                        if !lines.is_empty() {
+                            lines.push(Line::from(""));
+                        }
                     }
                 }
-                
+
                 if !self.expanded {
                     let batch_kind = match self.messages.get(i) {
                         Some(ClaudeMessage::ToolStart { name, .. })
@@ -695,7 +677,6 @@ impl ClaudeTranscript {
                                         .add_modifier(Modifier::ITALIC),
                                 ),
                             ]));
-                            lines.push(Line::from(""));
                             i = j;
                             continue;
                         }
@@ -703,7 +684,6 @@ impl ClaudeTranscript {
                 }
 
                 lines.extend(self.messages[i].to_ratatui_lines(self.expanded));
-                lines.push(Line::from(""));
                 i += 1;
             }
         }
@@ -756,7 +736,6 @@ impl ClaudeTranscript {
                                 kind, count
                             ))
                         ));
-                        lines.push(String::new());
                         i = j;
                         continue;
                     }
@@ -764,7 +743,6 @@ impl ClaudeTranscript {
             }
 
             lines.extend(self.messages[i].to_lines(self.expanded));
-            lines.push(String::new());
             i += 1;
         }
         lines
@@ -775,13 +753,7 @@ impl ClaudeTranscript {
 // Footer Hints (Claude Code-style)
 // ============================================================================
 
-pub(crate) const FOOTER_HINTS: &[&str] = &[
-    "ctrl+o: transcript",
-    "ctrl+t: tasks",
-    "ctrl+c: interrupt",
-    "enter: send",
-    "esc: cancel",
-];
+pub(crate) const FOOTER_HINTS: &[&str] = &["ctrl+o history · ctrl+t tasks · ctrl+c exit"];
 
 pub(crate) fn render_footer_hints() -> String {
     FOOTER_HINTS

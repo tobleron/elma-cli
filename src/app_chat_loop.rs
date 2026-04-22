@@ -236,7 +236,10 @@ async fn handle_chat_command(
         }
         "/reasoning" => {
             let new_state = crate::toggle_show_reasoning();
-            tui.notify(&format!("Reasoning {}", if new_state { "ON" } else { "OFF" }));
+            tui.notify(&format!(
+                "Reasoning {}",
+                if new_state { "ON" } else { "OFF" }
+            ));
             handled!()
         }
         "/help" => {
@@ -670,7 +673,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let line = if let Some(queued) = queued_inputs.pop_front() {
             queued
         } else {
-            let line_opt = tui.run_input_loop()?;
+            let line_opt = tui.run_input_loop().await?;
             let Some(line) = line_opt else {
                 break Ok(());
             };
@@ -824,14 +827,6 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 );
                 program = build_shell_path_probe_program(line, &path);
             }
-        }
-        // Only show planning details in transcript when verbose mode is enabled
-        // Don't print to stderr - keep it in the chat area only
-        if runtime.verbose {
-            tui.push_meta_event(
-                "PLAN",
-                &format!("{} → {} steps", complexity.complexity, program.steps.len()),
-            );
         }
         // Skip capability guard and policy validation for Maestro-generated programs
         // The Maestro + Orchestrator pipeline self-validates step generation

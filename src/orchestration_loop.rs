@@ -144,6 +144,9 @@ pub(crate) async fn run_autonomous_loop(
     let strict = !route_decision.route.eq_ignore_ascii_case("CHAT");
 
     loop {
+        if let Some(t) = tui.as_deref_mut() {
+            let _ = t.pump_ui();
+        }
         if plan.executed_steps >= plan.max_steps {
             final_reply = Some("Tell the user plainly that Elma stopped because the workflow hit the maximum step budget before reaching a reliable conclusion. Suggest one narrower next step.".to_string());
             break;
@@ -207,6 +210,9 @@ pub(crate) async fn run_autonomous_loop(
             tui.as_deref_mut(),
         )
         .await?;
+        if let Some(t) = tui.as_deref_mut() {
+            let _ = t.pump_ui();
+        }
         if batch_reply.is_none() {
             reasoning_clean &= verify_nontrivial_step_outcomes(
                 args,
@@ -283,6 +289,9 @@ pub(crate) async fn run_autonomous_loop(
                 )
             }
         };
+        if let Some(t) = tui.as_deref_mut() {
+            let _ = t.pump_ui();
+        }
         trace(
             args,
             &format!(
@@ -357,6 +366,9 @@ pub(crate) async fn run_autonomous_loop(
                 handle_critic_parse_error(args, &format!("critic_parse_error={e}"), strict, good)
             }
         };
+        if let Some(t) = tui.as_deref_mut() {
+            let _ = t.pump_ui();
+        }
         trace(
             args,
             &format!("critic_status={} reason={}", critic.status, critic.reason),

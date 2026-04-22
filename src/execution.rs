@@ -45,6 +45,9 @@ pub(crate) async fn execute_program(
     };
 
     for step in program.steps.clone() {
+        if let Some(t) = tui.as_deref_mut() {
+            let _ = t.pump_ui();
+        }
         execution_steps::handle_program_step(
             args,
             client,
