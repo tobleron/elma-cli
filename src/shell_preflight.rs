@@ -123,13 +123,63 @@ const DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
 ];
 
 const PIPE_DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
-    (
-        "| while read",
-        "pipe-to-while-loop: bulk operation on multiple files",
-    ),
     ("| xargs rm", "pipe-to-xargs-rm: bulk deletion"),
     ("| xargs mv", "pipe-to-xargs-mv: bulk move"),
-    ("| xargs", "pipe-to-xargs: bulk operation on multiple files"),
+    ("| xargs cp ", "pipe-to-xargs-cp: bulk copy overwrite"),
+    (
+        "| xargs chmod",
+        "pipe-to-xargs-chmod: bulk permission change",
+    ),
+    (
+        "| xargs chown",
+        "pipe-to-xargs-chown: bulk ownership change",
+    ),
+    (
+        "| xargs truncate",
+        "pipe-to-xargs-truncate: bulk file truncation",
+    ),
+    ("| xargs shred", "pipe-to-xargs-shred: bulk secure deletion"),
+];
+
+/// Commands that are safe to run in bulk via pipe (read-only inspection).
+const PIPE_SAFE_READ_ONLY: &[&str] = &[
+    "| xargs stat",
+    "| xargs ls",
+    "| xargs file",
+    "| xargs wc",
+    "| xargs head",
+    "| xargs tail",
+    "| xargs md5",
+    "| xargs shasum",
+    "| xargs sha256",
+    "| xargs cat",
+    "| xargs grep",
+    "| xargs rg",
+];
+
+/// Destructive keywords that make a while-read loop dangerous.
+const WHILE_LOOP_DESTRUCTIVE_KEYWORDS: &[&str] = &[
+    "rm ",
+    "rm;",
+    "rm\n",
+    "mv ",
+    "mv;",
+    "mv\n",
+    "cp ",
+    "cp;",
+    "cp\n",
+    "chmod ",
+    "chmod;",
+    "chmod\n",
+    "chown ",
+    "chown;",
+    "chown\n",
+    "truncate ",
+    "truncate;",
+    "shred ",
+    "shred;",
+    "> ",
+    ">> ",
 ];
 
 pub(crate) fn classify_command(command: &str) -> RiskLevel {
@@ -138,10 +188,30 @@ pub(crate) fn classify_command(command: &str) -> RiskLevel {
         return RiskLevel::Safe;
     }
 
+    // Check safe read-only pipe patterns first (stat, ls, file, etc.)
+    for pattern in PIPE_SAFE_READ_ONLY {
+        if cmd.contains(pattern) {
+            return RiskLevel::Safe;
+        }
+    }
+
     for (pattern, reason) in PIPE_DESTRUCTIVE_PATTERNS {
         if cmd.contains(pattern) {
             return RiskLevel::Dangerous(format!("BULK DESTRUCTIVE: {} pattern detected.", reason));
         }
+    }
+
+    // While-read loops: only block if body contains destructive keywords
+    if cmd.contains("| while read") || cmd.contains("|while read") {
+        for keyword in WHILE_LOOP_DESTRUCTIVE_KEYWORDS {
+            if cmd.contains(keyword) {
+                return RiskLevel::Dangerous(
+                    "BULK DESTRUCTIVE: while-read loop contains destructive operation.".to_string(),
+                );
+            }
+        }
+        // No destructive keywords found — allow it
+        return RiskLevel::Safe;
     }
 
     for (pattern, reason) in DESTRUCTIVE_PATTERNS {
@@ -298,8 +368,10 @@ fn generate_dry_run_preview(command: &str, workdir: &PathBuf) -> Option<String> 
 
 fn dry_run_rm(args: &str, workdir: &PathBuf) -> Option<String> {
     // Parse args to find files/globs
-    let parts: Vec<&str> = args
-        .split_whitespace()
+    let parts: Vec<String> = try_parse_shlex(args)?;
+    let parts: Vec<&str> = parts
+        .iter()
+        .map(|s| s.as_str())
         .filter(|a| !a.starts_with('-'))
         .collect();
     if parts.is_empty() {
@@ -353,12 +425,12 @@ fn dry_run_rm(args: &str, workdir: &PathBuf) -> Option<String> {
 }
 
 fn dry_run_mv(args: &str, workdir: &PathBuf) -> Option<String> {
-    let parts: Vec<&str> = args.split_whitespace().collect();
+    let parts = try_parse_shlex(args)?;
     if parts.len() < 2 {
         return None;
     }
 
-    let (sources, dest) = (parts[0], parts[1]);
+    let (sources, dest) = (&parts[0], &parts[1]);
     let dest_path = resolve_path(dest, workdir);
 
     if sources.contains('*') || sources.contains('?') {
@@ -408,12 +480,12 @@ fn dry_run_mv(args: &str, workdir: &PathBuf) -> Option<String> {
 }
 
 fn dry_run_cp(args: &str, workdir: &PathBuf) -> Option<String> {
-    let parts: Vec<&str> = args.split_whitespace().collect();
+    let parts = try_parse_shlex(args)?;
     if parts.len() < 2 {
         return None;
     }
-    let src = resolve_path(parts[0], workdir);
-    let dest = resolve_path(parts[1], workdir);
+    let src = resolve_path(&parts[0], workdir);
+    let dest = resolve_path(&parts[1], workdir);
     if !src.exists() {
         return Some(format!("Dry-run: Source '{}' does not exist.", parts[0]));
     }
@@ -425,6 +497,14 @@ fn dry_run_cp(args: &str, workdir: &PathBuf) -> Option<String> {
 }
 
 /// Simple glob matching for single-component patterns (no path traversal).
+fn parse_shlex(args: &str) -> anyhow::Result<Vec<String>> {
+    shlex::split(args).context("invalid shell quoting in command")
+}
+
+fn try_parse_shlex(args: &str) -> Option<Vec<String>> {
+    shlex::split(args)
+}
+
 fn glob_match(pattern: &str, name: &str) -> bool {
     if pattern == "*" {
         return true;
@@ -611,7 +691,16 @@ fn suggest_scoped_alternative(command: &str) -> String {
 }
 
 fn preflight_mv(args: &str, workdir: &PathBuf) -> PreflightResult {
-    let parts: Vec<&str> = args.split_whitespace().collect();
+    let parts = match parse_shlex(args) {
+        Ok(p) => p,
+        Err(_) => {
+            return PreflightResult {
+                risk: RiskLevel::Caution,
+                error_guidance: Some("invalid shell quoting in arguments".to_string()),
+                dry_run_preview: generate_dry_run_preview(&format!("mv {}", args), workdir),
+            };
+        }
+    };
     if parts.len() < 2 {
         return PreflightResult {
             risk: RiskLevel::Caution,
@@ -619,8 +708,8 @@ fn preflight_mv(args: &str, workdir: &PathBuf) -> PreflightResult {
             dry_run_preview: generate_dry_run_preview(&format!("mv {}", args), workdir),
         };
     }
-    let source = parts[0];
-    let dest = parts[1];
+    let source = &parts[0];
+    let dest = &parts[1];
     let source_path = resolve_path(source, workdir);
     if !source_path.exists() {
         return PreflightResult {
@@ -654,7 +743,16 @@ fn preflight_mv(args: &str, workdir: &PathBuf) -> PreflightResult {
 }
 
 fn preflight_cp(args: &str, workdir: &PathBuf) -> PreflightResult {
-    let parts: Vec<&str> = args.split_whitespace().collect();
+    let parts = match parse_shlex(args) {
+        Ok(p) => p,
+        Err(_) => {
+            return PreflightResult {
+                risk: RiskLevel::Caution,
+                error_guidance: Some("invalid shell quoting in arguments".to_string()),
+                dry_run_preview: generate_dry_run_preview(&format!("cp {}", args), workdir),
+            };
+        }
+    };
     if parts.len() < 2 {
         return PreflightResult {
             risk: RiskLevel::Caution,
@@ -662,8 +760,8 @@ fn preflight_cp(args: &str, workdir: &PathBuf) -> PreflightResult {
             dry_run_preview: generate_dry_run_preview(&format!("cp {}", args), workdir),
         };
     }
-    let source = parts[0];
-    let dest = parts[1];
+    let source = &parts[0];
+    let dest = &parts[1];
     let source_path = resolve_path(source, workdir);
     if !source_path.exists() {
         return PreflightResult {
@@ -713,7 +811,16 @@ fn preflight_rm(args: &str, workdir: &PathBuf) -> PreflightResult {
             dry_run_preview: generate_dry_run_preview(&format!("rm {}", args), workdir),
         };
     }
-    let parts: Vec<&str> = args.split_whitespace().collect();
+    let parts = match parse_shlex(args) {
+        Ok(p) => p,
+        Err(_) => {
+            return PreflightResult {
+                risk: RiskLevel::Caution,
+                error_guidance: Some("invalid shell quoting in arguments".to_string()),
+                dry_run_preview: generate_dry_run_preview(&format!("rm {}", args), workdir),
+            };
+        }
+    };
     for file in &parts {
         if file.starts_with('-') {
             continue;

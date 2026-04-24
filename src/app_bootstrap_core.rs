@@ -3,6 +3,7 @@
 //! App Bootstrap - Core Bootstrap Function
 
 use crate::app::{AppRuntime, LoadedProfiles};
+use crate::dirs::ElmaPaths;
 use crate::app_bootstrap_modes::*;
 use crate::app_bootstrap_profiles::*;
 use crate::ui_state::{
@@ -13,10 +14,16 @@ use crate::ui_theme::*;
 use crate::ui_trace::trace;
 use crate::*;
 
-pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
-    let args = Args::parse();
+pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     set_reasoning_display(args.show_thinking && args.debug_trace, args.no_color);
+    if args.show_thinking {
+        crate::set_show_reasoning(true);
+    }
     validate_mode_flags(&args)?;
+
+    if let Some(paths) = ElmaPaths::new() {
+        paths.ensure_dirs()?;
+    }
 
     let cfg_root = config_root_path(&args.config_root)?;
     let (base_url, base_url_source) =
@@ -188,7 +195,9 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
     let repo = repo_root()?;
     let ws = gather_workspace_context(&repo);
     let ws_brief = gather_workspace_brief(&repo);
+    let guidance = load_project_guidance(&repo);
     persist_workspace_intel(&args, &session, &ws, &ws_brief)?;
+    persist_guidance_snapshot(&args, &session, &guidance)?;
     trace(
         &args,
         &format!("base_url_source={base_url_source} value={base_url}"),
@@ -211,12 +220,14 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         &profiles.elma_cfg.system_prompt,
         &ws,
         &ws_brief,
+        &guidance,
         &model_id,
         chat_url.as_str(),
     );
     let messages = vec![ChatMessage::simple("system", &system_content.clone())];
 
     let goal_state = load_goal_state(&session.root).unwrap_or_default();
+    let active_runtime_task = load_latest_runtime_task(&session.root);
     if goal_state.has_active_goal() {
         trace(
             &args,
@@ -247,10 +258,14 @@ pub(crate) async fn bootstrap_app() -> Result<Option<AppRuntime>> {
         repo,
         ws,
         ws_brief,
+        guidance,
         system_content,
         messages,
         profiles,
         goal_state,
+        execution_plan: ExecutionPlanSelection::simple_general(),
+        active_runtime_task,
+        last_stop_outcome: None,
         verbose: true,
         retry_attempt: 0,
     }))
@@ -291,6 +306,7 @@ fn build_system_content(
     base_prompt: &str,
     ws: &str,
     ws_brief: &str,
+    guidance: &GuidanceSnapshot,
     model_id: &str,
     base_url: &str,
 ) -> String {
@@ -311,6 +327,11 @@ fn build_system_content(
     if !ws_brief.trim().is_empty() {
         system_content.push_str("\n\nWORKSPACE BRIEF:\n");
         system_content.push_str(ws_brief.trim());
+    }
+    let guidance_text = guidance.render_for_system_prompt();
+    if !guidance_text.is_empty() {
+        system_content.push_str("\n\nPROJECT GUIDANCE:\n");
+        system_content.push_str(&guidance_text);
     }
     system_content
 }

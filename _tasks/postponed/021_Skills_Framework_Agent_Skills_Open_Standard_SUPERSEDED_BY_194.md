@@ -1,5 +1,8 @@
 # Task 156: Skills Framework (Agent Skills Open Standard)
 
+## Status
+Superseded by Task 194. Historical reference only.
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.

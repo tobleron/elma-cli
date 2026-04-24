@@ -1,5 +1,8 @@
 # Task 095: Incremental Upgrade Master Plan
 
+## Status
+Superseded by Task 191. Historical reference only.
+
 ## Priority
 **P0 - MASTER UPGRADE TASK**
 **Created:** 2026-04-04

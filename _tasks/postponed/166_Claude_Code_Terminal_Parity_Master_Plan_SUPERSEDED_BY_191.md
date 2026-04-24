@@ -1,6 +1,9 @@
 # Task 166: Claude Code Terminal Parity Master Plan
 
 ## Status
+Partially superseded by Task 191. Keep as historical parity and terminal-safety reference.
+
+## Status
 Pending.
 
 ## Progress Notes (2026-04-21)
@@ -85,6 +88,23 @@ Pending.
   - `cargo test --test ui_parity` passed (27 tests)
   - `cargo test` full suite passed
 
+## Progress Notes (2026-04-22, tasks 188-189 completion)
+- **188 COMPLETED**: Recursive file picker workspace discovery
+  - Replaced top-level `std::fs::read_dir()` with `ignore::WalkBuilder`
+  - Respects `.gitignore` patterns (local and global)
+  - Skips hidden files/directories
+  - Limits to 10,000 files, truncates to 30 for display
+- **189 COMPLETED**: Deep markdown renderer
+  - Added `pulldown-cmark = "0.12"` dependency
+  - Full markdown parsing: headers, bold, italic, strikethrough, inline code, links, lists, blockquotes, tables, horizontal rules
+  - Code blocks with `syntect` syntax highlighting
+  - 10 unit tests covering all features
+- Verification evidence:
+  - `cargo build` passed
+  - `cargo test` passed (425 tests)
+  - `cargo test --test ui_parity` passed (26 tests)
+  - `cargo fmt --check` passed
+
 ## Progress Notes (2026-04-21, release-gate evidence pass)
 - Executed full 178 verification command bundle from this workspace:
   - `cargo fmt --check`
@@ -127,8 +147,8 @@ The master plan can be archived only after:
 - [x] Task 182 has removed legacy modal renderer.
 - [x] Task 183 has added input and rendering enhancements.
 - [x] Task 190 has unified dual transcript sources of truth.
-- [ ] Task 188: Recursive file picker workspace discovery (pending, low priority)
-- [ ] Task 189: Deep markdown renderer (pending, medium priority)
+- [x] Task 188: Recursive file picker workspace discovery (completed - uses `ignore` crate with `.gitignore` support)
+- [x] Task 189: Deep markdown renderer (completed - `pulldown-cmark` + `syntect` syntax highlighting)
 - [ ] All absorbed/superseded UI tasks are either archived, explicitly superseded, or documented as intentionally deferred.
 - [ ] Final verification commands pass and are recorded in this file.
 - [ ] The user explicitly approves moving this master plan to `_tasks/completed/`.

@@ -1,5 +1,8 @@
 # Task 068: Multi-Turn Goal Persistence
 
+## Status
+Absorbed by Task 195. Historical reference only.
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.
