@@ -326,7 +326,7 @@ fn render_message(
             } else {
                 vec![format!(
                     "  {} {} {}",
-                    dim(EXPAND_ARROW_RIGHT),
+                    dim(EXPAND_ARROW_DOWN),
                     meta_comment("Thinking"),
                     meta_comment("(ctrl+o to expand)"),
                 )]
@@ -478,8 +478,8 @@ fn render_warning_msg(message: &str, content_width: usize) -> Vec<String> {
 fn render_thinking(content: &str, content_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     lines.push(format!(
-        "{} {}",
-        meta_comment("~"),
+        "  {} {}",
+        dim(EXPAND_ARROW_RIGHT),
         meta_comment("(ctrl+o to collapse)"),
     ));
     lines.push(String::new());
@@ -779,6 +779,16 @@ fn render_header_strip(header: &HeaderInfo, width: usize) -> String {
     // Elma branding
     parts.push(bold(&fg(PURPLE.0, PURPLE.1, PURPLE.2, "Elma")));
 
+    // Workflow / formula label
+    if !header.workflow.is_empty() {
+        parts.push(fg(PINK.0, PINK.1, PINK.2, &header.workflow));
+    }
+
+    // Stage info for main tasks
+    if let Some(stage) = &header.stage {
+        parts.push(dim(stage));
+    }
+
     // Workspace (compact)
     if !header.workspace.is_empty() {
         parts.push(fg(AQUA.0, AQUA.1, AQUA.2, &header.workspace));
@@ -947,6 +957,7 @@ mod tests {
             workspace: "elma-cli".to_string(),
             session: "default".to_string(),
             workflow: String::new(),
+            stage: None,
             verbose: false,
         };
         let line = render_header_strip(&header, 80);

@@ -11,10 +11,13 @@
 //! - Compact boundary: "✻ Conversation compacted"
 
 use crate::claude_ui::render_markdown_ratatui;
-use crate::ui_state::is_reasoning_visible;
 use crate::ui_theme::*;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
+use std::time::{Duration, Instant};
+
+const THINKING_COLLAPSE_DELAY: Duration = Duration::from_secs(27);
+const TELEMETRY_COLLAPSE_DELAY: Duration = Duration::from_secs(10);
 
 // ============================================================================
 // Message Types (Claude Code-style)
@@ -54,10 +57,12 @@ pub(crate) enum ClaudeMessage {
     },
     /// Unified tool trace — replaces separate ToolStart/ToolResult/ToolProgress.
     /// Shows command + live status indicator (spinner → checkmark/cross).
+    /// `collapsed` hides output; auto-set when a newer tool starts.
     ToolTrace {
         name: String,
         command: String,
         status: ToolTraceStatus,
+        collapsed: bool,
     },
     PermissionRequest {
         command: String,
@@ -73,6 +78,14 @@ pub(crate) enum ClaudeMessage {
     },
     System {
         content: String,
+    },
+    /// Transcript-native telemetry row for operational visibility.
+    /// Auto-collapses after a short timeout but remains recoverable.
+    Telemetry {
+        category: String,
+        content: String,
+        created_at: Instant,
+        collapsed: bool,
     },
 }
 
@@ -130,9 +143,7 @@ impl ClaudeMessage {
                 lines
             }
             ClaudeMessage::Thinking { content } => {
-                let reasoning_visible = is_reasoning_visible();
-                let fully_shown = expanded && reasoning_visible;
-                if fully_shown {
+                if expanded {
                     let mut lines = Vec::new();
                     lines.push(Line::from(vec![
                         Span::styled(
@@ -301,6 +312,7 @@ impl ClaudeMessage {
                 name,
                 command,
                 status,
+                collapsed,
             } => {
                 let (symbol, symbol_style) = match status {
                     ToolTraceStatus::Running => (
@@ -323,7 +335,15 @@ impl ClaudeMessage {
                     ),
                 };
 
+                let is_expanded = expanded || !*collapsed;
+                let chevron = if is_expanded { "▾" } else { "▸" };
+
                 let mut lines = vec![Line::from(vec![
+                    Span::styled(
+                        chevron,
+                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                    ),
+                    Span::raw(" "),
                     Span::styled(symbol, symbol_style),
                     Span::raw(" "),
                     Span::styled(name.clone(), Style::default().add_modifier(Modifier::BOLD)),
@@ -353,40 +373,42 @@ impl ClaudeMessage {
                         ));
                     }
 
-                    let output_lines: Vec<&str> = output.lines().collect();
-                    let max_lines = if *success {
-                        if expanded {
-                            output_lines.len()
+                    if is_expanded {
+                        let output_lines: Vec<&str> = output.lines().collect();
+                        let max_lines = if *success {
+                            if expanded {
+                                output_lines.len()
+                            } else {
+                                8
+                            }
                         } else {
-                            8
+                            output_lines.len()
+                        };
+                        for line in output_lines.iter().take(max_lines) {
+                            lines.push(Line::from(vec![
+                                Span::raw("  "),
+                                Span::styled(
+                                    line.to_string(),
+                                    if *success {
+                                        Style::default().fg(theme.fg_dim.to_ratatui_color())
+                                    } else {
+                                        Style::default().fg(theme.error.to_ratatui_color())
+                                    },
+                                ),
+                            ]));
                         }
-                    } else {
-                        output_lines.len()
-                    };
-                    for line in output_lines.iter().take(max_lines) {
-                        lines.push(Line::from(vec![
-                            Span::raw("  "),
-                            Span::styled(
-                                line.to_string(),
-                                if *success {
-                                    Style::default().fg(theme.fg_dim.to_ratatui_color())
-                                } else {
-                                    Style::default().fg(theme.error.to_ratatui_color())
-                                },
-                            ),
-                        ]));
-                    }
-                    if output_lines.len() > max_lines {
-                        let remaining = output_lines.len() - max_lines;
-                        lines.push(Line::from(vec![
-                            Span::raw("    "),
-                            Span::styled(
-                                format!("+{} lines", remaining),
-                                Style::default()
-                                    .fg(theme.fg_dim.to_ratatui_color())
-                                    .add_modifier(Modifier::ITALIC),
-                            ),
-                        ]));
+                        if output_lines.len() > max_lines {
+                            let remaining = output_lines.len() - max_lines;
+                            lines.push(Line::from(vec![
+                                Span::raw("    "),
+                                Span::styled(
+                                    format!("+{} lines", remaining),
+                                    Style::default()
+                                        .fg(theme.fg_dim.to_ratatui_color())
+                                        .add_modifier(Modifier::ITALIC),
+                                ),
+                            ]));
+                        }
                     }
                 }
                 lines
@@ -467,6 +489,30 @@ impl ClaudeMessage {
                     ),
                 ])]
             }
+            ClaudeMessage::Telemetry {
+                category,
+                content,
+                collapsed,
+                ..
+            } => {
+                if *collapsed && !expanded {
+                    vec![Line::from(vec![Span::styled(
+                        format!("◦ {} ({})", category, content),
+                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                    )])]
+                } else {
+                    vec![Line::from(vec![
+                        Span::styled(
+                            format!("◦ {}: ", category),
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ),
+                        Span::styled(
+                            content.clone(),
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ),
+                    ])]
+                }
+            }
         }
     }
 
@@ -488,16 +534,14 @@ impl ClaudeMessage {
                 lines
             }
             ClaudeMessage::Thinking { content } => {
-                let reasoning_visible = is_reasoning_visible();
-                let fully_shown = expanded && reasoning_visible;
-                if fully_shown {
-                    let mut lines = vec!["∴ Thinking…".to_string()];
+                if expanded {
+                    let mut lines = vec![format!("  {} {}", EXPAND_ARROW_RIGHT, dim("(ctrl+o to collapse)"))];
                     for line in content.lines() {
                         lines.push(format!("    {}", dim(line)));
                     }
                     lines
                 } else {
-                    vec!["∴ Thinking".to_string()]
+                    vec![format!("  {} {}", EXPAND_ARROW_DOWN, dim("Thinking"))]
                 }
             }
             ClaudeMessage::ToolStart { name, input } => {
@@ -565,14 +609,18 @@ impl ClaudeMessage {
                 name,
                 command,
                 status,
+                collapsed,
             } => {
                 let symbol = match status {
                     ToolTraceStatus::Running => "◐",
                     ToolTraceStatus::Completed { success: true, .. } => "✓",
                     ToolTraceStatus::Completed { success: false, .. } => "✗",
                 };
+                let is_expanded = expanded || !*collapsed;
+                let chevron = if is_expanded { "▾" } else { "▸" };
                 let mut lines = vec![format!(
-                    "{} {} {}",
+                    "{} {} {} {}",
+                    dim(chevron),
                     info_cyan(symbol),
                     bold(name),
                     dim(command)
@@ -590,29 +638,32 @@ impl ClaudeMessage {
                             format!("{}ms", ms)
                         };
                         lines[0] = format!(
-                            "{} {} {} ({})",
+                            "{} {} {} {} ({})",
+                            dim(chevron),
                             info_cyan(symbol),
                             bold(name),
                             dim(command),
                             meta_comment(&duration)
                         );
                     }
-                    let output_lines: Vec<&str> = output.lines().collect();
-                    let max_lines = if *success {
-                        if expanded {
-                            output_lines.len()
+                    if is_expanded {
+                        let output_lines: Vec<&str> = output.lines().collect();
+                        let max_lines = if *success {
+                            if expanded {
+                                output_lines.len()
+                            } else {
+                                8
+                            }
                         } else {
-                            8
+                            output_lines.len()
+                        };
+                        for line in output_lines.iter().take(max_lines) {
+                            lines.push(format!("    {}", dim(line)));
                         }
-                    } else {
-                        output_lines.len()
-                    };
-                    for line in output_lines.iter().take(max_lines) {
-                        lines.push(format!("    {}", dim(line)));
-                    }
-                    if output_lines.len() > max_lines {
-                        let remaining = output_lines.len() - max_lines;
-                        lines.push(dim(&format!("    +{} lines", remaining)));
+                        if output_lines.len() > max_lines {
+                            let remaining = output_lines.len() - max_lines;
+                            lines.push(dim(&format!("    +{} lines", remaining)));
+                        }
                     }
                 }
                 lines
@@ -648,6 +699,18 @@ impl ClaudeMessage {
             ClaudeMessage::System { content } => {
                 vec![format!("{} {}", warn_yellow("⚠"), bold(content))]
             }
+            ClaudeMessage::Telemetry {
+                category,
+                content,
+                collapsed,
+                ..
+            } => {
+                if *collapsed && !expanded {
+                    vec![dim(&format!("◦ {} ({})", category, content))]
+                } else {
+                    vec![dim(&format!("◦ {}: {}", category, content))]
+                }
+            }
         }
     }
 }
@@ -661,6 +724,10 @@ pub(crate) struct ClaudeTranscript {
     pub messages: Vec<ClaudeMessage>,
     pub expanded: bool,
     pub scroll_offset: usize,
+    pub live_thinking_index: Option<usize>,
+    pub thinking_collapse_deadline: Option<(usize, Instant)>,
+    /// Index of thinking message explicitly expanded via click
+    pub thinking_expanded_index: Option<usize>,
     /// Index of the last message when user first scrolled up (for unseen divider)
     pub divider_index: Option<usize>,
     /// Y-position snapshot at first scroll-away
@@ -673,15 +740,109 @@ impl ClaudeTranscript {
     }
 
     pub(crate) fn push(&mut self, msg: ClaudeMessage) {
-        self.messages.push(msg.clone());
+        // Auto-collapse previous completed tool traces when a new tool starts.
+        if matches!(msg, ClaudeMessage::ToolTrace { .. }) {
+            for existing in self.messages.iter_mut().rev() {
+                if let ClaudeMessage::ToolTrace {
+                    status, collapsed, ..
+                } = existing
+                {
+                    if matches!(status, ToolTraceStatus::Completed { .. }) {
+                        *collapsed = true;
+                    }
+                }
+            }
+        }
+        self.messages.push(msg);
         // Only auto-scroll to bottom on conversational messages (user/assistant).
         // Tool output and thinking should not disrupt the user's scroll position.
-        match msg {
-            ClaudeMessage::User { .. } | ClaudeMessage::Assistant { .. } => {
+        match self.messages.last() {
+            Some(ClaudeMessage::User { .. } | ClaudeMessage::Assistant { .. }) => {
                 self.scroll_offset = 0;
             }
             _ => {}
         }
+    }
+
+    pub(crate) fn start_live_thinking(&mut self) {
+        if let Some(index) = self.live_thinking_index {
+            if self.thinking_collapse_deadline.is_none()
+                && matches!(
+                    self.messages.get(index),
+                    Some(ClaudeMessage::Thinking { .. })
+                )
+            {
+                return;
+            }
+        }
+        self.thinking_collapse_deadline = None;
+        self.messages.push(ClaudeMessage::Thinking {
+            content: String::new(),
+        });
+        self.live_thinking_index = Some(self.messages.len().saturating_sub(1));
+        self.scroll_offset = 0;
+    }
+
+    pub(crate) fn append_live_thinking(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        if self.live_thinking_index.is_none() || self.thinking_collapse_deadline.is_some() {
+            self.start_live_thinking();
+        }
+        if let Some(index) = self.live_thinking_index {
+            if let Some(ClaudeMessage::Thinking { content }) = self.messages.get_mut(index) {
+                content.push_str(text);
+                self.scroll_offset = 0;
+            }
+        }
+    }
+
+    pub(crate) fn finish_live_thinking(&mut self) {
+        if let Some(index) = self.live_thinking_index {
+            let should_remove = matches!(
+                self.messages.get(index),
+                Some(ClaudeMessage::Thinking { content }) if content.trim().is_empty()
+            );
+            if should_remove {
+                self.messages.remove(index);
+                self.live_thinking_index = None;
+                self.thinking_collapse_deadline = None;
+                return;
+            } else {
+                self.thinking_collapse_deadline =
+                    Some((index, Instant::now() + THINKING_COLLAPSE_DELAY));
+            }
+        }
+    }
+
+    pub(crate) fn thinking_redraw_deadline(&self) -> Option<Instant> {
+        self.thinking_collapse_deadline
+            .map(|(_, deadline)| deadline)
+            .filter(|deadline| Instant::now() < *deadline)
+    }
+
+    fn thinking_expanded_for_index(&self, index: usize) -> bool {
+        if self.expanded {
+            return true;
+        }
+        if self.live_thinking_index == Some(index) {
+            return match self.thinking_collapse_deadline {
+                Some((deadline_index, deadline)) if deadline_index == index => {
+                    Instant::now() < deadline
+                }
+                Some(_) => false,
+                None => true,
+            };
+        }
+        if self.thinking_expanded_index == Some(index) {
+            return true;
+        }
+        // Telemetry messages auto-collapse after a short timeout
+        if let Some(ClaudeMessage::Telemetry { created_at, .. }) = self.messages.get(index) {
+            return Instant::now().duration_since(*created_at) < TELEMETRY_COLLAPSE_DELAY;
+        }
+        false
     }
 
     pub(crate) fn scroll_up(&mut self, lines: usize) {
@@ -751,49 +912,59 @@ impl ClaudeTranscript {
             .count()
     }
 
-    pub(crate) fn render_ratatui(&self) -> Vec<Line<'static>> {
+    /// Returns rendered lines plus a parallel vector mapping each line to its
+    /// source message index (for click-to-expand and other hit-testing).
+    pub(crate) fn render_ratatui(&self) -> (Vec<Line<'static>>, Vec<usize>) {
         let mut lines = Vec::new();
-
-        // Count thinking blocks for filtering (only show last one in normal mode)
-        let thinking_count = self
-            .messages
-            .iter()
-            .filter(|m| matches!(m, ClaudeMessage::Thinking { .. }))
-            .count();
-        let mut thinking_seen = 0usize;
+        let mut mapping = Vec::new();
 
         let mut i = 0usize;
         while i < self.messages.len() {
             let msg = &self.messages[i];
-
-            // Skip non-last thinking blocks when not expanded
-            if let ClaudeMessage::Thinking { .. } = msg {
-                thinking_seen += 1;
-                if !self.expanded && thinking_seen < thinking_count {
-                    i += 1;
-                    continue;
-                }
-            }
 
             // Add blank line only on speaker changes (user → assistant transition)
             if let ClaudeMessage::Assistant { .. } = msg {
                 if let Some(ClaudeMessage::User { .. }) = self.messages.get(i.wrapping_sub(1)) {
                     if !lines.is_empty() {
                         lines.push(Line::from(""));
+                        mapping.push(i); // map blank line to the assistant message too
                     }
                 }
             }
 
-            lines.extend(self.messages[i].to_ratatui_lines(self.expanded));
+            let msg_lines = self.messages[i].to_ratatui_lines(self.thinking_expanded_for_index(i));
+            for _ in &msg_lines {
+                mapping.push(i);
+            }
+            lines.extend(msg_lines);
             i += 1;
         }
-        lines
+        (lines, mapping)
+    }
+
+    /// Toggle collapse/expand for a ToolTrace or Thinking at the given message index.
+    pub(crate) fn toggle_trace_collapse(&mut self, message_index: usize) {
+        if let Some(msg) = self.messages.get_mut(message_index) {
+            match msg {
+                ClaudeMessage::ToolTrace { collapsed, .. } => {
+                    *collapsed = !*collapsed;
+                }
+                ClaudeMessage::Thinking { .. } => {
+                    if self.thinking_expanded_index == Some(message_index) {
+                        self.thinking_expanded_index = None;
+                    } else {
+                        self.thinking_expanded_index = Some(message_index);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     pub(crate) fn render(&self) -> Vec<String> {
         let mut lines = Vec::new();
-        for msg in &self.messages {
-            lines.extend(msg.to_lines(self.expanded));
+        for (i, msg) in self.messages.iter().enumerate() {
+            lines.extend(msg.to_lines(self.thinking_expanded_for_index(i)));
         }
         lines
     }
