@@ -16,7 +16,6 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use std::time::{Duration, Instant};
 
-const THINKING_COLLAPSE_DELAY: Duration = Duration::from_secs(27);
 const TELEMETRY_COLLAPSE_DELAY: Duration = Duration::from_secs(10);
 
 // ============================================================================
@@ -70,6 +69,8 @@ pub(crate) enum ClaudeMessage {
     },
     Thinking {
         content: String,
+        is_streaming: bool,
+        word_count: usize,
     },
     CompactBoundary,
     CompactSummary {
@@ -142,19 +143,29 @@ impl ClaudeMessage {
                 }
                 lines
             }
-            ClaudeMessage::Thinking { content } => {
-                if expanded {
-                    let mut lines = Vec::new();
-                    lines.push(Line::from(vec![
+            ClaudeMessage::Thinking { content, is_streaming, word_count } => {
+                if *is_streaming {
+                    vec![Line::from(vec![
                         Span::styled(
-                            "∴",
-                            Style::default()
-                                .fg(theme.warning.to_ratatui_color())
-                                .add_modifier(Modifier::BOLD),
+                            SPINNER_FRAMES[0],
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
                         Span::raw(" "),
                         Span::styled(
-                            "Thinking…",
+                            "Thinking...",
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ),
+                    ])]
+                } else if expanded {
+                    let mut lines = Vec::new();
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            EXPAND_ARROW_RIGHT,
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ),
+                        Span::raw(" "),
+                        Span::styled(
+                            "(ctrl+o to collapse)",
                             Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
                     ]));
@@ -169,10 +180,17 @@ impl ClaudeMessage {
                     }
                     lines
                 } else {
-                    vec![Line::from(vec![Span::styled(
-                        "∴ Thinking",
-                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                    )])]
+                    vec![Line::from(vec![
+                        Span::styled(
+                            EXPAND_ARROW_RIGHT,
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ),
+                        Span::raw(" "),
+                        Span::styled(
+                            format!("Thinking.. ({} words)", word_count),
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ),
+                    ])]
                 }
             }
             ClaudeMessage::ToolStart { name, input } => {
@@ -533,15 +551,17 @@ impl ClaudeMessage {
                 }
                 lines
             }
-            ClaudeMessage::Thinking { content } => {
-                if expanded {
+            ClaudeMessage::Thinking { content, is_streaming, .. } => {
+                if *is_streaming {
+                    vec![format!("  {} {}", SPINNER_FRAMES[0], dim("Thinking..."))]
+                } else if expanded {
                     let mut lines = vec![format!("  {} {}", EXPAND_ARROW_RIGHT, dim("(ctrl+o to collapse)"))];
                     for line in content.lines() {
                         lines.push(format!("    {}", dim(line)));
                     }
                     lines
                 } else {
-                    vec![format!("  {} {}", EXPAND_ARROW_DOWN, dim("Thinking"))]
+                    vec![format!("  {} {}", EXPAND_ARROW_RIGHT, dim("Thinking.."))]
                 }
             }
             ClaudeMessage::ToolStart { name, input } => {
@@ -776,8 +796,11 @@ impl ClaudeTranscript {
             }
         }
         self.thinking_collapse_deadline = None;
+        self.thinking_expanded_index = None;
         self.messages.push(ClaudeMessage::Thinking {
             content: String::new(),
+            is_streaming: true,
+            word_count: 0,
         });
         self.live_thinking_index = Some(self.messages.len().saturating_sub(1));
         self.scroll_offset = 0;
@@ -791,8 +814,11 @@ impl ClaudeTranscript {
             self.start_live_thinking();
         }
         if let Some(index) = self.live_thinking_index {
-            if let Some(ClaudeMessage::Thinking { content }) = self.messages.get_mut(index) {
+            if let Some(ClaudeMessage::Thinking { content, word_count, .. }) =
+                self.messages.get_mut(index)
+            {
                 content.push_str(text);
+                *word_count += text.split_whitespace().count();
                 self.scroll_offset = 0;
             }
         }
@@ -800,19 +826,30 @@ impl ClaudeTranscript {
 
     pub(crate) fn finish_live_thinking(&mut self) {
         if let Some(index) = self.live_thinking_index {
-            let should_remove = matches!(
-                self.messages.get(index),
-                Some(ClaudeMessage::Thinking { content }) if content.trim().is_empty()
-            );
+            if let Some(ClaudeMessage::Thinking { is_streaming, .. }) =
+                self.messages.get_mut(index)
+            {
+                *is_streaming = false;
+            }
+            let word_count = match self.messages.get(index) {
+                Some(ClaudeMessage::Thinking { word_count, .. }) => *word_count,
+                _ => 0,
+            };
+            let should_remove = match self.messages.get(index) {
+                Some(ClaudeMessage::Thinking { content, .. }) if content.trim().is_empty() => true,
+                _ => false,
+            };
             if should_remove {
                 self.messages.remove(index);
                 self.live_thinking_index = None;
                 self.thinking_collapse_deadline = None;
+                self.thinking_expanded_index = None;
                 return;
-            } else {
-                self.thinking_collapse_deadline =
-                    Some((index, Instant::now() + THINKING_COLLAPSE_DELAY));
             }
+            let delay_secs =
+                (word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0);
+            self.thinking_collapse_deadline =
+                Some((index, Instant::now() + Duration::from_secs_f64(delay_secs)));
         }
     }
 

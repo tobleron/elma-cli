@@ -14,14 +14,20 @@ use super::claude_state::ClaudeMessage;
 // = : = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
 
 pub(crate) fn strip_thinking_tags(content: &str) -> String {
+    strip_thinking_tags_preserve_spacing(content)
+        .trim()
+        .to_string()
+}
+
+pub(crate) fn strip_thinking_tags_preserve_spacing(content: &str) -> String {
     content
         .replace("<think>", "")
+        .replace("</think>", "")
         .replace("[/CA]", "")
         .replace("[/MODEL]", "")
         .replace("<think>\n", "")
+        .replace("</think>\n", "")
         .replace("[/CA]\n", "")
-        .trim()
-        .to_string()
 }
 
 #[derive(Clone, Debug, Default)]
@@ -83,6 +89,8 @@ impl StreamingUI {
         if self.is_streaming_thinking || (!self.thinking.is_empty() && !self.is_streaming_content) {
             messages.push(ClaudeMessage::Thinking {
                 content: self.thinking.clone(),
+                is_streaming: false,
+                word_count: self.thinking.split_whitespace().count(),
             });
         }
 
@@ -130,6 +138,14 @@ mod tests {
 
         assert_eq!(s.thinking, "Analyzing the request");
         assert!(!s.is_streaming_thinking);
+    }
+
+    #[test]
+    fn test_preserve_spacing_when_stripping_thinking_tags() {
+        assert_eq!(
+            strip_thinking_tags_preserve_spacing(" hello </think> world"),
+            " hello  world"
+        );
     }
 
     #[test]

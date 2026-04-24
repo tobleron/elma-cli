@@ -324,11 +324,12 @@ fn render_message(
             if show_thinking {
                 render_thinking(content, content_width)
             } else {
+                let word_count = content.split_whitespace().count();
+                let label = format!("Thinking.. ({} words)", word_count);
                 vec![format!(
-                    "  {} {} {}",
-                    dim(EXPAND_ARROW_DOWN),
-                    meta_comment("Thinking"),
-                    meta_comment("(ctrl+o to expand)"),
+                    "  {} {}",
+                    dim(EXPAND_ARROW_RIGHT),
+                    meta_comment(&label),
                 )]
             }
         }

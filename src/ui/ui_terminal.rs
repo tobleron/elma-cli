@@ -203,6 +203,8 @@ impl TerminalUI {
             MessageRole::Thinking => {
                 self.claude.push_message(ClaudeMessage::Thinking {
                     content: content.clone(),
+                    is_streaming: false,
+                    word_count: content.split_whitespace().count(),
                 });
             }
             MessageRole::System => {
@@ -331,6 +333,19 @@ impl TerminalUI {
         self.pending_draw = true;
     }
 
+    pub(crate) fn update_context_tokens(&mut self, tokens: u64) {
+        self.state.footer.context_current = tokens;
+        self.pending_draw = true;
+    }
+
+    pub(crate) fn get_context_max(&self) -> u64 {
+        self.state.footer.context_max
+    }
+
+    pub(crate) fn get_context_current(&self) -> u64 {
+        self.state.footer.context_current
+    }
+
     // --- New push_* methods ---
 
     pub(crate) fn push_meta_event(&mut self, _category: &str, _message: &str) {
@@ -363,6 +378,19 @@ impl TerminalUI {
         self.claude
             .push_message(crate::claude_ui::ClaudeMessage::System {
                 content: message.to_string(),
+            });
+        self.pending_draw = true;
+    }
+
+    /// Push a transcript-native telemetry row for operational visibility.
+    /// These auto-collapse after a short timeout but remain in history.
+    pub(crate) fn push_telemetry(&mut self, category: &str, content: &str) {
+        self.claude
+            .push_message(crate::claude_ui::ClaudeMessage::Telemetry {
+                category: category.to_string(),
+                content: content.to_string(),
+                created_at: Instant::now(),
+                collapsed: false,
             });
         self.pending_draw = true;
     }
@@ -460,16 +488,15 @@ impl TerminalUI {
     }
 
     pub(crate) fn notify(&mut self, message: &str) {
-        self.notification_line = Some(message.to_string());
-        self.notification_expiry = Some(Instant::now() + Duration::from_secs(5));
-        self.pending_draw = true;
+        self.push_telemetry("notice", message);
     }
 
     pub(crate) fn enqueue_submission(&mut self, input: String) {
         self.queued_submissions.push_back(input);
-        self.notification_line = Some("Queued 1 message (will run after current response)".into());
-        self.notification_expiry = Some(Instant::now() + Duration::from_secs(5));
-        self.pending_draw = true;
+        self.push_telemetry(
+            "queue",
+            "1 message queued (will run after current response)",
+        );
     }
 
     pub(crate) fn take_queued_submissions(&mut self) -> Vec<String> {
@@ -480,6 +507,67 @@ impl TerminalUI {
     #[allow(dead_code)]
     pub(crate) fn estimate_tokens(text: &str) -> u64 {
         text.len() as u64 / 4
+    }
+
+    /// Handle a mouse click in the transcript area to toggle tool trace collapse.
+    fn handle_transcript_click(&mut self, mouse_event: &crossterm::event::MouseEvent) {
+        use crossterm::event::MouseEventKind;
+        if !matches!(mouse_event.kind, MouseEventKind::Down(_)) {
+            return;
+        }
+        if let Some(area) = self.claude.last_content_area {
+            let row = mouse_event.row;
+            let col = mouse_event.column;
+            // Check if click is within the content area
+            if row >= area.y
+                && row < area.y + area.height
+                && col >= area.x
+                && col < area.x + area.width
+            {
+                let relative_line = (row - area.y) as usize;
+                let absolute_line = self.claude.last_start_line + relative_line;
+                if let Some(&msg_idx) = self.claude.last_line_mapping.get(absolute_line) {
+                    self.claude.transcript.toggle_trace_collapse(msg_idx);
+                    self.pending_draw = true;
+                }
+            }
+        }
+    }
+
+    /// Estimate total tokens visible in the transcript (including large tool traces).
+    fn estimate_transcript_tokens(&self) -> u64 {
+        use crate::claude_ui::ClaudeMessage;
+        let mut total = 0u64;
+        for msg in &self.claude.transcript.messages {
+            let text = match msg {
+                ClaudeMessage::User { content } => content.as_str(),
+                ClaudeMessage::Assistant { content } => content.as_str(),
+                ClaudeMessage::Thinking { content, .. } => content.as_str(),
+                ClaudeMessage::ToolTrace {
+                    command, status, ..
+                } => {
+                    total += command.len() as u64 / 4;
+                    if let crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                        output,
+                        ..
+                    } = status
+                    {
+                        total += output.len() as u64 / 4;
+                    }
+                    continue;
+                }
+                ClaudeMessage::ToolResult { output, .. } => {
+                    total += output.len() as u64 / 4;
+                    continue;
+                }
+                ClaudeMessage::System { content } => content.as_str(),
+                _ => continue,
+            };
+            total += text.len() as u64 / 4;
+        }
+        total += self.claude.streaming.thinking.len() as u64 / 4;
+        total += self.claude.streaming.content.len() as u64 / 4;
+        total
     }
 
     // --- Drawing ---
@@ -542,34 +630,29 @@ impl TerminalUI {
             self.claude.set_autocomplete_state(None);
         }
 
-        // Compact status: always show context bar, append activity label when active
+        // Estimate the current model budget (base from last update + streaming)
+        let streaming_tokens = (self.claude.streaming.thinking.len() + self.claude.streaming.content.len()) as u64 / 4;
+        let model_context_tokens_estimate = self.state.footer.context_current + streaming_tokens;
+        let transcript_tokens_estimate = self.estimate_transcript_tokens();
+
+        // Compact status: always show context bar, using model budget
         let ctx_pct = if self.state.footer.context_max > 0 {
-            ((self.state.footer.context_current * 100 / self.state.footer.context_max) as usize)
-                .min(100)
+            ((model_context_tokens_estimate * 100) / self.state.footer.context_max) as usize
         } else {
             0
-        };
+        }
+        .min(100);
+
         let bar_width = 6;
         let filled = (ctx_pct * bar_width / 100) as usize;
         let bar = format!("{}{}", "█".repeat(filled), "░".repeat(bar_width - filled));
-        let base = format!("{}% {}  {}", ctx_pct, bar, self.state.footer.model);
-        let status = match &self.state.activity {
-            ActivityState::Active { label, .. } => Some(format!("{}  {}", base, label)),
-            ActivityState::Idle => Some(base),
+        
+        let base = if self.state.header.verbose && transcript_tokens_estimate > model_context_tokens_estimate + 500 {
+            format!("{}% {}  {}  (transcript: {})", ctx_pct, bar, self.state.footer.model, transcript_tokens_estimate)
+        } else {
+            format!("{}% {}  {}", ctx_pct, bar, self.state.footer.model)
         };
-        self.claude.set_status_line(status);
-
-        // Notification with TTL expiry
-        if let Some(ref note) = self.notification_line {
-            let now = std::time::Instant::now();
-            let expired = self.notification_expiry.map(|t| now >= t).unwrap_or(false);
-            if expired {
-                self.notification_line = None;
-                self.notification_expiry = None;
-            }
-        }
-        self.claude
-            .set_notification_line(self.notification_line.clone());
+        self.claude.set_status_line(Some(base));
 
         if let Some(terminal) = &mut self.terminal {
             terminal.draw(|f| {
@@ -642,9 +725,27 @@ impl TerminalUI {
             let ev = if let Ok(ev) = self.event_rx.try_recv() {
                 ev
             } else {
-                match self.event_rx.recv().await {
-                    Some(ev) => ev,
-                    None => return Ok(None),
+                let redraw_deadline = self.claude.next_redraw_deadline();
+                if let Some(deadline) = redraw_deadline {
+                    let now = Instant::now();
+                    if now < deadline {
+                        match tokio::time::timeout(deadline - now, self.event_rx.recv()).await {
+                            Ok(Some(ev)) => ev,
+                            Ok(None) => return Ok(None),
+                            Err(_) => {
+                                self.pending_draw = true;
+                                continue;
+                            }
+                        }
+                    } else {
+                        self.pending_draw = true;
+                        continue;
+                    }
+                } else {
+                    match self.event_rx.recv().await {
+                        Some(ev) => ev,
+                        None => return Ok(None),
+                    }
                 }
             };
 
@@ -658,7 +759,9 @@ impl TerminalUI {
                         self.claude.scroll_up(3);
                         self.pending_draw = true;
                     }
-                    _ => {}
+                    _ => {
+                        self.handle_transcript_click(&mouse_event);
+                    }
                 }
                 continue;
             }
@@ -1028,8 +1131,10 @@ impl TerminalUI {
                                     self.input.clear();
                                     self.ctrl_c_armed_until =
                                         Some(Instant::now() + Duration::from_millis(1200));
-                                    self.notification_line =
-                                        Some("Prompt cleared (Ctrl+C again to exit)".to_string());
+                                    self.push_telemetry(
+                                        "input",
+                                        "Prompt cleared (Ctrl+C again to exit)",
+                                    );
                                     self.pending_draw = true;
                                 } else {
                                     let now = Instant::now();
@@ -1038,8 +1143,7 @@ impl TerminalUI {
                                     }
                                     self.ctrl_c_armed_until =
                                         Some(now + Duration::from_millis(1200));
-                                    self.notification_line =
-                                        Some("Press Ctrl+C again to exit".to_string());
+                                    self.push_telemetry("input", "Press Ctrl+C again to exit");
                                     self.pending_draw = true;
                                 }
                             }
@@ -1049,8 +1153,7 @@ impl TerminalUI {
                                     return Ok(None);
                                 }
                                 self.ctrl_d_armed_until = Some(now + Duration::from_millis(1200));
-                                self.notification_line =
-                                    Some("Press Ctrl+D again to exit".to_string());
+                                self.push_telemetry("input", "Press Ctrl+D again to exit");
                                 self.pending_draw = true;
                             }
                             'u' => {
@@ -1259,13 +1362,12 @@ impl TerminalUI {
                             let now = Instant::now();
                             if self.esc_armed_until.map(|t| now <= t).unwrap_or(false) {
                                 self.input.clear();
-                                self.notification_line = Some("Prompt cleared".to_string());
+                                self.push_telemetry("input", "Prompt cleared");
                                 self.esc_armed_until = None;
                                 self.pending_draw = true;
                             } else {
                                 self.esc_armed_until = Some(now + Duration::from_millis(900));
-                                self.notification_line =
-                                    Some("Press Esc again to clear prompt".to_string());
+                                self.push_telemetry("input", "Press Esc again to clear prompt");
                                 self.pending_draw = true;
                             }
                         }
@@ -1377,7 +1479,7 @@ impl TerminalUI {
                 continue;
             }
 
-            // Handle mouse events (trackpad scroll)
+            // Handle mouse events (trackpad scroll + click to expand traces)
             if let Event::Mouse(mouse_event) = ev {
                 match mouse_event.kind {
                     MouseEventKind::ScrollDown => {
@@ -1388,7 +1490,9 @@ impl TerminalUI {
                         self.claude.scroll_up(3);
                         self.pending_draw = true;
                     }
-                    _ => {}
+                    _ => {
+                        self.handle_transcript_click(&mouse_event);
+                    }
                 }
                 continue;
             }
@@ -1761,7 +1865,7 @@ impl TerminalUI {
                         let now = Instant::now();
                         if self.esc_armed_until.map(|t| now <= t).unwrap_or(false) {
                             self.input.clear();
-                            self.notification_line = Some("Prompt cleared".to_string());
+                            self.push_telemetry("input", "Prompt cleared");
                             self.esc_armed_until = None;
                             self.pending_draw = true;
                         } else {
@@ -1828,5 +1932,25 @@ mod tests {
         let _ = MessageRole::Assistant;
         let _ = MessageRole::Thinking;
         let _ = MessageRole::System;
+    }
+
+    #[test]
+    fn test_transcript_budget_divergence() {
+        let mut tui = TerminalUI::new().unwrap();
+        // Model context budget is small (e.g. 100 tokens from prompt)
+        tui.update_context_tokens(100);
+
+        // A massive tool trace in the transcript (e.g. 40,000 bytes = 10,000 tokens)
+        let big_output = "x".repeat(40000);
+        tui.push_tool_start("shell", "find / -type f");
+        tui.push_tool_finish("shell", true, &big_output, Some(100));
+
+        let transcript_tokens = tui.estimate_transcript_tokens();
+        assert!(transcript_tokens >= 10000, "Transcript tokens should include the massive tool output");
+        
+        let streaming_tokens = (tui.claude.streaming.thinking.len() + tui.claude.streaming.content.len()) as u64 / 4;
+        let model_budget = tui.state.footer.context_current + streaming_tokens;
+        assert_eq!(model_budget, 100, "Model budget should not be polluted by the transcript tool traces");
+        assert!(transcript_tokens > model_budget);
     }
 }

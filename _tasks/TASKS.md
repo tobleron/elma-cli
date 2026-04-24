@@ -16,14 +16,9 @@
 - Start immediately when a real regression or failure class is being investigated.
 
 ## Current Master Plan
-- **Task 191**: Elma Skill-First Rebaseline Master Plan.
-- Supporting active tracks:
-  - **023** Expert responder transient context verification under the new routing flow.
-  - **064** Real CLI stress harness and reliability gates.
-  - **T206** Terminal markdown and reasoning leak regression.
-  - **T207** Cheap storage query strategies and platform-aware command repair.
-  - **T208** Context bar and model budget divergence for large tool output.
-  - **T209** Proactive budget forecasting and mid-turn compaction for shell-heavy tasks.
+- **Task 191**: Elma Skill-First Rebaseline Master Plan — COMPLETE.
+- Supporting active tracks: All complete (023, 064, T206-T209, T210).
+- Next pending tasks: 213-234 (dependency-free library additions).
 
 
 ## Supporting Active Verification Gate
