@@ -15,6 +15,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::*;
 use std::path::PathBuf;
+use std::time::Instant;
 
 // ============================================================================
 // Screen Buffer (Legacy/Compatibility)
@@ -43,13 +44,13 @@ pub(crate) enum TranscriptMode {
 }
 
 pub(crate) struct ClaudeRenderer {
-    transcript: ClaudeTranscript,
+    pub(crate) transcript: ClaudeTranscript,
     input_lines: Vec<String>,
     input_cursor_row: usize,
     input_cursor_col: usize,
     pub terminal_width: usize,
     pub terminal_height: usize,
-    streaming: StreamingUI,
+    pub(crate) streaming: StreamingUI,
     task_list: Option<crate::claude_ui::claude_tasks::TaskList>,
     status_line: Option<String>,
     notification_line: Option<String>,
@@ -62,6 +63,12 @@ pub(crate) struct ClaudeRenderer {
     pub transcript_mode: TranscriptMode,
     modal_state: Option<crate::ui_state::ModalState>,
     scrollbar_state: ScrollbarState,
+    // Animation frame counter for streaming indicators
+    anim_frame: usize,
+    // Hit-testing state for click-to-expand tool traces
+    pub(crate) last_content_area: Option<ratatui::layout::Rect>,
+    pub(crate) last_start_line: usize,
+    pub(crate) last_line_mapping: Vec<usize>,
 }
 
 impl ClaudeRenderer {
@@ -86,6 +93,10 @@ impl ClaudeRenderer {
             transcript_mode: TranscriptMode::Normal,
             modal_state: None,
             scrollbar_state: ScrollbarState::default(),
+            anim_frame: 0,
+            last_content_area: None,
+            last_start_line: 0,
+            last_line_mapping: Vec::new(),
         }
     }
 
@@ -285,23 +296,29 @@ impl ClaudeRenderer {
     /// Primary event handler for Claude-style UI (Task 169)
     pub(crate) fn handle_event(&mut self, event: crate::claude_ui::UiEvent) {
         use crate::claude_ui::{ClaudeMessage, UiEvent};
+        let show_reasoning = crate::ui_state::is_reasoning_visible();
 
         match event {
             UiEvent::TurnStarted => {
-                // Show immediate in-flight activity before first streamed delta arrives.
-                self.start_thinking();
+                // The transcript thinking row starts when real reasoning begins.
             }
             UiEvent::UserSubmitted(content) => {
                 self.push_message(ClaudeMessage::User { content });
             }
             UiEvent::ThinkingStarted => {
-                self.start_thinking();
+                if show_reasoning {
+                    self.start_thinking();
+                }
             }
             UiEvent::ThinkingDelta(delta) => {
-                self.append_thinking(&delta);
+                if show_reasoning {
+                    self.append_thinking(&delta);
+                }
             }
             UiEvent::ThinkingFinished => {
-                self.finish_thinking();
+                if show_reasoning {
+                    self.finish_thinking();
+                }
             }
             UiEvent::AssistantContentDelta(delta) => {
                 self.start_content(); // Ensure content mode is active
@@ -315,6 +332,7 @@ impl ClaudeRenderer {
                     name,
                     command,
                     status: crate::claude_ui::claude_state::ToolTraceStatus::Running,
+                    collapsed: false,
                 });
             }
             UiEvent::ToolProgress {
@@ -366,14 +384,18 @@ impl ClaudeRenderer {
     // --- Streaming API ---
     pub(crate) fn start_thinking(&mut self) {
         self.streaming.start_thinking();
+        self.transcript.start_live_thinking();
     }
 
     pub(crate) fn append_thinking(&mut self, text: &str) {
         self.streaming.append_thinking(text);
+        self.transcript.append_live_thinking(text);
     }
 
     pub(crate) fn finish_thinking(&mut self) {
         self.streaming.finish_thinking();
+        self.transcript.finish_live_thinking();
+        self.streaming.thinking.clear();
     }
 
     pub(crate) fn start_content(&mut self) {
@@ -387,13 +409,6 @@ impl ClaudeRenderer {
     pub(crate) fn finish_content(&mut self) {
         self.streaming.finish_content();
 
-        // Task 171: Push thinking to transcript first so it shows up before assistant text
-        if !self.streaming.thinking.is_empty() {
-            self.transcript.push(ClaudeMessage::Thinking {
-                content: self.streaming.thinking.clone(),
-            });
-        }
-
         if !self.streaming.content.is_empty() {
             self.transcript.push(ClaudeMessage::Assistant {
                 content: self.streaming.content.clone(),
@@ -401,7 +416,6 @@ impl ClaudeRenderer {
         }
 
         // Clear streaming state
-        self.streaming.thinking.clear();
         self.streaming.content.clear();
         self.streaming.is_streaming_thinking = false;
         self.streaming.is_streaming_content = false;
@@ -409,6 +423,10 @@ impl ClaudeRenderer {
 
     pub(crate) fn is_streaming(&self) -> bool {
         self.streaming.is_streaming_thinking || self.streaming.is_streaming_content
+    }
+
+    pub(crate) fn next_redraw_deadline(&self) -> Option<Instant> {
+        self.transcript.thinking_redraw_deadline()
     }
 
     pub(crate) fn last_assistant_message(&self) -> Option<&String> {
@@ -507,6 +525,7 @@ impl ClaudeRenderer {
     /// Render using Ratatui
     pub(crate) fn render_ratatui(&mut self, f: &mut Frame) {
         let theme = current_theme();
+        self.anim_frame = self.anim_frame.wrapping_add(1);
         let area = f.size();
 
         let picker_height = match &self.picker_state {
@@ -549,7 +568,7 @@ impl ClaudeRenderer {
         let input_area = main_chunks[3];
         let footer_area = main_chunks[4];
 
-        let transcript_lines = self.transcript.render_ratatui();
+        let (transcript_lines, line_mapping) = self.transcript.render_ratatui();
         let total_lines = transcript_lines.len();
 
         // Check if we need sticky header (scrolled up and have user messages)
@@ -620,6 +639,11 @@ impl ClaudeRenderer {
                 .saturating_sub(self.transcript.scroll_offset)
                 .min(max_offset)
         };
+
+        // Store hit-testing state for click-to-expand tool traces
+        self.last_content_area = Some(content_area);
+        self.last_start_line = start_line;
+        self.last_line_mapping = line_mapping;
 
         // Slice visible lines from the transcript
         let visible_lines: Vec<Line<'static>> = transcript_lines
@@ -796,34 +820,28 @@ impl ClaudeRenderer {
             }
         }
 
-        // Compute streaming hint for footer
-        let streaming_hint = if self.streaming.is_streaming_thinking {
-            Some(crate::ui_theme::dim("∴ Thinking..."))
+        // Build footer: status line is always visible; streaming indicator appends to it.
+        let streaming_suffix = if self.streaming.is_streaming_thinking {
+            Some("∴ Thinking...")
         } else if self.streaming.is_streaming_content {
-            Some(crate::ui_theme::dim("…"))
+            Some("…")
         } else {
             None
         };
 
-        // Footer
-        if let Some(note) = &self.notification_line {
-            f.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    note.clone(),
-                    Style::default().fg(theme.accent_primary.to_ratatui_color()),
-                ))),
-                footer_area,
-            );
-        } else if let Some(hint) = streaming_hint {
-            f.render_widget(Paragraph::new(hint), footer_area);
-        } else if let Some(status) = &self.status_line {
-            f.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    status.clone(),
+        if let Some(status) = &self.status_line {
+            let mut spans = vec![Span::styled(
+                status.clone(),
+                Style::default().fg(theme.fg_dim.to_ratatui_color()),
+            )];
+            if let Some(suffix) = streaming_suffix {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
+                    suffix,
                     Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                ))),
-                footer_area,
-            );
+                ));
+            }
+            f.render_widget(Paragraph::new(Line::from(spans)), footer_area);
         } else {
             let hints: Vec<Span> = FOOTER_HINTS
                 .iter()
@@ -860,10 +878,6 @@ impl ClaudeRenderer {
         // This is now a "best effort" ANSI-string renderer for non-ratatui paths
         // Implementation omitted for brevity, or kept as-is from previous turn
         let mut lines = self.transcript.render();
-
-        if self.streaming.is_streaming_thinking && !self.streaming.thinking.is_empty() {
-            lines.push(crate::ui_theme::meta_comment("∴ Thinking"));
-        }
 
         if self.streaming.is_streaming_content && !self.streaming.content.is_empty() {
             lines.push(format!("… {}", &self.streaming.content));
@@ -922,31 +936,46 @@ impl ClaudeRenderer {
 }
 
 // ============================================================================
-// Workspace File Discovery (Task 173 @ picker)
+// Workspace File Discovery (Task 173 @ picker, Task 188 recursive discovery)
 // ============================================================================
 
 fn discover_workspace_files(workdir: &PathBuf, query: &str) -> Vec<String> {
+    use ignore::WalkBuilder;
+
     let mut results = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(workdir) {
-        for entry in entries.flatten() {
-            if let Ok(path) = entry.path().canonicalize() {
-                if let Ok(rel) = path.strip_prefix(workdir.canonicalize().unwrap_or(path.clone())) {
-                    let rel_str = rel.to_string_lossy();
-                    // Skip hidden dirs, .git, target, node_modules
-                    if rel_str.starts_with('.')
-                        || rel_str.starts_with("target/")
-                        || rel_str.starts_with("node_modules/")
-                        || rel_str.starts_with(".git/")
-                    {
-                        continue;
-                    }
-                    if path.is_file() && rel_str.contains(query) {
-                        results.push(rel_str.to_string());
-                    }
-                }
+    let canonical_workdir = match workdir.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return results,
+    };
+
+    let mut walk_builder = WalkBuilder::new(&canonical_workdir);
+    walk_builder
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .require_git(false)
+        .max_depth(Some(10))
+        .skip_stdout(true);
+
+    for entry in walk_builder.build().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        if let Ok(rel) = path.strip_prefix(&canonical_workdir) {
+            let rel_str = rel.to_string_lossy().to_string();
+
+            if rel_str.contains(query) {
+                results.push(rel_str);
+            }
+
+            if results.len() >= 10000 {
+                break;
             }
         }
     }
+
     results.sort();
     results.truncate(30);
     results
@@ -984,9 +1013,10 @@ mod tests {
     fn test_thinking_collapsed() {
         let msg = ClaudeMessage::Thinking {
             content: "Let me think...".to_string(),
+            is_streaming: false,
+            word_count: 3,
         };
         let lines = msg.to_lines(false);
-        // When reasoning is hidden (new default), shows compact "∴ Thinking"
         assert!(lines[0].contains("Thinking"));
     }
 
@@ -994,9 +1024,15 @@ mod tests {
     fn test_thinking_expanded() {
         let msg = ClaudeMessage::Thinking {
             content: "Let me think...".to_string(),
+            is_streaming: false,
+            word_count: 3,
         };
         let lines = msg.to_lines(true);
-        assert!(lines[0].starts_with("∴ Thinking"));
+        assert!(lines[0].contains("Thinking"));
+        assert!(lines
+            .last()
+            .map(|l| l.contains("(ctrl+o to collapse)"))
+            .unwrap_or(false));
     }
 
     #[test]
@@ -1009,6 +1045,7 @@ mod tests {
                 output: "file content".to_string(),
                 duration_ms: Some(1500),
             },
+            collapsed: false,
         };
         let lines = msg.to_lines(false);
         assert!(lines[0].contains("✓"));
@@ -1026,6 +1063,7 @@ mod tests {
                 output: "error".to_string(),
                 duration_ms: Some(100),
             },
+            collapsed: false,
         };
         let lines = msg.to_lines(false);
         assert!(lines[0].contains("✗"));
@@ -1052,6 +1090,74 @@ mod tests {
     }
 
     #[test]
+    fn test_finish_thinking_persists_and_clears_live_buffer() {
+        let mut renderer = ClaudeRenderer::new(80, 24);
+        renderer.start_thinking();
+        renderer.append_thinking("step-by-step");
+        renderer.finish_thinking();
+
+        assert!(renderer.streaming.thinking.is_empty());
+        assert!(matches!(
+            renderer.transcript.messages.last(),
+            Some(ClaudeMessage::Thinking { content, .. }) if content == "step-by-step"
+        ));
+    }
+
+    #[test]
+    fn test_thinking_streams_in_transcript_then_collapses() {
+        use std::time::{Duration, Instant};
+
+        let mut renderer = ClaudeRenderer::new(80, 24);
+        renderer.start_thinking();
+        renderer.append_thinking("live reasoning text");
+
+        let live_lines = renderer.transcript.render();
+        // During streaming, shows ">> Thinking..." (not live content)
+        assert!(
+            live_lines.iter().any(|line| line.contains(">>"))
+                && live_lines.iter().any(|line| line.contains("Thinking...")),
+            "active thinking should show streaming indicator >> Thinking..."
+        );
+
+        renderer.finish_thinking();
+        let held_lines = renderer.transcript.render();
+        assert!(
+            held_lines
+                .iter()
+                .any(|line| line.contains("live reasoning text")),
+            "finished thinking should remain expanded briefly before collapsing"
+        );
+
+        renderer.transcript.thinking_collapse_deadline =
+            Some((0, Instant::now() - Duration::from_secs(1)));
+        let collapsed_lines = renderer.transcript.render();
+        assert!(
+            collapsed_lines.iter().any(|line| line.contains("Thinking")),
+            "finished thinking should remain as a collapsed transcript row"
+        );
+        assert!(
+            collapsed_lines
+                .iter()
+                .all(|line| !line.contains("live reasoning text")),
+            "finished thinking should collapse by default"
+        );
+        // Collapsed state should show ">" prefix and time label
+        assert!(
+            collapsed_lines.iter().any(|line| line.contains(">")),
+            "collapsed thinking should have > prefix"
+        );
+    }
+
+    #[test]
+    fn test_empty_thinking_step_is_not_kept_in_transcript() {
+        let mut renderer = ClaudeRenderer::new(80, 24);
+        renderer.start_thinking();
+        renderer.finish_thinking();
+
+        assert!(renderer.transcript.messages.is_empty());
+    }
+
+    #[test]
     fn test_renderer_basic() {
         let mut r = ClaudeRenderer::new(80, 24);
         r.push_message(ClaudeMessage::User {
@@ -1059,5 +1165,71 @@ mod tests {
         });
         let screen = r.render();
         assert!(!screen.lines.is_empty());
+    }
+
+    #[test]
+    fn test_click_to_expand_thinking() {
+        use std::time::Duration;
+        let mut renderer = ClaudeRenderer::new(80, 24);
+
+        // Add a thinking message
+        renderer.start_thinking();
+        renderer.append_thinking("step-by-step reasoning");
+        renderer.finish_thinking();
+
+        // Simulate deadline passed (collapsed state)
+        renderer.transcript.thinking_collapse_deadline =
+            Some((0, std::time::Instant::now() - Duration::from_secs(1)));
+
+        // Verify it's collapsed (1 line, no content)
+        let (lines, mapping) = renderer.transcript.render_ratatui();
+        assert_eq!(lines.len(), 1, "collapsed thinking should be 1 line");
+        assert!(
+            lines.iter().any(|l| fragments_contain(l, "Thinking..")),
+            "collapsed should have Thinking.."
+        );
+        assert!(
+            !lines.iter().any(|l| fragments_contain(l, "step-by-step")),
+            "collapsed should not have content"
+        );
+
+        // Click on the thinking row to expand it
+        if let Some(&msg_idx) = mapping.get(0) {
+            renderer.transcript.toggle_trace_collapse(msg_idx);
+        }
+
+        // Verify it's now expanded (multiple lines + ctrl+o hint)
+        let (lines2, _) = renderer.transcript.render_ratatui();
+        assert!(
+            lines2.len() > 1,
+            "expanded thinking should have multiple lines (got {})",
+            lines2.len()
+        );
+        assert!(
+            lines2.iter().any(|l| fragments_contain(l, "step-by-step")),
+            "expanded thinking should show content"
+        );
+        assert!(
+            lines2
+                .iter()
+                .any(|l| fragments_contain(l, "(ctrl+o to collapse)")),
+            "expanded thinking should show collapse hint"
+        );
+
+        // Click again to collapse
+        if let Some(&msg_idx) = mapping.get(0) {
+            renderer.transcript.toggle_trace_collapse(msg_idx);
+        }
+        let (lines3, _) = renderer.transcript.render_ratatui();
+        assert_eq!(
+            lines3.len(),
+            1,
+            "clicking again should collapse (got {} lines)",
+            lines3.len()
+        );
+    }
+
+    fn fragments_contain(line: &ratatui::text::Line, needle: &str) -> bool {
+        line.spans.iter().any(|s| s.content.contains(needle))
     }
 }

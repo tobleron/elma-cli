@@ -631,7 +631,8 @@ impl TerminalUI {
         }
 
         // Estimate the current model budget (base from last update + streaming)
-        let streaming_tokens = (self.claude.streaming.thinking.len() + self.claude.streaming.content.len()) as u64 / 4;
+        let streaming_tokens =
+            (self.claude.streaming.thinking.len() + self.claude.streaming.content.len()) as u64 / 4;
         let model_context_tokens_estimate = self.state.footer.context_current + streaming_tokens;
         let transcript_tokens_estimate = self.estimate_transcript_tokens();
 
@@ -646,9 +647,14 @@ impl TerminalUI {
         let bar_width = 6;
         let filled = (ctx_pct * bar_width / 100) as usize;
         let bar = format!("{}{}", "█".repeat(filled), "░".repeat(bar_width - filled));
-        
-        let base = if self.state.header.verbose && transcript_tokens_estimate > model_context_tokens_estimate + 500 {
-            format!("{}% {}  {}  (transcript: {})", ctx_pct, bar, self.state.footer.model, transcript_tokens_estimate)
+
+        let base = if self.state.header.verbose
+            && transcript_tokens_estimate > model_context_tokens_estimate + 500
+        {
+            format!(
+                "{}% {}  {}  (transcript: {})",
+                ctx_pct, bar, self.state.footer.model, transcript_tokens_estimate
+            )
         } else {
             format!("{}% {}  {}", ctx_pct, bar, self.state.footer.model)
         };
@@ -1946,11 +1952,18 @@ mod tests {
         tui.push_tool_finish("shell", true, &big_output, Some(100));
 
         let transcript_tokens = tui.estimate_transcript_tokens();
-        assert!(transcript_tokens >= 10000, "Transcript tokens should include the massive tool output");
-        
-        let streaming_tokens = (tui.claude.streaming.thinking.len() + tui.claude.streaming.content.len()) as u64 / 4;
+        assert!(
+            transcript_tokens >= 10000,
+            "Transcript tokens should include the massive tool output"
+        );
+
+        let streaming_tokens =
+            (tui.claude.streaming.thinking.len() + tui.claude.streaming.content.len()) as u64 / 4;
         let model_budget = tui.state.footer.context_current + streaming_tokens;
-        assert_eq!(model_budget, 100, "Model budget should not be polluted by the transcript tool traces");
+        assert_eq!(
+            model_budget, 100,
+            "Model budget should not be polluted by the transcript tool traces"
+        );
         assert!(transcript_tokens > model_budget);
     }
 }

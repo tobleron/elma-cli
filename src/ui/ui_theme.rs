@@ -175,6 +175,10 @@ pub(crate) fn elma_accent(text: &str) -> String {
     fg_token(current_theme().accent_primary, text)
 }
 
+pub(crate) fn accent_primary(text: &str) -> String {
+    fg_token(current_theme().accent_primary, text)
+}
+
 /// Info cyan → accent_secondary (Cyan)
 pub(crate) fn info_cyan(text: &str) -> String {
     fg_token(current_theme().accent_secondary, text)

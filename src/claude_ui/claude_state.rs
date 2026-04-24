@@ -143,12 +143,22 @@ impl ClaudeMessage {
                 }
                 lines
             }
-            ClaudeMessage::Thinking { content, is_streaming, word_count } => {
+            ClaudeMessage::Thinking {
+                content,
+                is_streaming,
+                word_count,
+            } => {
+                let delay_secs = (*word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0) as u64;
+                let time_label = if delay_secs >= 60 {
+                    format!("{}m {}s", delay_secs / 60, delay_secs % 60)
+                } else {
+                    format!("{}s", delay_secs)
+                };
                 if *is_streaming {
                     vec![Line::from(vec![
                         Span::styled(
-                            SPINNER_FRAMES[0],
-                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                            ">>",
+                            Style::default().fg(theme.accent_primary.to_ratatui_color()),
                         ),
                         Span::raw(" "),
                         Span::styled(
@@ -160,12 +170,12 @@ impl ClaudeMessage {
                     let mut lines = Vec::new();
                     lines.push(Line::from(vec![
                         Span::styled(
-                            EXPAND_ARROW_RIGHT,
-                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                            "⌄",
+                            Style::default().fg(theme.accent_primary.to_ratatui_color()),
                         ),
                         Span::raw(" "),
                         Span::styled(
-                            "(ctrl+o to collapse)",
+                            format!("Thinking [{}]", time_label),
                             Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
                     ]));
@@ -178,16 +188,23 @@ impl ClaudeMessage {
                             ),
                         ]));
                     }
+                    lines.push(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(
+                            "(ctrl+o to collapse)",
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ),
+                    ]));
                     lines
                 } else {
                     vec![Line::from(vec![
                         Span::styled(
-                            EXPAND_ARROW_RIGHT,
-                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                            ">",
+                            Style::default().fg(theme.accent_primary.to_ratatui_color()),
                         ),
                         Span::raw(" "),
                         Span::styled(
-                            format!("Thinking.. ({} words)", word_count),
+                            format!("Thinking.. [{}]", time_label),
                             Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
                     ])]
@@ -551,17 +568,36 @@ impl ClaudeMessage {
                 }
                 lines
             }
-            ClaudeMessage::Thinking { content, is_streaming, .. } => {
+            ClaudeMessage::Thinking {
+                content,
+                is_streaming,
+                word_count,
+            } => {
+                let delay_secs = (*word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0) as u64;
+                let time_label = if delay_secs >= 60 {
+                    format!("{}m {}s", delay_secs / 60, delay_secs % 60)
+                } else {
+                    format!("{}s", delay_secs)
+                };
                 if *is_streaming {
-                    vec![format!("  {} {}", SPINNER_FRAMES[0], dim("Thinking..."))]
+                    vec![format!("  {} {}", accent_primary(">>"), dim("Thinking..."))]
                 } else if expanded {
-                    let mut lines = vec![format!("  {} {}", EXPAND_ARROW_RIGHT, dim("(ctrl+o to collapse)"))];
+                    let mut lines = vec![format!(
+                        "  {} {}",
+                        accent_primary("⌄"),
+                        dim(&format!("Thinking [{}]", time_label))
+                    )];
                     for line in content.lines() {
                         lines.push(format!("    {}", dim(line)));
                     }
+                    lines.push(format!("    {}", dim("(ctrl+o to collapse)")));
                     lines
                 } else {
-                    vec![format!("  {} {}", EXPAND_ARROW_RIGHT, dim("Thinking.."))]
+                    vec![format!(
+                        "  {} {}",
+                        accent_primary(">"),
+                        dim(&format!("Thinking.. [{}]", time_label))
+                    )]
                 }
             }
             ClaudeMessage::ToolStart { name, input } => {
@@ -814,8 +850,11 @@ impl ClaudeTranscript {
             self.start_live_thinking();
         }
         if let Some(index) = self.live_thinking_index {
-            if let Some(ClaudeMessage::Thinking { content, word_count, .. }) =
-                self.messages.get_mut(index)
+            if let Some(ClaudeMessage::Thinking {
+                content,
+                word_count,
+                ..
+            }) = self.messages.get_mut(index)
             {
                 content.push_str(text);
                 *word_count += text.split_whitespace().count();
@@ -826,8 +865,7 @@ impl ClaudeTranscript {
 
     pub(crate) fn finish_live_thinking(&mut self) {
         if let Some(index) = self.live_thinking_index {
-            if let Some(ClaudeMessage::Thinking { is_streaming, .. }) =
-                self.messages.get_mut(index)
+            if let Some(ClaudeMessage::Thinking { is_streaming, .. }) = self.messages.get_mut(index)
             {
                 *is_streaming = false;
             }
@@ -846,8 +884,7 @@ impl ClaudeTranscript {
                 self.thinking_expanded_index = None;
                 return;
             }
-            let delay_secs =
-                (word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0);
+            let delay_secs = (word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0);
             self.thinking_collapse_deadline =
                 Some((index, Instant::now() + Duration::from_secs_f64(delay_secs)));
         }
@@ -863,6 +900,9 @@ impl ClaudeTranscript {
         if self.expanded {
             return true;
         }
+        if self.thinking_expanded_index == Some(index) {
+            return true;
+        }
         if self.live_thinking_index == Some(index) {
             return match self.thinking_collapse_deadline {
                 Some((deadline_index, deadline)) if deadline_index == index => {
@@ -872,10 +912,6 @@ impl ClaudeTranscript {
                 None => true,
             };
         }
-        if self.thinking_expanded_index == Some(index) {
-            return true;
-        }
-        // Telemetry messages auto-collapse after a short timeout
         if let Some(ClaudeMessage::Telemetry { created_at, .. }) = self.messages.get(index) {
             return Instant::now().duration_since(*created_at) < TELEMETRY_COLLAPSE_DELAY;
         }
@@ -989,8 +1025,14 @@ impl ClaudeTranscript {
                 ClaudeMessage::Thinking { .. } => {
                     if self.thinking_expanded_index == Some(message_index) {
                         self.thinking_expanded_index = None;
+                        if self.live_thinking_index == Some(message_index) {
+                            self.live_thinking_index = None;
+                        }
                     } else {
                         self.thinking_expanded_index = Some(message_index);
+                        if self.live_thinking_index == Some(message_index) {
+                            self.live_thinking_index = None;
+                        }
                     }
                 }
                 _ => {}
