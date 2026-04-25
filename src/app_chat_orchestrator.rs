@@ -11,7 +11,7 @@ use crate::app_chat_patterns::*;
 use crate::*;
 
 pub(crate) async fn build_program(
-    runtime: &AppRuntime,
+    runtime: &mut AppRuntime,
     line: &str,
     route_decision: &RouteDecision,
     workflow_plan: Option<&WorkflowPlannerOutput>,
@@ -35,7 +35,7 @@ pub(crate) async fn build_program(
 }
 
 pub(crate) async fn build_program_with_temp(
-    runtime: &AppRuntime,
+    runtime: &mut AppRuntime,
     line: &str,
     _route_decision: &RouteDecision,
     _workflow_plan: Option<&WorkflowPlannerOutput>,
@@ -61,18 +61,22 @@ pub(crate) async fn build_program_with_temp(
             // Return as a single Respond step for the execution framework
             Program {
                 objective: line.to_string(),
-                steps: vec![Step::Respond {
-                    id: "r1".to_string(),
-                    instructions: answer,
-                    common: StepCommon {
-                        purpose: "respond to user".to_string(),
-                        depends_on: vec![],
-                        success_condition: "user receives answer".to_string(),
-                        parent_id: None,
-                        depth: None,
-                        unit_type: None,
-                    },
-                }],
+            steps: vec![Step::Respond {
+                id: "r1".to_string(),
+                instructions: answer,
+                common: StepCommon {
+                    purpose: "respond to user".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "user receives answer".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    is_read_only: true,
+                    is_destructive: false,
+                    is_concurrency_safe: true,
+                                interrupt_behavior: InterruptBehavior::Graceful,
+                },
+            }],
             }
         }
         Err(e) => {

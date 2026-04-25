@@ -77,6 +77,7 @@ pub(crate) fn refresh_runtime_workspace(runtime: &mut AppRuntime) -> Result<()> 
         &runtime.profiles.elma_cfg.system_prompt,
         &runtime.ws,
         &runtime.ws_brief,
+        &runtime.guidance,
         &runtime.model_id,
         runtime.chat_url.as_str(),
     );
@@ -98,6 +99,7 @@ pub(crate) fn rebuild_system_content(
     base_prompt: &str,
     ws: &str,
     ws_brief: &str,
+    guidance: &GuidanceSnapshot,
     model_id: &str,
     base_url: &str,
 ) -> String {
@@ -118,6 +120,11 @@ pub(crate) fn rebuild_system_content(
     if !ws_brief.trim().is_empty() {
         system_content.push_str("\n\nWORKSPACE BRIEF:\n");
         system_content.push_str(ws_brief.trim());
+    }
+    let guidance_text = guidance.render_for_system_prompt();
+    if !guidance_text.is_empty() {
+        system_content.push_str("\n\nPROJECT GUIDANCE:\n");
+        system_content.push_str(&guidance_text);
     }
     system_content
 }

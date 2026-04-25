@@ -1,0 +1,47 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  clang-tidy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: true
+        fetch-depth: 0
+
+    - name: Initialize Submodules
+      run: |
+        git submodule update --init --recursive
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-tidy
+        sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev freeglut3-dev mesa-common-dev xorg-dev libgtk-3-dev
+
+    - name: Install Latest CMake
+      run: |
+        sudo apt-get purge --auto-remove cmake
+        wget https://github.com/Kitware/CMake/releases/download/v3.27.5/cmake-3.27.5-linux-x86_64.sh
+        sudo mkdir /opt/cmake
+        sudo sh cmake-3.27.5-linux-x86_64.sh --prefix=/opt/cmake --skip-license
+        sudo ln -sf /opt/cmake/bin/* /usr/local/bin/
+
+    - name: Configure the project
+      run: |
+        mkdir build && cd build
+        cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DGLFW_BUILD_WAYLAND=OFF ..
+
+    - name: Run Clang-Tidy
+      run: |
+        cd build
+        wget https://raw.githubusercontent.com/llvm/llvm-project/main/clang-tools-extra/clang-tidy/tool/run-clang-tidy.py
+        FILES=$(find ../ -path ../external -prune -o -name '*.cpp' -print)
+        python3 run-clang-tidy.py -p . -j $(nproc) $FILES

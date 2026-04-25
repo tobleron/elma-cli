@@ -1,0 +1,12 @@
+models/
+data/
+pool
+uploads/
+local-agent-framework
+localagi
+LocalAGI
+**/.env
+.vscode
+volumes/
+example/scheduler/scheduler
+example/scheduler/example_tasks.json

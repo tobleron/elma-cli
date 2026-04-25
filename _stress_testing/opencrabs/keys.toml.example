@@ -1,0 +1,123 @@
+# OpenCrabs API Keys File
+# Copy this to ~/.opencrabs/keys.toml
+# 
+# IMPORTANT: Set proper permissions after copying:
+#   chmod 600 ~/.opencrabs/keys.toml
+#
+# This file contains sensitive API keys - NEVER commit to version control!
+# Add to .gitignore: keys.toml
+
+# ========================================
+# LLM Provider API Keys
+# ========================================
+
+[providers.anthropic]
+# Get from: console.anthropic.com
+api_key = ""
+
+[providers.github]
+# No key needed if `gh` CLI is installed — token auto-detected.
+# Or paste a GitHub PAT: github.com/settings/tokens
+api_key = ""
+
+[providers.openai]
+# Get from: platform.openai.com
+api_key = ""
+
+[providers.openrouter]
+# Get from: openrouter.ai/keys
+api_key = ""
+
+[providers.minimax]
+# Get from: platform.minimax.io
+api_key = ""
+
+[providers.gemini]
+# Get from: aistudio.google.com
+api_key = ""
+
+# Custom providers use the same name as in config.toml:
+# For local LLMs (LM Studio, Ollama) — api_key not required, leave empty
+# For remote OpenAI-compatible APIs (Groq, Together, etc.) — set your key here
+[providers.custom.lm_studio]
+api_key = ""
+
+# [providers.custom.ollama]
+# api_key = ""
+
+# ========================================
+# Image Generation & Vision API Key
+# ========================================
+
+[image]
+# Same Google AI key used for both image generation and vision via Gemini
+# Get from: aistudio.google.com
+api_key = ""
+
+# ========================================
+# STT (Speech-to-Text) API Keys
+# ========================================
+
+[providers.stt.groq]
+# Get from: console.groq.com
+api_key = ""
+
+# ========================================
+# TTS (Text-to-Speech) API Keys
+# ========================================
+
+[providers.tts.openai]
+# Uses OpenAI key - can be same as providers.openai
+api_key = ""
+
+# ========================================
+# Messaging Channel Tokens
+# ========================================
+
+[channels.telegram]
+# Get from: @BotFather on Telegram
+# Format: "123456789:ABCdef..."
+token = ""
+
+[channels.discord]
+# Get from: Discord Developer Portal
+# Format: ~70 character base64 string
+token = ""
+
+[channels.slack]
+# Get from: Slack App settings
+# Bot token (xoxb-...) and App-level token (xapp-...)
+token = ""
+app_token = ""
+
+[channels.trello]
+# Get from: trello.com/power-ups/admin > API Key tab, then click Token link
+# app_token = Trello API Key, token = Trello API Token (confusingly named, but correct)
+app_token = ""  # API Key (alphanumeric, ~32 chars)
+token = ""      # API Token (long hex string, ~64 chars)
+
+[channels.whatsapp]
+# WhatsApp Business API (if using cloud API)
+token = ""
+
+# ========================================
+# A2A (Agent-to-Agent) Gateway
+# ========================================
+
+[a2a]
+# Bearer token for authenticating incoming A2A requests
+# Callers must send: Authorization: Bearer <api_key>
+# Leave empty for no auth (fine for loopback-only use)
+api_key = ""
+
+# ========================================
+# Web Search API Keys
+# ========================================
+
+[providers.web_search.exa]
+# Get from: exa.ai/api-key
+api_key = ""
+
+[providers.web_search.brave]
+# Get from: brave.com/search/api/
+api_key = ""

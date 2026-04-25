@@ -1,6 +1,0 @@
-total 64
-drwxr-xr-x@  5 r2  staff    160 Apr  3 00:03 .
-drwxr-xr-x@ 40 r2  staff   1280 Apr  5 22:13 ..
--rwxr-xr-x@  1 r2  staff  24270 Apr  1 15:18 export_defaults.sh
--rwxr-xr-x@  1 r2  staff    458 Mar 28 17:37 run_analyzer.sh
--rwxr-xr-x@  1 r2  staff   2638 Apr  3 00:03 test_grammar_injection.sh

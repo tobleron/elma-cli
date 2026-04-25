@@ -138,7 +138,7 @@ pub(crate) fn handle_discover_tools(runtime: &AppRuntime) -> Result<()> {
             println!("(tools cached for this session)");
         }
         Err(error) => {
-            eprintln!("Tool discovery failed: {}", error);
+            tracing::error!("Tool discovery failed: {}", error);
         }
     }
 

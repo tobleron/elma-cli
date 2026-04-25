@@ -10,6 +10,27 @@
 //! - fallback: Provide safe defaults on failure
 
 use crate::*;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub(crate) enum IntelError {
+    #[error("Empty user message")]
+    EmptyUserMessage,
+    #[error("Missing '{0}' field")]
+    MissingField(String),
+    #[error("Invalid {0} value: {1:?}")]
+    InvalidValue(String, String),
+    #[error("Failed to parse {0}: {1}")]
+    ParseError(String, String),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Http(#[from] reqwest::Error),
+    #[error("URL error: {0}")]
+    Url(#[from] url::ParseError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
 
 // Intel Context
 
@@ -246,7 +267,9 @@ pub(crate) struct ComplexityOutput {
 impl ComplexityOutput {
     pub fn from_intel_output(output: &IntelOutput) -> Result<Self> {
         let assessment: ComplexityAssessment = serde_json::from_value(output.data.clone())
-            .map_err(|e| anyhow::anyhow!("Failed to parse complexity assessment: {}", e))?;
+            .map_err(|e| {
+                IntelError::ParseError("complexity assessment".to_string(), e.to_string())
+            })?;
         Ok(Self {
             assessment,
             confidence: output.confidence,
@@ -335,10 +358,11 @@ fn trace_verbose(verbose: bool, message: &str) {
 }
 
 pub(crate) fn intel_chat_url(profile: &Profile) -> Result<Url> {
-    Url::parse(&profile.base_url)
-        .map_err(|e| anyhow::anyhow!("Invalid base_url '{}': {}", profile.base_url, e))?
+    let base = Url::parse(&profile.base_url).map_err(IntelError::from)?;
+    let joined = base
         .join("/v1/chat/completions")
-        .map_err(|e| anyhow::anyhow!("Failed to build chat URL: {}", e))
+        .map_err(IntelError::from)?;
+    Ok(joined)
 }
 
 pub(crate) fn neutral_route_decision() -> RouteDecision {

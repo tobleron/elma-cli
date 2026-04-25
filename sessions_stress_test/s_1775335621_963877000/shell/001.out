@@ -1,4 +1,0 @@
-export_defaults.sh
-run_analyzer.sh
-test_grammar_injection.sh
-run_test_plan.sh

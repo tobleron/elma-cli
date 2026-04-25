@@ -96,7 +96,7 @@ impl StreamingUI {
 
         if self.is_streaming_content || !self.content.is_empty() {
             messages.push(ClaudeMessage::Assistant {
-                content: self.content.clone(),
+                content: crate::claude_ui::AssistantContent::from_markdown(&self.content),
             });
         }
 

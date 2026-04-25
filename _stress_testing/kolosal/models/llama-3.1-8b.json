@@ -1,0 +1,37 @@
+{
+  "name": "Llama 3.1 8B",
+  "author": "Meta",
+  "hidden_size": 4096,
+  "attention_heads": 32,
+  "hidden_layers": 32,
+  "kv_heads": 8,
+  "variants": {
+    "fp16": {
+      "type": "fp16",
+      "path": "models/llama-3.1-8B/fp16/Meta-Llama-3.1-8B-Instruct.f16.gguf",
+      "downloadLink": "https://huggingface.co/kolosal/llama-3.1-8b/resolve/main/Meta-Llama-3.1-8B-Instruct.f16.gguf",
+      "isDownloaded": false,
+      "downloadProgress": 0.0,
+      "lastSelected": 0,
+      "size": 16.1
+    },
+    "8-bit": {
+      "type": "8-bit",
+      "path": "models/llama-3.1-8B/int8/Meta-Llama-3.1-8B-Instruct.Q8_0.gguf",
+      "downloadLink": "https://huggingface.co/kolosal/llama-3.1-8b/resolve/main/Meta-Llama-3.1-8B-Instruct.Q8_0.gguf",
+      "isDownloaded": false,
+      "downloadProgress": 0.0,
+      "lastSelected": 0,
+      "size": 8.54
+    },
+    "4-bit": {
+      "type": "4-bit",
+      "path": "models/llama-3.1-8B/int4/Meta-Llama-3.1-8B-Instruct.Q4_K_M.gguf",
+      "downloadLink": "https://huggingface.co/kolosal/llama-3.1-8b/resolve/main/Meta-Llama-3.1-8B-Instruct.Q4_K_M.gguf",
+      "isDownloaded": false,
+      "downloadProgress": 0.0,
+      "lastSelected": 0,
+      "size": 4.92
+    }
+  }
+}

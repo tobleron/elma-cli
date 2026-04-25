@@ -1,0 +1,33 @@
+services:
+  localai:
+    extends:
+      file: docker-compose.yaml
+      service: localai
+    environment:
+      - LOCALAI_SINGLE_ACTIVE_BACKEND=true
+      - DEBUG=true
+    image: localai/localai:master-gpu-nvidia-cuda-12
+    # For images with python backends, use:
+    # image: localai/localai:master-cublas-cuda12-ffmpeg
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  postgres:
+    extends:
+      file: docker-compose.yaml
+      service: postgres
+
+  dind:
+    extends:
+      file: docker-compose.yaml
+      service: dind
+
+  localagi:
+    extends:
+      file: docker-compose.yaml
+      service: localagi

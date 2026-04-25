@@ -5,10 +5,120 @@ use futures::stream::StreamExt;
 use serde_json::Value;
 use std::time::Duration;
 
+use crate::claude_ui::strip_thinking_tags_preserve_spacing;
 use crate::*;
 
 mod grounding;
 pub(crate) use grounding::*;
+
+const THINK_OPEN_TAG: &str = "<think>";
+const THINK_CLOSE_TAG: &str = "</think>";
+const THINKING_OPEN_TAG: &str = "<thinking>";
+const THINKING_CLOSE_TAG: &str = "</thinking>";
+const REASONING_OPEN_TAG: &str = "<reasoning>";
+const REASONING_CLOSE_TAG: &str = "</reasoning>";
+const THOUGHT_OPEN_TAG: &str = "<thought>";
+const THOUGHT_CLOSE_TAG: &str = "</thought>";
+
+fn match_reasoning_open(rest: &str) -> Option<usize> {
+    [
+        THINK_OPEN_TAG,
+        THINKING_OPEN_TAG,
+        REASONING_OPEN_TAG,
+        THOUGHT_OPEN_TAG,
+    ]
+    .into_iter()
+    .find_map(|tag| rest.starts_with(tag).then_some(tag.len()))
+}
+
+fn match_reasoning_close(rest: &str) -> Option<usize> {
+    [
+        THINK_CLOSE_TAG,
+        THINKING_CLOSE_TAG,
+        REASONING_CLOSE_TAG,
+        THOUGHT_CLOSE_TAG,
+    ]
+    .into_iter()
+    .find_map(|tag| rest.starts_with(tag).then_some(tag.len()))
+}
+
+fn has_reasoning_tag_prefix(rest: &str) -> bool {
+    [
+        THINK_OPEN_TAG,
+        THINK_CLOSE_TAG,
+        THINKING_OPEN_TAG,
+        THINKING_CLOSE_TAG,
+        REASONING_OPEN_TAG,
+        REASONING_CLOSE_TAG,
+        THOUGHT_OPEN_TAG,
+        THOUGHT_CLOSE_TAG,
+    ]
+    .into_iter()
+    .any(|tag| tag.starts_with(rest))
+}
+
+pub(crate) fn process_stream_content_chunk(
+    chunk: &str,
+    in_think_block: &mut bool,
+    pending_tag: &mut String,
+) -> (String, String) {
+    let mut input = String::with_capacity(pending_tag.len() + chunk.len());
+    input.push_str(pending_tag);
+    input.push_str(chunk);
+    pending_tag.clear();
+
+    let mut assistant = String::new();
+    let mut thinking = String::new();
+    let mut i = 0usize;
+
+    while i < input.len() {
+        let rest = &input[i..];
+        let Some(rel_lt) = rest.find('<') else {
+            if *in_think_block {
+                thinking.push_str(rest);
+            } else {
+                assistant.push_str(rest);
+            }
+            break;
+        };
+
+        if rel_lt > 0 {
+            let before = &rest[..rel_lt];
+            if *in_think_block {
+                thinking.push_str(before);
+            } else {
+                assistant.push_str(before);
+            }
+            i += rel_lt;
+        }
+
+        let rest = &input[i..];
+        if let Some(tag_len) = match_reasoning_open(rest) {
+            *in_think_block = true;
+            i += tag_len;
+            continue;
+        }
+        if let Some(tag_len) = match_reasoning_close(rest) {
+            *in_think_block = false;
+            i += tag_len;
+            continue;
+        }
+
+        if has_reasoning_tag_prefix(rest) {
+            pending_tag.push_str(rest);
+            break;
+        }
+
+        if *in_think_block {
+            thinking.push('<');
+        } else {
+            assistant.push('<');
+        }
+        i += 1;
+    }
+
+    (assistant, thinking)
+}
 
 pub(crate) async fn request_program_or_repair(
     client: &reqwest::Client,
@@ -304,6 +414,8 @@ pub(crate) async fn request_chat_final_text_streaming(
     let mut full_thinking = String::new();
     let mut buffer = String::new();
     let mut thinking_started = false;
+    let mut in_think_block = false;
+    let mut pending_think_tag = String::new();
 
     loop {
         let chunk_result_opt = tokio::select! {
@@ -355,6 +467,7 @@ pub(crate) async fn request_chat_final_text_streaming(
                                 .and_then(|v| v.as_str());
 
                             if let Some(reason) = reasoning {
+                                let reason = strip_thinking_tags_preserve_spacing(reason);
                                 if !reason.is_empty() {
                                     if !thinking_started {
                                         thinking_started = true;
@@ -363,11 +476,9 @@ pub(crate) async fn request_chat_final_text_streaming(
                                             let _ = tui.pump_ui();
                                         }
                                     }
-                                    full_thinking.push_str(reason);
+                                    full_thinking.push_str(&reason);
                                     if let Some(ref mut tui) = tui {
-                                        tui.handle_ui_event(UiEvent::ThinkingDelta(
-                                            reason.to_string(),
-                                        ));
+                                        tui.handle_ui_event(UiEvent::ThinkingDelta(reason));
                                         let _ = tui.pump_ui();
                                     }
                                 }
@@ -376,19 +487,51 @@ pub(crate) async fn request_chat_final_text_streaming(
                             // 2. Handle Assistant Content
                             if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                                 if !content.is_empty() {
-                                    if thinking_started {
+                                    let (assistant_delta, thinking_delta) =
+                                        process_stream_content_chunk(
+                                            content,
+                                            &mut in_think_block,
+                                            &mut pending_think_tag,
+                                        );
+
+                                    let thinking_delta =
+                                        strip_thinking_tags_preserve_spacing(&thinking_delta);
+                                    if !thinking_delta.is_empty() {
+                                        if !thinking_started {
+                                            thinking_started = true;
+                                            if let Some(ref mut tui) = tui {
+                                                tui.handle_ui_event(UiEvent::ThinkingStarted);
+                                                let _ = tui.pump_ui();
+                                            }
+                                        }
+                                        full_thinking.push_str(&thinking_delta);
+                                        if let Some(ref mut tui) = tui {
+                                            tui.handle_ui_event(UiEvent::ThinkingDelta(
+                                                thinking_delta,
+                                            ));
+                                            let _ = tui.pump_ui();
+                                        }
+                                    }
+
+                                    if !assistant_delta.is_empty()
+                                        && thinking_started
+                                        && !in_think_block
+                                    {
                                         thinking_started = false;
                                         if let Some(ref mut tui) = tui {
                                             tui.handle_ui_event(UiEvent::ThinkingFinished);
                                             let _ = tui.pump_ui();
                                         }
                                     }
-                                    full_content.push_str(content);
-                                    if let Some(ref mut tui) = tui {
-                                        tui.handle_ui_event(UiEvent::AssistantContentDelta(
-                                            content.to_string(),
-                                        ));
-                                        let _ = tui.pump_ui();
+
+                                    if !assistant_delta.is_empty() {
+                                        full_content.push_str(&assistant_delta);
+                                        if let Some(ref mut tui) = tui {
+                                            tui.handle_ui_event(UiEvent::AssistantContentDelta(
+                                                assistant_delta,
+                                            ));
+                                            let _ = tui.pump_ui();
+                                        }
                                     }
                                 }
                             }
@@ -491,9 +634,18 @@ pub(crate) async fn request_chat_final_text(
             };
             let usage_total = parsed.usage.as_ref().and_then(|u| u.total_tokens);
             let msg = &parsed.choices.get(0).context("No choices[0]")?.message;
-            let content = msg.content.as_deref().unwrap_or("").trim().to_string();
+            let extraction = crate::thinking_content::extract_thinking(
+                msg.content.as_deref(),
+                msg.reasoning_content.as_deref(),
+            );
+            let thinking = extraction.thinking.unwrap_or_default();
+            let content = extraction.final_answer.trim().to_string();
 
             if let Some(ref mut t) = tui {
+                if !thinking.is_empty() {
+                    t.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(thinking));
+                    let _ = t.pump_ui();
+                }
                 t.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
                 let _ = t.pump_ui();
                 if !content.is_empty() {
@@ -742,5 +894,59 @@ pub(crate) async fn maybe_format_final_text(
             usage_total, // Note: Usage tracking is omitted for now for simplicity, as it's a minor call
         ),
         _ => (plain_text, usage_total),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::process_stream_content_chunk;
+
+    #[test]
+    fn splits_inline_think_tags_into_thinking_stream() {
+        let mut in_think = false;
+        let mut pending = String::new();
+
+        let (assistant, thinking) =
+            process_stream_content_chunk("A<think>B</think>C", &mut in_think, &mut pending);
+
+        assert_eq!(assistant, "AC");
+        assert_eq!(thinking, "B");
+        assert!(!in_think);
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn handles_think_tags_split_across_stream_chunks() {
+        let mut in_think = false;
+        let mut pending = String::new();
+
+        let (assistant_1, thinking_1) =
+            process_stream_content_chunk("Hi <thi", &mut in_think, &mut pending);
+        assert_eq!(assistant_1, "Hi ");
+        assert_eq!(thinking_1, "");
+        assert_eq!(pending, "<thi");
+
+        let (assistant_2, thinking_2) =
+            process_stream_content_chunk("nk>plan</think> done", &mut in_think, &mut pending);
+        assert_eq!(assistant_2, " done");
+        assert_eq!(thinking_2, "plan");
+        assert!(!in_think);
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn supports_alternative_reasoning_tags_in_stream_chunks() {
+        let mut in_think = false;
+        let mut pending = String::new();
+
+        let (assistant, thinking) = process_stream_content_chunk(
+            "X<thinking>Y</thinking><reasoning>Z</reasoning>W",
+            &mut in_think,
+            &mut pending,
+        );
+        assert_eq!(assistant, "XW");
+        assert_eq!(thinking, "YZ");
+        assert!(!in_think);
+        assert!(pending.is_empty());
     }
 }

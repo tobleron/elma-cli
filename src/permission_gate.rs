@@ -11,6 +11,7 @@ use crate::shell_preflight::{classify_command, RiskLevel};
 use crate::ui_theme::*;
 use crate::*;
 use std::collections::HashSet;
+use std::io::IsTerminal;
 
 /// Tracks which command patterns have been approved in this session.
 struct ApprovalCache {
@@ -30,13 +31,25 @@ impl ApprovalCache {
 
     /// Check if a command pattern has been approved.
     fn is_approved(&self, command: &str) -> bool {
-        // Exact match
+        // Exact match always wins
         if self.approved.contains(command) {
             return true;
         }
-        // Prefix match (e.g., "mv *.sh " covers all mv *.sh operations)
-        for pattern in &self.approved {
-            if command.starts_with(pattern) {
+        // Prefix match: allow only if the approved pattern inherently includes
+        // a word boundary (ends with space or '/'), or if the command continues
+        // with a boundary (space or '/') after the matched prefix.
+        'pattern: for pattern in &self.approved {
+            if !command.starts_with(pattern.as_str()) {
+                continue;
+            }
+            let pattern = pattern.as_str();
+            // If pattern already ends with a boundary char, no further check needed.
+            if pattern.ends_with(' ') || pattern.ends_with('/') {
+                return true;
+            }
+            // Otherwise the command must have a boundary immediately after the prefix.
+            let rest = &command[pattern.len()..];
+            if rest.is_empty() || rest.starts_with(' ') || rest.starts_with('/') {
                 return true;
             }
         }
@@ -53,25 +66,33 @@ static PERMISSION_CACHE: OnceLock<Mutex<ApprovalCache>> = OnceLock::new();
 
 fn approval_cache() -> &'static Mutex<ApprovalCache> {
     PERMISSION_CACHE.get_or_init(|| {
-        let non_interactive = !atty::is(atty::Stream::Stdin);
+        let non_interactive = !std::io::stdin().is_terminal();
         Mutex::new(ApprovalCache::new(non_interactive))
     })
 }
 
 /// Reset the approval cache (called on /reset or new session).
 pub(crate) fn reset_permission_cache() {
-    if let Ok(mut cache) = approval_cache().lock() {
-        cache.approved.clear();
-    }
+    let mut cache = approval_cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    cache.approved.clear();
 }
 
 /// Check if a command requires permission gate approval.
 /// Returns true if the command is safe to execute (either no approval needed or user approved).
+/// `is_destructive`: if false, the step is not destructive and permission is auto-granted.
 pub(crate) async fn check_permission(
     args: &Args,
     command: &str,
+    is_destructive: bool,
     mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> bool {
+    // If the step is not destructive, grant permission immediately
+    if !is_destructive {
+        return true;
+    }
+
     let risk = classify_command(command);
 
     // Safe commands pass without approval
@@ -79,23 +100,17 @@ pub(crate) async fn check_permission(
         return true;
     }
 
-    // Check approval cache
-    if approval_cache()
-        .lock()
-        .ok()
-        .map(|c| c.is_approved(command))
-        .unwrap_or(false)
-    {
+    // Check approval cache (single lock acquisition; recover from poisoning)
+    let (already_approved, is_non_interactive) = {
+        let cache = approval_cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        (cache.is_approved(command), cache.non_interactive)
+    };
+    if already_approved {
         return true;
     }
-
-    // Non-interactive mode: auto-deny with trace message
-    if approval_cache()
-        .lock()
-        .ok()
-        .map(|c| c.non_interactive)
-        .unwrap_or(false)
-    {
+    if is_non_interactive {
         trace(
             args,
             &format!(
@@ -119,7 +134,7 @@ pub(crate) async fn check_permission(
     // HACK: To prevent hangs in TUI mode, check if stdin is a TTY.
     // If not a TTY (likely PTY or pipe), deny to avoid blocking.
     // TODO: Properly integrate with modal system.
-    if !atty::is(atty::Stream::Stdin) {
+    if !std::io::stdin().is_terminal() {
         trace(
             args,
             &format!(
@@ -134,9 +149,10 @@ pub(crate) async fn check_permission(
 
 /// Record that the user approved this command (for session caching).
 pub(crate) fn record_approval(command: &str) {
-    if let Ok(mut cache) = approval_cache().lock() {
-        cache.approve(command);
-    }
+    let mut cache = approval_cache()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    cache.approve(command);
 }
 
 /// Ask the user for permission to execute a dangerous command.
@@ -147,68 +163,36 @@ fn ask_permission(args: &Args, command: &str, risk: &RiskLevel) -> bool {
         RiskLevel::Safe => return true, // Already handled above
     };
 
-    // Disable raw mode temporarily for reading permission (safe to call even if not in raw mode)
-    let _ = crossterm::terminal::disable_raw_mode();
-
     eprintln!();
     eprintln!("  {}", warn_yellow(&reason));
     eprintln!();
     eprintln!("  Command: {}", warn_yellow(command));
     eprintln!();
 
-    // Ask: [y/N] with default N
-    eprint!("  Proceed? [y/N] ");
-    let _ = io::stderr().flush();
+    let approved = crate::ui::ui_interact::confirm("Proceed?");
 
-    let mut input = String::new();
-    let read_result = io::stdin().read_line(&mut input);
-
-    eprintln!();
-
-    let approved = match read_result {
-        Ok(0) => {
-            // EOF — treat as deny
-            trace(args, "permission_gate: DENIED (EOF)");
-            false
-        }
-        Ok(_) => {
-            let answer = input.trim().to_lowercase();
-            if answer == "y" || answer == "yes" {
-                // Record approval for future similar commands
-                record_approval(command);
-                trace(args, "permission_gate: APPROVED by user");
-                true
-            } else {
-                trace(args, "permission_gate: DENIED by user");
-                false
-            }
-        }
-        Err(e) => {
-            eprintln!("  Error reading input: {}", e);
-            false
-        }
-    };
-
-    // Re-enable raw mode (needed when called from TUI mode)
-    let _ = crossterm::terminal::enable_raw_mode();
+    if approved {
+        // Record approval for future similar commands
+        record_approval(command);
+        trace(args, "permission_gate: APPROVED by user");
+    } else {
+        trace(args, "permission_gate: DENIED by user");
+    }
 
     approved
 }
 
 /// Get a display string for the approval cache (for debug/status).
 pub(crate) fn approval_cache_summary() -> String {
-    approval_cache()
+    let cache = approval_cache()
         .lock()
-        .ok()
-        .map(|cache| {
-            if cache.approved.is_empty() {
-                "no approvals cached".to_string()
-            } else {
-                let items: Vec<String> = cache.approved.iter().take(5).cloned().collect();
-                format!("{} approved: {}", cache.approved.len(), items.join(", "))
-            }
-        })
-        .unwrap_or_else(|| "cache unavailable".to_string())
+        .unwrap_or_else(|e| e.into_inner());
+    if cache.approved.is_empty() {
+        "no approvals cached".to_string()
+    } else {
+        let items: Vec<String> = cache.approved.iter().take(5).cloned().collect();
+        format!("{} approved: {}", cache.approved.len(), items.join(", "))
+    }
 }
 
 #[cfg(test)]
@@ -247,5 +231,15 @@ mod tests {
     fn test_interactive_flag() {
         let cache = ApprovalCache::new(false);
         assert!(!cache.non_interactive);
+    }
+
+    #[test]
+    fn test_approval_prefix_does_not_bypass_boundary() {
+        let mut cache = ApprovalCache::new(false);
+        cache.approve("rm /tmp/test");
+        assert!(cache.is_approved("rm /tmp/test"));      // exact match
+        assert!(!cache.is_approved("rm /tmp/test_other")); // underscore ≠ word boundary
+        assert!(cache.is_approved("rm /tmp/test file2")); // space boundary → ok
+        assert!(cache.is_approved("rm /tmp/test/file2")); // slash boundary → ok
     }
 }

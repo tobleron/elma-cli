@@ -61,7 +61,7 @@ mod tests {
 
         let result = program_matches_level(&program, ExecutionLevel::Action);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Plan"));
+        assert!(result.unwrap_err().to_string().contains("Plan"));
     }
 
     #[test]
@@ -124,7 +124,7 @@ mod tests {
 
         let result = program_matches_level(&program, ExecutionLevel::Plan);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Plan"));
+        assert!(result.unwrap_err().to_string().contains("Plan"));
     }
 
     #[test]
@@ -144,7 +144,7 @@ mod tests {
 
         let result = program_matches_level(&program, ExecutionLevel::MasterPlan);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("MasterPlan"));
+        assert!(result.unwrap_err().to_string().contains("MasterPlan"));
     }
 
     #[test]
@@ -264,7 +264,13 @@ mod tests {
                 cmd: "ls".to_string(),
                 common: StepCommon {
                     purpose: "list files".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
             Step::Shell {
@@ -272,7 +278,13 @@ mod tests {
                 cmd: "cat file.txt".to_string(),
                 common: StepCommon {
                     purpose: "read file".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
             Step::Reply {
@@ -280,7 +292,13 @@ mod tests {
                 instructions: "done".to_string(),
                 common: StepCommon {
                     purpose: "answer".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
         ]);
@@ -297,7 +315,13 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count functions".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
             Step::Shell {
@@ -305,7 +329,13 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count functions".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
             Step::Shell {
@@ -313,7 +343,13 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count functions".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
             Step::Shell {
@@ -321,7 +357,13 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count functions".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
         ]);
@@ -340,7 +382,13 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count functions".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             });
         }
@@ -349,7 +397,13 @@ mod tests {
             instructions: "done".to_string(),
             common: StepCommon {
                 purpose: "answer".to_string(),
-                ..StepCommon::default()
+                depends_on: Vec::new(),
+                success_condition: "ok".to_string(),
+                parent_id: None,
+                depth: None,
+                unit_type: None,
+                interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
             },
         });
 
@@ -361,7 +415,10 @@ mod tests {
         // Should reject regardless of level due to absolute limit
         let result = program_matches_level(&program, ExecutionLevel::Task);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("maximum step limit"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("maximum step limit"));
     }
 
     #[test]
@@ -373,7 +430,13 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
             Step::Shell {
@@ -381,7 +444,13 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
             Step::Shell {
@@ -389,7 +458,13 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count".to_string(),
-                    ..StepCommon::default()
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                 },
             },
             Step::Shell {
@@ -397,6 +472,11 @@ mod tests {
                 cmd: "grep fn".to_string(),
                 common: StepCommon {
                     purpose: "count".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
                     ..StepCommon::default()
                 },
             },
@@ -404,7 +484,7 @@ mod tests {
 
         let result = program_matches_level(&program, ExecutionLevel::Task);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("duplicate steps"));
+        assert!(result.unwrap_err().to_string().contains("duplicate steps"));
     }
 
     // ========================================================================
@@ -426,18 +506,43 @@ mod tests {
             Step::Decide {
                 id: "d1".to_string(),
                 prompt: "decide".to_string(),
-                common: StepCommon::default(),
+                common: StepCommon {
+                    purpose: "decide".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    is_read_only: false,
+                    is_destructive: true,
+                    is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                },
             },
             Step::Reply {
                 id: "r1".to_string(),
                 instructions: "answer".to_string(),
-                common: StepCommon::default(),
+                common: StepCommon {
+                    purpose: "answer".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    is_read_only: true,
+                    is_destructive: false,
+                    is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                },
             },
         ]);
 
         let result = validate_evidence_requirements(&program, &route, &complexity, &formula);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("requires workspace evidence"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("requires workspace evidence"));
     }
 
     #[test]
@@ -455,17 +560,53 @@ mod tests {
             Step::Shell {
                 id: "s1".to_string(),
                 cmd: "rg --files .".to_string(),
-                common: StepCommon::default(),
+                common: StepCommon {
+                    purpose: "search".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    is_read_only: false,
+                    is_destructive: true,
+                    is_concurrency_safe: false,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
+                },
             },
             Step::Decide {
                 id: "d1".to_string(),
                 prompt: "decide".to_string(),
-                common: StepCommon::default(),
+                common: StepCommon {
+                    purpose: "decide".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    is_read_only: false,
+                    is_destructive: true,
+                    is_concurrency_safe: false,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
+                },
             },
             Step::Reply {
                 id: "r1".to_string(),
                 instructions: "answer".to_string(),
-                common: StepCommon::default(),
+                common: StepCommon {
+                    purpose: "answer".to_string(),
+                    depends_on: Vec::new(),
+                    success_condition: "ok".to_string(),
+                    parent_id: None,
+                    depth: None,
+                    unit_type: None,
+                    is_read_only: true,
+                    is_destructive: false,
+                    is_concurrency_safe: true,
+                    interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
+                },
             },
         ]);
 

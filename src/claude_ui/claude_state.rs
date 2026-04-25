@@ -10,7 +10,7 @@
 //! - Tool result: "✓" (success) or "✗" (failure)
 //! - Compact boundary: "✻ Conversation compacted"
 
-use crate::claude_ui::render_markdown_ratatui;
+use crate::claude_ui::{render_assistant_content, render_markdown_ratatui, AssistantContent};
 use crate::ui_theme::*;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -32,13 +32,39 @@ pub(crate) enum ToolTraceStatus {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum UiNoticeKind {
+    Budget,
+    Queue,
+    Compaction,
+    StopReason,
+    InputHint,
+    Session,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NoticePersistence {
+    TranscriptPersistent,
+    TranscriptCollapsible,
+    EphemeralPromptHint,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct UiNotice {
+    pub kind: UiNoticeKind,
+    pub content: String,
+    pub created_at: Instant,
+    pub persistence: NoticePersistence,
+    pub collapsed: bool,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum ClaudeMessage {
     User {
         content: String,
     },
     Assistant {
-        content: String,
+        content: AssistantContent,
     },
     ToolStart {
         name: String,
@@ -80,18 +106,11 @@ pub(crate) enum ClaudeMessage {
     System {
         content: String,
     },
-    /// Transcript-native telemetry row for operational visibility.
-    /// Auto-collapses after a short timeout but remains recoverable.
-    Telemetry {
-        category: String,
-        content: String,
-        created_at: Instant,
-        collapsed: bool,
-    },
+    Notice(UiNotice),
 }
 
 impl ClaudeMessage {
-    pub(crate) fn to_ratatui_lines(&self, expanded: bool) -> Vec<Line<'static>> {
+    pub(crate) fn to_ratatui_lines(&self, expanded: bool, width: usize) -> Vec<Line<'static>> {
         let theme = current_theme();
         match self {
             ClaudeMessage::User { content } => {
@@ -119,12 +138,11 @@ impl ClaudeMessage {
                 ])]
             }
             ClaudeMessage::Assistant { content } => {
-                // Left gutter approach: indicator on first line, empty gutter on subsequent
+                let content_width = width.saturating_sub(2).max(12);
+                let content_lines = render_assistant_content(content, content_width);
                 let mut lines = Vec::new();
-                let content_lines = render_markdown_ratatui(content);
                 for (i, content_line) in content_lines.into_iter().enumerate() {
                     if i == 0 {
-                        // First line: gutter indicator + content
                         let mut spans = vec![Span::styled(
                             ASSISTANT_DOT,
                             Style::default()
@@ -135,7 +153,6 @@ impl ClaudeMessage {
                         spans.extend(content_line.spans.into_iter());
                         lines.push(Line::from(spans));
                     } else {
-                        // Subsequent lines: empty gutter + content
                         let mut spans = vec![Span::raw("  ")]; // 2-char gutter
                         spans.extend(content_line.spans.into_iter());
                         lines.push(Line::from(spans));
@@ -155,17 +172,29 @@ impl ClaudeMessage {
                     format!("{}s", delay_secs)
                 };
                 if *is_streaming {
-                    vec![Line::from(vec![
+                    let mut lines = vec![Line::from(vec![
                         Span::styled(
-                            ">>",
-                            Style::default().fg(theme.accent_primary.to_ratatui_color()),
+                            "∴",
+                            Style::default()
+                                .fg(theme.accent_primary.to_ratatui_color())
+                                .add_modifier(Modifier::BOLD),
                         ),
                         Span::raw(" "),
                         Span::styled(
-                            "Thinking...",
+                            format!("Thinking... [{}]", time_label),
                             Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
-                    ])]
+                    ])];
+                    for line in content.lines() {
+                        lines.push(Line::from(vec![
+                            Span::raw("  "),
+                            Span::styled(
+                                line.to_string(),
+                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                            ),
+                        ]));
+                    }
+                    lines
                 } else if expanded {
                     let mut lines = Vec::new();
                     lines.push(Line::from(vec![
@@ -395,6 +424,14 @@ impl ClaudeMessage {
                     duration_ms,
                 } = status
                 {
+                    let output_line_count = output.lines().count();
+                    if output_line_count > 0 {
+                        lines[0].spans.push(Span::raw(" "));
+                        lines[0].spans.push(Span::styled(
+                            format!("[{} lines]", output_line_count),
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ));
+                    }
                     if let Some(ms) = duration_ms {
                         let duration = if *ms > 1000 {
                             format!("{:.1}s", *ms as f64 / 1000.0)
@@ -524,25 +561,21 @@ impl ClaudeMessage {
                     ),
                 ])]
             }
-            ClaudeMessage::Telemetry {
-                category,
-                content,
-                collapsed,
-                ..
-            } => {
-                if *collapsed && !expanded {
+            ClaudeMessage::Notice(notice) => {
+                let kind_label = notice.kind.label();
+                if notice.collapsed && !expanded {
                     vec![Line::from(vec![Span::styled(
-                        format!("◦ {} ({})", category, content),
+                        format!("◦ {} ({})", kind_label, notice.content),
                         Style::default().fg(theme.fg_dim.to_ratatui_color()),
                     )])]
                 } else {
                     vec![Line::from(vec![
                         Span::styled(
-                            format!("◦ {}: ", category),
+                            format!("◦ {}: ", kind_label),
                             Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
                         Span::styled(
-                            content.clone(),
+                            notice.content.clone(),
                             Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
                     ])]
@@ -562,8 +595,10 @@ impl ClaudeMessage {
                 lines
             }
             ClaudeMessage::Assistant { content } => {
-                let mut lines = vec![format!("● {}", content)];
-                for line in content.lines().skip(1) {
+                let mut raw_lines = content.raw_markdown.lines();
+                let first = raw_lines.next().unwrap_or_default();
+                let mut lines = vec![format!("● {}", first)];
+                for line in raw_lines {
                     lines.push(format!("  {}", line));
                 }
                 lines
@@ -580,7 +615,15 @@ impl ClaudeMessage {
                     format!("{}s", delay_secs)
                 };
                 if *is_streaming {
-                    vec![format!("  {} {}", accent_primary(">>"), dim("Thinking..."))]
+                    let mut lines = vec![format!(
+                        "  {} {}",
+                        accent_primary("∴"),
+                        dim(&format!("Thinking... [{}]", time_label))
+                    )];
+                    for line in content.lines() {
+                        lines.push(format!("    {}", dim(line)));
+                    }
+                    lines
                 } else if expanded {
                     let mut lines = vec![format!(
                         "  {} {}",
@@ -755,18 +798,27 @@ impl ClaudeMessage {
             ClaudeMessage::System { content } => {
                 vec![format!("{} {}", warn_yellow("⚠"), bold(content))]
             }
-            ClaudeMessage::Telemetry {
-                category,
-                content,
-                collapsed,
-                ..
-            } => {
-                if *collapsed && !expanded {
-                    vec![dim(&format!("◦ {} ({})", category, content))]
+            ClaudeMessage::Notice(notice) => {
+                let label = notice.kind.label();
+                if notice.collapsed && !expanded {
+                    vec![dim(&format!("◦ {} ({})", label, notice.content))]
                 } else {
-                    vec![dim(&format!("◦ {}: {}", category, content))]
+                    vec![dim(&format!("◦ {}: {}", label, notice.content))]
                 }
             }
+        }
+    }
+}
+
+impl UiNoticeKind {
+    fn label(&self) -> &'static str {
+        match self {
+            UiNoticeKind::Budget => "budget",
+            UiNoticeKind::Queue => "queue",
+            UiNoticeKind::Compaction => "compaction",
+            UiNoticeKind::StopReason => "stop",
+            UiNoticeKind::InputHint => "input",
+            UiNoticeKind::Session => "session",
         }
     }
 }
@@ -912,8 +964,9 @@ impl ClaudeTranscript {
                 None => true,
             };
         }
-        if let Some(ClaudeMessage::Telemetry { created_at, .. }) = self.messages.get(index) {
-            return Instant::now().duration_since(*created_at) < TELEMETRY_COLLAPSE_DELAY;
+        if let Some(ClaudeMessage::Notice(notice)) = self.messages.get(index) {
+            return notice.persistence == NoticePersistence::TranscriptCollapsible
+                && Instant::now().duration_since(notice.created_at) < TELEMETRY_COLLAPSE_DELAY;
         }
         false
     }
@@ -942,11 +995,15 @@ impl ClaudeTranscript {
     pub(crate) fn update_last_tool_trace(&mut self, name: &str, status: ToolTraceStatus) {
         for msg in self.messages.iter_mut().rev() {
             if let ClaudeMessage::ToolTrace {
-                name: n, status: s, ..
+                name: n,
+                status: s,
+                collapsed,
+                ..
             } = msg
             {
                 if n == name && matches!(s, ToolTraceStatus::Running) {
                     *s = status;
+                    *collapsed = true;
                     return;
                 }
             }
@@ -987,7 +1044,7 @@ impl ClaudeTranscript {
 
     /// Returns rendered lines plus a parallel vector mapping each line to its
     /// source message index (for click-to-expand and other hit-testing).
-    pub(crate) fn render_ratatui(&self) -> (Vec<Line<'static>>, Vec<usize>) {
+    pub(crate) fn render_ratatui(&self, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
         let mut lines = Vec::new();
         let mut mapping = Vec::new();
 
@@ -1005,7 +1062,8 @@ impl ClaudeTranscript {
                 }
             }
 
-            let msg_lines = self.messages[i].to_ratatui_lines(self.thinking_expanded_for_index(i));
+            let msg_lines =
+                self.messages[i].to_ratatui_lines(self.thinking_expanded_for_index(i), width);
             for _ in &msg_lines {
                 mapping.push(i);
             }

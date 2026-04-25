@@ -30,6 +30,7 @@ pub(crate) async fn handle_shell_step(
     objective: &str,
     emit_shell_output: bool,
     readonly_only: bool,
+    is_destructive: bool,
     sid: String,
     kind: String,
     purpose: String,
@@ -125,7 +126,7 @@ pub(crate) async fn handle_shell_step(
         return Ok(());
     }
 
-    if !permission_gate::check_permission(args, &cmd, tui.as_deref_mut()).await {
+    if !permission_gate::check_permission(args, &cmd, is_destructive, tui.as_deref_mut()).await {
         trace(
             args,
             &format!("step_denied id={sid} cmd={}", cmd.replace('\n', " ")),

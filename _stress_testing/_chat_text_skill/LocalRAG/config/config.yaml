@@ -1,0 +1,40 @@
+# Chunking Configuration
+chunking:
+  default_strategy: "fixed"  # Default strategy: fixed, recursive, structure, semantic
+  chunk_size: 512  # Characters per chunk
+  chunk_overlap: 50  # Overlap between chunks
+
+  # Strategy-specific parameters
+  strategies:
+    fixed: {}
+    recursive:
+      separators: ["\n\n", "\n", ". ", " "]
+      min_chunk_size: 50
+    structure:
+      split_on: "paragraphs"  # headings, paragraphs, lists, code_blocks
+    semantic:
+      similarity_threshold: 0.7
+      min_chunk_size: 100
+
+# Retrieval Configuration
+retrieval:
+  top_k: 5  # Final number of chunks to return
+  # Hybrid search (dense + sparse BM25 with RRF fusion)
+  hybrid_search: true
+  dense_top_k: 20  # First-stage dense retrieval count
+  sparse_top_k: 20  # First-stage BM25 retrieval count
+  rrf_k: 60  # RRF fusion parameter (higher = more weight to lower ranks)
+  # Reranking (two-stage: retrieval → cross-encoder reorder)
+  rerank: true
+  rerank_top_k: 20  # Number of candidates to rerank
+  rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"  # Local cross-encoder model
+  # MMR (Maximal Marginal Relevance) — diversifies results
+  mmr_enabled: true
+  mmr_lambda: 0.3  # 0.0 = pure relevance, 1.0 = pure diversity
+  # Query result caching
+  query_cache_ttl: 300  # Cache TTL in seconds
+  query_cache_size: 1000  # Max cached queries (LRU)
+
+# Vector Store Configuration (Chroma)
+vectorstore:
+  persist_directory: "data/chroma_db"  # Chroma persistence directory

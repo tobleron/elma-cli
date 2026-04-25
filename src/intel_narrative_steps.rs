@@ -222,8 +222,7 @@ pub(crate) fn make_shell_step(id: &str, cmd: &str, purpose: &str) -> Step {
         common: StepCommon {
             purpose: purpose.to_string(),
             depends_on: vec![],
-            success_condition: "done".to_string(),
-            ..Default::default()
+            success_condition: "done".to_string(),..Default::default()
         },
     }
 }
@@ -237,8 +236,7 @@ pub(crate) fn make_reply_step(id: &str, instructions: &str, purpose: &str) -> St
         common: StepCommon {
             purpose: purpose.to_string(),
             depends_on: vec![],
-            success_condition: "done".to_string(),
-            ..Default::default()
+            success_condition: "done".to_string(),..Default::default()
         },
     }
 }
@@ -261,14 +259,12 @@ mod tests {
             StepResult {
                 id: "s1".to_string(),
                 exit_code: Some(0),
-                raw_output: Some("file1.txt\nfile2.txt".to_string()),
-                ..Default::default()
+                raw_output: Some("file1.txt\nfile2.txt".to_string()),..Default::default()
             },
             StepResult {
                 id: "r1".to_string(),
                 exit_code: None,
-                raw_output: Some("Response generated".to_string()),
-                ..Default::default()
+                raw_output: Some("Response generated".to_string()),..Default::default()
             },
         ];
 
@@ -294,8 +290,7 @@ mod tests {
         let step_results = vec![StepResult {
             id: "s1".to_string(),
             exit_code: Some(0),
-            raw_output: Some("file1\nfile2".to_string()),
-            ..Default::default()
+            raw_output: Some("file1\nfile2".to_string()),..Default::default()
         }];
 
         let result = step_result_text(&step, &step_results);
@@ -309,8 +304,7 @@ mod tests {
         let step_results = vec![StepResult {
             id: "s1".to_string(),
             exit_code: Some(2),
-            raw_output: Some("error: not found".to_string()),
-            ..Default::default()
+            raw_output: Some("error: not found".to_string()),..Default::default()
         }];
 
         let result = step_result_text(&step, &step_results);
@@ -334,8 +328,7 @@ mod tests {
             purpose: "List all files".to_string(),
             ok: true,
             exit_code: Some(0),
-            raw_output: Some("file1.txt\nfile2.txt".to_string()),
-            ..Default::default()
+            raw_output: Some("file1.txt\nfile2.txt".to_string()),..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_sufficiency_narrative(
@@ -365,8 +358,7 @@ mod tests {
             purpose: "List all files".to_string(),
             ok: true,
             exit_code: Some(0),
-            raw_output: Some("file1.txt\nfile2.txt".to_string()),
-            ..Default::default()
+            raw_output: Some("file1.txt\nfile2.txt".to_string()),..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_reviewer_narrative(
@@ -390,8 +382,7 @@ mod tests {
             ok: true,
             summary: "Command succeeded".to_string(),
             raw_output: Some("file1.txt\nfile2.txt".to_string()),
-            exit_code: Some(0),
-            ..Default::default()
+            exit_code: Some(0),..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_claim_check_narrative(

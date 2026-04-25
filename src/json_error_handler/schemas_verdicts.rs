@@ -9,6 +9,7 @@
 //! - ground_critic_reason, verify_claim_against_outputs
 
 use crate::*;
+use thiserror::Error;
 
 /// Validate critic verdict against schema (manual implementation)
 pub(crate) fn validate_critic_verdict(
@@ -33,10 +34,6 @@ pub(crate) fn validate_critic_verdict(
     if errors.is_empty() {
         Ok(())
     } else {
-        trace(
-            args,
-            &format!("critic_schema_validation_failed errors={:?}", errors),
-        );
         Err(SchemaValidationError::ValidationErrors(errors))
     }
 }
@@ -64,10 +61,6 @@ pub(crate) fn validate_outcome_verdict(
     if errors.is_empty() {
         Ok(())
     } else {
-        trace(
-            args,
-            &format!("outcome_schema_validation_failed errors={:?}", errors),
-        );
         Err(SchemaValidationError::ValidationErrors(errors))
     }
 }
@@ -169,30 +162,15 @@ pub(crate) fn deterministic_fix_outcome_verdict(
 }
 
 /// Schema validation error
-#[derive(Debug, Clone)]
+#[derive(Error, Debug, Clone)]
 pub(crate) enum SchemaValidationError {
+    #[error("Failed to serialize verdict: {0}")]
     SerializationError(String),
+    #[error("Failed to parse schema: {0}")]
     SchemaParseError(String),
+    #[error("Schema validation failed: {}", .0.join("; "))]
     ValidationErrors(Vec<String>),
 }
-
-impl std::fmt::Display for SchemaValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SchemaValidationError::SerializationError(e) => {
-                write!(f, "Failed to serialize verdict: {}", e)
-            }
-            SchemaValidationError::SchemaParseError(e) => {
-                write!(f, "Failed to parse schema: {}", e)
-            }
-            SchemaValidationError::ValidationErrors(errors) => {
-                write!(f, "Schema validation failed: {}", errors.join("; "))
-            }
-        }
-    }
-}
-
-impl std::error::Error for SchemaValidationError {}
 
 /// Check if critic reason is grounded in actual step outputs
 ///
@@ -268,19 +246,8 @@ fn verify_claim_against_outputs(claim: &str, outputs: &[StepResult]) -> bool {
 }
 
 /// Grounding error
-#[derive(Debug, Clone)]
+#[derive(Error, Debug, Clone)]
 pub(crate) enum GroundingError {
+    #[error("Critic reason appears hallucinated: {0}")]
     HallucinatedClaim(String),
 }
-
-impl std::fmt::Display for GroundingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GroundingError::HallucinatedClaim(claim) => {
-                write!(f, "Critic reason appears hallucinated: {}", claim)
-            }
-        }
-    }
-}
-
-impl std::error::Error for GroundingError {}

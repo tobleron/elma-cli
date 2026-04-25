@@ -1,0 +1,52 @@
+name: tests
+
+on:
+  push:
+    paths:
+      - 'chatdocs/**'
+      - 'tests/**'
+      - setup.py
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        python:
+          - '3.x'
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Dependencies
+        env:
+          HNSWLIB_NO_NATIVE: 1
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Copy chatdocs.yml
+        run: cp tests/fixtures/chatdocs.yml .
+
+      - name: Test download
+        run: chatdocs download
+
+      - name: Test add
+        run: |
+          chatdocs add examples
+          chatdocs add tests/fixtures/documents
+
+      - name: Test chat
+        run: chatdocs chat 'Why was the NATO created?'

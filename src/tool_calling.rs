@@ -12,78 +12,24 @@ pub(crate) struct ToolExecutionResult {
     pub(crate) ok: bool,
 }
 
+/// Build initial tool definitions - only non-deferred tools (default tools)
 pub(crate) fn build_tool_definitions(_workdir: &PathBuf) -> Vec<ToolDefinition> {
-    vec![
-        ToolDefinition {
-            tool_type: "function".to_string(),
-            function: ToolFunction {
-                name: "shell".to_string(),
-                description: "Execute a shell command and return its output.".to_string(),
-                parameters: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {"command": {"type": "string"}},
-                    "required": ["command"]
-                })),
-            },
-        },
-        ToolDefinition {
-            tool_type: "function".to_string(),
-            function: ToolFunction {
-                name: "read".to_string(),
-                description: "Read the contents of a file.".to_string(),
-                parameters: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {"path": {"type": "string"}},
-                    "required": ["path"]
-                })),
-            },
-        },
-        ToolDefinition {
-            tool_type: "function".to_string(),
-            function: ToolFunction {
-                name: "search".to_string(),
-                description: "Search for text patterns in files using ripgrep.".to_string(),
-                parameters: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "pattern": {"type": "string"},
-                        "path": {"type": "string"}
-                    },
-                    "required": ["pattern"]
-                })),
-            },
-        },
-        ToolDefinition {
-            tool_type: "function".to_string(),
-            function: ToolFunction {
-                name: "respond".to_string(),
-                description: "Provide a final answer to the user.".to_string(),
-                parameters: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {"answer": {"type": "string"}},
-                    "required": ["answer"]
-                })),
-            },
-        },
-        ToolDefinition {
-            tool_type: "function".to_string(),
-            function: ToolFunction {
-                name: "update_todo_list".to_string(),
-                description: "Create and update a local task/todo list for multi-step work."
-                    .to_string(),
-                parameters: Some(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "action": {"type":"string","enum":["add","update","in_progress","completed","blocked","remove","list"]},
-                        "id": {"type":"integer"},
-                        "text": {"type":"string"},
-                        "reason": {"type":"string"}
-                    },
-                    "required": ["action"]
-                })),
-            },
-        },
-    ]
+    crate::tool_registry::build_current_tools()
+}
+
+/// Get dynamically loaded tools by name
+pub(crate) fn get_dynamic_tools(tool_names: &[String]) -> Vec<ToolDefinition> {
+    crate::tool_registry::get_registry().get_tools(tool_names)
+}
+
+/// Search for tools by query and return their definitions
+pub(crate) fn search_tools(query: &str) -> Vec<ToolDefinition> {
+    crate::tool_registry::get_registry().search_and_convert(query)
+}
+
+/// Get tool names from search (for marking as discovered)
+pub(crate) fn search_tool_names(query: &str) -> Vec<String> {
+    crate::tool_registry::get_registry().get_tool_names(query)
 }
 
 pub(crate) async fn execute_tool_call(
@@ -110,6 +56,7 @@ pub(crate) async fn execute_tool_call(
         }
     };
     match tool_name.as_str() {
+        "tool_search" => exec_tool_search(&args_value, &call_id, tui),
         "shell" => exec_shell(args, &args_value, workdir, session, &call_id, tui).await,
         "read" => exec_read(&args_value, workdir, &call_id, tui),
         "search" => exec_search(&args_value, workdir, &call_id, tui).await,
@@ -208,7 +155,7 @@ async fn exec_shell(
 
     // Task 117: Permission gate for destructive/caution commands
     emit_tool_progress(&mut tui, "shell", "checking permissions");
-    if !permission_gate::check_permission(args, &command, tui.as_deref_mut()).await {
+    if !permission_gate::check_permission(args, &command, true, tui.as_deref_mut()).await {
         trace(args, "tool_call: shell DENIED by permission gate");
         let denied_msg = "Permission denied. You declined to execute this command.\nTo proceed, approve the command or use a safer alternative.".to_string();
         emit_tool_result(&mut tui, "shell", false, &denied_msg);
@@ -388,9 +335,9 @@ fn exec_read(
     emit_tool_start(&mut tui, "read", &path);
     emit_tool_progress(&mut tui, "read", "reading file");
 
-    match std::fs::read_to_string(&full) {
-        Ok(c) => {
-            let content = format!("File: {}\n{}", full.display(), c);
+    match crate::document_adapter::read_file_smart(&full) {
+        Ok((content, header)) => {
+            let content = format!("{}\n{}", header, content);
             emit_tool_result(&mut tui, "read", true, &content);
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
@@ -479,12 +426,78 @@ fn exec_respond(
     call_id: &str,
     _tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> ToolExecutionResult {
-    let answer = av["answer"].as_str().unwrap_or("").to_string();
+    let answer = av["answer"]
+        .as_str()
+        .or_else(|| av["content"].as_str())
+        .or_else(|| av["text"].as_str())
+        .map(crate::text_utils::strip_thinking_blocks)
+        .unwrap_or_default();
     ToolExecutionResult {
         tool_call_id: call_id.to_string(),
         tool_name: "respond".to_string(),
         content: answer,
         ok: true,
+    }
+}
+
+fn exec_tool_search(
+    av: &serde_json::Value,
+    call_id: &str,
+    _tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let query = av["query"].as_str().unwrap_or("").to_string();
+    if query.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "tool_search".to_string(),
+            content: "Error: query is required".to_string(),
+            ok: false,
+        };
+    }
+
+    let tools = search_tools(&query);
+    if tools.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "tool_search".to_string(),
+            content: format!("No tools found matching: '{}'", query),
+            ok: true,
+        };
+    }
+
+    // Mark tools as discovered so they become available in future requests
+    let tool_names = search_tool_names(&query);
+    crate::tool_registry::mark_discovered(&tool_names);
+
+    // Format tool definitions as JSON for the model
+    let tools_json = serde_json::to_string_pretty(&tools).unwrap_or_default();
+    let content = format!(
+        "Found {} tool(s) matching '{}':\n\n{}\n\nThese tools are now loaded and available for use. You can call them directly in your next response.",
+        tools.len(),
+        query,
+        tools_json
+    );
+
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "tool_search".to_string(),
+        content,
+        ok: true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn respond_accepts_content_alias() {
+        let result = exec_respond(
+            &serde_json::json!({"content":"<think>hidden</think>Visible"}),
+            "c1",
+            None,
+        );
+        assert_eq!(result.content, "Visible");
     }
 }
 

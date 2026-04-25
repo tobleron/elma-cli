@@ -58,16 +58,21 @@ pub(crate) struct AppRuntime {
     pub(crate) repo: PathBuf,
     pub(crate) ws: String,
     pub(crate) ws_brief: String,
+    pub(crate) guidance: GuidanceSnapshot,
     pub(crate) system_content: String,
     pub(crate) messages: Vec<ChatMessage>,
     pub(crate) profiles: LoadedProfiles,
     pub(crate) goal_state: GoalState,
+    pub(crate) execution_plan: ExecutionPlanSelection,
+    pub(crate) active_runtime_task: Option<RuntimeTaskRecord>,
+    pub(crate) last_stop_outcome: Option<StopOutcome>,
     pub(crate) verbose: bool,
     pub(crate) retry_attempt: u32,
+    pub(crate) tool_registry: tool_discovery::ToolRegistry,
 }
 
-pub(crate) async fn run() -> Result<()> {
-    let Some(mut runtime) = app_bootstrap::bootstrap_app().await? else {
+pub(crate) async fn run(args: Args) -> Result<()> {
+    let Some(mut runtime) = app_bootstrap::bootstrap_app(args).await? else {
         return Ok(());
     };
     app_chat::run_chat_loop(&mut runtime).await

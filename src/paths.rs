@@ -1,5 +1,6 @@
 //! @efficiency-role: util-pure
 
+use crate::dirs::ElmaPaths;
 use crate::*;
 
 pub(crate) fn repo_root() -> Result<PathBuf> {
@@ -7,10 +8,24 @@ pub(crate) fn repo_root() -> Result<PathBuf> {
 }
 
 pub(crate) fn config_root_path(config_root: &str) -> Result<PathBuf> {
+    if config_root == "config" {
+        if let Some(paths) = ElmaPaths::new() {
+            let path = paths.config_dir().to_path_buf();
+            let _ = std::fs::create_dir_all(&path);
+            return Ok(path);
+        }
+    }
     Ok(repo_root()?.join(config_root))
 }
 
 pub(crate) fn sessions_root_path(sessions_root: &str) -> Result<PathBuf> {
+    if sessions_root == "sessions" {
+        if let Some(paths) = ElmaPaths::new() {
+            let path = paths.sessions_dir();
+            let _ = std::fs::create_dir_all(&path);
+            return Ok(path);
+        }
+    }
     Ok(repo_root()?.join(sessions_root))
 }
 
@@ -21,14 +36,13 @@ pub(crate) fn global_config_path(config_root: &Path) -> PathBuf {
 pub(crate) fn discover_saved_base_url(
     config_root: &Path,
     model_hint: Option<&str>,
-) -> Option<String> {
+) -> Result<Option<String>> {
     let global_path = global_config_path(config_root);
     if global_path.exists() {
-        if let Ok(cfg) = load_global_config(&global_path) {
-            let url = cfg.base_url.trim();
-            if !url.is_empty() {
-                return Some(url.to_string());
-            }
+        let cfg = load_global_config(&global_path)?;
+        let url = cfg.base_url.trim();
+        if !url.is_empty() {
+            return Ok(Some(url.to_string()));
         }
     }
 
@@ -60,7 +74,7 @@ pub(crate) fn discover_saved_base_url(
             if let Ok(cfg) = load_agent_config(&elma_cfg_path) {
                 let url = cfg.base_url.trim();
                 if !url.is_empty() {
-                    return Some(url.to_string());
+                    return Ok(Some(url.to_string()));
                 }
             }
         }
@@ -70,13 +84,13 @@ pub(crate) fn discover_saved_base_url(
             if let Ok(cal) = load_router_calibration(&router_cal_path) {
                 let url = cal.base_url.trim();
                 if !url.is_empty() {
-                    return Some(url.to_string());
+                    return Ok(Some(url.to_string()));
                 }
             }
         }
     }
 
-    None
+    Ok(None)
 }
 
 pub(crate) fn resolve_base_url(
@@ -87,10 +101,10 @@ pub(crate) fn resolve_base_url(
     if let Some(url) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
         return Ok((url.to_string(), "cli_or_env"));
     }
-    if let Some(url) = discover_saved_base_url(config_root, model_hint) {
+    if let Some(url) = discover_saved_base_url(config_root, model_hint)? {
         return Ok((url, "saved_config"));
     }
-    anyhow::bail!("No API base URL configured. Please specify in config/global.toml or via ELMA_BASE_URL environment variable.")
+    Err(crate::diagnostics::ElmaDiagnostic::MissingBaseUrl.into())
 }
 
 pub(crate) fn sanitize_model_folder_name(s: &str) -> String {

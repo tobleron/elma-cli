@@ -1,0 +1,282 @@
+# OpenCrabs Configuration File
+# Copy this file to one of these locations:
+#   - Linux/macOS: ~/.opencrabs/config.toml
+#   - Windows: %APPDATA%\opencrabs\config.toml or opencrabs\config.toml
+#
+# IMPORTANT: API keys should NOT be stored here!
+# Instead, store API keys in keys.toml (chmod 600) for security:
+#   - ~/.opencrabs/keys.toml
+# Keys in keys.toml take priority over this file.
+
+[database]
+# Database file location (stores conversation history)
+# path = "~/.opencrabs/opencrabs.db"  # Default; only override if needed
+
+[providers]
+# ========================================
+# Custom: OpenAI-Compatible Provider (Local LLMs, and any OpenAI Compatible model)
+# ========================================
+# Use this for LM Studio, Ollama, LocalAI, etc.
+# Every custom provider needs a name — the label after "custom." (e.g. lm_studio, nvidia, groq).
+# You can define as many as you need and switch between them via /models.
+[providers.custom.lm_studio]
+enabled = true
+base_url = "http://localhost:1234/v1/chat/completions"  # LM Studio default
+models = ["kimi-k2.5", "glm-5", "MiniMax-M2.7", "qwen3-coder", "gpt-oss-120b", "llama-4-70B", "mistral-Large-3", "qwen3-coder-next"]
+
+# ⭐ IMPORTANT: Set this to match the model name loaded in LM Studio!
+# Common examples:
+#   - qwen2.5-coder-7b-instruct
+#   - codellama-7b-instruct
+#   - deepseek-coder-6.7b-instruct
+#   - llama-3.2-1b-instruct
+default_model = "qwen3-coder-next"
+
+# Other local LLM servers — just add another named section:
+#
+# [providers.custom.ollama]
+# enabled = false
+# base_url = "http://localhost:11434/v1/chat/completions"
+# default_model = "mistral"
+# models = ["mistral", "llama3", "codellama"]
+
+# ========================================
+# GitHub Copilot Provider
+# ========================================
+# Uses your GitHub Copilot subscription via OAuth device flow.
+# Run /onboard:provider and select GitHub Copilot to sign in.
+# base_url = "https://api.githubcopilot.com/chat/completions"
+[providers.github]
+enabled = false
+default_model = "gpt-4o"
+# Models are fetched live from the Copilot API
+
+# ========================================
+# Official OpenAI Provider
+# ========================================
+[providers.openai]
+enabled = false
+default_model = "gpt-5-nano"  # Optional: override default model
+# vision_model = "gpt-5-nano"  # Optional: describes images for the chat model when it lacks vision
+
+# ========================================
+# Anthropic Provider (Claude)
+# ========================================
+[providers.anthropic]
+enabled = false
+default_model = "claude-sonnet-4-6"  # Optional: override default
+
+# ========================================
+# OpenRouter Provider (100+ models via OpenAI-compatible API)
+# ========================================
+[providers.openrouter]
+enabled = false
+base_url = "https://openrouter.ai/api/v1/chat/completions"
+default_model = "qwen/qwen3-coder-next"  # Many options at openrouter.ai/models
+
+# ========================================
+# Google Gemini Provider
+# ========================================
+# Models fetched live from the Gemini API during onboarding and /models
+# API key goes in keys.toml under [providers.gemini]
+# Get key from: aistudio.google.com
+[providers.gemini]
+enabled = false
+default_model = "gemini-2.5-flash"
+
+# ========================================
+# Claude CLI (Max Subscription — no API key needed)
+# ========================================
+# Spawns the local 'claude' CLI directly — uses your Claude Max subscription.
+# No proxy, no API key. Just install Claude Code CLI and authenticate it.
+# Install: npm install -g @anthropic-ai/claude-code
+[providers.claude_cli]
+enabled = false
+default_model = "sonnet"  # "sonnet", "opus", or "haiku"
+
+# ========================================
+# Minimax Provider (Chinese AI, OpenAI-compatible)
+# ========================================
+# Note: Minimax does NOT have a /models endpoint, so add models manually
+[providers.minimax]
+enabled = false
+base_url = "https://api.minimax.io/v1"
+default_model = "MiniMax-M2.7"
+models = ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-Text-01"]
+vision_model = "MiniMax-Text-01"  # Describes images for the chat model when it lacks vision
+
+[providers.zhipu]
+enabled = false
+# endpoint_type = "coding"  # "api" (default) or "coding" for code-optimized endpoint
+default_model = "glm-5.1"
+models = ["glm-5.1", "glm-5-turbo", "glm-5", "glm-4.7", "glm-4.6", "glm-4.5", "glm-4.5-air"]
+# API key goes in keys.toml: [providers.zhipu] api_key = "..."
+# Get key from open.bigmodel.cn or z.ai
+
+# ========================================
+# Fallback Providers (automatic failover)
+# ========================================
+# When the primary provider fails, try these in order.
+# Each must already have API keys configured in keys.toml.
+# Supports single or multiple fallbacks.
+[providers.fallback]
+enabled = false
+providers = ["openrouter", "anthropic"]  # Tried in order on failure
+# provider = "openrouter"               # Legacy: single fallback (use providers array instead)
+
+# ========================================
+# STT (Speech-to-Text) Providers
+# ========================================
+# Groq Whisper for transcription
+[providers.stt.groq]
+enabled = false
+default_model = "whisper-large-v3-turbo"
+
+# ========================================
+# TTS (Text-to-Speech) Providers
+# ========================================
+# OpenAI TTS for voice output
+[providers.tts.openai]
+enabled = false
+default_model = "gpt-4o-mini-tts"
+voice = "ash"             # TTS voice name
+model = "gpt-4o-mini-tts" # TTS model
+
+# ========================================
+# Image Generation & Vision (Google Gemini)
+# ========================================
+# API key goes in keys.toml under [image]
+# Get key from: aistudio.google.com
+# Use /onboard:image to configure via wizard
+
+# ========================================
+# Cron Job Defaults
+# ========================================
+# Default provider/model for cron jobs that don't specify their own.
+# Priority: per-job --provider > [cron] default > session's active provider.
+# Useful for routing cron jobs to a cheaper provider.
+[cron]
+# default_provider = "minimax"
+# default_model = "MiniMax-M2.7"
+
+# ========================================
+# Agent / Sub-Agent Defaults
+# ========================================
+# Default provider/model for spawned sub-agents (e.g., research tasks, parallel tool calls).
+# Priority: subagent_provider > session's active provider.
+# Useful for routing sub-agents to a cheaper/faster model while keeping the main session on a premium one.
+[agent]
+# subagent_provider = "zhipu"
+# subagent_model = "GLM 5"
+
+[image.generation]
+enabled = false
+model = "gemini-3.1-flash-image-preview"   # Gemini image-gen model ("Nano Banana")
+
+[image.vision]
+enabled = false
+model = "gemini-3.1-flash-image-preview"   # Gemini vision model
+
+# ========================================
+# Tips for Using Local LLMs
+# ========================================
+# 1. Make sure LM Studio is running before starting OpenCrabs
+# 2. Load a model in LM Studio first
+# 3. Set default_model to EXACTLY match the model name shown in LM Studio
+# 4. Increase context length in LM Studio if you get overflow errors:
+#    - Recommended: 8192 or higher
+#    - Location: LM Studio > Model Settings > Context Length
+
+# ==================================================
+# Channels (Telegram / WhatsApp / Slack / Discord / Trello)
+# ==================================================
+
+# respond_to controls which messages the bot replies to (applies to Telegram, Discord, Slack):
+#   "all"      — reply to every message in allowed channels (default)
+#   "dm_only"  — reply only to direct/private messages
+#   "mention"  — reply only when the bot is @mentioned or replied-to
+
+[channels.whatsapp]
+enabled = false
+# Phone numbers allowed to message the bot (E.164 format, leading + optional)
+# Access control is purely phone-based — add numbers here to restrict who can message the bot.
+allowed_phones = ["+15551234567"]
+# session_idle_hours = 24.0             # Archive inactive non-owner sessions after N hours (default: never)
+
+[channels.discord]
+enabled = false
+allowed_channels = ["channel_id"]       # Where the bot operates (empty = all channels)
+allowed_users = [123456789012345]        # Who the bot replies to (numeric user ID, empty = everyone)
+# respond_to = "all"                    # "all" | "dm_only" | "mention"
+# session_idle_hours = 24.0             # Archive inactive non-owner sessions after N hours (default: never)
+
+[channels.telegram]
+enabled = false
+allowed_users = [123456789]             # Who the bot replies to (numeric user ID, empty = everyone)
+# allowed_channels = ["-100123456789"]  # Chat/group IDs to restrict to (empty = all chats)
+# respond_to = "all"                    # "all" | "dm_only" | "mention"
+# session_idle_hours = 24.0             # Archive inactive non-owner sessions after N hours (default: never)
+
+[channels.slack]
+enabled = false
+allowed_channels = ["C12345678"]        # Where the bot operates (Slack channel ID, empty = all)
+allowed_users = ["U12345678"]           # Who the bot replies to (Slack user ID, empty = everyone)
+# respond_to = "all"                    # "all" | "dm_only" | "mention"
+# session_idle_hours = 24.0             # Archive inactive non-owner sessions after N hours (default: never)
+
+# ========================================
+# Trello — board card management
+# ========================================
+# API keys/tokens go in keys.toml under [channels.trello]
+# Default mode: tool-only — no automatic polling. The AI acts on Trello only
+# when you explicitly ask it to via trello_send / trello_connect.
+# Opt-in polling: set poll_interval_secs > 0 to have the agent watch boards
+# for @mentions of the bot username and respond to them.
+[channels.trello]
+enabled = false
+# Board IDs or names to monitor — you can mix 24-char hex IDs and human-readable board names.
+# The agent resolves names at startup. Comma-separated in the wizard; TOML array here.
+board_ids = ["your-board-name", "abc123def456abc123def456"]
+allowed_users = []                      # Trello member IDs allowed to @mention the bot (empty = all)
+# poll_interval_secs = 30              # Opt-in: poll boards every N seconds for @mentions. Default = disabled.
+# session_idle_hours = 24.0             # Archive inactive non-owner sessions after N hours (default: never)
+
+# ========================================
+# Daemon Mode (systemd / launchd service)
+# ========================================
+# Settings for `opencrabs daemon` headless mode.
+[daemon]
+# HTTP health check port. When set, GET /health returns 200 OK + JSON.
+# Useful for systemd watchdog, uptime monitors, and external health probes.
+# health_port = 8080
+
+# ========================================
+# Agent-to-Agent (A2A) Protocol
+# ========================================
+# Enables HTTP gateway for peer-to-peer agent communication.
+# Other A2A-compatible agents can send tasks, collaborate, and debate.
+[a2a]
+enabled = false
+bind = "127.0.0.1"     # Loopback only by default for security
+port = 18790            # A2A gateway port
+# CORS allowed origins (empty = no cross-origin requests allowed)
+# allowed_origins = ["http://localhost:3000"]
+# API key for Bearer token auth on /a2a/v1 (optional, recommended for non-loopback)
+# Can also be set in keys.toml under [a2a] api_key = "..."
+# api_key = "your-secret-key"
+
+# ========================================
+# Web Search Providers (default to free Duck Duck Go, no need additional web search provider)
+# ========================================
+
+[providers.web_search.exa]
+enabled = true
+# MCP is enabled by default as its free. If want through API its free up to 1000 requests. API key goes in keys.toml: [providers.web_search.exa] api_key = "..."
+
+[providers.web_search.duckduckgo]
+enabled = true
+# Completely free, enabled by default"
+
+[providers.web_search.brave]
+enabled = false
+# Its free up to 1000 requests. API key goes in keys.toml: [providers.web_search.brave] api_key = "..."

@@ -107,7 +107,7 @@ pub(crate) fn detect_duplicate_step_ratio(program: &Program) -> f64 {
 pub fn program_matches_level(
     program: &Program,
     required_level: ExecutionLevel,
-) -> Result<(), String> {
+) -> Result<(), PolicyError> {
     let has_plan = program.steps.iter().any(|s| matches!(s, Step::Plan { .. }));
     let has_masterplan = program
         .steps
@@ -123,10 +123,10 @@ pub fn program_matches_level(
     // No program should exceed 12 steps - if it does, it's likely a loop
     const MAX_STEPS_ABSOLUTE: usize = 12;
     if step_count > MAX_STEPS_ABSOLUTE {
-        return Err(format!(
-            "Program exceeds maximum step limit: {} steps (max: {}). This indicates a planning loop.",
-            step_count, MAX_STEPS_ABSOLUTE
-        ));
+        return Err(PolicyError::MaxStepsExceeded {
+            count: step_count,
+            max: MAX_STEPS_ABSOLUTE,
+        });
     }
 
     // Task 014: Detect duplicate step loops
@@ -134,10 +134,9 @@ pub fn program_matches_level(
     if step_count >= 4 {
         let duplicate_ratio = detect_duplicate_step_ratio(program);
         if duplicate_ratio > 0.5 {
-            return Err(format!(
-                "Program has {}% duplicate steps (max: 50%). This indicates a planning loop.",
-                (duplicate_ratio * 100.0) as usize
-            ));
+            return Err(PolicyError::DuplicateStepRatio {
+                ratio: (duplicate_ratio * 100.0) as usize,
+            });
         }
     }
 
@@ -146,23 +145,25 @@ pub fn program_matches_level(
             // Action level: should be 1-2 steps (primary action + reply)
             // Reject if has Plan/MasterPlan structure
             if has_plan {
-                return Err(format!(
-                    "Action-level request should not have Plan step ({} steps total)",
-                    step_count
-                ));
+                return Err(PolicyError::InvalidLevelStructure {
+                    level: ExecutionLevel::Action,
+                    structure: "Plan".to_string(),
+                });
             }
             if has_masterplan {
-                return Err(format!(
-                    "Action-level request should not have MasterPlan step ({} steps total)",
-                    step_count
-                ));
+                return Err(PolicyError::InvalidLevelStructure {
+                    level: ExecutionLevel::Action,
+                    structure: "MasterPlan".to_string(),
+                });
             }
             // Allow 1-3 steps (action + optional evidence + reply)
             if step_count > 3 {
-                return Err(format!(
-                    "Action-level request has too many steps: {} (expected 1-3)",
-                    step_count
-                ));
+                return Err(PolicyError::StepCountMismatch {
+                    level: ExecutionLevel::Action,
+                    bound: "many".to_string(),
+                    count: step_count,
+                    expected: "1-3".to_string(),
+                });
             }
         }
 
@@ -170,80 +171,96 @@ pub fn program_matches_level(
             // Task level: bounded outcome, 2-6 steps typical
             // Reject if has Plan/MasterPlan structure
             if has_plan {
-                return Err(format!(
-                    "Task-level request should not have Plan step ({} steps total)",
-                    step_count
-                ));
+                return Err(PolicyError::InvalidLevelStructure {
+                    level: ExecutionLevel::Task,
+                    structure: "Plan".to_string(),
+                });
             }
             if has_masterplan {
-                return Err(format!(
-                    "Task-level request should not have MasterPlan step ({} steps total)",
-                    step_count
-                ));
+                return Err(PolicyError::InvalidLevelStructure {
+                    level: ExecutionLevel::Task,
+                    structure: "MasterPlan".to_string(),
+                });
             }
             // Allow 2-8 steps (evidence chain + transformation + reply)
             if step_count < 2 {
-                return Err(format!(
-                    "Task-level request has too few steps: {} (expected 2-8)",
-                    step_count
-                ));
+                return Err(PolicyError::StepCountMismatch {
+                    level: ExecutionLevel::Task,
+                    bound: "few".to_string(),
+                    count: step_count,
+                    expected: "2-8".to_string(),
+                });
             }
             if step_count > 8 {
-                return Err(format!(
-                    "Task-level request has too many steps: {} (expected 2-8)",
-                    step_count
-                ));
+                return Err(PolicyError::StepCountMismatch {
+                    level: ExecutionLevel::Task,
+                    bound: "many".to_string(),
+                    count: step_count,
+                    expected: "2-8".to_string(),
+                });
             }
         }
 
         ExecutionLevel::Plan => {
             // Plan level: must have explicit Plan step
             if !has_plan {
-                return Err("Plan-level request must have explicit Plan step".to_string());
+                return Err(PolicyError::MissingRequiredStep {
+                    level: ExecutionLevel::Plan,
+                    step_type: "Plan".to_string(),
+                });
             }
             // Should have reasonable structure (Plan + supporting steps + reply)
             // Task 014: Add upper bound to prevent explosion
             if step_count < 2 {
-                return Err(format!(
-                    "Plan-level request has too few steps: {} (expected 2-10)",
-                    step_count
-                ));
+                return Err(PolicyError::StepCountMismatch {
+                    level: ExecutionLevel::Plan,
+                    bound: "few".to_string(),
+                    count: step_count,
+                    expected: "2-10".to_string(),
+                });
             }
             if step_count > 10 {
-                return Err(format!(
-                    "Plan-level request has too many steps: {} (expected 2-10)",
-                    step_count
-                ));
+                return Err(PolicyError::StepCountMismatch {
+                    level: ExecutionLevel::Plan,
+                    bound: "many".to_string(),
+                    count: step_count,
+                    expected: "2-10".to_string(),
+                });
             }
         }
 
         ExecutionLevel::MasterPlan => {
             // MasterPlan level: must have explicit MasterPlan step
             if !has_masterplan {
-                return Err(
-                    "MasterPlan-level request must have explicit MasterPlan step".to_string(),
-                );
+                return Err(PolicyError::MissingRequiredStep {
+                    level: ExecutionLevel::MasterPlan,
+                    step_type: "MasterPlan".to_string(),
+                });
             }
             // Should have strategic structure (MasterPlan + phases + reply)
             // Task 014: Add upper bound to prevent explosion
             if step_count < 2 {
-                return Err(format!(
-                    "MasterPlan-level request has too few steps: {} (expected 2-12)",
-                    step_count
-                ));
+                return Err(PolicyError::StepCountMismatch {
+                    level: ExecutionLevel::MasterPlan,
+                    bound: "few".to_string(),
+                    count: step_count,
+                    expected: "2-12".to_string(),
+                });
             }
             if step_count > 12 {
-                return Err(format!(
-                    "MasterPlan-level request has too many steps: {} (expected 2-12)",
-                    step_count
-                ));
+                return Err(PolicyError::StepCountMismatch {
+                    level: ExecutionLevel::MasterPlan,
+                    bound: "many".to_string(),
+                    count: step_count,
+                    expected: "2-12".to_string(),
+                });
             }
         }
     }
 
     // All levels require a Reply step
     if !has_reply {
-        return Err("Program must have Reply step".to_string());
+        return Err(PolicyError::MissingReplyStep);
     }
 
     Ok(())
@@ -279,7 +296,7 @@ pub fn program_is_underbuilt(program: &Program, level: ExecutionLevel) -> bool {
 pub fn validate_formula_level(
     formula: &FormulaSelection,
     level: ExecutionLevel,
-) -> Result<(), String> {
+) -> Result<(), PolicyError> {
     let allowed_formulas = match level {
         ExecutionLevel::Action => vec!["reply_only", "execute_reply"],
         ExecutionLevel::Task => vec![
@@ -296,12 +313,11 @@ pub fn validate_formula_level(
         .iter()
         .any(|f| formula.primary.eq_ignore_ascii_case(f))
     {
-        return Err(format!(
-            "Formula '{}' not allowed for {:?} level (allowed: {})",
-            formula.primary,
+        return Err(PolicyError::FormulaNotAllowed {
+            formula: formula.primary.clone(),
             level,
-            allowed_formulas.join(", ")
-        ));
+            allowed: allowed_formulas.join(", "),
+        });
     }
 
     Ok(())

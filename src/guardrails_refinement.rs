@@ -378,7 +378,8 @@ mod tests {
                     cmd: "ls -ltr".to_string(),
                     common: StepCommon {
                         purpose: "execute the requested shell command directly".to_string(),
-                        ..StepCommon::default()
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                     },
                 },
                 Step::Reply {
@@ -387,7 +388,8 @@ mod tests {
                     common: StepCommon {
                         purpose: "present the shell result to the user".to_string(),
                         depends_on: vec!["s1".to_string()],
-                        ..StepCommon::default()
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                     },
                 },
             ],

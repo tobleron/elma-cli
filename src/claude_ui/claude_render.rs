@@ -8,7 +8,11 @@
 //! - Uses theme tokens from ui_theme.rs
 
 use super::claude_input::{InputMode, PickerState, SLASH_COMMANDS};
-use super::claude_state::{ClaudeMessage, ClaudeTranscript, FOOTER_HINTS};
+use super::claude_markdown::AssistantContent;
+use crate::ui_autocomplete;
+use super::claude_state::{
+    ClaudeMessage, ClaudeTranscript, NoticePersistence, UiNotice, FOOTER_HINTS,
+};
 use super::claude_stream::StreamingUI;
 use crate::ui_theme::*;
 use ratatui::prelude::*;
@@ -43,6 +47,13 @@ pub(crate) enum TranscriptMode {
     },
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FooterModel {
+    pub context_pct: Option<usize>,
+    pub model_label: Option<String>,
+    pub transcript_metric: Option<String>,
+}
+
 pub(crate) struct ClaudeRenderer {
     pub(crate) transcript: ClaudeTranscript,
     input_lines: Vec<String>,
@@ -52,8 +63,8 @@ pub(crate) struct ClaudeRenderer {
     pub terminal_height: usize,
     pub(crate) streaming: StreamingUI,
     task_list: Option<crate::claude_ui::claude_tasks::TaskList>,
-    status_line: Option<String>,
-    notification_line: Option<String>,
+    footer_model: Option<FooterModel>,
+    prompt_hint: Option<UiNotice>,
     pub search_modal: crate::ui::ui_modal_search::SearchModal,
     pub model_picker: crate::ui::ui_model_picker::ModelPicker,
     pub autocomplete_state: Option<crate::ui::ui_autocomplete::AutocompleteState>,
@@ -82,8 +93,8 @@ impl ClaudeRenderer {
             terminal_height: height,
             streaming: StreamingUI::new(),
             task_list: None,
-            status_line: None,
-            notification_line: None,
+            footer_model: None,
+            prompt_hint: None,
             search_modal: crate::ui::ui_modal_search::SearchModal::new(),
             model_picker: crate::ui::ui_model_picker::ModelPicker::new(),
             autocomplete_state: None,
@@ -129,12 +140,39 @@ impl ClaudeRenderer {
         // Kept for backward compatibility; use set_task_list instead.
     }
 
-    pub(crate) fn set_status_line(&mut self, line: Option<String>) {
-        self.status_line = line;
+    pub(crate) fn set_footer_model(&mut self, model: Option<FooterModel>) {
+        self.footer_model = model;
     }
 
-    pub(crate) fn set_notification_line(&mut self, line: Option<String>) {
-        self.notification_line = line;
+    pub(crate) fn set_prompt_hint(&mut self, hint: Option<UiNotice>) {
+        self.prompt_hint = hint;
+    }
+
+    fn clear_expired_prompt_hint(&mut self) {
+        let expired = self.prompt_hint.as_ref().is_some_and(|hint| {
+            hint.persistence == NoticePersistence::EphemeralPromptHint
+                && Instant::now().duration_since(hint.created_at)
+                    > std::time::Duration::from_millis(1200)
+        });
+        if expired {
+            self.prompt_hint = None;
+        }
+    }
+
+    fn prompt_hint_text(&self) -> Option<String> {
+        self.prompt_hint
+            .as_ref()
+            .map(|hint| format!("◦ {}", hint.content))
+    }
+
+    fn footer_streaming_state(&self) -> Option<String> {
+        if self.streaming.is_streaming_thinking {
+            Some("∴ Thinking...".to_string())
+        } else if self.streaming.is_streaming_content {
+            Some("…".to_string())
+        } else {
+            None
+        }
     }
 
     pub(crate) fn scroll_up(&mut self, lines: usize) {
@@ -411,7 +449,7 @@ impl ClaudeRenderer {
 
         if !self.streaming.content.is_empty() {
             self.transcript.push(ClaudeMessage::Assistant {
-                content: self.streaming.content.clone(),
+                content: AssistantContent::from_markdown(&self.streaming.content),
             });
         }
 
@@ -432,7 +470,7 @@ impl ClaudeRenderer {
     pub(crate) fn last_assistant_message(&self) -> Option<&String> {
         self.transcript.messages.iter().rev().find_map(|m| {
             if let ClaudeMessage::Assistant { content } = m {
-                Some(content)
+                Some(&content.raw_markdown)
             } else {
                 None
             }
@@ -528,6 +566,14 @@ impl ClaudeRenderer {
         self.anim_frame = self.anim_frame.wrapping_add(1);
         let area = f.size();
 
+        // Always repaint the full frame background so stale rows from prior
+        // frames or prior alternate-screen sessions cannot survive in
+        // transcript/input/footer regions when the layout changes.
+        f.render_widget(
+            Block::default().style(Style::default().bg(Color::Black)),
+            area,
+        );
+
         let picker_height = match &self.picker_state {
             PickerState::Slash { .. } => {
                 let filtered = self.filtered_slash_commands();
@@ -567,9 +613,6 @@ impl ClaudeRenderer {
         let picker_area = main_chunks[2];
         let input_area = main_chunks[3];
         let footer_area = main_chunks[4];
-
-        let (transcript_lines, line_mapping) = self.transcript.render_ratatui();
-        let total_lines = transcript_lines.len();
 
         // Check if we need sticky header (scrolled up and have user messages)
         let show_sticky =
@@ -625,7 +668,20 @@ impl ClaudeRenderer {
 
         let content_area = scrollable_chunks[0];
         let pill_area = scrollable_chunks[1];
-        let height = content_area.height as usize;
+
+        // Reserve a dedicated scrollbar column so transcript text never paints
+        // underneath it. This avoids edge-glyph artifacts on long tool rows.
+        let content_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(content_area);
+        let text_area = content_chunks[0];
+        let scrollbar_area = content_chunks[1];
+        let height = text_area.height as usize;
+        let content_width = content_area_width_guess(text_area.width as usize);
+
+        let (transcript_lines, line_mapping) = self.transcript.render_ratatui(content_width);
+        let total_lines = transcript_lines.len();
 
         // Manual line slicing: compute visible window based on scroll_offset
         // scroll_offset=0 means at bottom (latest), scroll_offset increases = scrolled up
@@ -657,24 +713,19 @@ impl ClaudeRenderer {
             .position(start_line)
             .viewport_content_length(height);
 
-        // Render transcript without Paragraph::scroll() — we slice lines manually
-        let paragraph = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+        // Render transcript without ratatui re-wrapping. We already control the
+        // row model; letting Paragraph wrap again can produce stray edge glyphs
+        // and broken line mapping for long tool rows.
+        let paragraph = Paragraph::new(visible_lines);
 
-        f.render_widget(paragraph, content_area);
+        f.render_widget(paragraph, text_area);
 
         // Render scrollbar on the right edge
         if total_lines > height {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .thumb_style(Style::default().fg(theme.fg_dim.to_ratatui_color()))
                 .track_style(Style::default().fg(theme.border.to_ratatui_color()));
-            f.render_stateful_widget(
-                scrollbar,
-                content_area.inner(&Margin {
-                    vertical: 0,
-                    horizontal: 0,
-                }),
-                &mut self.scrollbar_state,
-            );
+            f.render_stateful_widget(scrollbar, scrollbar_area, &mut self.scrollbar_state);
         }
 
         // Render new messages pill
@@ -732,116 +783,122 @@ impl ClaudeRenderer {
         }
         f.render_widget(Paragraph::new(input_content), input_area);
 
-        // Picker overlay (slash commands or file mentions)
-        if picker_height > 0 {
-            let picker_lines = match &self.picker_state {
-                PickerState::Slash { query, selected } => {
-                    let filtered = self.filtered_slash_commands();
-                    let mut lines = vec![Line::from(vec![
-                        Span::styled(
-                            " Commands ",
-                            Style::default()
-                                .fg(theme.accent_primary.to_ratatui_color())
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw(query),
-                    ])];
-                    lines.push(Line::from(""));
-                    for (i, cmd) in filtered.iter().enumerate().take(8) {
-                        let is_sel = i == *selected;
-                        let arrow = if is_sel {
-                            Span::styled(
-                                "▸ ",
-                                Style::default().fg(theme.accent_primary.to_ratatui_color()),
-                            )
-                        } else {
-                            Span::raw("  ")
-                        };
-                        let name_style = if is_sel {
-                            Style::default()
-                                .fg(theme.accent_primary.to_ratatui_color())
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default().fg(theme.fg_dim.to_ratatui_color())
-                        };
-                        lines.push(Line::from(vec![
-                            arrow,
-                            Span::styled(cmd.name, name_style),
-                            Span::raw("  "),
-                            Span::styled(
-                                cmd.description,
-                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                            ),
-                        ]));
-                    }
-                    lines
-                }
-                PickerState::File { query, selected } => {
-                    let mut lines = vec![Line::from(vec![
-                        Span::styled(
-                            " Files ",
-                            Style::default()
-                                .fg(theme.accent_secondary.to_ratatui_color())
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw(query),
-                    ])];
-                    lines.push(Line::from(""));
-                    for (i, path) in self.file_matches.iter().enumerate().take(8) {
-                        let is_sel = i == *selected;
-                        let arrow = if is_sel {
-                            Span::styled(
-                                "▸ ",
-                                Style::default().fg(theme.accent_primary.to_ratatui_color()),
-                            )
-                        } else {
-                            Span::raw("  ")
-                        };
-                        let path_style = if is_sel {
-                            Style::default()
-                                .fg(theme.accent_primary.to_ratatui_color())
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default().fg(theme.fg_dim.to_ratatui_color())
-                        };
-                        lines.push(Line::from(vec![arrow, Span::styled(path, path_style)]));
-                    }
-                    lines
-                }
-                PickerState::None => vec![],
-            };
-            if !picker_lines.is_empty() {
-                let picker_block = Paragraph::new(picker_lines).block(
-                    ratatui::widgets::Block::default()
-                        .borders(ratatui::widgets::Borders::ALL)
-                        .border_style(Style::default().fg(theme.border.to_ratatui_color())),
-                );
-                f.render_widget(picker_block, picker_area);
-            }
-        }
+// Picker overlay (slash commands or file mentions)
+         if picker_height > 0 {
+             let mut picker_lines = match &self.picker_state {
+                 PickerState::Slash { query, selected } => {
+                     let filtered = self.filtered_slash_commands();
+                     let mut lines = vec![Line::from(vec![
+                         Span::styled(
+                             " Commands ",
+                             Style::default()
+                                 .fg(theme.accent_primary.to_ratatui_color())
+                                 .add_modifier(Modifier::BOLD),
+                         ),
+                         Span::raw(query),
+                     ])];
+                     lines.push(Line::from(""));
+                     for (i, cmd) in filtered.iter().enumerate().take(8) {
+                         let is_sel = i == *selected;
+                         let arrow = if is_sel {
+                             Span::styled(
+                                 "▸ ",
+                                 Style::default().fg(theme.accent_primary.to_ratatui_color()),
+                             )
+                         } else {
+                             Span::raw("  ")
+                         };
+                         let name_style = if is_sel {
+                             Style::default()
+                                 .fg(theme.accent_primary.to_ratatui_color())
+                                 .add_modifier(Modifier::BOLD)
+                         } else {
+                             Style::default().fg(theme.fg_dim.to_ratatui_color())
+                         };
+                         lines.push(Line::from(vec![
+                             arrow,
+                             Span::styled(cmd.name, name_style),
+                             Span::raw("  "),
+                             Span::styled(
+                                 cmd.description,
+                                 Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                             ),
+                         ]));
+                     }
+                     lines
+                 }
+                 PickerState::File { query, selected } => {
+                     let mut lines = vec![Line::from(vec![
+                         Span::styled(
+                             " Files ",
+                             Style::default()
+                                 .fg(theme.accent_secondary.to_ratatui_color())
+                                 .add_modifier(Modifier::BOLD),
+                         ),
+                         Span::raw(query),
+                     ])];
+                     lines.push(Line::from(""));
+                     for (i, path) in self.file_matches.iter().enumerate().take(8) {
+                         let is_sel = i == *selected;
+                         let arrow = if is_sel {
+                             Span::styled(
+                                 "▸ ",
+                                 Style::default().fg(theme.accent_primary.to_ratatui_color()),
+                             )
+                         } else {
+                             Span::raw("  ")
+                         };
+                         let path_style = if is_sel {
+                             Style::default()
+                                 .fg(theme.accent_primary.to_ratatui_color())
+                                 .add_modifier(Modifier::BOLD)
+                         } else {
+                             Style::default().fg(theme.fg_dim.to_ratatui_color())
+                         };
+                         lines.push(Line::from(vec![arrow, Span::styled(path, path_style)]));
+                     }
+                     lines
+                 }
+                 PickerState::None => vec![],
+             };
+// Add autocomplete suggestions if active
+             if let Some(state) = &self.autocomplete_state {
+                 if state.active && !state.matches.is_empty() {
+                     let max_width = picker_area.width as usize;
+                     let max_items = (picker_height - picker_lines.len() as u16).min(10) as usize;
+                     let autocomplete_lines = ui_autocomplete::render_autocomplete(
+                         state,
+                         max_width,
+                         max_items,
+                     );
+                     picker_lines.extend(autocomplete_lines.into_iter().map(Line::from));
+                 }
+             }
+             if !picker_lines.is_empty() {
+                 f.render_widget(Clear, picker_area);
+                 let picker_block = Paragraph::new(picker_lines).block(
+                     ratatui::widgets::Block::default()
+                         .borders(ratatui::widgets::Borders::ALL)
+                         .border_style(Style::default().fg(theme.border.to_ratatui_color())),
+                 );
+                 f.render_widget(picker_block, picker_area);
+             }
+         }
 
-        // Build footer: status line is always visible; streaming indicator appends to it.
-        let streaming_suffix = if self.streaming.is_streaming_thinking {
-            Some("∴ Thinking...")
-        } else if self.streaming.is_streaming_content {
-            Some("…")
-        } else {
-            None
-        };
+        self.clear_expired_prompt_hint();
 
-        if let Some(status) = &self.status_line {
-            let mut spans = vec![Span::styled(
-                status.clone(),
-                Style::default().fg(theme.fg_dim.to_ratatui_color()),
-            )];
-            if let Some(suffix) = streaming_suffix {
-                spans.push(Span::raw("  "));
-                spans.push(Span::styled(
-                    suffix,
+        if let Some(hint) = &self.prompt_hint {
+            let line = Line::from(vec![
+                Span::styled("◦ ", Style::default().fg(theme.fg_dim.to_ratatui_color())),
+                Span::styled(
+                    hint.content.clone(),
                     Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                ));
-            }
-            f.render_widget(Paragraph::new(Line::from(spans)), footer_area);
+                ),
+            ]);
+            f.render_widget(Paragraph::new(line), footer_area);
+        } else if let Some(model) = &self.footer_model {
+            let line = render_footer_line(model, self.footer_streaming_state(), footer_area.width);
+            f.render_widget(Paragraph::new(line), footer_area);
         } else {
             let hints: Vec<Span> = FOOTER_HINTS
                 .iter()
@@ -913,7 +970,11 @@ impl ClaudeRenderer {
             lines.push(format!("{}{}", prefix, line));
         }
 
-        if let Some(hint) = streaming_hint {
+        if let Some(hint) = self.prompt_hint_text() {
+            lines.push(hint);
+        } else if let Some(model) = &self.footer_model {
+            lines.push(render_footer_plain(model, self.footer_streaming_state()));
+        } else if let Some(hint) = streaming_hint {
             lines.push(hint);
         } else {
             let hints_line: String = FOOTER_HINTS
@@ -933,6 +994,130 @@ impl ClaudeRenderer {
             cursor_col,
         }
     }
+}
+
+fn content_area_width_guess(transcript_width: usize) -> usize {
+    transcript_width.saturating_sub(1).max(12)
+}
+
+fn shorten_model_label(label: &str, max_chars: usize) -> String {
+    let count = label.chars().count();
+    if count <= max_chars {
+        label.to_string()
+    } else {
+        let tail: String = label
+            .chars()
+            .rev()
+            .take(max_chars.saturating_sub(1))
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        format!("…{}", tail)
+    }
+}
+
+fn render_footer_plain(model: &FooterModel, streaming_state: Option<String>) -> String {
+    let mut parts = Vec::new();
+    if let Some(ctx) = model.context_pct {
+        let bar_width = 6usize;
+        let filled = (ctx.min(100) * bar_width) / 100;
+        parts.push(format!(
+            "ctx {}% {}{}",
+            ctx.min(100),
+            "█".repeat(filled),
+            "░".repeat(bar_width.saturating_sub(filled))
+        ));
+    }
+    if let Some(label) = &model.model_label {
+        parts.push(label.clone());
+    }
+    if let Some(tx) = &model.transcript_metric {
+        parts.push(tx.clone());
+    }
+    if let Some(state) = streaming_state {
+        parts.push(state);
+    }
+    parts.join("  ")
+}
+
+fn render_footer_line(
+    model: &FooterModel,
+    streaming_state: Option<String>,
+    width: u16,
+) -> Line<'static> {
+    let theme = current_theme();
+    let mut segments: Vec<(String, Style)> = Vec::new();
+
+    if let Some(ctx) = model.context_pct {
+        let bar_width = 6usize;
+        let filled = (ctx.min(100) * bar_width) / 100;
+        segments.push((
+            format!(
+                "ctx {}% {}{}",
+                ctx.min(100),
+                "█".repeat(filled),
+                "░".repeat(bar_width.saturating_sub(filled))
+            ),
+            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+        ));
+    }
+    if let Some(label) = &model.model_label {
+        segments.push((
+            label.clone(),
+            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+        ));
+    }
+    if let Some(tx) = &model.transcript_metric {
+        segments.push((
+            tx.clone(),
+            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+        ));
+    }
+    if let Some(state) = streaming_state {
+        segments.push((state, Style::default().fg(theme.fg_dim.to_ratatui_color())));
+    }
+
+    let mut text_len = footer_len(&segments);
+    if text_len > width as usize && segments.len() >= 3 {
+        segments.remove(2);
+        text_len = footer_len(&segments);
+    }
+    if text_len > width as usize && segments.len() >= 3 {
+        segments.pop();
+        text_len = footer_len(&segments);
+    }
+    if text_len > width as usize && segments.len() >= 2 {
+        let reserved_without_model = footer_len(&[
+            segments[0].clone(),
+            segments
+                .last()
+                .cloned()
+                .unwrap_or_else(|| segments[1].clone()),
+        ]);
+        let available = width as usize;
+        let budget = available.saturating_sub(reserved_without_model + 2).max(12);
+        if let Some((model_text, _)) = segments.get_mut(1) {
+            *model_text = shorten_model_label(model_text, budget);
+        }
+    }
+
+    let mut spans = Vec::new();
+    for (index, (text, style)) in segments.into_iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(text, style));
+    }
+    Line::from(spans)
+}
+
+fn footer_len(segments: &[(String, Style)]) -> usize {
+    segments
+        .iter()
+        .map(|(text, _)| text.chars().count())
+        .sum::<usize>()
+        + segments.len().saturating_sub(1) * 2
 }
 
 // ============================================================================
@@ -1003,7 +1188,7 @@ mod tests {
     #[test]
     fn test_assistant_message_prefix() {
         let msg = ClaudeMessage::Assistant {
-            content: "Hello!".to_string(),
+            content: AssistantContent::from_markdown("Hello!"),
         };
         let lines = msg.to_lines(false);
         assert!(lines[0].starts_with("● "));
@@ -1112,11 +1297,17 @@ mod tests {
         renderer.append_thinking("live reasoning text");
 
         let live_lines = renderer.transcript.render();
-        // During streaming, shows ">> Thinking..." (not live content)
+        // During streaming, show the active thinking row plus the live text.
         assert!(
-            live_lines.iter().any(|line| line.contains(">>"))
+            live_lines.iter().any(|line| line.contains("∴"))
                 && live_lines.iter().any(|line| line.contains("Thinking...")),
-            "active thinking should show streaming indicator >> Thinking..."
+            "active thinking should show a visible thinking header"
+        );
+        assert!(
+            live_lines
+                .iter()
+                .any(|line| line.contains("live reasoning text")),
+            "active thinking should stream visible content"
         );
 
         renderer.finish_thinking();
@@ -1146,6 +1337,23 @@ mod tests {
             collapsed_lines.iter().any(|line| line.contains(">")),
             "collapsed thinking should have > prefix"
         );
+    }
+
+    #[test]
+    fn test_live_thinking_renders_in_expanded_layout_while_streaming() {
+        let mut renderer = ClaudeRenderer::new(80, 24);
+        renderer.start_thinking();
+        renderer.append_thinking("first second third fourth fifth");
+
+        let (lines, _) = renderer.transcript.render_ratatui(80);
+        assert!(
+            lines.len() >= 2,
+            "live thinking should render expanded content"
+        );
+        assert!(fragments_contain(&lines[0], "Thinking..."));
+        assert!(lines
+            .iter()
+            .any(|line| fragments_contain(line, "first second third fourth fifth")));
     }
 
     #[test]
@@ -1182,7 +1390,7 @@ mod tests {
             Some((0, std::time::Instant::now() - Duration::from_secs(1)));
 
         // Verify it's collapsed (1 line, no content)
-        let (lines, mapping) = renderer.transcript.render_ratatui();
+        let (lines, mapping) = renderer.transcript.render_ratatui(80);
         assert_eq!(lines.len(), 1, "collapsed thinking should be 1 line");
         assert!(
             lines.iter().any(|l| fragments_contain(l, "Thinking..")),
@@ -1199,7 +1407,7 @@ mod tests {
         }
 
         // Verify it's now expanded (multiple lines + ctrl+o hint)
-        let (lines2, _) = renderer.transcript.render_ratatui();
+        let (lines2, _) = renderer.transcript.render_ratatui(80);
         assert!(
             lines2.len() > 1,
             "expanded thinking should have multiple lines (got {})",
@@ -1220,13 +1428,55 @@ mod tests {
         if let Some(&msg_idx) = mapping.get(0) {
             renderer.transcript.toggle_trace_collapse(msg_idx);
         }
-        let (lines3, _) = renderer.transcript.render_ratatui();
+        let (lines3, _) = renderer.transcript.render_ratatui(80);
         assert_eq!(
             lines3.len(),
             1,
             "clicking again should collapse (got {} lines)",
             lines3.len()
         );
+    }
+
+    #[test]
+    fn test_footer_drops_transcript_metric_on_narrow_width() {
+        let model = FooterModel {
+            context_pct: Some(84),
+            model_label: Some(
+                "granite-4.0-h-micro-UD-Q8_K_XL.gguf/very/long/model/name".to_string(),
+            ),
+            transcript_metric: Some("tx 123456".to_string()),
+        };
+        let line = render_footer_line(&model, Some("∴ Thinking...".to_string()), 36);
+        let text: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(text.contains("ctx 84%"));
+        assert!(!text.contains("tx 123456"));
+    }
+
+    #[test]
+    fn test_footer_shortens_model_label() {
+        let shortened = shorten_model_label("a/b/c/really-long-model-name.gguf", 12);
+        assert!(shortened.starts_with('…'));
+        assert!(shortened.len() <= 14);
+    }
+
+    #[test]
+    fn test_footer_keeps_full_model_label_when_width_allows() {
+        let model = FooterModel {
+            context_pct: Some(40),
+            model_label: Some("granite-4.0-h-micro-UD-Q8_K_XL.gguf".to_string()),
+            transcript_metric: Some("tx 1024".to_string()),
+        };
+        let line = render_footer_line(&model, None, 120);
+        let text: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(text.contains("granite-4.0-h-micro-UD-Q8_K_XL.gguf"));
     }
 
     fn fragments_contain(line: &ratatui::text::Line, needle: &str) -> bool {

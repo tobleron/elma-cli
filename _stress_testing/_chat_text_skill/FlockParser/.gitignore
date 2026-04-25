@@ -1,0 +1,192 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# GitHub - Allow issue templates
+!.github/
+
+# FlockParser Specific
+# ChromaDB vector databases
+chroma_db/
+chroma_db_cli/
+chroma_db_api/
+
+# Processed documents
+converted_files/
+*.txt
+*.md
+!README.md
+!*.py
+!pyproject.toml
+!MANIFEST.in
+
+# Showcase outputs
+showcase/papers/
+showcase/results.json
+showcase/RESULTS.md
+
+# Public-facing documentation (keep these)
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!CHANGELOG.md
+!LICENSE
+!ERROR_HANDLING.md
+!DISTRIBUTED_SETUP.md
+!KNOWN_ISSUES.md
+!SECURITY.md
+!BENCHMARKS.md
+!docs/
+
+# Technical documentation (keep these)
+!PERFORMANCE_OPTIMIZATION.md
+!GPU_ROUTER_SETUP.md
+!ADAPTIVE_PARALLELISM.md
+!GPU_AUTO_OPTIMIZATION.md
+!CHROMADB_PRODUCTION.md
+!CHROMADB_INTEGRATION_SUMMARY.md
+!VRAM_MONITORING.md
+!NODE_MANAGEMENT.md
+!QUICK_SETUP.md
+!MODEL_CACHING.md
+!CODECOV_SETUP.md
+!PROFESSIONAL_IMPROVEMENTS.md
+
+# Internal planning docs (ignore these - keep private)
+YOUTUBE_DESCRIPTION.md
+LINKEDIN_POST.md
+LAUNCH_CHECKLIST.md
+READY_TO_SHIP.md
+DEMO_SCRIPT.md
+BENCHMARK_RESULTS.md
+DEMO_OUTPUT.md
+INTEGRATION_TEST_RESULTS.md
+MODEL_CACHING_INTEGRATION_TEST.md
+NEW_FEATURES.md
+PERFORMANCE_CHART.md
+WEBUI_GUIDE.md
+VRAM_MONITORING_SUMMARY.md
+
+# Document index and embeddings
+document_index.json
+embedding_cache.json
+
+# Ollama node configuration
+ollama_nodes.json
+
+# Test PDFs (optional - uncomment if you don't want to track test files)
+# testpdfs/
+# *.pdf
+
+# Logs
+logs/
+*.log
+/tmp/
+api_server.log
+
+# Cache files
+.cache/
+*.cache
+
+# Temporary files
+*.tmp
+temp/
+*.bak
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# API keys and secrets (if any)
+.env
+.env.local
+secrets.json
+config.local.json
+credentials.json
+
+# Large model files (if downloading locally)
+models/
+*.gguf
+*.bin
+
+# Jupyter Notebooks (if using)
+.ipynb_checkpoints/
+*.ipynb
+
+# Test output
+test_output/
+test_results/
+.pytest_cache/
+*.pyc
+
+# Development test scripts (keep in tests/ directory instead)
+test_*.py
+!tests/test_*.py
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Documentation build
+docs/_build/
+docs/.doctrees/
+
+# Demo materials (private/too large)
+DEMO_SCRIPT.md
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# Package manager
+poetry.lock
+Pipfile.lock
+package-lock.json
+yarn.lock
+
+# Database files (except ChromaDB which is already listed)
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.backup
+backup/

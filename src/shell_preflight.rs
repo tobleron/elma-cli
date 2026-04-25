@@ -188,20 +188,14 @@ pub(crate) fn classify_command(command: &str) -> RiskLevel {
         return RiskLevel::Safe;
     }
 
-    // Check safe read-only pipe patterns first (stat, ls, file, etc.)
-    for pattern in PIPE_SAFE_READ_ONLY {
-        if cmd.contains(pattern) {
-            return RiskLevel::Safe;
-        }
-    }
-
+    // DESTRUCTIVE must be evaluated before safe overrides
     for (pattern, reason) in PIPE_DESTRUCTIVE_PATTERNS {
         if cmd.contains(pattern) {
             return RiskLevel::Dangerous(format!("BULK DESTRUCTIVE: {} pattern detected.", reason));
         }
     }
 
-    // While-read loops: only block if body contains destructive keywords
+    // While-read loops
     if cmd.contains("| while read") || cmd.contains("|while read") {
         for keyword in WHILE_LOOP_DESTRUCTIVE_KEYWORDS {
             if cmd.contains(keyword) {
@@ -210,8 +204,14 @@ pub(crate) fn classify_command(command: &str) -> RiskLevel {
                 );
             }
         }
-        // No destructive keywords found — allow it
         return RiskLevel::Safe;
+    }
+
+    // Safe read-only pipes (only relevant when no destructive pipe found above)
+    for pattern in PIPE_SAFE_READ_ONLY {
+        if cmd.contains(pattern) {
+            return RiskLevel::Safe;
+        }
     }
 
     for (pattern, reason) in DESTRUCTIVE_PATTERNS {
@@ -255,6 +255,8 @@ pub(crate) fn classify_command(command: &str) -> RiskLevel {
         "file ",
         "du ",
         "df ",
+        "du -sh",
+        "find . -type f",
         "git status",
         "git log",
         "git diff",
@@ -267,6 +269,17 @@ pub(crate) fn classify_command(command: &str) -> RiskLevel {
         if cmd.starts_with(prefix) {
             return RiskLevel::Safe;
         }
+    }
+
+    // Detect analytical find + du + wc patterns (read-only aggregation queries)
+    if cmd.contains("find . -type f") && cmd.contains("| wc -l") {
+        return RiskLevel::Safe;
+    }
+    if cmd.contains("find . -type f") && cmd.contains("du -ch") && cmd.contains("tail -1") {
+        return RiskLevel::Safe;
+    }
+    if cmd.contains("du -sh") && cmd.contains("find . -type f") {
+        return RiskLevel::Safe;
     }
 
     RiskLevel::Caution
@@ -496,11 +509,6 @@ fn dry_run_cp(args: &str, workdir: &PathBuf) -> Option<String> {
     ))
 }
 
-/// Simple glob matching for single-component patterns (no path traversal).
-fn parse_shlex(args: &str) -> anyhow::Result<Vec<String>> {
-    shlex::split(args).context("invalid shell quoting in command")
-}
-
 fn try_parse_shlex(args: &str) -> Option<Vec<String>> {
     shlex::split(args)
 }
@@ -509,13 +517,33 @@ fn glob_match(pattern: &str, name: &str) -> bool {
     if pattern == "*" {
         return true;
     }
-    if pattern.contains('*') {
-        let parts: Vec<&str> = pattern.split('*').collect();
-        if parts.len() == 2 {
-            return name.starts_with(parts[0]) && name.ends_with(parts[1]);
+
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.is_empty() {
+        return false;
+    }
+
+    let Some(remaining) = name.strip_prefix(parts[0]) else {
+        return false;
+    };
+    let mut pos = remaining;
+
+    for segment in &parts[1..parts.len() - 1] {
+        if segment.is_empty() {
+            continue;
+        }
+        let Some(idx) = pos.find(segment) else {
+            return false;
+        };
+        pos = &pos[idx + segment.len()..];
+    }
+
+    if let Some(last) = parts.last() {
+        if !last.is_empty() && !pos.ends_with(last) {
+            return false;
         }
     }
-    pattern == name
+    true
 }
 
 fn resolve_path(path: &str, workdir: &PathBuf) -> PathBuf {
@@ -691,9 +719,9 @@ fn suggest_scoped_alternative(command: &str) -> String {
 }
 
 fn preflight_mv(args: &str, workdir: &PathBuf) -> PreflightResult {
-    let parts = match parse_shlex(args) {
-        Ok(p) => p,
-        Err(_) => {
+    let parts = match try_parse_shlex(args) {
+        Some(p) => p,
+        None => {
             return PreflightResult {
                 risk: RiskLevel::Caution,
                 error_guidance: Some("invalid shell quoting in arguments".to_string()),
@@ -743,9 +771,9 @@ fn preflight_mv(args: &str, workdir: &PathBuf) -> PreflightResult {
 }
 
 fn preflight_cp(args: &str, workdir: &PathBuf) -> PreflightResult {
-    let parts = match parse_shlex(args) {
-        Ok(p) => p,
-        Err(_) => {
+    let parts = match try_parse_shlex(args) {
+        Some(p) => p,
+        None => {
             return PreflightResult {
                 risk: RiskLevel::Caution,
                 error_guidance: Some("invalid shell quoting in arguments".to_string()),
@@ -811,9 +839,9 @@ fn preflight_rm(args: &str, workdir: &PathBuf) -> PreflightResult {
             dry_run_preview: generate_dry_run_preview(&format!("rm {}", args), workdir),
         };
     }
-    let parts = match parse_shlex(args) {
-        Ok(p) => p,
-        Err(_) => {
+    let parts = match try_parse_shlex(args) {
+        Some(p) => p,
+        None => {
             return PreflightResult {
                 risk: RiskLevel::Caution,
                 error_guidance: Some("invalid shell quoting in arguments".to_string()),
@@ -963,5 +991,24 @@ mod tests {
         // Caution commands should get dry-run previews
         let result = preflight_command("mv /tmp/file1 /tmp/file2", &workdir);
         assert!(result.dry_run_preview.is_some() || result.error_guidance.is_some());
+    }
+
+    #[test]
+    fn test_mixed_pipe_destructive_wins() {
+        // Even though "| xargs stat" is PIPE_SAFE_READ_ONLY, the later "| xargs rm" must win
+        let cmd = "find . | xargs stat | xargs rm";
+        assert!(matches!(classify_command(cmd), RiskLevel::Dangerous(_)));
+    }
+
+    #[test]
+    fn test_safe_pipe_alone_is_safe() {
+        let cmd = "find . -name '*.rs' | xargs stat";
+        assert!(matches!(classify_command(cmd), RiskLevel::Safe));
+    }
+
+    #[test]
+    fn test_destructive_pipe_alone_is_dangerous() {
+        let cmd = "find . | xargs rm -rf";
+        assert!(matches!(classify_command(cmd), RiskLevel::Dangerous(_)));
     }
 }

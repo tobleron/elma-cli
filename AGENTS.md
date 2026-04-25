@@ -3,16 +3,21 @@ This file provides universal guidance for agents working in this repository.
 ## UI Design Philosophy
 
 ### Current UI Direction
-Elma's interactive terminal UI must closely mimic Claude Code's terminal interface as observed in `_stress_testing/_claude_code_src`.
+Elma's interactive terminal UI should preserve the sparse, message-first Claude-like interaction model while following the task-first product direction in Task 191.
 
-The active planning source for this work is:
-- `_tasks/pending/166_Claude_Code_Terminal_Parity_Master_Plan.md`
-- `_tasks/pending/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate.md`
-- `_tasks/pending/167_Claude_Code_Source_Audit_And_Golden_Terminal_Harness.md` through `_tasks/pending/178_End_To_End_Claude_Parity_Stress_Gate.md`
+The active planning sources for current work are:
+- `_tasks/active/191_Elma_Skill_First_Rebaseline_Master_Plan.md`
+- `_tasks/pending/200_Branded_Splash_And_Compact_Header.md`
+- `_tasks/active/064_Real_CLI_Stress_Harness_And_Reliability_Gates.md`
+
+Historical UI reference material that remains useful but is no longer the canonical product plan:
+- `_tasks/postponed/166_Claude_Code_Terminal_Parity_Master_Plan_SUPERSEDED_BY_191.md`
+- `_tasks/completed/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate_DONE.md`
+- `_tasks/completed/167_Claude_Code_Source_Audit_And_Golden_Terminal_Harness_DONE.md` through `_tasks/completed/178_End_To_End_Claude_Parity_Stress_Gate_DONE.md`
 
 Older UI instructions that conflict with Claude Code parity are stale. In particular:
 - Do not preserve the old five-frame Elma layout.
-- Do not preserve the old persistent header strip, activity rail, boxed composer, or context progress bar.
+- Do not preserve the old persistent header strip, activity rail, boxed composer, or context progress bar. A compact branded header from Task 200 is allowed if it stays lightweight and terminal-safe. The bottom status/footer bar must remain limited to core runtime metrics rather than operational notifications or mode labels.
 - Do not preserve Gruvbox-only, Tokyo Night, Catppuccin, or Rose Pine theme assumptions.
 - Do not preserve a crossterm-only restriction if Ratatui or another Rust terminal crate gets closer to Claude Code behavior.
 
@@ -117,6 +122,10 @@ When in doubt, optimize for these repo-specific preferences:
 - Treat ugly, hanging, stale, or non-Claude UI behavior as a P0 product defect.
 - Prefer removing or quarantining conflicting legacy UI paths over preserving old Elma chrome.
 - Use the black/white/grey plus Pink/Cyan tokenized theme for the default interactive UI.
+- Keep the bottom status bar limited to core runtime metrics only; execution mode, queue notices, and operational notifications belong in the chat transcript, not the footer.
+- Prefer transcript-native operational visibility: budgeting, routing/formula choice, compaction, stop reasons, and hidden processes should surface as collapsible transcript rows rather than disappearing into trace-only state.
+- Document and ebook skills must be context-budget aware and should default to full-document processing unless the user explicitly asks for a skim, scoped chapter/topic, or keyword/needle search.
+- Skill behavior should come from rich code-authoritative playbooks, not one-line directives.
 - Do not reduce intel-unit coverage for performance without explicit approval.
 - If a model is too weak for a step, prefer adding a narrow intermediary intel unit over bloating a prompt or adding rigid heuristics.
 - Preserve autonomy, but make it honest and bounded.
@@ -130,9 +139,9 @@ When in doubt, optimize for these repo-specific preferences:
 
 Before substantial work:
 1. Read [`_tasks/TASKS.md`](_tasks/TASKS.md).
-2. Read the active master task identified by `_tasks/TASKS.md`, currently usually [`_tasks/active/095_Incremental_Upgrade_Master_Plan.md`](_tasks/active/095_Incremental_Upgrade_Master_Plan.md) if present.
+2. Read the active master task identified by `_tasks/TASKS.md`, currently [`_tasks/active/191_Elma_Skill_First_Rebaseline_Master_Plan.md`](_tasks/active/191_Elma_Skill_First_Rebaseline_Master_Plan.md).
 3. Check [`_dev-tasks/`](_dev-tasks/) for current structural guidance.
-4. For interactive UI work, read [`_tasks/pending/166_Claude_Code_Terminal_Parity_Master_Plan.md`](_tasks/pending/166_Claude_Code_Terminal_Parity_Master_Plan.md) and [`_tasks/pending/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate.md`](_tasks/pending/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate.md).
+4. For interactive UI work, read the active UX/runtime telemetry task when present, currently [`_tasks/pending/205_Transcript_Native_Runtime_Telemetry_And_Final_Answer_Presentation.md`](_tasks/pending/205_Transcript_Native_Runtime_Telemetry_And_Final_Answer_Presentation.md), plus the completed UI/header references [`_tasks/completed/200_Branded_Splash_And_Compact_Header_DONE.md`](_tasks/completed/200_Branded_Splash_And_Compact_Header_DONE.md), [`_tasks/postponed/166_Claude_Code_Terminal_Parity_Master_Plan_SUPERSEDED_BY_191.md`](_tasks/postponed/166_Claude_Code_Terminal_Parity_Master_Plan_SUPERSEDED_BY_191.md), and [`_tasks/completed/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate_DONE.md`](_tasks/completed/T179_Terminal_UI_Hang_Triage_And_Recovery_Gate_DONE.md).
 5. Use root-relative paths in reasoning and edits.
 
 If the work touches an existing active task, update that task instead of creating duplicate planning.

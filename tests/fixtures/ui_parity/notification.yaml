@@ -11,4 +11,6 @@ steps:
   - input: "\u001b\u001b"
     send_enter: false
     delay_ms: 500
-
+asserts:
+  - pattern: "◦ input:"
+    not: true

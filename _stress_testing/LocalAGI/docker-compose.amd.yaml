@@ -1,0 +1,27 @@
+services:
+  localai:
+    extends:
+      file: docker-compose.yaml
+      service: localai
+    environment:
+      - LOCALAI_SINGLE_ACTIVE_BACKEND=true
+      - DEBUG=true
+    image: localai/localai:master-gpu-hipblas
+    devices:
+      - /dev/dri
+      - /dev/kfd
+
+  postgres:
+    extends:
+      file: docker-compose.yaml
+      service: postgres
+
+  dind:
+    extends:
+      file: docker-compose.yaml
+      service: dind
+
+  localagi:
+    extends:
+      file: docker-compose.yaml
+      service: localagi

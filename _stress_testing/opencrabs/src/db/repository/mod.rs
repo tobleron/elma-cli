@@ -1,0 +1,44 @@
+//! Repository Module
+//!
+//! Repository pattern implementations for database access.
+
+pub mod channel_message;
+pub mod cron_job;
+pub mod cron_job_run;
+pub mod file;
+pub mod message;
+pub mod pending_request;
+pub mod plan;
+pub mod session;
+pub mod usage_ledger;
+
+pub use channel_message::ChannelMessageRepository;
+pub use cron_job::CronJobRepository;
+pub use cron_job_run::CronJobRunRepository;
+pub use file::FileRepository;
+pub use message::MessageRepository;
+pub use pending_request::PendingRequestRepository;
+pub use plan::PlanRepository;
+pub use session::{SessionListOptions, SessionRepository};
+pub use usage_ledger::UsageLedgerRepository;
+
+use anyhow::Result;
+
+/// Repository trait for common database operations
+#[async_trait::async_trait]
+pub trait Repository<T> {
+    /// Find entity by ID
+    async fn find_by_id(&self, id: &str) -> Result<Option<T>>;
+
+    /// Create a new entity
+    async fn create(&self, entity: &T) -> Result<()>;
+
+    /// Update an existing entity
+    async fn update(&self, entity: &T) -> Result<()>;
+
+    /// Delete an entity by ID
+    async fn delete(&self, id: &str) -> Result<()>;
+
+    /// List all entities
+    async fn list(&self) -> Result<Vec<T>>;
+}

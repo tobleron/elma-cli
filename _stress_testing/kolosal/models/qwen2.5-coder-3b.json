@@ -1,0 +1,37 @@
+{
+  "name": "Qwen Coder 3B",
+  "author": "Alibaba",
+  "hidden_size": 2048,
+  "attention_heads": 16,
+  "hidden_layers": 36,
+  "kv_heads": 2,
+  "variants": {
+    "fp16": {
+      "type": "fp16",
+      "path": "models/qwen-coder-3b/fp16/qwen2.5-coder-3b-instruct-fp16.gguf",
+      "downloadLink": "https://huggingface.co/kolosal/qwen2.5-coder-3b/resolve/main/qwen2.5-coder-3b-instruct-fp16.gguf",
+      "isDownloaded": false,
+      "downloadProgress": 0.0,
+      "lastSelected": 0,
+      "size": 6.18
+    },
+    "8-bit": {
+      "type": "8-bit",
+      "path": "models/qwen-coder-3b/int8/qwen2.5-coder-3b-instruct-q8_0.gguf",
+      "downloadLink": "https://huggingface.co/kolosal/qwen2.5-coder-3b/resolve/main/qwen2.5-coder-3b-instruct-q8_0.gguf",
+      "isDownloaded": false,
+      "downloadProgress": 0.0,
+      "lastSelected": 0,
+      "size": 3.29
+    },
+    "4-bit": {
+      "type": "4-bit",
+      "path": "models/qwen-coder-3b/int4/qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+      "downloadLink": "https://huggingface.co/kolosal/qwen2.5-coder-3b/resolve/main/qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+      "isDownloaded": false,
+      "downloadProgress": 0.0,
+      "lastSelected": 0,
+      "size": 1.93
+    }
+  }
+}

@@ -1,0 +1,82 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Debug files
+*.dSYM/
+*.pdb
+
+# Configuration and data
+opencrab.toml
+opencrab.json
+opencrab.db
+opencrab.db-shm
+opencrab.db-wal
+*.log
+
+# User data directories
+.opencrab/
+.opencrabs/
+.local/share/opencrab/
+.config/opencrab/
+/opencrabs
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Testing
+/tests/fixtures/temp/
+coverage/
+*.profraw
+*.profdata
+
+# Documentation build
+/book/
+/target/doc/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+~*
+
+# Lock files (keep for libraries, ignore for binaries)
+# Cargo.lock
+
+# Release artifacts
+/dist/
+/releases/
+
+# Claude Code / AI Development Files
+.claude/
+
+# Workspace personal files (use docs/reference/templates/ for generic versions)
+src/workspace/
+
+
+# Local
+whatsapp-rust/
+src/patches/
+src/tasks/
+tasks/
+~/
+.opencrabs_*.json
+PLAN.md
+COST_ESTIMATE.md
+src/plans/
+*.swp
+*.swo
+*.backup
+commands.md
+cc-research.md
+# examples/

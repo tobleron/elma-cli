@@ -2,6 +2,15 @@
 
 use crate::*;
 
+fn new_request_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    format!("{:08x}", nanos)
+}
+
 async fn fetch_models_response(client: &reqwest::Client, base_url: &Url) -> Result<ModelsList> {
     let url = base_url
         .join("/v1/models")
@@ -206,6 +215,7 @@ async fn probe_chat_completion_raw(
 ) -> Result<ChatCompletionResponse> {
     let resp = client
         .post(chat_url.clone())
+        .header("X-Request-Id", new_request_id())
         .json(req)
         .send()
         .await
@@ -449,9 +459,6 @@ pub(crate) async fn ensure_model_behavior_profile(
         needs_text_finalizer: probe.auto_reasoning && (probe.auto_exact_content != exact_token),
         preferred_reasoning_format: preferred_rf,
     };
-    let _ = probe_logprobs_support(client, chat_url, model_id)
-        .await
-        .ok();
     save_model_behavior_profile(&path, &profile)?;
     Ok(profile)
 }

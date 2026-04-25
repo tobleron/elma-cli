@@ -3,32 +3,74 @@ name = "elma-cli"
 version = "0.1.0"
 edition = "2021"
 
+[lints.rust]
+unreachable_patterns = "warn"
+
 [dependencies]
 anyhow = "1.0"
+color-eyre = "0.6"
+humansize = "2.1"
+once_cell = "1.20"
+derive_more = "0.99"
+itertools = "0.13"
+tap = "1.0"
+strum = { version = "0.25", features = ["derive"] }
+console = "0.16"
+trash = "3.1"
+clap_mangen = "0.2"
+serde_path_to_error = "0.1"
+flate2 = "1.0"
+async-trait = "0.1"
+tokio-stream = "0.1"
+infer = "0.16"
+mime_guess = "2.0"
+encoding_rs = "0.8"
+serde_with = "3.12"
+ron = "0.8"
+toml_edit = "0.22"
+quick-xml = "0.37"
+comrak = "0.34"
+zip = "2.0"
 clap = { version = "4.5", features = ["derive", "env"] }
+clap_complete = "4.5"
+miette = { version = "7.6", features = ["fancy"] }
 reqwest = { version = "0.12", features = ["json", "gzip", "brotli", "deflate", "rustls-tls", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+directories = "5.0"
+dialoguer = "0.11"
+thiserror = "1.0"
+tempfile = "3.12"
+shlex = "1.3"
+url = "2.5"
 toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "process"] }
 jsonrepair-rs = "0.1.0"
 ignore = "0.4"
 futures = "0.3"
 which = "7.0"
-atty = "0.2"
 crossterm = "0.28"
 ratatui = "0.26"
 unicode-width = "0.2"
 indicatif = "0.17"
 inquire = "0.7"
 syntect = "5.2"
+pulldown-cmark = "0.12"
 similar = "2.6"
+pdf-extract = "0.10"
+epub = "2.1"
+html2text = "0.17"
+djvu-rs = "0.13"
+mobi = "0.8"
+regex = "1.10"
+portable-pty = "0.6"
+strip-ansi-escapes = "0.1"
 
 [dev-dependencies]
 # UI parity test harness
-portable-pty = "0.6"
 vt100 = "0.15"
-strip-ansi-escapes = "0.1"
 insta = "1.47"
 serde_yaml = "0.9"
 tokio = { version = "1.37", features = ["rt", "time", "io-util"] }

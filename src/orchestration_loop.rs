@@ -173,7 +173,7 @@ pub(crate) async fn run_autonomous_loop(
                 messages,
                 &mut plan,
                 &step_results,
-                &reason,
+                &reason.to_string(),
             )
             .await?
             {
@@ -181,6 +181,19 @@ pub(crate) async fn run_autonomous_loop(
                 break;
             }
             continue;
+        }
+
+        // Log concurrency safety flags for each step (Task 265)
+        for step in &plan.current_program.steps {
+            let common = crate::step_common(step);
+            trace(
+                args,
+                &format!(
+                    "step id={} is_concurrency_safe={}",
+                    crate::step_id(step),
+                    common.is_concurrency_safe
+                ),
+            );
         }
 
         let (mut batch_results, batch_reply) = execute_program(

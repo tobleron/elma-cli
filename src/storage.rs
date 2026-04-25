@@ -1,6 +1,8 @@
 //! @efficiency-role: infra-adapter
 
 use crate::*;
+use miette::IntoDiagnostic;
+use miette::WrapErr;
 
 fn write_bytes_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
@@ -34,7 +36,19 @@ pub(crate) fn load_agent_config(path: &PathBuf) -> Result<Profile> {
     let bytes = std::fs::read(&path)
         .with_context(|| format!("Failed to read config file at {}", path.display()))?;
     let s = String::from_utf8(bytes).context("config file is not valid UTF-8")?;
-    toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+    toml::from_str(&s)
+        .map_err(|err| {
+            let span = err.span().map(|s| s.into());
+            anyhow::anyhow!(
+                "{:?}",
+                miette::Report::new(crate::diagnostics::ElmaDiagnostic::ConfigError {
+                    input: s.clone(),
+                    span,
+                    err,
+                })
+            )
+        })
+        .with_context(|| format!("Failed to parse {}", path.display()))
 }
 
 pub(crate) fn save_global_config(path: &PathBuf, cfg: &GlobalConfig) -> Result<()> {
@@ -47,7 +61,19 @@ pub(crate) fn load_global_config(path: &PathBuf) -> Result<GlobalConfig> {
     let bytes = std::fs::read(path)
         .with_context(|| format!("Failed to read global config at {}", path.display()))?;
     let s = String::from_utf8(bytes).context("global config is not valid UTF-8")?;
-    toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+    toml::from_str(&s)
+        .map_err(|err| {
+            let span = err.span().map(|s| s.into());
+            anyhow::anyhow!(
+                "{:?}",
+                miette::Report::new(crate::diagnostics::ElmaDiagnostic::ConfigError {
+                    input: s.clone(),
+                    span,
+                    err,
+                })
+            )
+        })
+        .with_context(|| format!("Failed to parse global config at {}", path.display()))
 }
 
 pub(crate) fn save_agent_config(path: &PathBuf, p: &Profile) -> Result<()> {
@@ -66,7 +92,19 @@ pub(crate) fn load_router_calibration(path: &PathBuf) -> Result<RouterCalibratio
     let bytes = std::fs::read(path)
         .with_context(|| format!("Failed to read router calibration at {}", path.display()))?;
     let s = String::from_utf8(bytes).context("router calibration is not valid UTF-8")?;
-    toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+    toml::from_str(&s)
+        .map_err(|err| {
+            let span = err.span().map(|s| s.into());
+            anyhow::anyhow!(
+                "{:?}",
+                miette::Report::new(crate::diagnostics::ElmaDiagnostic::ConfigError {
+                    input: s.clone(),
+                    span,
+                    err,
+                })
+            )
+        })
+        .with_context(|| format!("Failed to parse router calibration at {}", path.display()))
 }
 
 pub(crate) fn save_model_behavior_profile(

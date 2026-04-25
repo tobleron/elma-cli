@@ -9,7 +9,7 @@
 //!
 //! Design: Gruvbox Dark Hard themed, vim-mode (j/k), graceful TTY fallback.
 
-use inquire::{Confirm, Select, Text};
+use inquire::{Select, Text};
 use std::io::IsTerminal;
 
 /// Theme configuration using Gruvbox Dark Hard colors.
@@ -79,10 +79,11 @@ pub(crate) fn confirm(message: &str) -> bool {
         return false;
     }
 
-    Confirm::new(message)
-        .with_render_config(theme())
-        .with_default(false)
-        .prompt()
+    dialoguer::Confirm::new()
+        .with_prompt(message)
+        .default(false)
+        .interact_opt()
+        .unwrap_or(Some(false))
         .unwrap_or(false)
 }
 

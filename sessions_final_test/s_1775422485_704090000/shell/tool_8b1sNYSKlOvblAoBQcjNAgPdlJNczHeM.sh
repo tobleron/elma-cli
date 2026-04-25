@@ -1,1 +1,0 @@
-ls -R | grep \.[sS][hH]$ | wc -l

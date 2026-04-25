@@ -14,6 +14,7 @@ use crate::app_chat_trace::*;
 use crate::ui_state::HeaderInfo;
 use crate::ui_terminal::{MessageRole, TerminalUI};
 use crate::*;
+use shlex::quote;
 use std::collections::VecDeque;
 use std::future::Future;
 
@@ -23,12 +24,12 @@ async fn await_with_busy_queue<T, F>(
     future: F,
 ) -> Result<T>
 where
-    F: Future<Output = T>,
+    F: Future<Output = Result<T>>,
 {
     tokio::pin!(future);
     loop {
         tokio::select! {
-            result = &mut future => return Ok(result),
+            result = &mut future => return result,
             _ = tokio::time::sleep(std::time::Duration::from_millis(40)) => {
                 tui.pump_ui()?;
                 if let Some(queued) = tui.poll_busy_submission()? {
@@ -195,6 +196,12 @@ async fn handle_chat_command(
             } else {
                 tui.add_message(MessageRole::Assistant, lines.join("\n"));
             }
+            handled!()
+        }
+        "/sessions" | "/sessions cleanup" | "/sessions cleanup-all" => {
+            let session_root = runtime.session.root.clone();
+            let response = session_cleanup::sessions_savings(2, &session_root);
+            tui.add_message(MessageRole::Assistant, response);
             handled!()
         }
         "/reset" => {
@@ -421,8 +428,26 @@ fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) {
     let Some(path) = extract_first_path_from_user_text(line) else {
         return;
     };
+
+    // Validate path stays within workspace to prevent directory traversal attacks.
+    let canonical_path = match std::fs::canonicalize(&path) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let workspace_root = match std::fs::canonicalize(".") {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    if !canonical_path.starts_with(&workspace_root) {
+        // Path escapes workspace — silently skip discovery.
+        return;
+    }
+
+    // Properly quote the path for shell interpolation to prevent injection.
+    let safe_path = quote(&path);
+
     let cmd = format!(
-        "ls -R '{path}' | head -n 100; echo '---'; file -b '{path}'/* 2>/dev/null | head -n 10"
+        "ls -R {safe_path} | head -n 100; echo '---'; file -b {safe_path}/* 2>/dev/null | head -n 10"
     );
     let output = crate::workspace::cmd_out(&cmd, &std::path::PathBuf::from("."));
     if !output.trim().is_empty() {
@@ -431,6 +456,47 @@ fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) {
             output.trim(),
             runtime.ws
         );
+    }
+}
+
+/// Execute a tool by name with arguments
+pub(crate) async fn execute_tool(
+    runtime: &mut AppRuntime,
+    tool_name: &str,
+    args: &[String],
+) -> Result<String> {
+    use tool_discovery::ToolCapability;
+
+    let tool = runtime.tool_registry.get_tool(tool_name)
+        .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", tool_name))?;
+
+    if !tool.available {
+        return Err(anyhow::anyhow!("Tool not available: {}", tool_name));
+    }
+
+    // Build command from template
+    let cmd_template = &tool.invocation;
+    let cmd = if args.is_empty() {
+        cmd_template.clone()
+    } else {
+        format!("{} {}", cmd_template, args.join(" "))
+    };
+
+    // Execute the command
+    let output = tokio::process::Command::new("sh")
+        .arg("-c")
+        .arg(&cmd)
+        .current_dir(&runtime.repo)
+        .output()
+        .await
+        .with_context(|| format!("Failed to execute tool: {}", tool_name))?;
+
+    if output.status.success() {
+        let result = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(result)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(anyhow::anyhow!("Tool failed: {}\n{}", tool_name, stderr))
     }
 }
 
@@ -519,7 +585,7 @@ fn has_edit_result(step_results: &[StepResult]) -> bool {
 }
 
 async fn run_reflection_loop(
-    runtime: &AppRuntime,
+    runtime: &mut AppRuntime,
     program: Program,
     line: &str,
     route_decision: &RouteDecision,
@@ -653,6 +719,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         workspace: ws_name,
         session: session_name,
         workflow: String::new(),
+        stage: None,
         verbose: runtime.verbose,
     });
 
@@ -713,10 +780,20 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 &runtime.messages,
             ),
         )
-        .await?
-        .unwrap_or_else(|_| line.to_string());
+        .await
+        .unwrap_or_else(|e| {
+            tracing::trace!(error = %e, "intent_annotation_failed");
+            line.to_string()
+        });
 
         try_workspace_discovery(runtime, line);
+
+        // Tool discovery and execution (Task 015: Autonomous Tool Discovery)
+        if runtime.tool_registry.needs_discovery() {
+            if let Ok(registry) = tool_discovery::discover_workspace_tools(&runtime.repo) {
+                runtime.tool_registry = registry;
+            }
+        }
 
         // No keyword-based routing — the Maestro pipeline handles everything.
         // Default to CHAT+reply_only for very short inputs (likely conversational),
@@ -966,7 +1043,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 reasoning_clean,
             ),
         )
-        .await??;
+        .await?;
         if has_edit_result(&step_results) {
             refresh_runtime_workspace(runtime)?;
         }

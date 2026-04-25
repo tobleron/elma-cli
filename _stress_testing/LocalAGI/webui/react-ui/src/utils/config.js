@@ -1,0 +1,76 @@
+/**
+ * Application configuration
+ */
+
+// Get the base URL from Vite's environment variables or default to '/app/'
+export const BASE_URL = import.meta.env.BASE_URL || '/app/';
+
+// API endpoints configuration
+export const API_CONFIG = {
+  // Base URL for API requests
+  baseUrl: '/',  // API endpoints are at the root, not under /app/
+  
+  // Default headers for API requests
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  
+  // Endpoints
+  endpoints: {
+    // Agent endpoints
+    agents: '/api/agents',
+    agentConfig: (name) => `/api/agent/${name}/config`,
+    agentConfigMetadata: '/api/meta/agent/config',
+    createAgent: '/api/agent/create',
+    deleteAgent: (name) => `/api/agent/${name}`,
+    pauseAgent: (name) => `/api/agent/${name}/pause`,
+    startAgent: (name) => `/api/agent/${name}/start`,
+    
+    exportAgent: (name) => `/settings/export/${name}`,
+    importAgent: '/settings/import',
+    
+    // Group endpoints
+    generateGroupProfiles: '/api/agent/group/generateProfiles',
+    createGroup: '/api/agent/group/create',
+    
+    // Chat endpoints
+    chat: (name) => `/api/chat/${name}`, 
+    notify: (name) => `/notify/${name}`,
+    responses: '/v1/responses',
+    
+    // SSE endpoint
+    sse: (name) => `/sse/${name}`,
+    
+    // Action endpoints
+    listActions: '/api/actions',
+    actionDefinition: (name) => `/api/action/${name}/definition`,
+    executeAction: (name) => `/api/action/${name}/run`,
+    
+    // Status endpoint
+    status: (name) => `/status/${name}`,
+
+    // Skills endpoints
+    skillsConfig: '/api/skills/config',
+    skillsList: '/api/skills',
+    skillsSearch: (q) => `/api/skills/search?q=${encodeURIComponent(q)}`,
+    skill: (name) => `/api/skills/${encodeURIComponent(name)}`,
+    skillsImport: '/api/skills/import',
+    skillExport: (name) => `/api/skills/export/${encodeURIComponent(name)}`,
+    skillResources: (name) => `/api/skills/${encodeURIComponent(name)}/resources`,
+    skillResource: (name, path) => `/api/skills/${encodeURIComponent(name)}/resources/${path.split('/').map(encodeURIComponent).join('/')}`,
+    gitRepos: '/api/git-repos',
+    gitRepo: (id) => `/api/git-repos/${id}`,
+    gitRepoSync: (id) => `/api/git-repos/${id}/sync`,
+    gitRepoToggle: (id) => `/api/git-repos/${id}/toggle`,
+
+    // Collections / knowledge base (LocalRecall-compatible)
+    collections: '/api/collections',
+    collectionUpload: (name) => `/api/collections/${encodeURIComponent(name)}/upload`,
+    collectionEntries: (name) => `/api/collections/${encodeURIComponent(name)}/entries`,
+    collectionEntry: (name, entry) => `/api/collections/${encodeURIComponent(name)}/entries/${encodeURIComponent(entry)}`,
+    collectionSearch: (name) => `/api/collections/${encodeURIComponent(name)}/search`,
+    collectionReset: (name) => `/api/collections/${encodeURIComponent(name)}/reset`,
+    collectionDeleteEntry: (name) => `/api/collections/${encodeURIComponent(name)}/entry/delete`,
+    collectionSources: (name) => `/api/collections/${encodeURIComponent(name)}/sources`,
+  }
+};

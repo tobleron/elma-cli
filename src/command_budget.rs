@@ -16,8 +16,10 @@ use std::time::Instant;
 const MAX_CAUTION_PER_SESSION: usize = 20;
 /// Maximum dangerous-level commands per session.
 const MAX_DANGER_PER_SESSION: usize = 5;
-/// Maximum shell tool calls per single turn.
+/// Maximum shell tool calls per single turn (standard commands).
 const MAX_SHELL_CALLS_PER_TURN: usize = 10;
+/// Maximum shell tool calls per single turn (analytical/read-only commands).
+const MAX_ANALYTICAL_SHELL_CALLS_PER_TURN: usize = 15;
 /// Minimum time between commands (prevents runaway loops).
 const COMMAND_THROTTLE_MS: u64 = 100;
 
@@ -75,12 +77,17 @@ impl CommandBudget {
             // (do this in record_command instead to avoid double-updates)
         }
 
-        // Per-turn shell call limit
+        // Per-turn shell call limit - with higher limit for analytical commands
         let current_turn_calls = self.turn_shell_calls.load(Ordering::Relaxed);
-        if current_turn_calls >= MAX_SHELL_CALLS_PER_TURN {
+        let max_turn_calls = match risk {
+            shell_preflight::RiskLevel::Safe => MAX_ANALYTICAL_SHELL_CALLS_PER_TURN,
+            _ => MAX_SHELL_CALLS_PER_TURN,
+        };
+        if current_turn_calls >= max_turn_calls {
             return Err(format!(
-                "Shell call budget exhausted: {}/{} calls this turn. The model is making too many shell calls in a single turn.",
-                current_turn_calls, MAX_SHELL_CALLS_PER_TURN
+                "Shell call budget exhausted: {}/{} calls this turn (max {} for analytical). The model is making too many shell calls in a single turn.",
+                current_turn_calls, max_turn_calls,
+                MAX_ANALYTICAL_SHELL_CALLS_PER_TURN
             ));
         }
 
@@ -221,14 +228,15 @@ mod tests {
     #[test]
     fn test_per_turn_shell_limit() {
         let budget = CommandBudget::new();
+        // Use Caution instead of Dangerous, because Dangerous also checks session budget
         for _ in 0..MAX_SHELL_CALLS_PER_TURN {
             // Need to reset throttle between calls for this test
             *budget.last_command_time.lock().unwrap() = None;
-            assert!(budget.check_budget(&RiskLevel::Safe).is_ok());
-            budget.record_command(&RiskLevel::Safe);
+            assert!(budget.check_budget(&RiskLevel::Caution).is_ok());
+            budget.record_command(&RiskLevel::Caution);
         }
         *budget.last_command_time.lock().unwrap() = None;
-        assert!(budget.check_budget(&RiskLevel::Safe).is_err());
+        assert!(budget.check_budget(&RiskLevel::Caution).is_err());
     }
 
     #[test]

@@ -1,0 +1,112 @@
+services:
+  localai:
+    # See https://localai.io/basics/container/#standard-container-images for
+    # a list of available container images (or build your own with the provided Dockerfile)
+    # Available images with CUDA, ROCm, SYCL, Vulkan
+    # Image list (quay.io): https://quay.io/repository/go-skynet/local-ai?tab=tags
+    # Image list (dockerhub): https://hub.docker.com/r/localai/localai
+    image: localai/localai:master
+    command: 
+    - ${MODEL_NAME:-gemma-3-4b-it-qat}
+    - ${MULTIMODAL_MODEL:-gemma-3-4b-it-qat}
+    - granite-embedding-107m-multilingual
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/readyz"]
+      interval: 60s
+      timeout: 10m
+      retries: 120
+    ports:
+    - 8081:8080
+    environment:
+      - DEBUG=true
+      #- LOCALAI_API_KEY=sk-1234567890
+    volumes:
+      - models:/models
+      - backends:/backends
+      - images:/tmp/generated/images
+
+  postgres:
+    image: quay.io/mudler/localrecall:${LOCALRECALL_VERSION:-v0.5.2}-postgresql
+    environment:
+      - POSTGRES_DB=localrecall
+      - POSTGRES_USER=localrecall
+      - POSTGRES_PASSWORD=localrecall
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U localrecall"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sshbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sshbox
+    ports:
+      - "22"
+    environment:
+      - SSH_USER=root
+      - SSH_PASSWORD=root
+      - DOCKER_HOST=tcp://dind:2375
+    depends_on:
+      dind:
+        condition: service_healthy
+
+  dind:
+    image: docker:dind
+    privileged: true
+    command: ["dockerd", "-H", "tcp://0.0.0.0:2375", "-H", "unix:///var/run/docker.sock"]
+    environment:
+      - DOCKER_TLS_CERTDIR=""
+    expose:
+      - 2375
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  localagi:
+    depends_on:
+      localai:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      dind:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: Dockerfile.webui
+    ports:
+      - 8080:3000
+    #image: quay.io/mudler/localagi:master
+    environment:
+      - LOCALAGI_MODEL=${MODEL_NAME:-gemma-3-4b-it-qat}
+      - LOCALAGI_MULTIMODAL_MODEL=${MULTIMODAL_MODEL:-moondream2-20250414}
+      - LOCALAGI_LLM_API_URL=http://localai:8080
+      #- LOCALAGI_LLM_API_KEY=sk-1234567890
+      - LOCALAGI_STATE_DIR=/pool
+      # Knowledge base (collections) with PostgreSQL by default
+      - VECTOR_ENGINE=postgres
+      - DATABASE_URL=postgresql://localrecall:localrecall@postgres:5432/localrecall?sslmode=disable
+      - EMBEDDING_MODEL=granite-embedding-107m-multilingual
+      - LOCALAGI_TIMEOUT=5m
+      - LOCALAGI_ENABLE_CONVERSATIONS_LOGGING=false
+      - LOCALAGI_SSHBOX_URL=root:root@sshbox:22
+      - DOCKER_HOST=tcp://dind:2375
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - localagi_pool:/pool
+      # Optional: mount a host directory for skills (replaces the default state-dir/skills path)
+      # - ./skills:/pool/skills
+
+volumes:
+  postgres_data:
+  models:
+  backends:
+  images:
+  localagi_pool:

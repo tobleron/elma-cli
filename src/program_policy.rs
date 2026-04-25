@@ -9,6 +9,42 @@ use crate::*;
 
 // Re-export level validation functions to maintain the same public API
 pub use crate::program_policy_level::*;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub(crate) enum PolicyError {
+    #[error("Program exceeds maximum step limit: {count} steps (max: {max}). This indicates a planning loop.")]
+    MaxStepsExceeded { count: usize, max: usize },
+    #[error("Program has {ratio}% duplicate steps (max: 50%). This indicates a planning loop.")]
+    DuplicateStepRatio { ratio: usize },
+    #[error("{level:?} request should not have {structure} structure")]
+    InvalidLevelStructure {
+        level: ExecutionLevel,
+        structure: String,
+    },
+    #[error("{level:?} request has too {bound} steps: {count} (expected {expected})")]
+    StepCountMismatch {
+        level: ExecutionLevel,
+        bound: String,
+        count: usize,
+        expected: String,
+    },
+    #[error("{level:?} level request must have explicit {step_type} step")]
+    MissingRequiredStep {
+        level: ExecutionLevel,
+        step_type: String,
+    },
+    #[error("Program must have Reply step")]
+    MissingReplyStep,
+    #[error("Formula '{formula}' not allowed for {level:?} level (allowed: {allowed})")]
+    FormulaNotAllowed {
+        formula: String,
+        level: ExecutionLevel,
+        allowed: String,
+    },
+    #[error("Request requires workspace evidence but program has no shell/read/search step")]
+    MissingEvidenceSteps,
+}
 
 /// Deterministic risk level based on step types in a program
 #[derive(Debug, Clone, PartialEq)]
@@ -165,14 +201,11 @@ pub(crate) fn validate_evidence_requirements(
     route_decision: &RouteDecision,
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
-) -> Result<(), String> {
+) -> Result<(), PolicyError> {
     if request_requires_workspace_evidence(route_decision, complexity, formula)
         && !program_has_workspace_evidence_steps(program)
     {
-        return Err(
-            "Request requires workspace evidence but program has no shell/read/search step"
-                .to_string(),
-        );
+        return Err(PolicyError::MissingEvidenceSteps);
     }
 
     Ok(())
@@ -415,7 +448,39 @@ pub(crate) fn apply_capability_guard(
             parent_id: None,
             depth: None,
             unit_type: None,
+            interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
         },
     }];
     true
+}
+
+/// Validate step flags consistency (Task 265)
+pub(crate) fn validate_step_flags(program: &Program) -> Vec<String> {
+    let mut errors = Vec::new();
+    for step in &program.steps {
+        let common = crate::step_common(step);
+        // Check is_read_only vs is_destructive consistency
+        if common.is_read_only && common.is_destructive {
+            errors.push(format!(
+                "Step {}: is_read_only and is_destructive cannot both be true",
+                crate::step_id(step)
+            ));
+        }
+        // Check is_concurrency_safe consistency
+        if common.is_destructive && common.is_concurrency_safe {
+            errors.push(format!(
+                "Step {}: destructive steps should not be marked as concurrency-safe",
+                crate::step_id(step)
+            ));
+        }
+        // Check interrupt_behavior consistency
+        if common.is_destructive && matches!(common.interrupt_behavior, InterruptBehavior::Complete) {
+            errors.push(format!(
+                "Step {}: destructive steps should not use Complete interrupt behavior",
+                crate::step_id(step)
+            ));
+        }
+    }
+    errors
 }

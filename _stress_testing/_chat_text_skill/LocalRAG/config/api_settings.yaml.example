@@ -1,0 +1,17 @@
+# Copy this file to api_settings.yaml and fill in your values
+# DO NOT commit api_settings.yaml — it contains your private API keys and endpoints
+
+embedding:
+  api_base: http://localhost:1234/v1
+  api_key: not-needed
+  model: your-embedding-model
+
+llm:
+  api_base: http://localhost:1234/v1
+  api_key: not-needed
+  model: your-llm-model
+
+rerank:
+  api_base: ""          # Leave empty to disable reranking
+  api_key: not-needed
+  model: ""             # Or local path / HuggingFace model ID

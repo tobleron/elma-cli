@@ -189,7 +189,7 @@ async fn select_items_via_unit(
     }
 }
 
-fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionRequest {
+pub(crate) fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionRequest {
     ChatCompletionRequest {
         model: cfg.model.clone(),
         messages: vec![
@@ -208,7 +208,7 @@ fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionReq
     }
 }
 
-async fn chat_once_get_text(
+pub(crate) async fn chat_once_get_text(
     client: &reqwest::Client,
     chat_url: &Url,
     req: &ChatCompletionRequest,
@@ -697,7 +697,7 @@ pub(crate) async fn handle_program_step(
             )
             .await?
         }
-        Step::Shell { cmd, .. } => {
+        Step::Shell { cmd, common, .. } => {
             handle_shell_step(
                 args,
                 client,
@@ -716,6 +716,7 @@ pub(crate) async fn handle_program_step(
                 objective,
                 emit_shell_output,
                 readonly_only,
+                common.is_destructive,
                 sid,
                 kind.clone(),
                 purpose,

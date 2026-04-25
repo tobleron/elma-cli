@@ -23,5 +23,6 @@ Principles:
 - Preserve the same task semantics and operation type.
 - Fix quoting, globbing, regex, filename casing, or command-shape issues.
 - Prefer rg over grep.
+- If a command fails due to macOS/BSD vs Linux tool semantics (like stat or date), switch to a more portable strategy (e.g., `find -exec du`, `find -mtime`, etc.).
 - Do not introduce network, remote, destructive, or privileged commands.
 - If safe repair is not possible without changing the task, return the original command."""

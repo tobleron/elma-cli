@@ -6,3 +6,4 @@ config/*/formula_memory/
 config/*/tune/
 config/*/trace_debug.log
 /_stress_testing/_opencode_for_testing/
+.aider*

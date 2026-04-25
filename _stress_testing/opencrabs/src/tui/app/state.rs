@@ -1,0 +1,2575 @@
+//! TUI Application State
+//!
+//! Core state management for the terminal user interface.
+
+use super::events::{
+    AppMode, EventHandler, SudoPasswordRequest, SudoPasswordResponse, ToolApprovalRequest,
+    ToolApprovalResponse, TuiEvent,
+};
+use super::onboarding::OnboardingWizard;
+use super::prompt_analyzer::PromptAnalyzer;
+use crate::brain::agent::AgentService;
+use crate::brain::provider::Provider;
+use crate::brain::{BrainLoader, CommandLoader, SelfUpdater, UserCommand};
+use crate::db::models::{Message, Session};
+use crate::services::{MessageService, ServiceContext, SessionService};
+use crate::tui::pane::PaneManager;
+use anyhow::Result;
+use ratatui::text::Line;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+
+/// Slash command definition
+#[derive(Debug, Clone)]
+pub struct SlashCommand {
+    pub name: &'static str,
+    pub description: &'static str,
+}
+
+/// Available slash commands for autocomplete
+pub const SLASH_COMMANDS: &[SlashCommand] = &[
+    SlashCommand {
+        name: "/help",
+        description: "Show available commands",
+    },
+    SlashCommand {
+        name: "/models",
+        description: "Switch model",
+    },
+    SlashCommand {
+        name: "/usage",
+        description: "Session usage stats",
+    },
+    SlashCommand {
+        name: "/onboard",
+        description: "Run setup wizard",
+    },
+    SlashCommand {
+        name: "/onboard:provider",
+        description: "Jump to AI provider setup",
+    },
+    SlashCommand {
+        name: "/onboard:workspace",
+        description: "Jump to workspace settings",
+    },
+    SlashCommand {
+        name: "/onboard:channels",
+        description: "Jump to channel config",
+    },
+    SlashCommand {
+        name: "/onboard:voice",
+        description: "Jump to voice STT/TTS setup",
+    },
+    SlashCommand {
+        name: "/onboard:image",
+        description: "Jump to image handling setup (vision + generation)",
+    },
+    SlashCommand {
+        name: "/onboard:brain",
+        description: "Jump to brain/persona setup",
+    },
+    SlashCommand {
+        name: "/doctor",
+        description: "Run connection health check",
+    },
+    SlashCommand {
+        name: "/sessions",
+        description: "List all sessions",
+    },
+    SlashCommand {
+        name: "/approve",
+        description: "Tool approval policy",
+    },
+    SlashCommand {
+        name: "/compact",
+        description: "Compact context now",
+    },
+    SlashCommand {
+        name: "/rebuild",
+        description: "Build & restart from source",
+    },
+    SlashCommand {
+        name: "/evolve",
+        description: "Download latest release & restart",
+    },
+    SlashCommand {
+        name: "/whisper",
+        description: "Speak anywhere, paste to clipboard",
+    },
+    SlashCommand {
+        name: "/cd",
+        description: "Change working directory",
+    },
+];
+
+/// Approval option selected by the user
+#[derive(Debug, Clone, PartialEq)]
+pub enum ApprovalOption {
+    AllowOnce,
+    AllowForSession,
+    AllowAlways,
+}
+
+/// State of an inline approval request
+#[derive(Debug, Clone, PartialEq)]
+pub enum ApprovalState {
+    Pending,
+    Approved(ApprovalOption),
+    Denied(String),
+}
+
+/// Data for an inline tool approval request embedded in a DisplayMessage
+#[derive(Debug, Clone)]
+pub struct ApprovalData {
+    pub tool_name: String,
+    pub tool_description: String,
+    pub tool_input: Value,
+    pub capabilities: Vec<String>,
+    pub request_id: Uuid,
+    pub response_tx: mpsc::UnboundedSender<ToolApprovalResponse>,
+    pub requested_at: std::time::Instant,
+    pub state: ApprovalState,
+    /// 0-2, arrow key navigation
+    pub selected_option: usize,
+    /// V key toggle
+    pub show_details: bool,
+}
+
+/// State for the /approve policy selector menu
+#[derive(Debug, Clone, PartialEq)]
+pub enum ApproveMenuState {
+    Pending,
+    Selected(usize),
+}
+
+/// Data for the /approve inline menu
+#[derive(Debug, Clone)]
+pub struct ApproveMenu {
+    /// 0-2
+    pub selected_option: usize,
+    pub state: ApproveMenuState,
+}
+
+/// An image file attached to the input (detected from pasted paths)
+#[derive(Debug, Clone)]
+pub struct ImageAttachment {
+    /// Display name (file name)
+    pub name: String,
+    /// Full path to the image
+    pub path: String,
+}
+
+/// Image file extensions for auto-detection
+pub(crate) const IMAGE_EXTENSIONS: &[&str] =
+    &[".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"];
+
+/// Text file extensions for auto-detection (paste a path → inline content)
+pub(crate) const TEXT_EXTENSIONS: &[&str] = &[
+    ".txt", ".md", ".rst", ".log", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv", ".tsv",
+    ".js", ".mjs", ".ts", ".py", ".rb", ".sh", ".rs", ".go", ".java", ".c", ".cpp", ".h", ".html",
+    ".htm", ".css", ".sql",
+];
+
+/// A single tool call entry within a grouped display
+#[derive(Debug, Clone)]
+pub struct ToolCallEntry {
+    pub description: String,
+    pub success: bool,
+    pub details: Option<String>,
+    /// Whether the tool has finished executing
+    pub completed: bool,
+    /// Full raw tool input — shown untruncated in expanded view
+    pub tool_input: serde_json::Value,
+}
+
+/// A group of tool calls displayed as a collapsible bullet
+#[derive(Debug, Clone)]
+pub struct ToolCallGroup {
+    pub calls: Vec<ToolCallEntry>,
+    pub expanded: bool,
+}
+
+/// Display message for UI rendering
+#[derive(Debug, Clone)]
+pub struct DisplayMessage {
+    pub id: Uuid,
+    pub role: String,
+    pub content: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub token_count: Option<i32>,
+    pub cost: Option<f64>,
+    pub approval: Option<ApprovalData>,
+    pub approve_menu: Option<ApproveMenu>,
+    /// Collapsible details (tool output, etc.) — shown when expanded
+    pub details: Option<String>,
+    /// Whether details are currently expanded
+    pub expanded: bool,
+    /// Grouped tool calls (for role == "tool_group")
+    pub tool_group: Option<ToolCallGroup>,
+}
+
+impl From<Message> for DisplayMessage {
+    fn from(msg: Message) -> Self {
+        Self {
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.created_at,
+            token_count: msg.token_count,
+            cost: msg.cost,
+            approval: None,
+            approve_menu: None,
+            details: None,
+            expanded: false,
+            tool_group: None,
+        }
+    }
+}
+
+/// Main application state
+pub struct App {
+    /// Core state
+    pub current_session: Option<Session>,
+    pub messages: Vec<DisplayMessage>,
+    pub sessions: Vec<Session>,
+    /// All-time usage stats from the ledger (survives session deletes)
+    pub usage_ledger_stats: Vec<crate::db::repository::usage_ledger::ModelUsageStats>,
+
+    /// UI state
+    pub mode: AppMode,
+    pub input_buffer: String,
+    /// Cursor position within input_buffer (byte offset, always on a char boundary)
+    pub cursor_position: usize,
+    /// Images attached to the current input (auto-detected from pasted paths)
+    pub attachments: Vec<ImageAttachment>,
+    /// When Some, an attachment is focused (Up/Down to navigate, Backspace/Delete to remove).
+    /// Index into `attachments`. None means input text is focused.
+    pub focused_attachment: Option<usize>,
+    pub scroll_offset: usize,
+    /// When true, new streaming content auto-scrolls to bottom.
+    /// Set to false when user scrolls up; re-enabled when they scroll back to bottom or send a message.
+    pub auto_scroll: bool,
+    pub selected_session_index: usize,
+    pub should_quit: bool,
+
+    /// Streaming state
+    pub is_processing: bool,
+    pub processing_started_at: Option<std::time::Instant>,
+    pub streaming_response: Option<String>,
+    /// Reasoning/thinking content from providers like MiniMax (display-only, cleared on complete)
+    pub streaming_reasoning: Option<String>,
+    pub error_message: Option<String>,
+    /// When error_message was set — used to auto-dismiss after 2.5s
+    pub error_message_shown_at: Option<std::time::Instant>,
+    /// Transient notification (non-error, e.g. "Copied to clipboard")
+    pub notification: Option<String>,
+    pub notification_shown_at: Option<std::time::Instant>,
+    /// Currently selected message index (left-click to select, right-click to copy)
+    pub selected_message_idx: Option<usize>,
+    /// Set to true when IntermediateText arrives during the current response cycle.
+    /// Reset to false at the start of each new send_message call.
+    /// Used in complete_response to avoid double-adding the assistant message.
+    pub(crate) intermediate_text_received: bool,
+
+    /// Rolling build output lines (last 6, cleared on RestartReady)
+    pub(crate) build_lines: Vec<String>,
+    /// Index of the build-progress DisplayMessage (updated in place)
+    pub(crate) build_msg_idx: Option<usize>,
+
+    /// Animation state
+    pub animation_frame: usize,
+
+    /// Splash screen state
+    pub(crate) splash_shown_at: Option<std::time::Instant>,
+
+    /// Escape confirmation state (double-press to clear)
+    pub(crate) escape_pending_at: Option<std::time::Instant>,
+
+    /// Ctrl+C confirmation state (first clears input, second quits)
+    pub(crate) ctrl_c_pending_at: Option<std::time::Instant>,
+
+    /// Help/Settings scroll offset
+    pub help_scroll_offset: usize,
+
+    /// Model name for display (from provider default)
+    pub default_model_name: String,
+
+    /// Approval policy state
+    pub approval_auto_session: bool,
+    pub approval_auto_always: bool,
+
+    /// File picker state
+    pub file_picker_files: Vec<std::path::PathBuf>,
+    pub file_picker_selected: usize,
+    pub file_picker_scroll_offset: usize,
+    pub file_picker_current_dir: std::path::PathBuf,
+
+    /// Slash autocomplete state
+    pub slash_suggestions_active: bool,
+    /// Indices into SLASH_COMMANDS
+    pub slash_filtered: Vec<usize>,
+    pub slash_selected_index: usize,
+
+    /// Emoji picker state
+    pub emoji_picker_active: bool,
+    /// (emoji char, shortcode) pairs matching current query
+    pub emoji_filtered: Vec<(&'static str, &'static str)>,
+    pub emoji_selected_index: usize,
+    /// Byte offset in input_buffer where the `:` trigger starts
+    pub emoji_colon_offset: usize,
+
+    /// Session rename state
+    pub session_renaming: bool,
+    pub session_rename_buffer: String,
+
+    /// Model selector state (shared with onboarding via ProviderSelectorState)
+    pub ps: crate::tui::provider_selector::ProviderSelectorState,
+
+    /// Input history (arrow up/down to cycle through past messages)
+    pub(crate) input_history: Vec<String>,
+    /// None = not browsing, Some(i) = viewing history[i]
+    pub(crate) input_history_index: Option<usize>,
+    /// Saves current input when entering history
+    pub(crate) input_history_stash: String,
+
+    /// Working directory
+    pub working_directory: std::path::PathBuf,
+
+    /// Context hints queued by UI actions (e.g. /cd, @ file picker).
+    /// Drained and prepended to the next user message so the LLM knows
+    /// what just happened without the user having to explain.
+    pub pending_context: Vec<String>,
+
+    /// Brain state
+    pub brain_path: PathBuf,
+    pub user_commands: Vec<UserCommand>,
+
+    /// Onboarding wizard state
+    pub onboarding: Option<OnboardingWizard>,
+    pub force_onboard: bool,
+
+    /// Sessions currently processing (have in-flight agent tasks)
+    pub(crate) processing_sessions: HashSet<Uuid>,
+    /// Per-session cancel tokens
+    pub(crate) session_cancel_tokens: HashMap<Uuid, CancellationToken>,
+    /// Sessions that completed while user was in a different session (unread responses)
+    pub(crate) sessions_with_unread: HashSet<Uuid>,
+    /// Sessions that have pending approval requests waiting
+    pub(crate) sessions_with_pending_approval: HashSet<Uuid>,
+    /// Cached provider instances keyed by provider name (e.g., "anthropic", "custom:nvidia")
+    pub(crate) provider_cache: HashMap<String, Arc<dyn Provider>>,
+
+    /// Cancellation token for aborting in-progress requests
+    pub(crate) cancel_token: Option<CancellationToken>,
+
+    /// Abort handle for the active agent task — hard-kills the tokio task on cancel
+    pub(crate) task_abort_handle: Option<tokio::task::AbortHandle>,
+
+    /// Queued message — shared with agent so it can be injected between tool calls
+    pub(crate) message_queue: Arc<tokio::sync::Mutex<Option<String>>>,
+
+    /// Local copy of queued message text for display in the input area.
+    /// Set when a message is queued, cleared when injected or recalled via Up.
+    pub(crate) queued_message_preview: Option<String>,
+
+    /// Shared session ID — channels (Telegram, WhatsApp) read this to use the same session
+    pub(crate) shared_session_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
+
+    /// Context window tracking
+    pub context_max_tokens: u32,
+    pub last_input_tokens: Option<u32>,
+    /// Per-response output token count (streaming, counted via tiktoken)
+    pub streaming_output_tokens: u32,
+    /// Per-session cache of last known input token count — survives session switches
+    pub(crate) session_context_cache: HashMap<Uuid, u32>,
+
+    /// Active tool call group (during processing)
+    pub active_tool_group: Option<ToolCallGroup>,
+
+    /// Self-update state
+    pub rebuild_status: Option<String>,
+
+    /// Version string when an update is available (shown in update prompt dialog)
+    pub update_available_version: Option<String>,
+
+    /// Session to resume after restart (set via --session CLI arg)
+    pub resume_session_id: Option<Uuid>,
+
+    /// Cache of rendered lines per message to avoid re-parsing markdown every frame.
+    /// Key: (message_id, content_width). Invalidated on terminal resize.
+    pub render_cache: HashMap<(Uuid, u16), Vec<Line<'static>>>,
+
+    /// Mapping from rendered line index → message index (for click-to-copy).
+    /// Updated each frame by render_chat.
+    pub chat_line_to_msg: Vec<Option<usize>>,
+    /// The scroll offset used during the last render (for coordinate mapping)
+    pub chat_render_scroll: usize,
+    /// The top-left Y coordinate of the chat area in the terminal
+    pub chat_area_y: u16,
+
+    /// History paging — how many DB messages are hidden above the current view
+    pub hidden_older_messages: usize,
+    pub oldest_displayed_sequence: i32,
+    pub display_token_count: usize,
+
+    /// Pending sudo password request (shown as inline dialog)
+    pub sudo_pending: Option<SudoPasswordRequest>,
+    /// Raw password text being typed (never displayed, only dots)
+    pub sudo_input: String,
+
+    /// Active plan document for the current session (loaded from disk)
+    pub plan_document: Option<crate::tui::plan::PlanDocument>,
+    /// Path to the plan JSON file for the current session
+    pub plan_file_path: Option<std::path::PathBuf>,
+
+    /// Split pane manager — tracks pane layout, focus, and per-pane state
+    pub pane_manager: PaneManager,
+    /// Cached messages for inactive panes (keyed by session_id).
+    /// Snapshotted when focus leaves a pane so it can be rendered read-only.
+    pub(crate) pane_message_cache: HashMap<Uuid, Vec<DisplayMessage>>,
+
+    /// Shared WhatsApp state — single bot instance broadcasts QR/connected events.
+    #[cfg(feature = "whatsapp")]
+    pub(crate) whatsapp_state: Arc<crate::channels::whatsapp::WhatsAppState>,
+
+    /// Services
+    pub(crate) agent_service: Arc<AgentService>,
+    pub(crate) session_service: SessionService,
+    pub(crate) message_service: MessageService,
+
+    /// Events
+    pub(crate) event_handler: EventHandler,
+
+    /// Prompt analyzer
+    pub(crate) prompt_analyzer: PromptAnalyzer,
+}
+
+impl App {
+    /// Create a new app instance
+    pub fn new(
+        agent_service: Arc<AgentService>,
+        context: ServiceContext,
+        #[cfg(feature = "whatsapp")] whatsapp_state: Arc<crate::channels::whatsapp::WhatsAppState>,
+    ) -> Self {
+        let brain_path = BrainLoader::resolve_path();
+        let command_loader = CommandLoader::from_brain_path(&brain_path);
+        let user_commands = command_loader.load();
+
+        // Load persisted approval policy from config.toml
+        let (approval_auto_session, approval_auto_always) =
+            Self::read_approval_policy_from_config();
+
+        let this = Self {
+            current_session: None,
+            messages: Vec::new(),
+            sessions: Vec::new(),
+            usage_ledger_stats: Vec::new(),
+            mode: AppMode::Splash,
+            input_buffer: String::new(),
+            cursor_position: 0,
+            attachments: Vec::new(),
+            focused_attachment: None,
+            scroll_offset: 0,
+            auto_scroll: true,
+            selected_session_index: 0,
+            should_quit: false,
+            is_processing: false,
+            processing_started_at: None,
+            streaming_response: None,
+            streaming_reasoning: None,
+            error_message: None,
+            error_message_shown_at: None,
+            notification: None,
+            notification_shown_at: None,
+            selected_message_idx: None,
+            intermediate_text_received: false,
+            build_lines: Vec::new(),
+            build_msg_idx: None,
+            animation_frame: 0,
+            splash_shown_at: Some(std::time::Instant::now()),
+            escape_pending_at: None,
+            ctrl_c_pending_at: None,
+            help_scroll_offset: 0,
+            approval_auto_session,
+            approval_auto_always,
+            file_picker_files: Vec::new(),
+            file_picker_selected: 0,
+            file_picker_scroll_offset: 0,
+            file_picker_current_dir: std::env::current_dir().unwrap_or_default(),
+            slash_suggestions_active: false,
+            slash_filtered: Vec::new(),
+            slash_selected_index: 0,
+            emoji_picker_active: false,
+            emoji_filtered: Vec::new(),
+            emoji_selected_index: 0,
+            emoji_colon_offset: 0,
+            session_renaming: false,
+            session_rename_buffer: String::new(),
+            ps: crate::tui::provider_selector::ProviderSelectorState::default(),
+            input_history: Self::load_history(),
+            input_history_index: None,
+            input_history_stash: String::new(),
+            working_directory: std::env::current_dir().unwrap_or_default(),
+            pending_context: Vec::new(),
+            brain_path,
+            user_commands,
+            onboarding: None,
+            force_onboard: false,
+            processing_sessions: HashSet::new(),
+            session_cancel_tokens: HashMap::new(),
+            sessions_with_unread: HashSet::new(),
+            sessions_with_pending_approval: HashSet::new(),
+            provider_cache: HashMap::new(),
+            cancel_token: None,
+            task_abort_handle: None,
+            message_queue: Arc::new(tokio::sync::Mutex::new(None)),
+            queued_message_preview: None,
+            shared_session_id: Arc::new(tokio::sync::Mutex::new(None)),
+            default_model_name: agent_service.provider_model(),
+            context_max_tokens: agent_service
+                .context_window_for_model(&agent_service.provider_model()),
+            last_input_tokens: None,
+            streaming_output_tokens: 0,
+            session_context_cache: HashMap::new(),
+            active_tool_group: None,
+            rebuild_status: None,
+            update_available_version: None,
+            resume_session_id: None,
+            render_cache: HashMap::new(),
+            chat_line_to_msg: Vec::new(),
+            chat_render_scroll: 0,
+            chat_area_y: 0,
+            hidden_older_messages: 0,
+            oldest_displayed_sequence: 0,
+            display_token_count: 0,
+            sudo_pending: None,
+            sudo_input: String::new(),
+            plan_document: None,
+            plan_file_path: None,
+            pane_manager: PaneManager::load_layout(),
+            pane_message_cache: HashMap::new(),
+            #[cfg(feature = "whatsapp")]
+            whatsapp_state,
+            session_service: SessionService::new(context.clone()),
+            message_service: MessageService::new(context),
+            agent_service,
+            event_handler: EventHandler::new(),
+            prompt_analyzer: PromptAnalyzer::new(),
+        };
+        tracing::info!(
+            "App created — provider: {} / {}",
+            this.agent_service.provider_name(),
+            this.agent_service.provider_model(),
+        );
+        this
+    }
+
+    /// Get the provider name
+    pub fn provider_name(&self) -> String {
+        self.agent_service.provider_name()
+    }
+
+    /// Get the provider model
+    pub fn provider_model(&self) -> String {
+        self.agent_service.provider_model()
+    }
+
+    /// Check if a session_id matches the currently active session
+    pub(crate) fn is_current_session(&self, session_id: Uuid) -> bool {
+        self.current_session.as_ref().map(|s| s.id) == Some(session_id)
+    }
+
+    /// Set the plan file path for a session and attempt to load it.
+    pub(crate) fn set_plan_file_for_session(&mut self, session_id: Uuid) {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let path = std::path::PathBuf::from(format!(
+            "{}/.opencrabs/agents/session/.opencrabs_plan_{}.json",
+            home, session_id
+        ));
+        self.plan_file_path = Some(path);
+        self.reload_plan();
+    }
+
+    /// Reload the plan document from disk.
+    ///
+    /// Stale plans (terminal status, or InProgress but not actively processing)
+    /// are discarded automatically so they don't linger across restarts.
+    pub(crate) fn reload_plan(&mut self) {
+        self.plan_document = self.plan_file_path.as_ref().and_then(|path| {
+            let content = std::fs::read_to_string(path).ok()?;
+            serde_json::from_str::<crate::tui::plan::PlanDocument>(&content).ok()
+        });
+
+        // Clean up stale plans that shouldn't be displayed
+        if let Some(ref plan) = self.plan_document {
+            use crate::tui::plan::PlanStatus;
+            let should_discard = match plan.status {
+                PlanStatus::Completed | PlanStatus::Rejected | PlanStatus::Cancelled => true,
+                PlanStatus::InProgress => {
+                    // If the agent isn't actively processing, this plan is stale
+                    // (left over from a previous run or a failed tool call)
+                    !self.is_processing
+                }
+                _ => false,
+            };
+            if should_discard {
+                self.discard_plan_file();
+                self.plan_document = None;
+            }
+        }
+    }
+
+    /// Clear the in-memory plan and delete the backing file.
+    pub(crate) fn discard_plan_file(&mut self) {
+        if let Some(path) = &self.plan_file_path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    /// Get the shared session ID handle (for channels like Telegram/WhatsApp)
+    pub fn shared_session_id(&self) -> Arc<tokio::sync::Mutex<Option<Uuid>>> {
+        self.shared_session_id.clone()
+    }
+
+    /// Initialize the app by loading or creating a session
+    pub async fn initialize(&mut self) -> Result<()> {
+        // Resume a specific session (e.g. after /rebuild restart) or load the most recent
+        if let Some(session_id) = self.resume_session_id.take() {
+            self.load_session(session_id).await?;
+            // Skip splash — go straight to chat
+            self.mode = AppMode::Chat;
+            self.splash_shown_at = None;
+            // Send a hidden wake-up message to the agent (not shown in UI)
+            // If we also evolved, merge the evolution context into the same message
+            // to avoid sending two separate prompts that produce duplicate responses.
+            self.processing_sessions.insert(session_id);
+            self.is_processing = true;
+            self.processing_started_at = Some(std::time::Instant::now());
+            let agent_service = self.agent_service.clone();
+            let event_sender = self.event_sender();
+            let token = CancellationToken::new();
+            self.cancel_token = Some(token.clone());
+            let evolution_context = std::env::var("OPENCRABS_EVOLVED_FROM")
+                .ok()
+                .filter(|old| old != crate::VERSION)
+                .map(|old| {
+                    // Clear env var so it doesn't fire again
+                    // SAFETY: single-threaded at this point in startup
+                    unsafe { std::env::remove_var("OPENCRABS_EVOLVED_FROM") };
+                    format!(
+                        " You just evolved from v{old} to v{new}. \
+                         Check the CHANGELOG at the repo root for what's new in v{new}. \
+                         Compare the brain templates in src/docs/reference/templates/ against \
+                         the user's brain files in ~/.opencrabs/ (TOOLS.md, AGENTS.md, etc.) \
+                         and tell the user what changed. Offer to update their brain files \
+                         with the new content. Be specific about what's new.",
+                        new = crate::VERSION,
+                    )
+                })
+                .unwrap_or_default();
+            tokio::spawn(async move {
+                let wake_up = format!(
+                    "[System: You just rebuilt yourself from source and restarted \
+                    via exec(). Greet the user, confirm the restart succeeded, and continue \
+                    where you left off.{evolution_context}]"
+                );
+                match agent_service
+                    .send_message_with_tools_and_mode(
+                        session_id,
+                        wake_up.to_string(),
+                        None,
+                        Some(token),
+                    )
+                    .await
+                {
+                    Ok(response) => {
+                        let _ = event_sender.send(TuiEvent::ResponseComplete {
+                            session_id,
+                            response,
+                        });
+                    }
+                    Err(e) => {
+                        let _ = event_sender.send(TuiEvent::Error {
+                            session_id,
+                            message: e.to_string(),
+                        });
+                    }
+                }
+            });
+        } else if let Some(last_id) = Self::read_last_session_id()
+            && self.session_service.get_session(last_id).await?.is_some()
+        {
+            self.load_session(last_id).await?;
+        } else if let Some(session) = self.session_service.get_most_recent_session().await? {
+            self.load_session(session.id).await?;
+        } else {
+            // Create a new session if none exists
+            self.create_new_session().await?;
+        }
+
+        tracing::info!(
+            "Session loaded — provider: {} / {}, session: {:?}",
+            self.agent_service.provider_name(),
+            self.default_model_name,
+            self.current_session.as_ref().map(|s| s.id),
+        );
+
+        // Pre-load sessions for restored split panes so they render
+        // immediately instead of showing empty until focused.
+        if self.pane_manager.is_split() {
+            let focused = self.pane_manager.focused;
+            let pane_sessions: Vec<Uuid> = self
+                .pane_manager
+                .panes
+                .iter()
+                .filter(|p| p.id != focused)
+                .filter_map(|p| p.session_id)
+                .collect();
+            for sid in pane_sessions {
+                self.preload_pane_session(sid).await;
+            }
+        }
+
+        // Load sessions list
+        self.load_sessions().await?;
+
+        // Post-evolve fallback: if OPENCRABS_EVOLVED_FROM is still set
+        // (e.g. /evolve without resume_session_id), handle it here.
+        // Normally this is merged into the wake-up message above.
+        if let Ok(old_version) = std::env::var("OPENCRABS_EVOLVED_FROM") {
+            unsafe { std::env::remove_var("OPENCRABS_EVOLVED_FROM") };
+            if old_version != crate::VERSION && self.current_session.is_some() {
+                let msg = format!(
+                    "[SYSTEM: You just evolved from v{old} to v{new}. \
+                     Check the CHANGELOG at the repo root for what's new in v{new}. \
+                     Compare the brain templates in src/docs/reference/templates/ against \
+                     the user's brain files in ~/.opencrabs/ (TOOLS.md, AGENTS.md, etc.) \
+                     and tell the user what changed. Offer to update their brain files \
+                     with the new content. Be specific about what's new.]",
+                    old = old_version,
+                    new = crate::VERSION,
+                );
+                let tx = self.event_sender();
+                let _ = tx.send(TuiEvent::MessageSubmitted(msg));
+            }
+        }
+
+        // Spawn background release check (immediately on startup, then daily).
+        // No initial delay — if an update exists the prompt appears before/during splash.
+        {
+            let tx = self.event_sender();
+            tokio::spawn(async move {
+                loop {
+                    if let Some(latest) = crate::brain::tools::evolve::check_for_update().await {
+                        let _ = tx.send(TuiEvent::UpdateAvailable(latest));
+                    }
+                    // Check again in 24 hours
+                    tokio::time::sleep(std::time::Duration::from_secs(86400)).await;
+                }
+            });
+        }
+
+        // Notify user if config was recovered from last-known-good snapshot
+        if crate::config::Config::was_recovered() {
+            self.push_system_message(
+                "🔧 Config recovered from last-known-good snapshot. \
+                 Review ~/.opencrabs/config.toml for issues."
+                    .to_string(),
+            );
+        }
+
+        // Notify user about unknown config keys (possible typos)
+        let typo_warnings = crate::config::Config::take_typo_warnings();
+        if !typo_warnings.is_empty() {
+            self.push_system_message(format!(
+                "⚠️ Unknown keys in config.toml (possible typos): {}",
+                typo_warnings.join(", ")
+            ));
+        }
+
+        // Notify user if DB integrity check failed
+        if crate::db::db_integrity_failed() {
+            self.push_system_message(
+                "⚠️ Database integrity check FAILED — data may be corrupted. \
+                 Consider backing up and recreating the database."
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Get event handler
+    pub fn event_handler(&self) -> &EventHandler {
+        &self.event_handler
+    }
+
+    /// Get mutable event handler
+    pub fn event_handler_mut(&mut self) -> &mut EventHandler {
+        &mut self.event_handler
+    }
+
+    /// Get event sender
+    pub fn event_sender(&self) -> tokio::sync::mpsc::UnboundedSender<TuiEvent> {
+        self.event_handler.sender()
+    }
+
+    /// Set agent service (used to inject configured agent after app creation)
+    pub fn set_agent_service(&mut self, agent_service: Arc<AgentService>) {
+        self.default_model_name = agent_service.provider_model();
+        self.agent_service = agent_service;
+    }
+
+    /// Rebuild agent service with a new provider
+    pub(crate) async fn rebuild_agent_service(&mut self) -> Result<()> {
+        // Load config - API keys are stored in keys.toml and merged with config
+        let config = crate::config::Config::load()
+            .map_err(|e| anyhow::anyhow!("Failed to load config: {}", e))?;
+
+        // Check all providers dynamically - log enabled providers for debugging
+        let enabled_providers: Vec<&str> = vec![
+            config
+                .providers
+                .anthropic
+                .as_ref()
+                .filter(|p| p.enabled)
+                .map(|_| "anthropic"),
+            config
+                .providers
+                .openai
+                .as_ref()
+                .filter(|p| p.enabled)
+                .map(|_| "openai"),
+            config
+                .providers
+                .gemini
+                .as_ref()
+                .filter(|p| p.enabled)
+                .map(|_| "gemini"),
+            config
+                .providers
+                .openrouter
+                .as_ref()
+                .filter(|p| p.enabled)
+                .map(|_| "openrouter"),
+            config
+                .providers
+                .minimax
+                .as_ref()
+                .filter(|p| p.enabled)
+                .map(|_| "minimax"),
+            config
+                .providers
+                .zhipu
+                .as_ref()
+                .filter(|p| p.enabled)
+                .map(|_| "zhipu"),
+            config.providers.active_custom().map(|_| "custom"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        tracing::debug!(
+            "rebuild_agent_service: enabled_providers = {:?}",
+            enabled_providers
+        );
+
+        // Create new provider from config
+        let (provider, provider_warning) =
+            crate::brain::provider::create_provider_with_warning(&config)
+                .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))?;
+
+        // Get existing context from current agent service
+        let context = self.agent_service.context().clone();
+
+        // Get existing tool registry from current agent service
+        let tool_registry = self.agent_service.tool_registry().clone();
+
+        // Get existing system brain from current agent service
+        let system_brain = self.agent_service.system_brain().cloned();
+
+        // Get event sender for approval callback
+        let event_sender = self.event_sender();
+
+        // Create approval callback that sends requests to TUI
+        let approval_callback: crate::brain::agent::ApprovalCallback = Arc::new(move |tool_info| {
+            let sender = event_sender.clone();
+            Box::pin(async move {
+                use crate::tui::events::{ToolApprovalRequest, TuiEvent};
+                use tokio::sync::mpsc;
+
+                let (response_tx, mut response_rx) = mpsc::unbounded_channel();
+
+                let request = ToolApprovalRequest {
+                    request_id: uuid::Uuid::new_v4(),
+                    session_id: tool_info.session_id,
+                    tool_name: tool_info.tool_name,
+                    tool_description: tool_info.tool_description,
+                    tool_input: tool_info.tool_input,
+                    capabilities: tool_info.capabilities,
+                    response_tx,
+                    requested_at: std::time::Instant::now(),
+                };
+
+                sender
+                    .send(TuiEvent::ToolApprovalRequested(request))
+                    .map_err(|e| {
+                        crate::brain::agent::AgentError::Internal(format!(
+                            "Failed to send approval request: {}",
+                            e
+                        ))
+                    })?;
+
+                let response = response_rx.recv().await.ok_or_else(|| {
+                    crate::brain::agent::AgentError::Internal("Approval channel closed".to_string())
+                })?;
+
+                // TUI handles "always" internally via approval_auto_session;
+                // return false for always_approve so tool_loop doesn't duplicate it
+                Ok((response.approved, false))
+            })
+        });
+
+        // Preserve existing callbacks from the current agent service
+        let progress_callback = self.agent_service.progress_callback().clone();
+        let message_queue_callback = self.agent_service.message_queue_callback().clone();
+        let sudo_callback = self.agent_service.sudo_callback().clone();
+        let session_updated_tx = self.agent_service.session_updated_tx();
+        let working_dir = self
+            .agent_service
+            .working_directory()
+            .read()
+            .expect("working_directory lock poisoned")
+            .clone();
+        let brain_path = self.agent_service.brain_path().clone();
+
+        // Create new agent service with new provider — preserve ALL callbacks
+        let mut new_agent_service = AgentService::new(provider, context, &config)
+            .with_tool_registry(tool_registry)
+            .with_approval_callback(Some(approval_callback))
+            .with_progress_callback(progress_callback)
+            .with_message_queue_callback(message_queue_callback)
+            .with_sudo_callback(sudo_callback)
+            .with_working_directory(working_dir);
+
+        if let Some(tx) = session_updated_tx {
+            new_agent_service = new_agent_service.with_session_updated_tx(tx);
+        }
+
+        if let Some(bp) = brain_path {
+            new_agent_service = new_agent_service.with_brain_path(bp);
+        }
+
+        // Add system brain if it exists
+        if let Some(brain) = system_brain {
+            new_agent_service = new_agent_service.with_system_brain(brain);
+        }
+
+        let new_agent_service = Arc::new(new_agent_service);
+
+        // Update app state
+        self.default_model_name = new_agent_service.provider_model();
+        self.agent_service = new_agent_service;
+
+        // Surface fallback warning as TUI system message
+        if let Some(warning) = provider_warning {
+            self.push_system_message(warning);
+        }
+
+        Ok(())
+    }
+
+    /// Sync the current session's provider_name and model to match the active agent service.
+    /// Call after rebuild_agent_service() so the footer and sessions screen reflect the change.
+    pub(crate) async fn sync_session_to_provider(&mut self) {
+        let provider_name = self.agent_service.provider_name();
+        let model = self.default_model_name.clone();
+        if let Some(ref mut session) = self.current_session {
+            session.provider_name = Some(provider_name.clone());
+            session.model = Some(model);
+            let session_copy = session.clone();
+            if let Err(e) = self.session_service.update_session(&session_copy).await {
+                tracing::warn!("Failed to persist provider to session: {}", e);
+            }
+        }
+        // Cache provider instance
+        let provider_arc = self.agent_service.provider();
+        self.provider_cache.insert(provider_name, provider_arc);
+    }
+
+    /// Get the agent service
+    pub fn agent_service(&self) -> &Arc<AgentService> {
+        &self.agent_service
+    }
+
+    /// Receive next event (blocks until available)
+    pub async fn next_event(&mut self) -> Option<TuiEvent> {
+        self.event_handler.next().await
+    }
+
+    /// Try to receive next event without blocking (returns None if queue is empty)
+    pub fn try_next_event(&mut self) -> Option<TuiEvent> {
+        self.event_handler.try_next()
+    }
+
+    /// Handle an event
+    pub async fn handle_event(&mut self, event: TuiEvent) -> Result<()> {
+        match event {
+            TuiEvent::Key(key_event) => {
+                self.handle_key_event(key_event).await?;
+            }
+            TuiEvent::MouseScroll(direction) => {
+                if self.mode == AppMode::Chat {
+                    if direction > 0 {
+                        // Scrolling up — disable auto-scroll
+                        self.scroll_offset = self.scroll_offset.saturating_add(3);
+                        self.auto_scroll = false;
+                    } else {
+                        self.scroll_offset = self.scroll_offset.saturating_sub(3);
+                        // Re-enable auto-scroll when back at bottom
+                        if self.scroll_offset == 0 {
+                            self.auto_scroll = true;
+                        }
+                    }
+                }
+            }
+            TuiEvent::MouseClick(_col, row) => {
+                if self.mode == AppMode::Chat {
+                    self.handle_click_select(row);
+                }
+            }
+            TuiEvent::MouseRightClick(_col, row) => {
+                if self.mode == AppMode::Chat {
+                    self.handle_right_click_copy(row);
+                }
+            }
+            TuiEvent::Paste(text) => {
+                // Handle paste events in Chat mode or Onboarding mode
+                if self.mode == AppMode::Chat {
+                    // Check if pasted text contains image paths — extract as attachments
+                    let (clean_text, new_attachments) = Self::extract_image_paths(&text);
+                    if !new_attachments.is_empty() {
+                        self.attachments.extend(new_attachments);
+                        if !clean_text.trim().is_empty() {
+                            self.input_buffer
+                                .insert_str(self.cursor_position, &clean_text);
+                            self.cursor_position += clean_text.len();
+                        }
+                    } else {
+                        self.input_buffer.insert_str(self.cursor_position, &text);
+                        self.cursor_position += text.len();
+                    }
+                    self.update_slash_suggestions();
+                } else if self.mode == AppMode::Onboarding {
+                    // Handle paste in onboarding wizard (for API keys, etc.)
+                    if let Some(ref mut wizard) = self.onboarding {
+                        wizard.handle_paste(&text);
+                        // Trigger model fetch if provider supports it and key was just pasted
+                        if wizard.ps.supports_model_fetch() && !wizard.ps.api_key_input.is_empty() {
+                            let provider_idx = wizard.ps.selected_provider;
+                            let api_key = wizard.ps.api_key_input.clone();
+                            wizard.ps.models_fetching = true;
+                            let sender = self.event_sender();
+                            tokio::spawn(async move {
+                                let models = super::onboarding::fetch_provider_models(
+                                    provider_idx,
+                                    Some(&api_key),
+                                    None,
+                                )
+                                .await;
+                                let _ = sender.send(TuiEvent::OnboardingModelsFetched(models));
+                            });
+                        }
+                    }
+                } else if self.mode == AppMode::ModelSelector {
+                    let is_custom = self.ps.is_custom();
+                    let is_zhipu = self.ps.is_zhipu();
+                    match (self.ps.focused_field, is_custom, is_zhipu) {
+                        // Zhipu: field 1 = endpoint type — paste auto-advances to API key
+                        (1, false, true) => {
+                            self.ps.focused_field = 2;
+                            self.ps.api_key_input.push_str(&text);
+                            let provider_idx = self.ps.selected_provider;
+                            let api_key = self.ps.api_key_input.clone();
+                            let zhipu_et = self.ps.zhipu_endpoint_str();
+                            let sender = self.event_sender();
+                            tokio::spawn(async move {
+                                let models = super::onboarding::fetch_provider_models(
+                                    provider_idx,
+                                    Some(&api_key),
+                                    zhipu_et.as_deref(),
+                                )
+                                .await;
+                                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                                    provider_idx,
+                                    models,
+                                ));
+                            });
+                        }
+                        // Zhipu: field 2 = API key
+                        (2, false, true) => {
+                            self.ps.api_key_input.push_str(&text);
+                            let provider_idx = self.ps.selected_provider;
+                            let api_key = self.ps.api_key_input.clone();
+                            let zhipu_et = self.ps.zhipu_endpoint_str();
+                            let sender = self.event_sender();
+                            tokio::spawn(async move {
+                                let models = super::onboarding::fetch_provider_models(
+                                    provider_idx,
+                                    Some(&api_key),
+                                    zhipu_et.as_deref(),
+                                )
+                                .await;
+                                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                                    provider_idx,
+                                    models,
+                                ));
+                            });
+                        }
+                        // Non-custom non-zhipu: field 1 = API key
+                        (1, false, false) => {
+                            self.ps.api_key_input.push_str(&text);
+                            // Trigger model fetch after pasting key
+                            let provider_idx = self.ps.selected_provider;
+                            let api_key = self.ps.api_key_input.clone();
+                            let sender = self.event_sender();
+                            tokio::spawn(async move {
+                                let models = super::onboarding::fetch_provider_models(
+                                    provider_idx,
+                                    Some(&api_key),
+                                    None,
+                                )
+                                .await;
+                                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                                    provider_idx,
+                                    models,
+                                ));
+                            });
+                        }
+                        // Custom: field 1 = base URL, field 2 = API key, field 3 = model
+                        (1, true, _) => {
+                            self.ps.base_url.push_str(&text);
+                        }
+                        (2, true, _) => {
+                            self.ps.api_key_input.push_str(&text);
+                        }
+                        (3, true, _) => {
+                            self.ps.custom_model.push_str(&text);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            TuiEvent::MessageSubmitted(content) => {
+                self.send_message(content).await?;
+            }
+            TuiEvent::ResponseChunk { session_id, text } => {
+                let is_current = self.is_current_session(session_id);
+                tracing::debug!(
+                    "[TUI] ResponseChunk: len={} is_current={} streaming_len={}",
+                    text.len(),
+                    is_current,
+                    self.streaming_response
+                        .as_ref()
+                        .map(|s| s.len())
+                        .unwrap_or(0)
+                );
+                if is_current {
+                    self.append_streaming_chunk(text);
+                }
+            }
+            TuiEvent::ReasoningChunk { session_id, text } => {
+                if self.is_current_session(session_id) {
+                    if let Some(ref mut existing) = self.streaming_reasoning {
+                        existing.push_str(&text);
+                    } else {
+                        self.streaming_reasoning = Some(text);
+                    }
+                    if self.auto_scroll {
+                        self.scroll_offset = 0;
+                    }
+                }
+            }
+            TuiEvent::ResponseComplete {
+                session_id,
+                response,
+            } => {
+                if self.is_current_session(session_id) {
+                    if self.is_processing {
+                        self.complete_response(response).await?;
+                    } else {
+                        // Session was cancelled (Esc×2) — agent finished after cancel.
+                        // Reload from DB to pick up any final content the agent wrote
+                        // before detecting the cancellation token.
+                        self.load_session(session_id).await?;
+                    }
+                } else {
+                    // Background session completed — mark as unread
+                    self.processing_sessions.remove(&session_id);
+                    self.session_cancel_tokens.remove(&session_id);
+                    self.sessions_with_unread.insert(session_id);
+                    // Refresh pane cache so inactive pane shows the completed response
+                    if self.pane_manager.is_split() {
+                        self.preload_pane_session(session_id).await;
+                    }
+                }
+            }
+            TuiEvent::Error {
+                session_id,
+                message,
+            } => {
+                // Always clear session processing state — missing this for current sessions
+                // caused subsequent messages to be silently queued after errors.
+                self.processing_sessions.remove(&session_id);
+                self.session_cancel_tokens.remove(&session_id);
+                if self.is_current_session(session_id) {
+                    // Reload from DB to pick up any writes the agent made after
+                    // the Esc×2 cancel (tool blocks, reasoning, etc. persisted
+                    // between the initial reload and the Cancelled return).
+                    self.load_session(session_id).await?;
+                    if message != "Cancelled" {
+                        self.show_error(message);
+                    }
+                } else {
+                    tracing::warn!("Background session {} error: {}", session_id, message);
+                    // Refresh pane cache so inactive pane shows whatever was written
+                    if self.pane_manager.is_split() {
+                        self.preload_pane_session(session_id).await;
+                    }
+                }
+            }
+            TuiEvent::SwitchMode(mode) => {
+                self.switch_mode(mode).await?;
+            }
+            TuiEvent::SelectSession(session_id) => {
+                self.load_session(session_id).await?;
+            }
+            TuiEvent::NewSession => {
+                self.create_new_session().await?;
+            }
+            TuiEvent::Quit => {
+                self.pane_manager.save_layout();
+                self.should_quit = true;
+            }
+            TuiEvent::Tick => {
+                // Update animation frame for spinner
+                self.animation_frame = self.animation_frame.wrapping_add(1);
+
+                // Resolve deferred health checks (shows Pending for one frame first)
+                if let Some(ref mut wizard) = self.onboarding
+                    && wizard.health_running
+                    && !wizard.health_complete
+                {
+                    wizard.tick_health_check();
+                }
+
+                // Auto-dismiss error/warning messages after 2.5 seconds
+                if let Some(shown_at) = self.error_message_shown_at
+                    && shown_at.elapsed() >= std::time::Duration::from_millis(2500)
+                {
+                    self.error_message = None;
+                    self.error_message_shown_at = None;
+                }
+
+                // Auto-close splash screen after 3 seconds
+                if self.mode == AppMode::Splash
+                    && let Some(shown_at) = self.splash_shown_at
+                    && shown_at.elapsed() >= std::time::Duration::from_secs(3)
+                {
+                    self.splash_shown_at = None;
+                    let is_first = super::onboarding::is_first_time();
+                    if self.force_onboard || is_first {
+                        self.force_onboard = false;
+                        self.onboarding = Some(OnboardingWizard::new());
+                        self.switch_mode(AppMode::Onboarding).await?;
+                    } else {
+                        self.switch_mode(AppMode::Chat).await?;
+                    }
+                }
+            }
+            TuiEvent::ToolApprovalRequested(request) => {
+                self.handle_approval_requested(request);
+            }
+            TuiEvent::ToolApprovalResponse(_response) => {
+                // Response is sent via channel, auto-scroll if enabled
+                if self.auto_scroll {
+                    self.scroll_offset = 0;
+                }
+            }
+            TuiEvent::ToolCallStarted {
+                session_id,
+                tool_name,
+                tool_input,
+            } if self.is_current_session(session_id) && self.is_processing => {
+                tracing::info!(
+                    "[TUI] ToolCallStarted: {} (active_group={}, msg_count={})",
+                    tool_name,
+                    self.active_tool_group.is_some(),
+                    self.messages.len()
+                );
+                // Show tool call in progress
+                let desc = Self::format_tool_description(&tool_name, &tool_input);
+                let entry = ToolCallEntry {
+                    description: desc,
+                    success: true,
+                    details: None,
+                    completed: false,
+                    tool_input: tool_input.clone(),
+                };
+                if let Some(ref mut group) = self.active_tool_group {
+                    group.calls.push(entry);
+                } else {
+                    self.active_tool_group = Some(ToolCallGroup {
+                        calls: vec![entry],
+                        expanded: false,
+                    });
+                }
+                if self.auto_scroll {
+                    self.scroll_offset = 0;
+                }
+            }
+            TuiEvent::IntermediateText {
+                session_id,
+                text,
+                reasoning,
+            } if self.is_current_session(session_id) && self.is_processing => {
+                tracing::info!(
+                    "[TUI] IntermediateText: len={} active_group={} streaming={}",
+                    text.len(),
+                    self.active_tool_group.is_some(),
+                    self.streaming_response.is_some()
+                );
+                // Reset timer for next thinking phase
+                self.processing_started_at = Some(std::time::Instant::now());
+
+                // Capture reasoning from either the event or the streaming accumulator
+                let reasoning_details = reasoning.or_else(|| self.streaming_reasoning.take());
+
+                // Clear streaming response - text is now going to be a permanent message
+                self.streaming_response = None;
+                self.streaming_reasoning = None;
+                self.intermediate_text_received = true;
+
+                // Flush previous iteration's tool group FIRST, so tools appear
+                // before the next iteration's text (matches DB order).
+                if let Some(group) = self.active_tool_group.take() {
+                    let count = group.calls.len();
+                    self.messages.push(DisplayMessage {
+                        id: Uuid::new_v4(),
+                        role: "tool_group".to_string(),
+                        content: format!(
+                            "{} tool call{}",
+                            count,
+                            if count == 1 { "" } else { "s" }
+                        ),
+                        timestamp: chrono::Utc::now(),
+                        token_count: None,
+                        cost: None,
+                        approval: None,
+                        approve_menu: None,
+                        details: None,
+                        expanded: false,
+                        tool_group: Some(group),
+                    });
+                }
+
+                // Then add the new intermediate text as a separate assistant message
+                let text = crate::utils::sanitize::strip_llm_artifacts(&text);
+                self.messages.push(DisplayMessage {
+                    id: Uuid::new_v4(),
+                    role: "assistant".to_string(),
+                    content: text,
+                    timestamp: chrono::Utc::now(),
+                    token_count: None,
+                    cost: None,
+                    approval: None,
+                    approve_menu: None,
+                    details: reasoning_details,
+                    expanded: false,
+                    tool_group: None,
+                });
+
+                if self.auto_scroll {
+                    self.scroll_offset = 0;
+                }
+            }
+            TuiEvent::QueuedUserMessage { session_id, text }
+                if self.is_current_session(session_id) =>
+            {
+                tracing::info!(
+                    "[TUI] QueuedUserMessage inline: len={} active_group={}",
+                    text.len(),
+                    self.active_tool_group.is_some()
+                );
+
+                // Flush any active tool group so the user message appears after it
+                if let Some(group) = self.active_tool_group.take() {
+                    let count = group.calls.len();
+                    self.messages.push(DisplayMessage {
+                        id: Uuid::new_v4(),
+                        role: "tool".to_string(),
+                        content: format!(
+                            "{} tool call{} completed",
+                            count,
+                            if count == 1 { "" } else { "s" }
+                        ),
+                        timestamp: chrono::Utc::now(),
+                        token_count: None,
+                        cost: None,
+                        approval: None,
+                        approve_menu: None,
+                        details: None,
+                        expanded: false,
+                        tool_group: Some(group),
+                    });
+                }
+
+                // Add the queued user message inline in the chat flow
+                self.messages.push(DisplayMessage {
+                    id: Uuid::new_v4(),
+                    role: "user".to_string(),
+                    content: text,
+                    timestamp: chrono::Utc::now(),
+                    token_count: None,
+                    cost: None,
+                    approval: None,
+                    approve_menu: None,
+                    details: None,
+                    expanded: false,
+                    tool_group: None,
+                });
+
+                // Clear the preview and input buffer — message is now in the chat
+                self.queued_message_preview = None;
+                if !self.input_buffer.is_empty() {
+                    self.input_buffer.clear();
+                    self.cursor_position = 0;
+                }
+
+                if self.auto_scroll {
+                    self.scroll_offset = 0;
+                }
+            }
+            TuiEvent::ToolCallCompleted {
+                session_id,
+                tool_name,
+                tool_input,
+                success,
+                summary,
+            } if self.is_current_session(session_id) && self.is_processing => {
+                // Reset timer so "thinking..." counter restarts after each tool call
+                self.processing_started_at = Some(std::time::Instant::now());
+                let desc = Self::format_tool_description(&tool_name, &tool_input);
+                let details = if summary.is_empty() {
+                    None
+                } else {
+                    Some(summary)
+                };
+
+                // Update the existing Started entry instead of pushing a duplicate.
+                // Match by description — the Started entry that hasn't completed yet.
+                let updated = if let Some(ref mut group) = self.active_tool_group {
+                    if let Some(existing) = group
+                        .calls
+                        .iter_mut()
+                        .rev()
+                        .find(|c| c.description == desc && !c.completed)
+                    {
+                        existing.success = success;
+                        existing.details = details.clone();
+                        existing.completed = true;
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                // Fallback: push as new entry if no matching Started entry found
+                if !updated {
+                    let entry = ToolCallEntry {
+                        description: desc,
+                        success,
+                        details,
+                        completed: true,
+                        tool_input: tool_input.clone(),
+                    };
+                    if let Some(ref mut group) = self.active_tool_group {
+                        group.calls.push(entry);
+                    } else {
+                        self.active_tool_group = Some(ToolCallGroup {
+                            calls: vec![entry],
+                            expanded: false,
+                        });
+                    }
+                }
+                // Reload plan from disk whenever the plan tool completes
+                if tool_name == "plan" {
+                    self.reload_plan();
+                }
+                if self.auto_scroll {
+                    self.scroll_offset = 0;
+                }
+            }
+            TuiEvent::CompactionSummary {
+                session_id,
+                summary,
+            } if self.is_current_session(session_id) => {
+                // Agent has summarized history — clear the TUI view for a fresh start.
+                self.messages.clear();
+                self.render_cache.clear();
+                self.hidden_older_messages = 0;
+                self.oldest_displayed_sequence = 0;
+                self.display_token_count = 0;
+                // Reset streaming state so post-compaction tool calls render cleanly
+                self.streaming_response = None;
+                self.streaming_reasoning = None;
+                self.active_tool_group = None;
+                // Allow post-compaction TokenCountUpdated to set a lower value
+                self.last_input_tokens = None;
+
+                // Brief status notice
+                self.messages.push(DisplayMessage {
+                    id: Uuid::new_v4(),
+                    role: "system".to_string(),
+                    content: "⚡ Context compacted — summary saved to daily memory log".to_string(),
+                    timestamp: chrono::Utc::now(),
+                    token_count: None,
+                    cost: None,
+                    approval: None,
+                    approve_menu: None,
+                    details: None,
+                    expanded: false,
+                    tool_group: None,
+                });
+
+                // Summary rendered as a real assistant message in chat — tool calls follow below
+                self.messages.push(DisplayMessage {
+                    id: Uuid::new_v4(),
+                    role: "assistant".to_string(),
+                    content: summary,
+                    timestamp: chrono::Utc::now(),
+                    token_count: None,
+                    cost: None,
+                    approval: None,
+                    approve_menu: None,
+                    details: None,
+                    expanded: false,
+                    tool_group: None,
+                });
+                // auto_scroll stays true — new messages continue below
+            }
+            TuiEvent::BuildLine(line) => {
+                // Keep a rolling window of the last 6 build lines
+                self.build_lines.push(line);
+                if self.build_lines.len() > 6 {
+                    self.build_lines.remove(0);
+                }
+                // Build the display content: header + rolling lines
+                let content = format!("🦀 Building OpenCrabs...\n{}", self.build_lines.join("\n"));
+                if let Some(idx) = self.build_msg_idx {
+                    // Update existing build message in place
+                    if let Some(msg) = self.messages.get_mut(idx) {
+                        msg.content = content;
+                    }
+                } else {
+                    // Create the build progress message
+                    self.messages.push(DisplayMessage {
+                        id: Uuid::new_v4(),
+                        role: "system".to_string(),
+                        content,
+                        timestamp: chrono::Utc::now(),
+                        token_count: None,
+                        cost: None,
+                        approval: None,
+                        approve_menu: None,
+                        details: None,
+                        expanded: false,
+                        tool_group: None,
+                    });
+                    self.build_msg_idx = Some(self.messages.len() - 1);
+                }
+                self.scroll_offset = 0;
+            }
+            TuiEvent::RestartReady(_status) => {
+                // Clear build progress
+                if let Some(idx) = self.build_msg_idx.take()
+                    && idx < self.messages.len()
+                {
+                    self.messages.remove(idx);
+                }
+                self.build_lines.clear();
+                self.rebuild_status = None;
+                // Auto exec() restart — no prompt, no permission needed
+                if let Some(session) = &self.current_session {
+                    let session_id = session.id;
+                    match SelfUpdater::auto_detect() {
+                        Ok(updater) => {
+                            if let Err(e) = updater.restart(session_id) {
+                                self.show_error(format!("Restart failed: {}", e));
+                                self.switch_mode(AppMode::Chat).await?;
+                            }
+                            // exec() succeeded — this process is replaced, never reached
+                        }
+                        Err(e) => {
+                            self.show_error(format!("Restart failed: {}", e));
+                            self.switch_mode(AppMode::Chat).await?;
+                        }
+                    }
+                }
+            }
+            TuiEvent::ConfigReloaded => {
+                // Refresh commands autocomplete
+                self.reload_user_commands();
+                // Refresh approval policy
+                (self.approval_auto_session, self.approval_auto_always) =
+                    Self::read_approval_policy_from_config();
+                // Provider swap is already handled by the ConfigWatcher callback
+                // (ui.rs). Do NOT re-create the provider here — it causes a
+                // redundant create_provider call every reload, and the model-name
+                // comparison (config alias vs provider full ID) never matches,
+                // so it would fire on every single reload.
+                tracing::info!("Config reloaded — refreshed commands, approval policy, agent");
+            }
+            TuiEvent::TokenCountUpdated { session_id, count }
+                if self.is_current_session(session_id) =>
+            {
+                self.display_token_count = count;
+                // Always reflect the latest token count from the tool loop.
+                // The CLI calibration (tool_loop.rs line ~870) overwrites the
+                // tiktoken estimate with the real value reported by Claude CLI,
+                // so this must be allowed to decrease — otherwise post-compaction
+                // counts get stuck at the pre-calibration tiktoken estimate.
+                self.last_input_tokens = Some(count as u32);
+            }
+            TuiEvent::StreamingOutputTokens { session_id, tokens }
+                if self.is_current_session(session_id) =>
+            {
+                self.streaming_output_tokens += tokens;
+            }
+            // Silently ignore events for background sessions (already handled above for ResponseComplete/Error)
+            TuiEvent::ToolCallStarted { .. }
+            | TuiEvent::ToolCallCompleted { .. }
+            | TuiEvent::IntermediateText { .. }
+            | TuiEvent::QueuedUserMessage { .. }
+            | TuiEvent::CompactionSummary { .. }
+            | TuiEvent::TokenCountUpdated { .. }
+            | TuiEvent::StreamingOutputTokens { .. } => {}
+
+            TuiEvent::SessionUpdated(session_id) => {
+                // A remote channel completed an agent response. Only react when the TUI
+                // itself is NOT processing this session (to avoid conflicting with the
+                // TUI's own ResponseComplete flow).
+                if !self.processing_sessions.contains(&session_id) {
+                    if self.is_current_session(session_id) {
+                        self.load_session(session_id).await?;
+                    } else {
+                        self.sessions_with_unread.insert(session_id);
+                    }
+                }
+            }
+
+            TuiEvent::PendingResumed {
+                session_id,
+                cancel_token,
+            } => {
+                // A pending request was resumed on startup — wire the cancel token
+                // so double-Escape can abort it.
+                self.processing_sessions.insert(session_id);
+                if self.is_current_session(session_id) {
+                    self.is_processing = true;
+                    self.processing_started_at = Some(std::time::Instant::now());
+                    self.cancel_token = Some(cancel_token);
+                } else {
+                    self.session_cancel_tokens.insert(session_id, cancel_token);
+                }
+            }
+
+            TuiEvent::OnboardingModelsFetched(models) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.ps.models_fetching = false;
+                    if !models.is_empty() {
+                        wizard.ps.models = models;
+                        wizard.ps.resolve_selected_model_index();
+                    }
+                }
+            }
+            TuiEvent::ModelSelectorModelsFetched(provider_idx, models) => {
+                // Discard stale fetches from a previously-selected provider
+                if self.mode == AppMode::ModelSelector
+                    && !models.is_empty()
+                    && provider_idx == self.ps.selected_provider
+                {
+                    // Read the provider's saved default_model from config
+                    let saved_model =
+                        crate::config::Config::load()
+                            .ok()
+                            .and_then(|c| match provider_idx {
+                                0 => c.providers.anthropic.and_then(|p| p.default_model),
+                                1 => c.providers.openai.and_then(|p| p.default_model),
+                                2 => c.providers.github.and_then(|p| p.default_model),
+                                3 => c.providers.gemini.and_then(|p| p.default_model),
+                                4 => c.providers.openrouter.and_then(|p| p.default_model),
+                                5 => c.providers.minimax.and_then(|p| p.default_model),
+                                6 => c.providers.zhipu.and_then(|p| p.default_model),
+                                7 => c.providers.claude_cli.and_then(|p| p.default_model),
+                                8 => c.providers.opencode_cli.and_then(|p| p.default_model),
+                                idx if idx >= 10 => {
+                                    let ci = idx - 10;
+                                    self.ps.custom_names.get(ci).and_then(|name| {
+                                        c.providers
+                                            .custom_by_name(name)
+                                            .and_then(|p| p.default_model.clone())
+                                    })
+                                }
+                                _ => None,
+                            });
+                    let target = saved_model.as_deref().unwrap_or(&self.default_model_name);
+                    let selected = models.iter().position(|m| m == target).unwrap_or(0);
+                    self.ps.models = models;
+                    self.ps.selected_model = selected;
+                    self.ps.model_filter.clear();
+                }
+            }
+            TuiEvent::GitHubDeviceCode(code) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.github_user_code = Some(code);
+                    wizard.github_device_flow_status =
+                        super::onboarding::GitHubDeviceFlowStatus::WaitingForUser;
+                }
+            }
+            TuiEvent::GitHubOAuthComplete(oauth_token) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.github_device_flow_status =
+                        super::onboarding::GitHubDeviceFlowStatus::Complete;
+                    // Save the OAuth token to keys.toml
+                    if let Err(e) =
+                        crate::config::write_secret_key("providers.github", "api_key", &oauth_token)
+                    {
+                        tracing::warn!("Failed to save Copilot OAuth token: {}", e);
+                    }
+                    // Mark key as existing and advance to model selection
+                    wizard.ps.api_key_input = super::onboarding::EXISTING_KEY_SENTINEL.to_string();
+                    wizard.auth_field = super::onboarding::AuthField::Model;
+                    wizard.ps.models.clear();
+                    wizard.ps.selected_model = 0;
+                    // Trigger model fetch using the OAuth token
+                    let token = oauth_token.clone();
+                    let sender = self.event_sender();
+                    tokio::spawn(async move {
+                        let models =
+                            super::onboarding::fetch_provider_models(2, Some(&token), None).await;
+                        let _ = sender.send(TuiEvent::OnboardingModelsFetched(models));
+                    });
+                }
+            }
+            TuiEvent::GitHubOAuthError(err) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.github_device_flow_status =
+                        super::onboarding::GitHubDeviceFlowStatus::Failed(err);
+                    wizard.github_user_code = None;
+                }
+            }
+            TuiEvent::WhatsAppQrCode(qr_data) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.set_whatsapp_qr(&qr_data);
+                }
+            }
+            TuiEvent::WhatsAppConnected => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.set_whatsapp_connected();
+                    let _ =
+                        crate::config::Config::write_key("channels.whatsapp", "enabled", "true");
+                }
+            }
+            TuiEvent::WhatsAppError(err) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.set_whatsapp_error(err);
+                }
+            }
+            TuiEvent::ChannelTestResult { success, error, .. } => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.channel_test_status = if success {
+                        super::onboarding::ChannelTestStatus::Success
+                    } else {
+                        super::onboarding::ChannelTestStatus::Failed(
+                            error.unwrap_or_else(|| "Unknown error".to_string()),
+                        )
+                    };
+                }
+            }
+            TuiEvent::WhisperDownloadProgress(progress) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.stt_model_download_progress = Some(progress);
+                }
+            }
+            TuiEvent::WhisperDownloadComplete(result) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.stt_model_download_progress = None;
+                    match result {
+                        Ok(()) => {
+                            wizard.stt_model_downloaded = true;
+                            wizard.stt_model_download_error = None;
+                        }
+                        Err(e) => {
+                            wizard.stt_model_download_error = Some(e);
+                        }
+                    }
+                }
+            }
+            TuiEvent::PiperDownloadProgress(progress) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    // Ignore stale progress events after download completed
+                    if !wizard.tts_voice_downloaded {
+                        wizard.tts_voice_download_progress = Some(progress);
+                    }
+                }
+            }
+            TuiEvent::PiperDownloadComplete(result) => {
+                if let Some(ref mut wizard) = self.onboarding {
+                    wizard.tts_voice_download_progress = None;
+                    match result {
+                        #[cfg(feature = "local-tts")]
+                        Ok(voice_id) => {
+                            wizard.tts_voice_downloaded = true;
+                            wizard.tts_voice_download_error = None;
+                            tokio::spawn(async move {
+                                if let Err(e) =
+                                    crate::channels::voice::local_tts::preview_voice(&voice_id)
+                                        .await
+                                {
+                                    tracing::warn!("Voice preview failed: {}", e);
+                                }
+                            });
+                        }
+                        #[cfg(not(feature = "local-tts"))]
+                        Ok(_) => {
+                            wizard.tts_voice_downloaded = true;
+                            wizard.tts_voice_download_error = None;
+                        }
+                        Err(e) => {
+                            wizard.tts_voice_download_error = Some(e);
+                        }
+                    }
+                }
+            }
+            TuiEvent::SudoPasswordRequested(request) => {
+                self.sudo_pending = Some(request);
+                self.sudo_input.clear();
+            }
+            TuiEvent::SystemMessage(msg) => {
+                self.push_system_message(msg);
+            }
+            TuiEvent::UpdateAvailable(version) => {
+                self.update_available_version = Some(version);
+                self.switch_mode(AppMode::UpdatePrompt).await?;
+            }
+            TuiEvent::FocusGained | TuiEvent::FocusLost => {
+                // Handled by the event loop for tick coalescing
+            }
+            TuiEvent::Resize(_, _) => {
+                // Invalidate render cache on terminal resize (content width changes)
+                self.render_cache.clear();
+            }
+            TuiEvent::AgentProcessing => {
+                // Handled by the render loop
+            }
+        }
+        Ok(())
+    }
+
+    /// Handle keyboard input
+    async fn handle_key_event(&mut self, event: crossterm::event::KeyEvent) -> Result<()> {
+        use super::events::keys;
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        // Sudo password dialog intercepts all keys when active
+        if self.sudo_pending.is_some() {
+            match event.code {
+                KeyCode::Enter => {
+                    // Submit password
+                    if let Some(request) = self.sudo_pending.take() {
+                        let password = std::mem::take(&mut self.sudo_input);
+                        let _ = request.response_tx.send(SudoPasswordResponse {
+                            password: Some(password),
+                        });
+                    }
+                }
+                KeyCode::Esc => {
+                    // Cancel sudo
+                    if let Some(request) = self.sudo_pending.take() {
+                        let _ = request
+                            .response_tx
+                            .send(SudoPasswordResponse { password: None });
+                    }
+                    self.sudo_input.clear();
+                }
+                KeyCode::Backspace => {
+                    self.sudo_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.sudo_input.push(c);
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        // Ctrl+C: first press clears input, second press (within 3s) quits
+        if keys::is_quit(&event) {
+            if let Some(pending_at) = self.ctrl_c_pending_at
+                && pending_at.elapsed() < std::time::Duration::from_secs(3)
+            {
+                // Second Ctrl+C within window — quit
+                // Cancel any running agent task
+                if let Some(token) = &self.cancel_token {
+                    token.cancel();
+                }
+                self.pane_manager.save_layout();
+                self.should_quit = true;
+                // Force exit after 1s in case spawn_blocking tasks are stuck
+                tokio::spawn(async {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    std::process::exit(0);
+                });
+                return Ok(());
+            }
+            // First Ctrl+C — clear input and show hint
+            self.input_buffer.clear();
+            self.cursor_position = 0;
+            self.slash_suggestions_active = false;
+            self.error_message = Some("Press Ctrl+C again to quit".to_string());
+            self.error_message_shown_at = Some(std::time::Instant::now());
+            self.ctrl_c_pending_at = Some(std::time::Instant::now());
+            return Ok(());
+        }
+
+        // Any non-Ctrl+C key resets the quit confirmation
+        self.ctrl_c_pending_at = None;
+
+        // Delete word — comprehensive handling across platforms.
+        // macOS Option+Delete, Ctrl+Backspace, Ctrl+W, Ctrl+H — all delete the
+        // previous word.  Terminals encode these in many ways:
+        //   - KeyCode::Backspace + ALT/CONTROL modifier (standard)
+        //   - KeyCode::Char('\x7f') + ALT (macOS Option+Delete with enhancement)
+        //   - KeyCode::Char('\x08') + CONTROL (Ctrl+Backspace as Ctrl+H)
+        //   - KeyCode::Char('h') + CONTROL (Ctrl+H without enhancement)
+        //   - KeyCode::Char('w') + CONTROL (Ctrl+W)
+        //   - KeyCode::Char('\x17') + CONTROL or NONE (Ctrl+W raw)
+        {
+            let is_delete_word = match event.code {
+                KeyCode::Backspace => {
+                    event.modifiers.contains(KeyModifiers::CONTROL)
+                        || event.modifiers.contains(KeyModifiers::ALT)
+                        || event.modifiers.contains(KeyModifiers::SUPER)
+                }
+                KeyCode::Char('\x7f') => {
+                    // DEL char — macOS Option+Delete with keyboard enhancement
+                    event.modifiers.contains(KeyModifiers::ALT)
+                        || event.modifiers.contains(KeyModifiers::CONTROL)
+                        || event.modifiers.contains(KeyModifiers::SUPER)
+                        || event.modifiers.is_empty()
+                }
+                KeyCode::Char('\x08') => true, // raw Ctrl+H / Ctrl+Backspace
+                KeyCode::Char('\x17') => true, // raw Ctrl+W
+                KeyCode::Char('h') => event.modifiers.contains(KeyModifiers::CONTROL),
+                KeyCode::Char('w') => event.modifiers.contains(KeyModifiers::CONTROL),
+                _ => false,
+            };
+            if is_delete_word {
+                self.delete_last_word();
+                return Ok(());
+            }
+        }
+
+        // Ctrl+Left or Alt+Left — jump to previous word boundary
+        if event.code == KeyCode::Left
+            && (event.modifiers.contains(KeyModifiers::CONTROL)
+                || event.modifiers.contains(KeyModifiers::ALT))
+        {
+            let before = &self.input_buffer[..self.cursor_position];
+            // Skip whitespace, then find start of word
+            let trimmed = before.trim_end();
+            self.cursor_position = trimmed
+                .rfind(char::is_whitespace)
+                .map(|pos| pos + 1)
+                .unwrap_or(0);
+            return Ok(());
+        }
+        // macOS: Option+Left sends Char('b') with Alt modifier in some terminals
+        if event.code == KeyCode::Char('b') && event.modifiers.contains(KeyModifiers::ALT) {
+            let before = &self.input_buffer[..self.cursor_position];
+            let trimmed = before.trim_end();
+            self.cursor_position = trimmed
+                .rfind(char::is_whitespace)
+                .map(|pos| pos + 1)
+                .unwrap_or(0);
+            return Ok(());
+        }
+
+        // Ctrl+Right or Alt+Right — jump to next word boundary
+        if event.code == KeyCode::Right
+            && (event.modifiers.contains(KeyModifiers::CONTROL)
+                || event.modifiers.contains(KeyModifiers::ALT))
+        {
+            let after = &self.input_buffer[self.cursor_position..];
+            // Skip current word chars, then skip whitespace
+            let word_end = after.find(char::is_whitespace).unwrap_or(after.len());
+            let rest = &after[word_end..];
+            let space_end = rest
+                .find(|c: char| !c.is_whitespace())
+                .unwrap_or(rest.len());
+            self.cursor_position += word_end + space_end;
+            return Ok(());
+        }
+        // macOS: Option+Right sends Char('f') with Alt modifier in some terminals
+        if event.code == KeyCode::Char('f') && event.modifiers.contains(KeyModifiers::ALT) {
+            let after = &self.input_buffer[self.cursor_position..];
+            let word_end = after.find(char::is_whitespace).unwrap_or(after.len());
+            let rest = &after[word_end..];
+            let space_end = rest
+                .find(|c: char| !c.is_whitespace())
+                .unwrap_or(rest.len());
+            self.cursor_position += word_end + space_end;
+            return Ok(());
+        }
+
+        // Ctrl+U — delete to start of current line
+        if event.code == KeyCode::Char('u') && event.modifiers == KeyModifiers::CONTROL {
+            let line_start = self.input_buffer[..self.cursor_position]
+                .rfind('\n')
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            self.input_buffer.drain(line_start..self.cursor_position);
+            self.cursor_position = line_start;
+            return Ok(());
+        }
+
+        if keys::is_new_session(&event) {
+            self.create_new_session().await?;
+            return Ok(());
+        }
+
+        if keys::is_list_sessions(&event) {
+            self.switch_mode(AppMode::Sessions).await?;
+            return Ok(());
+        }
+
+        if keys::is_clear_session(&event) {
+            self.clear_session().await?;
+            return Ok(());
+        }
+
+        // Split pane focus & close (global — work from Chat mode)
+        if keys::is_close_pane(&event) && self.pane_manager.is_split() {
+            self.pane_manager.close_focused();
+            self.pane_manager.save_layout();
+            if let Some(pane) = self.pane_manager.focused_pane()
+                && let Some(session_id) = pane.session_id
+            {
+                self.load_session(session_id).await?;
+            }
+            return Ok(());
+        }
+        if keys::is_focus_next_pane(&event) && self.pane_manager.is_split() {
+            self.pane_manager.focus_next();
+            if let Some(pane) = self.pane_manager.focused_pane()
+                && let Some(session_id) = pane.session_id
+            {
+                self.load_session(session_id).await?;
+            }
+            return Ok(());
+        }
+
+        // Mode-specific handling
+        tracing::trace!("Current mode: {:?}", self.mode);
+        match self.mode {
+            AppMode::Splash => {
+                // Check if minimum display time (3 seconds) has elapsed
+                if let Some(shown_at) = self.splash_shown_at
+                    && shown_at.elapsed() >= std::time::Duration::from_secs(3)
+                {
+                    self.splash_shown_at = None;
+                    // Check if onboarding should be shown
+                    let is_first = super::onboarding::is_first_time();
+                    tracing::debug!(
+                        "[Splash] force_onboard={}, is_first_time={}",
+                        self.force_onboard,
+                        is_first
+                    );
+                    if self.force_onboard || is_first {
+                        self.force_onboard = false;
+                        tracing::info!("[Splash] Starting onboarding wizard");
+                        self.onboarding = Some(OnboardingWizard::new());
+                        self.switch_mode(AppMode::Onboarding).await?;
+                    } else {
+                        tracing::debug!("[Splash] Skipping onboarding, going to Chat");
+                        self.switch_mode(AppMode::Chat).await?;
+                    }
+                }
+                // If not enough time has elapsed, ignore the key press
+            }
+            AppMode::Chat => self.handle_chat_key(event).await?,
+            AppMode::Sessions => self.handle_sessions_key(event).await?,
+            AppMode::FilePicker => self.handle_file_picker_key(event).await?,
+            AppMode::DirectoryPicker => self.handle_directory_picker_key(event).await?,
+            AppMode::ModelSelector => self.handle_model_selector_key(event).await?,
+            AppMode::UsageDialog => {
+                if keys::is_cancel(&event) || keys::is_enter(&event) {
+                    self.switch_mode(AppMode::Chat).await?;
+                }
+            }
+            AppMode::RestartPending => {
+                if keys::is_cancel(&event) {
+                    self.rebuild_status = None;
+                    self.switch_mode(AppMode::Chat).await?;
+                } else if keys::is_enter(&event) {
+                    // Perform the restart
+                    if let Some(session) = &self.current_session {
+                        let session_id = session.id;
+                        if let Ok(updater) = SelfUpdater::auto_detect()
+                            && let Err(e) = updater.restart(session_id)
+                        {
+                            self.show_error(format!("Restart failed: {}", e));
+                            self.switch_mode(AppMode::Chat).await?;
+                        }
+                        // If restart succeeds, this process is replaced — we never reach here
+                    }
+                }
+            }
+            AppMode::UpdatePrompt => {
+                if keys::is_cancel(&event) {
+                    // Decline — return to splash so user sees current version
+                    self.update_available_version = None;
+                    if self.splash_shown_at.is_some() {
+                        // Reset splash timer so it shows for the full duration
+                        self.splash_shown_at = Some(std::time::Instant::now());
+                        self.switch_mode(AppMode::Splash).await?;
+                    } else {
+                        self.switch_mode(AppMode::Chat).await?;
+                    }
+                } else if keys::is_enter(&event) {
+                    let version = self.update_available_version.take();
+                    // Dismiss splash so update progress is visible
+                    self.splash_shown_at = None;
+                    self.switch_mode(AppMode::Chat).await?;
+                    if let Some(v) = version {
+                        self.push_system_message(format!("Updating to v{}...", v));
+                        let tx = self.event_sender();
+                        let _ = tx.send(TuiEvent::MessageSubmitted(
+                            "Use the `evolve` tool now to check for and install the latest version."
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+            AppMode::Onboarding => {
+                self.handle_onboarding_key(event).await?;
+            }
+            AppMode::Help | AppMode::Settings => {
+                if keys::is_cancel(&event) {
+                    self.help_scroll_offset = 0;
+                    self.switch_mode(AppMode::Chat).await?;
+                } else if keys::is_up(&event) {
+                    self.help_scroll_offset = self.help_scroll_offset.saturating_sub(1);
+                } else if keys::is_down(&event) {
+                    self.help_scroll_offset = self.help_scroll_offset.saturating_add(1);
+                } else if keys::is_page_up(&event) {
+                    self.help_scroll_offset = self.help_scroll_offset.saturating_sub(10);
+                } else if keys::is_page_down(&event) {
+                    self.help_scroll_offset = self.help_scroll_offset.saturating_add(10);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Show an error message
+    pub(crate) fn show_error(&mut self, error: String) {
+        self.is_processing = false;
+        self.processing_started_at = None;
+        self.streaming_response = None;
+        self.streaming_reasoning = None;
+        self.cancel_token = None;
+        self.task_abort_handle = None;
+        self.escape_pending_at = None;
+        // Preserve context token count from real-time updates if we never got a complete response
+        if self.last_input_tokens.is_none() && self.display_token_count > 0 {
+            self.last_input_tokens = Some(self.display_token_count as u32);
+        }
+        // Deny any pending approvals so agent callbacks don't hang, then remove
+        for msg in &mut self.messages {
+            if let Some(ref mut approval) = msg.approval
+                && approval.state == ApprovalState::Pending
+            {
+                let _ = approval.response_tx.send(ToolApprovalResponse {
+                    request_id: approval.request_id,
+                    approved: false,
+                    reason: Some("Error occurred".to_string()),
+                });
+                approval.state = ApprovalState::Denied("Error occurred".to_string());
+            }
+        }
+        // Finalize any active tool group
+        if let Some(group) = self.active_tool_group.take() {
+            let count = group.calls.len();
+            self.messages.push(DisplayMessage {
+                id: Uuid::new_v4(),
+                role: "tool_group".to_string(),
+                content: format!("{} tool call{}", count, if count == 1 { "" } else { "s" }),
+                timestamp: chrono::Utc::now(),
+                token_count: None,
+                cost: None,
+                approval: None,
+                approve_menu: None,
+                details: None,
+                expanded: false,
+                tool_group: Some(group),
+            });
+        }
+        self.error_message = Some(error);
+        self.error_message_shown_at = Some(std::time::Instant::now());
+        // Auto-scroll to show the error
+        self.scroll_offset = 0;
+    }
+
+    /// Switch to a different mode
+    pub(crate) async fn switch_mode(&mut self, mode: AppMode) -> Result<()> {
+        tracing::info!("🔄 Switching mode to: {:?}", mode);
+        self.mode = mode;
+
+        if mode == AppMode::Sessions {
+            self.load_sessions().await?;
+        }
+
+        Ok(())
+    }
+
+    /// Get total token count for current session (from DB, not in-memory messages).
+    /// In-memory messages only cover the current context window — the DB has the
+    /// cumulative total across all compactions.
+    pub fn total_tokens(&self) -> i32 {
+        self.current_session
+            .as_ref()
+            .map(|s| s.token_count)
+            .unwrap_or(0)
+    }
+
+    /// Get context usage as a percentage
+    /// Uses the calibrated message token count (excludes tool schema overhead)
+    pub fn context_usage_percent(&self) -> f64 {
+        if self.context_max_tokens == 0 {
+            return 0.0;
+        }
+        let used = self.last_input_tokens.unwrap_or(0) as f64;
+        (used / self.context_max_tokens as f64) * 100.0
+    }
+
+    /// Get total cost for current session (from DB, not in-memory messages).
+    pub fn total_cost(&self) -> f64 {
+        self.current_session
+            .as_ref()
+            .map(|s| s.total_cost)
+            .unwrap_or(0.0)
+    }
+
+    /// Handle tool approval request — inline in chat (session-aware)
+    fn handle_approval_requested(&mut self, request: ToolApprovalRequest) {
+        let is_current = self.is_current_session(request.session_id);
+        tracing::info!(
+            "[APPROVAL] handle_approval_requested tool='{}' session={} is_current={} auto_session={} auto_always={}",
+            request.tool_name,
+            request.session_id,
+            is_current,
+            self.approval_auto_session,
+            self.approval_auto_always
+        );
+
+        // Auto-approve silently if policy allows
+        if self.approval_auto_always || self.approval_auto_session {
+            let response = ToolApprovalResponse {
+                request_id: request.request_id,
+                approved: true,
+                reason: None,
+            };
+            let _ = request.response_tx.send(response.clone());
+            let _ = self
+                .event_sender()
+                .send(TuiEvent::ToolApprovalResponse(response));
+            return;
+        }
+
+        // Background session approval — auto-approve (user can't interact with it)
+        // They'll see the results when they switch to that session
+        if !is_current {
+            tracing::info!(
+                "[APPROVAL] Auto-approving background session {} tool '{}'",
+                request.session_id,
+                request.tool_name
+            );
+            let response = ToolApprovalResponse {
+                request_id: request.request_id,
+                approved: true,
+                reason: Some("Auto-approved (background session)".to_string()),
+            };
+            let _ = request.response_tx.send(response.clone());
+            let _ = self
+                .event_sender()
+                .send(TuiEvent::ToolApprovalResponse(response));
+            return;
+        }
+
+        // Deny stale pending approvals from previous requests in THIS session only
+        for msg in &mut self.messages {
+            if let Some(ref mut approval) = msg.approval
+                && approval.state == ApprovalState::Pending
+            {
+                let _ = approval.response_tx.send(ToolApprovalResponse {
+                    request_id: approval.request_id,
+                    approved: false,
+                    reason: Some("Superseded by new request".to_string()),
+                });
+                approval.state = ApprovalState::Denied("Superseded by new request".to_string());
+            }
+        }
+
+        // Clear streaming overlay so the approval dialog is visible
+        if let Some(text) = self.streaming_response.take()
+            && !text.trim().is_empty()
+        {
+            // Persist any streamed text as a regular message before showing approval
+            self.messages.push(DisplayMessage {
+                id: Uuid::new_v4(),
+                role: "assistant".to_string(),
+                content: text,
+                timestamp: chrono::Utc::now(),
+                token_count: None,
+                cost: None,
+                approval: None,
+                approve_menu: None,
+                details: None,
+                expanded: false,
+                tool_group: None,
+            });
+        }
+
+        // Show inline approval in chat
+        self.messages.push(DisplayMessage {
+            id: Uuid::new_v4(),
+            role: "approval".to_string(),
+            content: String::new(),
+            timestamp: chrono::Utc::now(),
+            token_count: None,
+            cost: None,
+            approval: Some(ApprovalData {
+                tool_name: request.tool_name,
+                tool_description: request.tool_description,
+                tool_input: request.tool_input,
+                capabilities: request.capabilities,
+                request_id: request.request_id,
+                response_tx: request.response_tx,
+                requested_at: request.requested_at,
+                state: ApprovalState::Pending,
+                selected_option: 0,
+                show_details: false,
+            }),
+            approve_menu: None,
+            details: None,
+            expanded: false,
+            tool_group: None,
+        });
+        // Auto-collapse all tool groups so the approval dialog is immediately visible
+        if let Some(ref mut group) = self.active_tool_group {
+            group.expanded = false;
+        }
+        for msg in self.messages.iter_mut() {
+            if let Some(ref mut group) = msg.tool_group {
+                group.expanded = false;
+            }
+        }
+        self.auto_scroll = true;
+        self.scroll_offset = 0;
+        tracing::info!(
+            "[APPROVAL] Pushed approval message for tool='{}', total messages={}, has_pending={}",
+            self.messages
+                .last()
+                .map(|m| m
+                    .approval
+                    .as_ref()
+                    .map(|a| a.tool_name.as_str())
+                    .unwrap_or("?"))
+                .unwrap_or("?"),
+            self.messages.len(),
+            self.has_pending_approval()
+        );
+        // Stay in AppMode::Chat — no mode switch
+    }
+
+    /// Update slash command autocomplete suggestions (built-in + user-defined)
+    pub(crate) fn update_slash_suggestions(&mut self) {
+        let input = self.input_buffer.trim_start();
+        if input.starts_with('/') && !input.contains(' ') && !input.is_empty() {
+            let prefix = input.to_lowercase();
+
+            // Built-in commands: indices 0..SLASH_COMMANDS.len()
+            self.slash_filtered = SLASH_COMMANDS
+                .iter()
+                .enumerate()
+                .filter(|(_, cmd)| cmd.name.starts_with(&prefix))
+                .map(|(i, _)| i)
+                .collect();
+
+            // User-defined commands: indices starting at SLASH_COMMANDS.len()
+            // Skip user commands that shadow a built-in name
+            let base = SLASH_COMMANDS.len();
+            for (i, ucmd) in self.user_commands.iter().enumerate() {
+                if ucmd.name.to_lowercase().starts_with(&prefix)
+                    && !SLASH_COMMANDS.iter().any(|b| b.name == ucmd.name)
+                {
+                    self.slash_filtered.push(base + i);
+                }
+            }
+
+            // Sort suggestions alphabetically by command name
+            self.slash_filtered.sort_by(|&a, &b| {
+                let name_a = if a < SLASH_COMMANDS.len() {
+                    SLASH_COMMANDS[a].name
+                } else {
+                    self.user_commands
+                        .get(a - SLASH_COMMANDS.len())
+                        .map(|c| c.name.as_str())
+                        .unwrap_or("")
+                };
+                let name_b = if b < SLASH_COMMANDS.len() {
+                    SLASH_COMMANDS[b].name
+                } else {
+                    self.user_commands
+                        .get(b - SLASH_COMMANDS.len())
+                        .map(|c| c.name.as_str())
+                        .unwrap_or("")
+                };
+                name_a.cmp(name_b)
+            });
+
+            self.slash_suggestions_active = !self.slash_filtered.is_empty();
+            // Clamp selected index
+            if self.slash_selected_index >= self.slash_filtered.len() {
+                self.slash_selected_index = 0;
+            }
+        } else {
+            self.slash_suggestions_active = false;
+            self.slash_filtered.clear();
+            self.slash_selected_index = 0;
+        }
+    }
+
+    /// Get the name of a slash command by its combined index
+    /// (built-in indices 0..N, user command indices N..)
+    pub fn slash_command_name(&self, index: usize) -> Option<&str> {
+        if index < SLASH_COMMANDS.len() {
+            Some(SLASH_COMMANDS[index].name)
+        } else {
+            self.user_commands
+                .get(index - SLASH_COMMANDS.len())
+                .map(|c| c.name.as_str())
+        }
+    }
+
+    /// Get the description of a slash command by its combined index
+    pub fn slash_command_description(&self, index: usize) -> Option<&str> {
+        if index < SLASH_COMMANDS.len() {
+            Some(SLASH_COMMANDS[index].description)
+        } else {
+            self.user_commands
+                .get(index - SLASH_COMMANDS.len())
+                .map(|c| c.description.as_str())
+        }
+    }
+
+    /// Reload user commands from brain workspace (called after agent responses)
+    pub(crate) fn reload_user_commands(&mut self) {
+        let command_loader = CommandLoader::from_brain_path(&self.brain_path);
+        self.user_commands = command_loader.load();
+    }
+
+    /// Update emoji picker based on the text behind the cursor.
+    /// Triggers when there's `:query` (colon + at least 1 char, no spaces).
+    pub(crate) fn update_emoji_picker(&mut self) {
+        // Search backwards from cursor for an unmatched ':'
+        let before_cursor = &self.input_buffer[..self.cursor_position];
+        if let Some(colon_pos) = before_cursor.rfind(':') {
+            let query = &before_cursor[colon_pos + 1..];
+            // Must have at least 1 char, no spaces, no other ':'
+            if !query.is_empty() && !query.contains(' ') && !query.contains(':') {
+                let query_lower = query.to_lowercase();
+                let max_results = 8;
+                self.emoji_filtered = emojis::iter()
+                    .filter_map(|e| {
+                        e.shortcodes()
+                            .find(|sc| sc.contains(&*query_lower))
+                            .map(|sc| (e.as_str(), sc))
+                    })
+                    .take(max_results)
+                    .collect();
+                if !self.emoji_filtered.is_empty() {
+                    self.emoji_picker_active = true;
+                    self.emoji_colon_offset = colon_pos;
+                    if self.emoji_selected_index >= self.emoji_filtered.len() {
+                        self.emoji_selected_index = 0;
+                    }
+                    return;
+                }
+            }
+        }
+        self.dismiss_emoji_picker();
+    }
+
+    /// Dismiss the emoji picker.
+    pub(crate) fn dismiss_emoji_picker(&mut self) {
+        self.emoji_picker_active = false;
+        self.emoji_filtered.clear();
+        self.emoji_selected_index = 0;
+    }
+
+    /// Insert the selected emoji, replacing `:query` with the emoji char.
+    pub(crate) fn accept_emoji(&mut self) {
+        if let Some(&(emoji, _)) = self.emoji_filtered.get(self.emoji_selected_index) {
+            let colon = self.emoji_colon_offset;
+            let end = self.cursor_position;
+            self.input_buffer.replace_range(colon..end, emoji);
+            self.cursor_position = colon + emoji.len();
+            self.dismiss_emoji_picker();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_display_message_from_db_message() {
+        let msg = Message {
+            id: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+            sequence: 1,
+            created_at: chrono::Utc::now(),
+            token_count: Some(10),
+            cost: Some(0.001),
+        };
+
+        let display_msg: DisplayMessage = msg.into();
+        assert_eq!(display_msg.role, "user");
+        assert_eq!(display_msg.content, "Hello");
+    }
+}

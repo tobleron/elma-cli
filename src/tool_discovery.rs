@@ -16,6 +16,7 @@
 //! not on every conversation turn.
 
 use crate::*;
+use crate::tools::discovery::ToolCategory;
 use std::collections::HashMap;
 use std::env;
 #[cfg(unix)]
@@ -120,7 +121,7 @@ impl ToolRegistry {
             output.push_str("**Scripts:**\n");
             for tool in &scripts {
                 output.push_str(&format!(
-                    "- `{}`: {} ({})\n",
+                    "- `{}`: {} (invocation: {})\n",
                     tool.name, tool.description, tool.invocation
                 ));
             }
@@ -149,12 +150,39 @@ impl ToolRegistry {
         if !system.is_empty() {
             output.push_str("**Verified System Tools:**\n");
             for tool in &system {
-                output.push_str(&format!("- `{}`: {}\n", tool.name, tool.description));
+                output.push_str(&format!("- `{}`: {} ({} available)\n", 
+                    tool.name, tool.description, 
+                    if tool.available { "✓" } else { "✗" }
+                ));
             }
             output.push('\n');
         }
 
         output
+    }
+
+    /// Get an iterator over all tools
+    pub fn iter(&self) -> impl Iterator<Item = &ToolCapability> {
+        self.tools.values()
+    }
+
+    /// Get tools by category
+    pub fn by_category(&self, category: ToolCategory) -> Vec<&ToolCapability> {
+        self.tools.values()
+            .filter(|tool| match (&tool.source, &category) {
+                (ToolSource::Script(_), ToolCategory::CustomScript) => true,
+                (ToolSource::MakefileTarget, ToolCategory::ProjectSpecific) => true,
+                (ToolSource::SystemTool, ToolCategory::Builtin) => true,
+                _ => false,
+            })
+            .collect()
+    }
+
+    /// Get tools that are currently available
+    pub fn available_tools(&self) -> Vec<&ToolCapability> {
+        self.tools.values()
+            .filter(|tool| tool.available)
+            .collect()
     }
 }
 

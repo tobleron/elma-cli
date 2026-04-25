@@ -15,7 +15,7 @@ pub(crate) fn validate_mode_flags(args: &Args) -> Result<()> {
         args.restore_last,
     ];
     if mode_flags.into_iter().filter(|v| *v).count() > 1 {
-        anyhow::bail!("Choose only one of --tune, --calibrate, --restore-base, or --restore-last");
+        return Err(crate::diagnostics::ElmaDiagnostic::InvalidModeCombination.into());
     }
     Ok(())
 }
@@ -56,7 +56,7 @@ pub(crate) async fn handle_special_modes(
             "manual_restore_base",
             0.0,
         )?;
-        eprintln!(
+        tracing::info!(
             "Restored baseline profiles for {} from {}",
             model_id,
             baseline_dir.display()
@@ -67,10 +67,12 @@ pub(crate) async fn handle_special_modes(
     if args.restore_last {
         let fallback_dir = model_fallback_last_active_dir(model_cfg_dir);
         if !fallback_dir.exists() {
-            anyhow::bail!(
-                "No last-active profile snapshot found for {} at {}",
-                model_id,
-                fallback_dir.display()
+            return Err(
+                crate::diagnostics::ElmaDiagnostic::ProfileSnapshotNotFound {
+                    model_id: model_id.to_string(),
+                    path: fallback_dir.display().to_string(),
+                }
+                .into(),
             );
         }
         activate_profile_set(
@@ -85,7 +87,7 @@ pub(crate) async fn handle_special_modes(
             "manual_restore_last",
             0.0,
         )?;
-        eprintln!(
+        tracing::info!(
             "Restored last active profiles for {} from {}",
             model_id,
             fallback_dir.display()
@@ -119,9 +121,11 @@ pub(crate) async fn handle_special_modes(
             .await?;
         } else {
             let winner = optimize_model(args, client, chat_url, base_url, &dir, &mid).await?;
-            eprintln!(
+            tracing::info!(
                 "Activated tuned profiles for {} with score {:.3} (certified: {}).",
-                mid, winner.score, winner.report.summary.certified
+                mid,
+                winner.score,
+                winner.report.summary.certified
             );
             eprintln!("Restore last: cargo run -- --model {} --restore-last", mid);
             eprintln!("Restore base: cargo run -- --model {} --restore-base", mid);
@@ -137,12 +141,24 @@ pub(crate) async fn handle_special_modes(
 pub(crate) fn emit_startup_banner(
     _args: &Args,
     _chat_url: &Url,
-    _model_id: &str,
+    model_id: &str,
     _model_cfg_dir: &Path,
     _session: &SessionPaths,
     _tuned: bool,
 ) {
-    // Banner migrated to header strip in interactive mode.
-    // Non-interactive paths may call this, but we suppress output to avoid
-    // duplicating what the header already shows.
+    // Branded Elma splash for non-interactive and brief interactive startup
+    let splash = format!(
+        r#"
+    ███████╗██╗     ███╗   ███╗ █████╗
+    ██╔════╝██║     ████╗ ████║██╔══██╗
+    █████╗  ██║     ██╔████╔██║███████║
+    ██╔══╝  ██║     ██║╚██╔╝██║██╔══██║
+    ███████╗███████╗██║ ╚═╝ ██║██║  ██║
+    ╚══════╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝
+    local-first AI assistant
+    model: {}
+"#,
+        model_id
+    );
+    eprintln!("{}", splash);
 }

@@ -1,0 +1,28 @@
+services:
+  localai:
+    extends:
+      file: docker-compose.yaml
+      service: localai
+    environment:
+      - LOCALAI_SINGLE_ACTIVE_BACKEND=true
+      - DEBUG=true
+    image: localai/localai:master-gpu-intel
+    devices:
+      # On a system with integrated GPU and an Arc 770, this is the Arc 770
+      - /dev/dri/card1
+      - /dev/dri/renderD129
+
+  postgres:
+    extends:
+      file: docker-compose.yaml
+      service: postgres
+
+  dind:
+    extends:
+      file: docker-compose.yaml
+      service: dind
+
+  localagi:
+    extends:
+      file: docker-compose.yaml
+      service: localagi

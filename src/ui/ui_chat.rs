@@ -198,14 +198,14 @@ async fn chat_once_base(
     }
 
     if is_timeout {
-        append_trace_log_line(&format!(
-            "[ERROR] timeout: Model API call timed out after {}s (model={})",
-            timeout_secs, effective_req.model
-        ));
-        anyhow::bail!("Model API timeout after {}s: {}", timeout_secs, last_error);
+        return Err(crate::diagnostics::ElmaDiagnostic::ModelApiTimeout {
+            timeout_secs,
+            last_error,
+        }
+        .into());
     }
 
-    anyhow::bail!("Model API error after 3 attempts: {}", last_error)
+    Err(crate::diagnostics::ElmaDiagnostic::ModelApiError { last_error }.into())
 }
 
 pub(crate) async fn chat_once(
@@ -428,22 +428,8 @@ fn effective_reasoning_format(req: &ChatCompletionRequest) -> Option<String> {
     if !requested.eq_ignore_ascii_case("none") {
         return Some(requested.to_string());
     }
-    if req.max_tokens <= 16 {
-        return Some("none".to_string());
-    }
-    if request_expects_json(req) {
-        return Some("none".to_string());
-    }
-    let Some(profile) = current_model_behavior_profile() else {
-        return Some("none".to_string());
-    };
-    if profile
-        .preferred_reasoning_format
-        .eq_ignore_ascii_case("auto")
-        && profile.auto_reasoning_separated
-    {
-        return Some("auto".to_string());
-    }
+    // T206: callers that explicitly request "none" must not be silently
+    // escalated to visible reasoning.
     Some("none".to_string())
 }
 

@@ -76,6 +76,19 @@ pub(crate) struct Args {
     pub(crate) debug_trace: bool,
     #[arg(long, default_value_t = true, env = "ELMA_DISABLE_GUARDS")]
     pub(crate) disable_guards: bool,
+
+    #[command(subcommand)]
+    pub(crate) command: Option<Commands>,
+}
+
+#[derive(clap::Subcommand, Debug, Clone)]
+pub(crate) enum Commands {
+    /// Generate shell completions
+    Completion {
+        /// The shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -401,7 +414,8 @@ pub(crate) struct EfficiencyReport {
     pub(crate) scenarios: Vec<EfficiencyScenarioResult>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, derive_more::Display)]
+#[display(fmt = "ProgramEvaluation(parsed={parsed}, shape_ok={shape_ok}, policy_ok={policy_ok})")]
 pub(crate) struct ProgramEvaluation {
     pub(crate) parsed: bool,
     pub(crate) parse_error: String,
@@ -426,7 +440,8 @@ pub(crate) struct CalibrationJudgeVerdict {
     pub(crate) plain_text: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, derive_more::Display)]
+#[display(fmt = "CandidateScore(name={name}, score={score:.2}, rejected={hard_rejected})")]
 pub(crate) struct CandidateScore {
     pub(crate) name: String,
     pub(crate) dir: PathBuf,
@@ -510,7 +525,33 @@ pub(crate) struct Program {
     pub(crate) steps: Vec<Step>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) enum InterruptBehavior {
+    #[serde(rename = "graceful")]
+    Graceful,
+    #[serde(rename = "immediate")]
+    Immediate,
+    #[serde(rename = "defer")]
+    Defer,
+    #[serde(rename = "cancel")]
+    Cancel,
+    #[serde(rename = "complete")]
+    Complete,
+}
+
+impl Default for InterruptBehavior {
+    fn default() -> Self {
+        Self::Graceful
+    }
+}
+
+/// Default value for `is_concurrency_safe` field in `StepCommon`.
+/// Conservative default: `false` (tools are not safe for concurrent execution unless explicitly marked).
+fn default_concurrency_safe() -> bool {
+    false
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, Default)]
 pub(crate) struct StepCommon {
     #[serde(default)]
     pub(crate) purpose: String,
@@ -524,6 +565,14 @@ pub(crate) struct StepCommon {
     pub(crate) depth: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) unit_type: Option<String>,
+    #[serde(default)]
+    pub(crate) is_read_only: bool,
+    #[serde(default)]
+    pub(crate) is_destructive: bool,
+    #[serde(default = "default_concurrency_safe")]
+    pub(crate) is_concurrency_safe: bool,
+    #[serde(default)]
+    pub(crate) interrupt_behavior: InterruptBehavior,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]

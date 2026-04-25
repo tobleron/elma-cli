@@ -3,9 +3,9 @@
 //! App Bootstrap - Core Bootstrap Function
 
 use crate::app::{AppRuntime, LoadedProfiles};
-use crate::dirs::ElmaPaths;
 use crate::app_bootstrap_modes::*;
 use crate::app_bootstrap_profiles::*;
+use crate::dirs::ElmaPaths;
 use crate::ui_state::{
     set_final_answer_extractor_profile, set_json_outputter_profile, set_model_behavior_profile,
     set_reasoning_display, set_trace_log_path,
@@ -266,8 +266,9 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         execution_plan: ExecutionPlanSelection::simple_general(),
         active_runtime_task,
         last_stop_outcome: None,
-        verbose: true,
+        verbose: false,
         retry_attempt: 0,
+        tool_registry: tool_discovery::ToolRegistry::new(),
     }))
 }
 

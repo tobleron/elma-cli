@@ -587,7 +587,7 @@ pub(crate) fn save_json_tuning_report(
     let report_path = report_dir.join(format!("json_tuning_{}.toml", timestamp));
     std::fs::write(&report_path, build_tuning_report_content(result, timestamp))
         .with_context(|| format!("write {}", report_path.display()))?;
-    eprintln!("[JSON_TUNING] Report saved to {}", report_path.display());
+    tracing::info!("Report saved to {}", report_path.display());
     Ok(())
 }
 

@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # FlockParser API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flockparser-api
+    ports:
+      - "8000:8000"
+    environment:
+      - FLOCKPARSE_API_KEY=${FLOCKPARSE_API_KEY:-your-secret-api-key-change-this}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+    volumes:
+      - ./converted_files:/app/converted_files
+      - ./chroma_db:/app/chroma_db
+      - ./knowledge_base:/app/knowledge_base
+      - ./logs:/app/logs
+    networks:
+      - flockparser-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - ollama
+
+  # FlockParser Web UI
+  webui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flockparser-webui
+    command: ["python", "-m", "streamlit", "run", "flock_webui.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    ports:
+      - "8501:8501"
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+    volumes:
+      - ./converted_files:/app/converted_files
+      - ./chroma_db:/app/chroma_db
+      - ./knowledge_base:/app/knowledge_base
+      - ./logs:/app/logs
+    networks:
+      - flockparser-network
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  # FlockParser CLI (interactive)
+  cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flockparser-cli
+    command: ["python", "flockparsecli.py"]
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+    volumes:
+      - ./converted_files:/app/converted_files
+      - ./chroma_db:/app/chroma_db
+      - ./knowledge_base:/app/knowledge_base
+      - ./logs:/app/logs
+      - ./testpdfs:/app/testpdfs
+    networks:
+      - flockparser-network
+    stdin_open: true
+    tty: true
+    depends_on:
+      - ollama
+
+  # Ollama Service (for local LLM inference)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: flockparser-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - flockparser-network
+    restart: unless-stopped
+    # Uncomment for GPU support (requires nvidia-container-toolkit)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+networks:
+  flockparser-network:
+    driver: bridge
+
+volumes:
+  ollama-data:
+    driver: local

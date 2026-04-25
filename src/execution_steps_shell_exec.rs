@@ -4,6 +4,127 @@
 
 use crate::execution_steps_compat::*;
 use crate::*;
+use std::collections::HashSet;
+use std::sync::{LazyLock, Mutex};
+
+/// Track executed command patterns to prevent retry loops.
+static EXECUTED_COMMANDS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Normalize a command for deduplication: lowercase, collapse whitespace, strip trailing pipes/sorts.
+fn normalize_command_pattern(cmd: &str) -> String {
+    let mut normalized = cmd.to_lowercase();
+    // Collapse whitespace
+    let mut result = String::new();
+    let mut prev_space = false;
+    for c in normalized.chars() {
+        if c.is_whitespace() {
+            if !prev_space {
+                result.push(' ');
+                prev_space = true;
+            }
+        } else {
+            result.push(c);
+            prev_space = false;
+        }
+    }
+
+    // For find commands, normalize aggressively to a single canonical form.
+    // The model keeps generating variations (grep -v vs ! -path, -maxdepth, head -N vs head -M,
+    // -exec stat vs | while read stat, xargs ls -lt, etc.) — all are the same "list files" intent.
+    if result.starts_with("find ") {
+        // Extract the file type being searched for
+        let file_type = if result.contains("-name \"*.md\"") || result.contains("-name '*.md'") {
+            "md"
+        } else if result.contains("-name \"*.toml\"") || result.contains("-name '*.toml'") {
+            "toml"
+        } else if result.contains("-name \"*.json\"") || result.contains("-name '*.json'") {
+            "json"
+        } else if result.contains("-name \"*.rs\"") || result.contains("-name '*.rs'") {
+            "rs"
+        } else if result.contains("-name \"*.txt\"") || result.contains("-name '*.txt'") {
+            "txt"
+        } else {
+            "other"
+        };
+
+        // Detect if stat/date/size info is being requested (any form)
+        let has_stat = result.contains("stat ")
+            || result.contains("-printf \"%t")
+            || result.contains("-printf \"%y")
+            || result.contains("-printf \"%m")
+            || result.contains("ls -lt")
+            || result.contains("ls -la")
+            || result.contains("-printf \"%s");
+
+        // Detect if output is being counted
+        let has_wc = result.contains("| wc");
+
+        // Detect if output is being truncated (head/tail)
+        let has_head = result.contains("| head") || result.contains("|head");
+
+        let mut key = format!("find_{}", file_type);
+        if has_stat {
+            key.push_str("_stat");
+        }
+        if has_wc {
+            key.push_str("_count");
+        }
+        if has_head {
+            key.push_str("_truncated");
+        }
+        return key;
+    }
+
+    // Strip trailing sort/head/tail for pattern matching (these are output formatters, not core logic)
+    let stripped = result
+        .split(" | ")
+        .next()
+        .unwrap_or(&result)
+        .trim()
+        .to_string();
+    // Also strip the first pipe chain for find/grep commands
+    let core = stripped
+        .split(" | grep")
+        .next()
+        .unwrap_or(&stripped)
+        .split(" | sort")
+        .next()
+        .unwrap_or(&stripped)
+        .split(" | head")
+        .next()
+        .unwrap_or(&stripped)
+        .split(" | tail")
+        .next()
+        .unwrap_or(&stripped)
+        .split(" | wc")
+        .next()
+        .unwrap_or(&stripped)
+        .trim()
+        .to_string();
+    core
+}
+
+/// Check if a command pattern has already been executed. Returns true if it's a duplicate.
+fn is_duplicate_command(cmd: &str) -> bool {
+    let pattern = normalize_command_pattern(cmd);
+    let mut cache = EXECUTED_COMMANDS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if cache.contains(&pattern) {
+        return true;
+    }
+    cache.insert(pattern);
+    false
+}
+
+/// Clear the executed commands cache (for testing).
+pub(crate) fn clear_executed_commands_cache() {
+    let mut cache = EXECUTED_COMMANDS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    cache.clear();
+}
 
 async fn compact_evidence_via_unit(
     client: &reqwest::Client,
@@ -120,6 +241,40 @@ pub(crate) async fn execute_and_process_shell(
     } else {
         None
     };
+
+    // Prevent duplicate command execution (retry loop guard)
+    if is_duplicate_command(&cmd) {
+        let msg = format!(
+            "SKIPPED: This command pattern was already executed in this session. Do not retry the same command — use the previous output or try a different approach."
+        );
+        trace(
+            args,
+            &format!(
+                "shell_skipped_duplicate={}",
+                normalize_command_pattern(&cmd)
+            ),
+        );
+        state.step_results.push(StepResult {
+            id: sid,
+            kind,
+            purpose: purpose_str,
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: msg.clone(),
+            command: Some(cmd),
+            raw_output: Some(msg),
+            exit_code: Some(-1),
+            output_bytes: Some(0),
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: Some("DUPLICATE_COMMAND".to_string()),
+        });
+        return Ok(());
+    }
 
     let path = write_shell_action(&session.shell_dir, &cmd)?;
     trace(args, &format!("shell_saved={}", path.display()));

@@ -193,3 +193,15 @@ expected_formula = "capability_reply"
 expected_answer_keywords = ["can", "confirm"]
 minimum_step_count = 1
 maximum_step_count = 1
+
+[[scenarios]]
+file = "stress_016_storage_query_regression.md"
+speech_act = "INFO_REQUEST"
+workflow = "WORKFLOW"
+mode = "INSPECT"
+route = "SHELL"
+notes = "Storage queries should avoid per-file stat loops and prefer aggregate du/find logic."
+expected_formula = "inspect_summarize_reply"
+forbidden_scope_terms = ["while read", "for i in"]
+minimum_step_count = 2
+maximum_step_count = 4

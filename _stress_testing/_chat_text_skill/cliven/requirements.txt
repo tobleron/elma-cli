@@ -1,0 +1,6 @@
+typer
+rich
+pdfplumber
+sentence-transformers
+chromadb
+langchain

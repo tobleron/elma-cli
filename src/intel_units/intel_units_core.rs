@@ -29,7 +29,7 @@ impl IntelUnit for ComplexityAssessmentUnit {
 
     fn pre_flight(&self, context: &IntelContext) -> Result<()> {
         if context.user_message.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty user message"));
+            return Err(IntelError::EmptyUserMessage.into());
         }
         Ok(())
     }
@@ -56,18 +56,28 @@ impl IntelUnit for ComplexityAssessmentUnit {
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         let d = &output.data;
         if d.get("complexity").is_none() {
-            return Err(anyhow::anyhow!("Missing 'complexity' field"));
+            return Err(IntelError::MissingField("complexity".to_string()).into());
         }
         if d.get("risk").is_none() {
-            return Err(anyhow::anyhow!("Missing 'risk' field"));
+            return Err(IntelError::MissingField("risk".to_string()).into());
         }
         match d.get("complexity").and_then(|v| v.as_str()) {
             Some("DIRECT") | Some("INVESTIGATE") | Some("MULTISTEP") | Some("OPEN_ENDED") => {}
-            other => return Err(anyhow::anyhow!("Invalid complexity value: {:?}", other)),
+            other => {
+                return Err(IntelError::InvalidValue(
+                    "complexity".to_string(),
+                    format!("{:?}", other),
+                )
+                .into())
+            }
         }
         match d.get("risk").and_then(|v| v.as_str()) {
             Some("LOW") | Some("MEDIUM") | Some("HIGH") => {}
-            other => return Err(anyhow::anyhow!("Invalid risk value: {:?}", other)),
+            other => {
+                return Err(
+                    IntelError::InvalidValue("risk".to_string(), format!("{:?}", other)).into(),
+                )
+            }
         }
         Ok(())
     }
@@ -109,7 +119,7 @@ impl IntelUnit for EvidenceNeedsUnit {
 
     fn pre_flight(&self, context: &IntelContext) -> Result<()> {
         if context.user_message.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty user message"));
+            return Err(IntelError::EmptyUserMessage.into());
         }
         Ok(())
     }
@@ -132,10 +142,10 @@ impl IntelUnit for EvidenceNeedsUnit {
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("needs_evidence").is_none() {
-            return Err(anyhow::anyhow!("Missing 'needs_evidence' field"));
+            return Err(IntelError::MissingField("needs_evidence".to_string()).into());
         }
         if output.get("needs_tools").is_none() {
-            return Err(anyhow::anyhow!("Missing 'needs_tools' field"));
+            return Err(IntelError::MissingField("needs_tools".to_string()).into());
         }
         Ok(())
     }
@@ -172,7 +182,7 @@ impl IntelUnit for ActionNeedsUnit {
 
     fn pre_flight(&self, context: &IntelContext) -> Result<()> {
         if context.user_message.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty user message"));
+            return Err(IntelError::EmptyUserMessage.into());
         }
         Ok(())
     }
@@ -195,10 +205,10 @@ impl IntelUnit for ActionNeedsUnit {
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("needs_decision").is_none() {
-            return Err(anyhow::anyhow!("Missing 'needs_decision' field"));
+            return Err(IntelError::MissingField("needs_decision".to_string()).into());
         }
         if output.get("needs_plan").is_none() {
-            return Err(anyhow::anyhow!("Missing 'needs_plan' field"));
+            return Err(IntelError::MissingField("needs_plan".to_string()).into());
         }
         Ok(())
     }
@@ -235,7 +245,7 @@ impl IntelUnit for WorkflowPlannerUnit {
 
     fn pre_flight(&self, context: &IntelContext) -> Result<()> {
         if context.user_message.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty user message"));
+            return Err(IntelError::EmptyUserMessage.into());
         }
         Ok(())
     }
@@ -262,13 +272,13 @@ impl IntelUnit for WorkflowPlannerUnit {
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("objective").is_none() {
-            return Err(anyhow::anyhow!("Missing 'objective' field"));
+            return Err(IntelError::MissingField("objective".to_string()).into());
         }
         if output.get("complexity").is_none() {
-            return Err(anyhow::anyhow!("Missing 'complexity' field"));
+            return Err(IntelError::MissingField("complexity".to_string()).into());
         }
         if output.get("risk").is_none() {
-            return Err(anyhow::anyhow!("Missing 'risk' field"));
+            return Err(IntelError::MissingField("risk".to_string()).into());
         }
         Ok(())
     }
@@ -315,7 +325,7 @@ impl IntelUnit for PatternSuggestionUnit {
 
     fn pre_flight(&self, context: &IntelContext) -> Result<()> {
         if context.user_message.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty user message"));
+            return Err(IntelError::EmptyUserMessage.into());
         }
         Ok(())
     }
@@ -337,7 +347,7 @@ impl IntelUnit for PatternSuggestionUnit {
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("suggested_pattern").is_none() {
-            return Err(anyhow::anyhow!("Missing 'suggested_pattern' field"));
+            return Err(IntelError::MissingField("suggested_pattern".to_string()).into());
         }
         Ok(())
     }
@@ -374,7 +384,7 @@ impl IntelUnit for ScopeBuilderUnit {
 
     fn pre_flight(&self, context: &IntelContext) -> Result<()> {
         if context.user_message.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty user message"));
+            return Err(IntelError::EmptyUserMessage.into());
         }
         Ok(())
     }
@@ -403,7 +413,7 @@ impl IntelUnit for ScopeBuilderUnit {
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("objective").is_none() {
-            return Err(anyhow::anyhow!("Missing 'objective' field"));
+            return Err(IntelError::MissingField("objective".to_string()).into());
         }
         Ok(())
     }
@@ -445,7 +455,7 @@ impl IntelUnit for FormulaSelectorUnit {
 
     fn pre_flight(&self, context: &IntelContext) -> Result<()> {
         if context.user_message.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty user message"));
+            return Err(IntelError::EmptyUserMessage.into());
         }
         Ok(())
     }
@@ -482,7 +492,7 @@ impl IntelUnit for FormulaSelectorUnit {
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("primary").is_none() {
-            return Err(anyhow::anyhow!("Missing 'primary' field"));
+            return Err(IntelError::MissingField("primary".to_string()).into());
         }
         Ok(())
     }

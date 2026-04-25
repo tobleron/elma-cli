@@ -60,12 +60,16 @@ mod tests {
                 Step::Shell {
                     id: "s1".to_string(),
                     cmd: "ls".to_string(),
-                    common: StepCommon::default(),
+                    common: StepCommon {
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
+                    },
                 },
                 Step::Select {
                     id: "sel1".to_string(),
                     instructions: "pick one".to_string(),
                     common: StepCommon {
+                        purpose: "pick one".to_string(),
                         depends_on: vec!["s1".to_string()],
                         ..StepCommon::default()
                     },
@@ -121,14 +125,18 @@ mod tests {
                         content: "hello".to_string(),
                         ..EditSpec::default()
                     },
-                    common: StepCommon::default(),
+                    common: StepCommon {
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
+                    },
                 },
                 Step::Read {
                     id: "r1".to_string(),
                     path: "README.md".to_string(),
                     common: StepCommon {
                         depends_on: vec!["e1".to_string()],
-                        ..StepCommon::default()
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                     },
                 },
             ],
@@ -171,14 +179,18 @@ mod tests {
                         content: "hello".to_string(),
                         ..EditSpec::default()
                     },
-                    common: StepCommon::default(),
+                    common: StepCommon {
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
+                    },
                 },
                 Step::Read {
                     id: "r1".to_string(),
                     path: "README.md".to_string(),
                     common: StepCommon {
                         depends_on: vec!["e1".to_string()],
-                        ..StepCommon::default()
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                    ..Default::default()
                     },
                 },
             ],

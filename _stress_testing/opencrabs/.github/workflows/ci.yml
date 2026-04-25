@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    tags-ignore:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache target
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-target-stable-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run tests (Windows — no whatsapp/local-stt/local-tts)
+        if: runner.os == 'Windows'
+        run: cargo test --no-default-features --features "telegram,discord,slack,whatsapp,trello" --verbose
+
+      - name: Run tests (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CFLAGS: -march=armv8-a+crypto
+          CXXFLAGS: -march=armv8-a+crypto
+        run: cargo test --all-features --verbose
+
+      - name: Install ALSA dev (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Run tests (Linux)
+        if: runner.os == 'Linux'
+        run: cargo test --all-features --verbose
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Install ALSA dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Run clippy
+        run: cargo clippy --lib --bins --tests --all-features -- -D warnings
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Check formatting
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Install ALSA dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Generate coverage
+        run: cargo tarpaulin --out Xml --no-default-features --features "telegram,whatsapp,discord,slack,trello"
+        # Note: local-stt excluded — tarpaulin uses rust-lld which can't handle
+        # duplicate ggml symbols from whisper-rs-sys + llama-cpp-sys-2.
+        # local-tts added when feature lands on main.
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./cobertura.xml

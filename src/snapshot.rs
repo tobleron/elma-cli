@@ -3,6 +3,9 @@
 //! Workspace snapshot creation and management.
 
 use crate::*;
+use itertools::Itertools;
+use tap::Tap;
+use tracing::{info,trace};
 use std::collections::HashSet;
 
 const SNAPSHOT_MANIFEST_VERSION: u32 = 1;
@@ -76,8 +79,23 @@ pub(crate) fn rollback_workspace_snapshot(
     let files_dir = snapshot_dir.join("files");
     let expected_set = manifest.files.iter().cloned().collect::<HashSet<String>>();
 
+    // Pre-flight: verify all snapshot source files are readable before touching workspace
+    for rel_str in &manifest.files {
+        let src = files_dir.join(PathBuf::from(rel_str));
+        if !src.exists() {
+            anyhow::bail!(
+                "Snapshot source file missing: {}. Rollback aborted to protect workspace.",
+                src.display()
+            );
+        }
+        // Verify it's actually readable
+        std::fs::File::open(&src)
+            .with_context(|| format!("Cannot read snapshot file: {}", src.display()))?;
+    }
+
     let mut restored_files = 0u64;
     let mut verified_files = 0u64;
+    let file_count = manifest.files.len().tap(|c| tracing::debug!("restoring {} files from snapshot", c));
     for rel_str in &manifest.files {
         let rel = PathBuf::from(rel_str);
         let src = files_dir.join(&rel);
@@ -96,18 +114,7 @@ pub(crate) fn rollback_workspace_snapshot(
 
     let (_, _, current_files) = collect_snapshot_relative_files(repo_root)?;
     let mut removed_files = 0u64;
-    for rel in current_files {
-        let rel_string = rel.display().to_string();
-        if expected_set.contains(&rel_string) {
-            continue;
-        }
-        let path = repo_root.join(&rel);
-        if path.exists() {
-            std::fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
-            removed_files += 1;
-            cleanup_empty_parents(repo_root, path.parent());
-        }
-    }
+    remove_extra_files_after_restore(repo_root, &current_files, &expected_set, &mut removed_files)?;
 
     Ok(RollbackResult {
         snapshot_id: snapshot_id.to_string(),
@@ -154,8 +161,7 @@ fn collect_snapshot_relative_files(repo_root: &Path) -> Result<(bool, String, Ve
     }
     let mut files = Vec::new();
     walk_snapshot_files(repo_root, repo_root, &mut files)?;
-    files.sort();
-    files.dedup();
+    files = files.into_iter().unique().collect();
     Ok((false, "workspace_walk".to_string(), files))
 }
 
@@ -203,8 +209,7 @@ fn collect_git_snapshot_files(repo_root: &Path) -> Result<Vec<PathBuf>> {
             files.push(rel);
         }
     }
-    files.sort();
-    files.dedup();
+    files = files.into_iter().unique().collect();
     Ok(files)
 }
 
@@ -264,6 +269,22 @@ fn file_bytes_equal(a: &Path, b: &Path) -> Result<bool> {
     let a_bytes = std::fs::read(a).with_context(|| format!("read {}", a.display()))?;
     let b_bytes = std::fs::read(b).with_context(|| format!("read {}", b.display()))?;
     Ok(a_bytes == b_bytes)
+}
+
+fn remove_extra_files_after_restore(repo_root: &Path, current_files: &[PathBuf], expected_set: &HashSet<String>, removed_files: &mut u64) -> Result<()> {
+    for rel in current_files {
+        let rel_string = rel.display().to_string();
+        if expected_set.contains(&rel_string) {
+            continue;
+        }
+        let path = repo_root.join(&rel);
+        if path.exists() {
+            std::fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+            *removed_files += 1;
+            cleanup_empty_parents(repo_root, path.parent());
+        }
+    }
+    Ok(())
 }
 
 fn cleanup_empty_parents(repo_root: &Path, mut dir: Option<&Path>) {

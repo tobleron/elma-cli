@@ -66,6 +66,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     id: "s1".to_string(),
                     cmd: format!("find {} -type d | sort", quoted_path),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "map the directory structure".to_string(),
                         depends_on: Vec::new(),
                         success_condition: "directory structure is available".to_string(),
@@ -81,6 +85,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                         quoted_path
                     ),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "find the top 3 largest source files by line count".to_string(),
                         depends_on: Vec::new(),
                         success_condition: "top 3 largest files are identified".to_string(),
@@ -95,6 +103,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "From the grounded evidence, report the directory structure and the top 3 largest source files by line count."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "summarize the structure and size findings".to_string(),
                         depends_on: vec!["s1".to_string(), "s2".to_string()],
                         success_condition: "a concise summary is available".to_string(),
@@ -108,6 +120,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "Present the directory structure and top 3 largest files. Stay grounded in the observed evidence."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "present the grounded discovery result".to_string(),
                         depends_on: vec!["s1".to_string(), "s2".to_string(), "sum1".to_string()],
                         success_condition: "the user receives a grounded structure and size report"
@@ -133,6 +149,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                         quoted_path
                     ),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "find a grounded parsing path that directly depends on a present message id field"
                             .to_string(),
                         depends_on: Vec::new(),
@@ -147,6 +167,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     id: "s2".to_string(),
                     cmd: format!("sed -n '145,165p' {}", quoted_target),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "inspect the concrete vulnerable code block around the selected id access"
                             .to_string(),
                         depends_on: vec!["s1".to_string()],
@@ -164,6 +188,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                         quoted_target
                     ),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "implement a robust local fallback when parsed stream message_start data lacks an id field"
                             .to_string(),
                         depends_on: vec!["s1".to_string(), "s2".to_string()],
@@ -181,6 +209,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                         quoted_target
                     ),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "verify locally that the direct missing-id hazard was replaced by the new fallback logic"
                             .to_string(),
                         depends_on: vec!["s3".to_string()],
@@ -196,6 +228,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "Report the exact file changed, the vulnerable path that was fixed, the fallback that was introduced, and the local verification result. Stay grounded in the shell evidence only."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "present the grounded troubleshooting fix result".to_string(),
                         depends_on: vec![
                             "s1".to_string(),
@@ -226,6 +262,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                         quoted_path
                     ),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "gather candidate files for renaming within the scoped workspace"
                             .to_string(),
                         depends_on: Vec::new(),
@@ -241,6 +281,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "Choose one small utility function with a vague name that could be improved. Return the exact function name only."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "select one vague function name to rename"
                             .to_string(),
                         depends_on: vec!["s1".to_string()],
@@ -256,6 +300,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "Propose one clear descriptive replacement name for the selected function. Return only the new name."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "propose a better function name"
                             .to_string(),
                         depends_on: vec!["sel1".to_string()],
@@ -273,6 +321,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                         "{{sel1|shell_words}}", quoted_path
                     ),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "find the function definition location"
                             .to_string(),
                         depends_on: vec!["sel1".to_string()],
@@ -290,6 +342,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                         "{{sel1|shell_words}}", "{{sel2|shell_words}}", quoted_path
                     ),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "rename the function and update all call sites across the scoped workspace"
                             .to_string(),
                         depends_on: vec!["sel1".to_string(), "sel2".to_string()],
@@ -307,6 +363,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                         "{{sel1|shell_words}}", quoted_path
                     ),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "verify the old name no longer appears in the scoped workspace"
                             .to_string(),
                         depends_on: vec!["s3".to_string()],
@@ -322,6 +382,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "Report the exact old and new function names, the scoped files changed, and the verification result. Stay grounded in the evidence."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "present the grounded rename result"
                             .to_string(),
                         depends_on: vec![
@@ -353,6 +417,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     id: "s1".to_string(),
                     cmd: format!("ls -1 {}", quoted_path),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "list the top-level files and directories in the target path"
                             .to_string(),
                         depends_on: Vec::new(),
@@ -366,6 +434,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     id: "s2".to_string(),
                     cmd: format!("rg --files {} | head -n 120", quoted_path),
                     common: StepCommon {
+                                        is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: true,
+                                        is_read_only: false,
                         purpose: "gather concrete file-path evidence from the target path"
                             .to_string(),
                         depends_on: Vec::new(),
@@ -380,6 +452,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "Select exactly three grounded file paths that are the strongest candidates for main application logic. Prefer entry points, app wiring, root commands, and central runtime modules. Return exact file paths only."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "choose three grounded candidate files".to_string(),
                         depends_on: vec!["s1".to_string(), "s2".to_string()],
                         success_condition: "three candidate file paths are selected".to_string(),
@@ -393,6 +469,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "From the candidate file paths, choose exactly one most likely main application logic file. Prefer the file that most directly acts as the application entry point or root command. Return the exact file path only."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "select the most likely candidate from the three grounded options"
                             .to_string(),
                         depends_on: vec!["sel1".to_string()],
@@ -408,6 +488,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                     instructions: "Report the three selected candidate file paths, then name the most likely candidate and explain briefly why it is the strongest grounded choice."
                         .to_string(),
                     common: StepCommon {
+                                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                        is_destructive: false,
+                                        is_read_only: true,
                         purpose: "present the grounded candidates and the final selection"
                             .to_string(),
                         depends_on: vec![
@@ -431,6 +515,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
         id: "s1".to_string(),
         cmd: format!("ls -1 {}", quoted_path),
         common: StepCommon {
+                            is_concurrency_safe: false,
+                            interrupt_behavior: InterruptBehavior::Graceful,
+                            is_destructive: true,
+                            is_read_only: false,
             purpose: "list the files in the target path".to_string(),
             depends_on: Vec::new(),
             success_condition: "the file or directory listing is available".to_string(),
@@ -445,6 +533,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
             id: "r1".to_string(),
             path: format!("{}/README.md", path.trim_end_matches('/')),
             common: StepCommon {
+                                is_concurrency_safe: true,
+                            interrupt_behavior: InterruptBehavior::Graceful,
+                                is_destructive: false,
+                                is_read_only: true,
                 purpose: "read the README file in the target path".to_string(),
                 depends_on: Vec::new(),
                 success_condition: "the README contents are available".to_string(),
@@ -460,6 +552,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                 instructions: "Create exactly 3 concise bullet points that summarize the README for an executive audience. Keep every point grounded in the README contents."
                     .to_string(),
                 common: StepCommon {
+                                    is_concurrency_safe: true,
+                            interrupt_behavior: InterruptBehavior::Graceful,
+                                    is_destructive: false,
+                                    is_read_only: true,
                     purpose: "summarize the README into the requested executive bullets"
                         .to_string(),
                     depends_on: vec!["r1".to_string()],
@@ -474,6 +570,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
                 instructions: "Return exactly the 3 bullet points from the grounded summary. Do not add extra prose before or after the bullets."
                     .to_string(),
                 common: StepCommon {
+                                    is_concurrency_safe: true,
+                            interrupt_behavior: InterruptBehavior::Graceful,
+                                    is_destructive: false,
+                                    is_read_only: true,
                     purpose: "deliver the grounded README summary in the requested format"
                         .to_string(),
                     depends_on: vec!["s1".to_string(), "r1".to_string(), "sum1".to_string()],
@@ -493,6 +593,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
             id: "a1".to_string(),
             instructions: "Summarize the README core purpose and keep the answer grounded in the observed file contents.".to_string(),
             common: StepCommon {
+                                is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                is_destructive: false,
+                                is_read_only: true,
                 purpose: "answer using the README evidence".to_string(),
                 depends_on: vec!["s1".to_string(), "r1".to_string()],
                 success_condition: "the user receives a grounded summary".to_string(),
@@ -520,6 +624,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
         id: "s2".to_string(),
         cmd: evidence_cmd,
         common: StepCommon {
+                            is_concurrency_safe: false,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                            is_destructive: true,
+                            is_read_only: false,
             purpose: "collect supporting file evidence from the target path".to_string(),
             depends_on: Vec::new(),
             success_condition: "supporting file evidence is available".to_string(),
@@ -534,6 +642,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
             instructions: "From the grounded file-path evidence, choose exactly one most likely primary entry point for the codebase. Prefer the top-level executable entry file over secondary command wiring. Return the exact relative path only."
                 .to_string(),
             common: StepCommon {
+                                is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                is_destructive: false,
+                                is_read_only: true,
                 purpose: "select the strongest grounded primary entry-point candidate".to_string(),
                 depends_on: vec!["s2".to_string()],
                 success_condition: "one grounded relative path is selected as the primary entry point".to_string(),
@@ -546,6 +658,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
             id: "r1".to_string(),
             instructions: "Answer using the observed file evidence and the selected entry-point candidate. Preserve exact grounded relative file paths from the evidence in the final answer. State the selected exact relative path first, then explain briefly why it is the strongest grounded entry point.".to_string(),
             common: StepCommon {
+                                is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                is_destructive: false,
+                                is_read_only: true,
                 purpose: "present the grounded result".to_string(),
                 depends_on: vec!["s2".to_string(), "sel1".to_string()],
                 success_condition: "the user receives a grounded answer".to_string(),
@@ -559,6 +675,10 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
             id: "r1".to_string(),
             instructions: "Answer using the observed file evidence. Preserve exact grounded relative file paths from the evidence in the final answer.".to_string(),
             common: StepCommon {
+                                is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                                is_destructive: false,
+                                is_read_only: true,
                 purpose: "present the grounded result".to_string(),
                 depends_on: vec!["s1".to_string(), "s2".to_string()],
                 success_condition: "the user receives a grounded answer".to_string(),

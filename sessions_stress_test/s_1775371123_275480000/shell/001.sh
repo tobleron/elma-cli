@@ -1,1 +1,0 @@
-ls -1 '_stress_testing/_opencode_for_testing/'

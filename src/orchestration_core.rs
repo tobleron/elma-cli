@@ -17,7 +17,7 @@ use crate::*;
 
 /// Build a system prompt for tool calling without any intermediate planner.
 /// The model has full context (workspace, conversation, tools) and plans directly.
-fn build_tool_calling_system_prompt(runtime: &AppRuntime, line: &str) -> String {
+fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String {
     // Include conversation excerpt for continuity
     let conversation = if runtime.messages.is_empty() {
         String::new()
@@ -39,6 +39,18 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, line: &str) -> String 
         format!("\nRECENT CONVERSATION:\n{}", last_msgs.join("\n"))
     };
 
+    let skill_context = build_skill_context(runtime);
+
+    // Build dynamic tool list from the registry (only always-available tools)
+    let tool_list = {
+        let registry = crate::tool_registry::get_registry();
+        let mut lines = String::new();
+        for tool in registry.default_tools() {
+            lines.push_str(&format!("- {}: {}\n", tool.function.name, tool.function.description));
+        }
+        lines
+    };
+
     format!(
         r#"You are Elma — a local-first AI assistant that helps users with their requests.
 
@@ -51,35 +63,119 @@ WORKSPACE BRIEF:
 {}
 {}
 
-TOOLS AVAILABLE:
-- shell: Execute any shell command. THIS IS YOUR PRIMARY TOOL. Use: `ls`, `ls -la`, `find . -name "*.sh"`, `cat file`, `tree -L 2`, `rg "pattern"`, `head`, `wc -l`, etc.
-- read: Read a specific file's contents (when you already know the path)
-- search: Search FILE CONTENTS with ripgrep — NOT for finding files by name. Use `shell` with `find` or `ls` for discovering files.
-- respond: Provide your final answer to the user
+EXECUTION MODE:
+{}
 
-HOW TO INVESTIGATE:
-1. FIRST use `shell` to list/discover — e.g. `find . -name "*.sh"` or `ls -la path/`
-2. THEN use `read` or `search` to examine specific files you found
-3. Use `respond` when you have the answer
+FORMULA STAGES:
+{}
+
+PLAN DIRECTIVE:
+{}
+
+PROJECT GUIDANCE SNAPSHOT:
+{}
+
+SKILL CONTEXT:
+{}
+
+TOOLS AVAILABLE (always loaded):
+{}
+
+DYNAMIC TOOL LOADING:
+Additional tools (shell, read, search, update_todo_list) are not loaded by default to reduce token usage. Use `tool_search` with capability hints to load them on demand. Example queries: "execute shell command", "read file contents", "search text in files", "manage todo list".
+
+HOW TO INVESTIGATE (MINIMUM SUFFICIENT EVIDENCE):
+1. Start with the smallest direct source of truth (specific file over broad directory scans).
+2.如果需要读取文件或搜索内容，首先使用 tool_search 加载对应工具。
+3. As soon as evidence answers the question, call `respond`.
+
+DOCUMENT READING RULES:
+- PDF, EPUB, and HTML files should be read with the `read` tool, NOT with shell pipelines like `pdftotext`, `strings`, or `cat`.
+- The `read` tool extracts clean text from documents automatically.
+- Do NOT run destructive shell pipelines on PDFs (e.g., `pdftotext ... | grep | awk | sort`). These produce garbage output.
+
+STORAGE & RETENTION QUERY PLAYBOOK:
+- When calculating directory size: use `du -sh <dir>` instead of per-file `stat` loops.
+- When inspecting large files: use `find <dir> -type f -exec du -h {{}} + | sort -rh | head -n 10` instead of `stat`.
+- When filtering by date/time: use `find <dir> -type f -mtime +<days>` or `-mmin +<mins>`.
+- If date predicates differ by platform (BSD vs GNU), use simple `-mtime` fallbacks before giving up.
+- Avoid reading file contents entirely when you only need size, count, or dates.
+- For counts, use `find <dir> -type f | wc -l`.
 
 CRITICAL RULES:
 - To find files by name or extension: use `shell` with `find` or `ls`, NOT `search`
 - `search` searches INSIDE files for text patterns — it does NOT find files by name
-- If you already ran a command that showed files (like `ls -ltr`), use THAT OUTPUT — don't search again
+- If you already ran a command that showed what you need, use THAT OUTPUT — do not re-list the same paths
+- Avoid repetitive commands that only restate known information
 - Always ground your answer in actual tool output, not assumptions
 - If a command fails, try a different approach
 - Always use `respond` when you have the answer
-- For conversational requests, respond directly without using tools"#,
+- For conversational requests, respond directly without using tools
+- Follow the selected skill's scope before falling back to general behavior"#,
         runtime.ws.trim(),
         runtime.ws_brief.trim(),
-        conversation
+        conversation,
+        runtime.execution_plan.request_class.as_str(),
+        runtime
+            .execution_plan
+            .formula
+            .stages
+            .iter()
+            .map(|stage| format!("- {}: {}", stage.skill_id.as_str(), stage.action))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        runtime.execution_plan.summary_directive,
+        runtime.guidance.render_for_system_prompt(),
+        skill_context,
+        tool_list.trim() // trim trailing newline
     )
+}
+
+fn build_skill_context(runtime: &AppRuntime) -> String {
+    let primary = runtime.execution_plan.primary_skill();
+    match primary {
+        SkillId::RepoExplorer => {
+            if let Ok(overview) = repo_explorer::explore_repo(&runtime.repo) {
+                repo_explorer::render_repo_overview(&overview)
+            } else {
+                "(repo exploration unavailable)".to_string()
+            }
+        }
+        SkillId::DocumentReader => {
+            let caps = document_adapter::document_capabilities();
+            let lines: Vec<String> = caps
+                .iter()
+                .map(|c| {
+                    let note = c
+                        .quality_note
+                        .as_ref()
+                        .map(|q| format!(" ({q})"))
+                        .unwrap_or_default();
+                    format!("- {} via {}{}", c.format, c.backend, note)
+                })
+                .collect();
+            format!("Document capabilities:\n{}", lines.join("\n"))
+        }
+        SkillId::FileScout => {
+            let exclusions: Vec<String> =
+                file_scout::default_scout_exclusions().into_iter().collect();
+            format!(
+                "File scout exclusions: {}\nUse on-demand discovery. Stay read-only outside workspace. Disclose searched roots.",
+                exclusions.join(", ")
+            )
+        }
+        SkillId::TaskSteward => {
+            let inventory = task_steward::scan_task_inventory(&runtime.repo);
+            task_steward::render_inventory_summary(&inventory)
+        }
+        SkillId::General => "(general mode — no specialized context)".to_string(),
+    }
 }
 
 /// Run the tool-calling pipeline: model plans and executes tools directly.
 /// Returns (final_answer, iterations_used, tool_calls_made, stopped_by_max).
 pub(crate) async fn run_tool_calling_pipeline(
-    runtime: &AppRuntime,
+    runtime: &mut AppRuntime,
     line: &str,
     tui: &mut crate::ui_terminal::TerminalUI,
 ) -> Result<(String, usize, usize, bool)> {
@@ -101,11 +197,17 @@ pub(crate) async fn run_tool_calling_pipeline(
         0.2, // temperature — low for reliability
         2048,
         tui,
+        Some(&runtime.profiles.summarizer_cfg),
     )
     .await?;
 
+    runtime.last_stop_outcome = result.stop_outcome.clone();
+
+    // Strip leaked thinking/tool_call blocks before returning to the user
+    let clean_answer = crate::text_utils::strip_thinking_blocks(&result.final_answer);
+
     Ok((
-        result.final_answer,
+        clean_answer,
         result.iterations,
         result.tool_calls_made,
         result.stopped_by_max,
@@ -328,6 +430,10 @@ pub(crate) async fn build_program_from_maestro(
                 parent_id: None,
                 depth: None,
                 unit_type: None,
+                is_read_only: true,
+                is_destructive: false,
+                is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
             },
         });
         all_steps.push(Step::Respond {
@@ -340,6 +446,10 @@ pub(crate) async fn build_program_from_maestro(
                 parent_id: None,
                 depth: None,
                 unit_type: None,
+                is_read_only: true,
+                is_destructive: false,
+                is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
             },
         });
     } else if !last_step_is_reply && all_steps.len() == 1 {
@@ -353,6 +463,10 @@ pub(crate) async fn build_program_from_maestro(
                 parent_id: None,
                 depth: None,
                 unit_type: None,
+                is_read_only: true,
+                is_destructive: false,
+                is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
             },
         });
     }

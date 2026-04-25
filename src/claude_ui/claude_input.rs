@@ -44,6 +44,11 @@ pub(crate) const SLASH_COMMANDS: &[SlashCommand] = &[
         second_action: None,
     },
     SlashCommand {
+        name: "/init",
+        description: "Initialize Elma project files",
+        second_action: None,
+    },
+    SlashCommand {
         name: "/retry",
         description: "Retry last assistant response",
         second_action: None,
@@ -56,6 +61,11 @@ pub(crate) const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/resume",
         description: "Resume previous session",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/skills",
+        description: "Show available Elma skills",
         second_action: None,
     },
 ];

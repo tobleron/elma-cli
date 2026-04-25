@@ -75,6 +75,7 @@ pub(crate) const GREEN: (u8, u8, u8) = (184, 187, 38); // success token
 pub(crate) const YELLOW: (u8, u8, u8) = (250, 189, 47); // warning token
 pub(crate) const BLUE: (u8, u8, u8) = (131, 165, 152); // accent_secondary token
 pub(crate) const PURPLE: (u8, u8, u8) = (211, 134, 155); // accent_primary token
+pub(crate) const PINK: (u8, u8, u8) = (255, 120, 180); // primary accent (pink)
 pub(crate) const AQUA: (u8, u8, u8) = (142, 192, 124); // accent_secondary alt
 pub(crate) const ORANGE: (u8, u8, u8) = (254, 128, 25); // accent_primary alt
 pub(crate) const GRAY: (u8, u8, u8) = (146, 131, 116); // fg_dim token

@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: Build and Upload (${{ matrix.goos }}-${{ matrix.goarch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: ""
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build release binary
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          BIN_NAME="pdfrag-${GOOS}-${GOARCH}${{ matrix.ext }}"
+          CGO_ENABLED=1 go build -o "dist/${BIN_NAME}" .
+          sha256sum "dist/${BIN_NAME}" > "dist/${BIN_NAME}.sha256"
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/pdfrag-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+            dist/pdfrag-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}.sha256
+          generate_release_notes: true

@@ -281,6 +281,7 @@ pub(crate) struct HeaderInfo {
     pub workspace: String,
     pub session: String,
     pub workflow: String,
+    pub stage: Option<String>,
     pub verbose: bool,
 }
 

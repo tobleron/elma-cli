@@ -1,0 +1,65 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data (keep structure, ignore contents)
+data/chroma_db/
+data/uploads/
+src/data/
+
+# Logs
+logs/
+
+# Local model files
+model/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+CHAT_LOG_*.md
+Please_Readme.txt
+*.sqlite3
+
+# Private config (contains API keys and endpoints)
+config/api_settings.yaml
+
+# Local docs
+docs/

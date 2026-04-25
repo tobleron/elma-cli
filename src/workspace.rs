@@ -35,7 +35,20 @@ pub(crate) fn gather_workspace_context(repo_root: &Path) -> String {
         repo_root,
     );
 
+    // Detect platform explicitly for model context
+    let platform = if cfg!(target_os = "macos") {
+        "macOS (darwin)".to_string()
+    } else if cfg!(target_os = "linux") {
+        "Linux".to_string()
+    } else {
+        "unknown".to_string()
+    };
+
     let mut s = String::new();
+    s.push_str(&format!("platform: {platform}\n"));
+    if cfg!(target_os = "macos") {
+        s.push_str("NOTE: This is macOS. Use BSD-style commands: `stat -f` not `stat --format`, `find` has no `-printf`, use `| while read f; do stat -f \"%m %N\" \"$f\"; done` for file dates.\n");
+    }
     s.push_str(&format!(
         "cwd: {}\n",
         if !pwd.is_empty() {

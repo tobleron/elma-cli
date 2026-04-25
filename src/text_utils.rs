@@ -2,6 +2,43 @@
 
 use crate::*;
 
+/// Strip `<think>...</think>` and `<tool_call>...</tool_call>` blocks that
+/// leak from models even when reasoning_format=none.
+pub(crate) fn strip_thinking_blocks(text: &str) -> String {
+    let mut result = text.to_string();
+    loop {
+        if let Some(start) = result.find("<think>") {
+            if let Some(end) = result.find("</think>") {
+                result.replace_range(start..end + "</think>".len(), "");
+                continue;
+            }
+        }
+        if let Some(start) = result.find("<thinking>") {
+            if let Some(end) = result.find("</thinking>") {
+                result.replace_range(start..end + "</thinking>".len(), "");
+                continue;
+            }
+        }
+        if let Some(start) = result.find("<reasoning>") {
+            if let Some(end) = result.find("</reasoning>") {
+                result.replace_range(start..end + "</reasoning>".len(), "");
+                continue;
+            }
+        }
+        break;
+    }
+    loop {
+        if let Some(start) = result.find("<tool_call>") {
+            if let Some(end) = result.find("</tool_call>") {
+                result.replace_range(start..end + "</tool_call>".len(), "");
+                continue;
+            }
+        }
+        break;
+    }
+    result.trim().to_string()
+}
+
 pub(crate) fn looks_like_path_token(s: &str) -> bool {
     let t = s.trim_matches(|c: char| {
         matches!(
@@ -116,18 +153,7 @@ pub(crate) fn plain_terminal_text(s: &str) -> String {
 }
 
 pub(crate) fn shell_quote(s: &str) -> String {
-    // POSIX-ish single-quote escaping: ' -> '\''.
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('\'');
-    for ch in s.chars() {
-        if ch == '\'' {
-            out.push_str("'\\''");
-        } else {
-            out.push(ch);
-        }
-    }
-    out.push('\'');
-    out
+    shlex::quote(s).to_string()
 }
 
 pub(crate) fn normalize_shell_cmd(cmd: &str) -> String {
@@ -233,5 +259,29 @@ mod tests {
             extract_first_path_from_user_text(line).as_deref(),
             Some("src")
         );
+    }
+
+    #[test]
+    fn strip_thinking_blocks_removes_think_tags() {
+        let raw = "<think>\ninternal reasoning\n</think>\nactual answer";
+        assert_eq!(strip_thinking_blocks(raw), "actual answer");
+    }
+
+    #[test]
+    fn strip_thinking_blocks_removes_tool_call_tags() {
+        let raw = "<tool_call>{\"name\":\"respond\"}</tool_call>\nanswer";
+        assert_eq!(strip_thinking_blocks(raw), "answer");
+    }
+
+    #[test]
+    fn strip_thinking_blocks_handles_nested_blocks() {
+        let raw = "<think>think1</think>\n<think>think2</think>\nanswer";
+        assert_eq!(strip_thinking_blocks(raw), "answer");
+    }
+
+    #[test]
+    fn strip_thinking_blocks_passes_through_clean_text() {
+        let raw = "just a normal answer";
+        assert_eq!(strip_thinking_blocks(raw), "just a normal answer");
     }
 }

@@ -13,7 +13,28 @@
 use crate::json_parser_extract;
 use crate::*;
 use jsonrepair_rs::jsonrepair;
+use miette::{Diagnostic, SourceSpan};
 use std::any::TypeId;
+use thiserror::Error;
+
+#[derive(Error, Diagnostic, Debug)]
+pub(crate) enum ParseError {
+    #[error("Unable to parse JSON after direct parse, extraction, repair, and fallback")]
+    #[diagnostic(
+        code(elma::json::unable_to_parse),
+        help("The model output did not contain valid JSON or a recognizable fallback pattern.")
+    )]
+    UnableToParse {
+        #[source_code]
+        input: String,
+        #[label("this output")]
+        span: SourceSpan,
+    },
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Schema(#[from] SchemaValidationError),
+}
 
 pub(crate) use json_parser_extract::{
     extract_cmd, extract_entropy, extract_label, extract_reason, regex_fallback_value,
@@ -61,7 +82,22 @@ fn json_field_f64(json: &serde_json::Value, key: &str) -> Option<f64> {
 }
 
 pub(crate) fn extract_json_object(raw: &str) -> Option<serde_json::Value> {
-    let raw_trimmed = raw.trim();
+    let mut raw_trimmed = raw.trim().to_string();
+
+    // Strip <think>...</think> blocks that leak from models even when
+    // reasoning_format=none. This prevents the parser from failing to
+    // find JSON buried inside thinking output.
+    loop {
+        if let Some(start) = raw_trimmed.find("<think>") {
+            if let Some(end) = raw_trimmed.find("</think>") {
+                raw_trimmed.replace_range(start..end + "</think>".len(), "");
+                continue;
+            }
+        }
+        break;
+    }
+    let raw_trimmed = raw_trimmed.trim();
+
     if raw_trimmed.starts_with('{') {
         if let Some(json) = try_json_parse(raw_trimmed) {
             return Some(json);
@@ -164,7 +200,11 @@ pub(crate) fn parse_with_repair<T: serde::de::DeserializeOwned + 'static>(raw: &
         }
         return Ok(serde_json::from_value(fallback)?);
     }
-    anyhow::bail!("Unable to parse JSON after direct parse, extraction, repair, and fallback")
+    Err(ParseError::UnableToParse {
+        input: raw.to_string(),
+        span: (0, raw.len()).into(),
+    }
+    .into())
 }
 
 fn detect_parse_method(raw_trimmed: &str) -> ParseMethod {
@@ -341,6 +381,14 @@ mod tests {
         let raw = "   \n\t  ";
         let result = parse_intel_output(raw, TEST_PAIRS);
         assert_eq!(result.parse_method, ParseMethod::Failed);
+    }
+
+    #[test]
+    fn test_extract_json_from_think_block() {
+        let raw = "<think>\nLet me analyze...\n</think>\n{\"choice\": \"1\", \"label\": \"CHAT\"}";
+        let result = parse_intel_output(raw, TEST_PAIRS);
+        assert_eq!(result.label, Some("CHAT".to_string()));
+        assert_eq!(result.choice, Some("1".to_string()));
     }
 
     #[test]
