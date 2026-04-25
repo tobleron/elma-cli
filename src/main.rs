@@ -3,6 +3,7 @@
 
 pub(crate) use anyhow::{Context, Result};
 pub(crate) use clap::Parser;
+pub(crate) use miette::IntoDiagnostic;
 pub(crate) use reqwest::Url;
 pub(crate) use serde::de::DeserializeOwned;
 pub(crate) use serde::{Deserialize, Serialize};
@@ -35,6 +36,7 @@ mod app_chat_orchestrator_tests;
 mod app_chat_patterns;
 mod app_chat_trace;
 mod auto_compact; // Task 114: Auto-Compact (Context Window Management)
+mod background_task; // Task 268: Background Task Management
 mod command_budget; // Task 121: Command Budget & Rate Limiting
 mod decomposition; // Task 023: Hierarchical decomposition
 mod defaults;
@@ -42,6 +44,9 @@ mod defaults_core;
 mod defaults_evidence;
 mod defaults_evidence_core;
 mod defaults_router;
+mod diagnostics;
+mod dirs;
+mod document_adapter; // Task 197: Document intelligence skill stack
 mod evaluation;
 mod evaluation_response;
 mod evaluation_routing;
@@ -53,11 +58,12 @@ mod execution_steps_compat;
 mod execution_steps_edit;
 mod execution_steps_read;
 mod execution_steps_search;
-#[cfg(test)]
+mod format;
 mod execution_steps_selectors;
 mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
+mod file_scout; // Task 198: Read-only whole-system file scout
 mod formulas;
 mod fs_intel; // Task 072: Specialized Filesystem Intel
 mod guardrails; // State-aware guardrails for context drift (Task 011)
@@ -75,6 +81,7 @@ mod json_grammar; // GBNF grammar loading and injection
 mod json_parser; // Robust JSON parsing for intel unit outputs
 mod json_parser_extract; // Extraction helpers for json_parser
 mod json_tuning; // JSON temperature tuning
+mod logging;
 mod metrics;
 mod models_api;
 mod optimization;
@@ -99,16 +106,21 @@ mod program_policy_level;
 mod program_policy_tests;
 mod program_steps;
 mod program_utils;
+mod project_guidance;
+mod project_init;
 mod prompt_constants;
 mod pubsub; // Task 019: Generic Pub/Sub Broker
 mod refinement;
 mod reflection;
+mod repo_explorer; // Task 196: Repo explorer and analyzer skill
 mod routing;
 mod routing_calc;
 mod routing_infer;
 mod routing_parse;
+mod runtime_task;
 mod scenarios;
 mod session;
+mod session_cleanup;
 mod session_error;
 mod session_hierarchy;
 mod session_paths;
@@ -116,15 +128,20 @@ mod session_seq;
 mod session_write;
 mod shell_preflight; // Task 116: Destructive Command Detection & Preflight
 mod shutdown; // Task 017: Graceful Shutdown And Panic Recovery
+mod skills;
 mod snapshot;
+mod stop_policy;
 mod storage;
 mod strategy; // Multi-strategy planning with fallback chains (Task 010)
 mod streaming_tool_executor; // Task 115: Streaming Tool Execution
+mod task_steward; // Task 202: Project task steward skill
+mod temp;
 mod text_utils;
 mod thinking_content;
 mod tool_calling;
 mod tool_discovery;
 mod tool_loop;
+mod tool_registry;
 mod tool_result_storage; // Task 113: Tool Result Budget & Disk Persistence
 mod tools;
 mod tune;
@@ -139,6 +156,7 @@ mod types_api;
 mod types_core;
 mod types_core_impl;
 mod types_hierarchy;
+mod trash;
 mod ui;
 // UI modules are now organized under the `ui` namespace.
 // Backward-compatible re-exports to preserve existing absolute paths (crate::ui_*).
@@ -176,9 +194,11 @@ mod workspace_tree;
 pub(crate) use decomposition::*; // Task 023
 pub(crate) use defaults::*;
 pub(crate) use defaults_evidence::*; // JSON pipeline intel functions
+pub(crate) use document_adapter::*; // Task 197: Document intelligence
 pub(crate) use evaluation::*;
 pub(crate) use execution::*;
 pub(crate) use execution_ladder::*; // Execution ladder types and functions
+pub(crate) use file_scout::*; // Task 198: File scout
 pub(crate) use guardrails::*; // State-aware guardrails (Task 011)
 pub(crate) use guardrails_refinement::*; // Guardrails refinement phase (Task 011)
 pub(crate) use intel_trait::*; // Intel unit trait and interfaces
@@ -194,15 +214,22 @@ pub(crate) use orchestration_helpers::*;
 pub(crate) use paths::*;
 pub(crate) use profile_sets::*;
 pub(crate) use program::*;
+pub(crate) use project_guidance::*;
+pub(crate) use project_init::*;
 pub(crate) use prompt_constants::*;
 pub(crate) use refinement::*;
 pub(crate) use reflection::*;
+pub(crate) use repo_explorer::*; // Task 196: Repo explorer
 pub(crate) use routing::*;
+pub(crate) use runtime_task::*;
 pub(crate) use scenarios::*;
 pub(crate) use session::*;
+pub(crate) use skills::*;
 pub(crate) use snapshot::*;
+pub(crate) use stop_policy::*;
 pub(crate) use storage::*;
 pub(crate) use strategy::*; // Multi-strategy planning (Task 010)
+pub(crate) use task_steward::*; // Task 202: Task steward
 pub(crate) use text_utils::*;
 pub(crate) use thinking_content::*;
 pub(crate) use tune::*;
@@ -213,6 +240,24 @@ pub(crate) use verification::*;
 pub(crate) use workspace::*;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    app::run().await
+async fn main() {
+    color_eyre::install().unwrap();
+    let args = crate::types::Args::parse();
+    logging::init_logging(args.debug_trace);
+
+    if let Some(command) = &args.command {
+        match command {
+            crate::types::Commands::Completion { shell } => {
+                use clap::CommandFactory;
+                let mut cmd = crate::types::Args::command();
+                clap_complete::generate(*shell, &mut cmd, "elma-cli", &mut std::io::stdout());
+                return;
+            }
+        }
+    }
+
+    if let Err(e) = app::run(args).await {
+        eprintln!("{:?}", e);
+        std::process::exit(1);
+    }
 }

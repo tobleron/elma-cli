@@ -52,23 +52,26 @@ pub(crate) struct TerminalUI {
     tasks: crate::claude_ui::claude_tasks::TaskList,
     // Task U003: Coordinator status indicator
     coordinator_status: crate::ui_coordinator_status::CoordinatorStatus,
+    // Task 268: Background task panel
+    background_tasks_visible: bool,
+    selected_background_task: Option<String>,
     // Double-key chord state
     esc_armed_until: Option<Instant>,
     ctrl_c_armed_until: Option<Instant>,
     ctrl_d_armed_until: Option<Instant>,
-    notification_line: Option<String>,
-    notification_expiry: Option<Instant>,
     queued_submissions: VecDeque<String>,
     // Async permission request channel
     permission_tx: Option<tokio::sync::oneshot::Sender<bool>>,
     // Async event channel: background thread reads crossterm events,
     // all TerminalUI methods drain from here. This is the ONLY event source.
     event_rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    // Incremental token counter for transcript
+    transcript_token_estimate: u64,
 }
 
 #[cfg(unix)]
 fn is_stdin_tty() -> bool {
-    atty::is(atty::Stream::Stdin)
+    std::io::stdin().is_terminal()
 }
 
 #[cfg(not(unix))]
@@ -95,7 +98,9 @@ impl TerminalUI {
 
         let terminal = if is_interactive {
             let backend = ratatui::backend::CrosstermBackend::new(io::stdout());
-            Some(ratatui::Terminal::new(backend)?)
+            let mut terminal = ratatui::Terminal::new(backend)?;
+            terminal.clear()?;
+            Some(terminal)
         } else {
             None
         };
@@ -138,11 +143,12 @@ impl TerminalUI {
             esc_armed_until: None,
             ctrl_c_armed_until: None,
             ctrl_d_armed_until: None,
-            notification_line: None,
-            notification_expiry: None,
             queued_submissions: VecDeque::new(),
             permission_tx: None,
             event_rx,
+            transcript_token_estimate: 0,
+            background_tasks_visible: false,
+            selected_background_task: None,
         })
     }
 
@@ -186,6 +192,8 @@ impl TerminalUI {
     pub(crate) fn add_message(&mut self, role: MessageRole, content: String) {
         use crate::claude_ui::ClaudeMessage;
 
+        self.transcript_token_estimate += content.len() as u64 / 4;
+
         match &role {
             MessageRole::User => {
                 self.claude.push_message(ClaudeMessage::User {
@@ -196,7 +204,7 @@ impl TerminalUI {
                 // Avoid double-pushing if streaming already added it
                 if self.claude.last_assistant_message() != Some(&content) {
                     self.claude.push_message(ClaudeMessage::Assistant {
-                        content: content.clone(),
+                        content: crate::claude_ui::AssistantContent::from_markdown(&content),
                     });
                 }
             }
@@ -382,16 +390,25 @@ impl TerminalUI {
         self.pending_draw = true;
     }
 
-    /// Push a transcript-native telemetry row for operational visibility.
-    /// These auto-collapse after a short timeout but remain in history.
-    pub(crate) fn push_telemetry(&mut self, category: &str, content: &str) {
-        self.claude
-            .push_message(crate::claude_ui::ClaudeMessage::Telemetry {
-                category: category.to_string(),
-                content: content.to_string(),
-                created_at: Instant::now(),
-                collapsed: false,
-            });
+    fn push_notice(
+        &mut self,
+        kind: crate::claude_ui::UiNoticeKind,
+        persistence: crate::claude_ui::NoticePersistence,
+        content: &str,
+    ) {
+        let notice = crate::claude_ui::UiNotice {
+            kind,
+            content: content.to_string(),
+            created_at: Instant::now(),
+            persistence: persistence.clone(),
+            collapsed: false,
+        };
+        if persistence == crate::claude_ui::NoticePersistence::EphemeralPromptHint {
+            self.claude.set_prompt_hint(Some(notice));
+        } else {
+            self.claude
+                .push_message(crate::claude_ui::ClaudeMessage::Notice(notice));
+        }
         self.pending_draw = true;
     }
 
@@ -439,6 +456,7 @@ impl TerminalUI {
         self.state.reset();
         // Also clear Claude renderer transcript
         self.claude.clear_transcript();
+        self.transcript_token_estimate = 0;
         self.pending_draw = true;
     }
 
@@ -487,14 +505,157 @@ impl TerminalUI {
         self.tasks.render()
     }
 
+    // === Task 268: Background Task Panel ===
+
+    pub(crate) fn toggle_background_tasks(&mut self) {
+        self.background_tasks_visible = !self.background_tasks_visible;
+    }
+
+    pub(crate) fn is_background_tasks_visible(&self) -> bool {
+        self.background_tasks_visible
+    }
+
+    pub(crate) fn select_next_background_task(&mut self, task_ids: &[String]) {
+        if task_ids.is_empty() {
+            self.selected_background_task = None;
+            return;
+        }
+        let current = self.selected_background_task.as_ref();
+        let idx = task_ids
+            .iter()
+            .position(|id| current.map(|c| c == id).unwrap_or(false));
+        match idx {
+            Some(i) => {
+                let next = (i + 1) % task_ids.len();
+                self.selected_background_task = Some(task_ids[next].clone());
+            }
+            None => self.selected_background_task = Some(task_ids[0].clone()),
+        }
+    }
+
+    pub(crate) fn select_previous_background_task(&mut self, task_ids: &[String]) {
+        if task_ids.is_empty() {
+            self.selected_background_task = None;
+            return;
+        }
+        let current = self.selected_background_task.as_ref();
+        let idx = task_ids
+            .iter()
+            .position(|id| current.map(|c| c == id).unwrap_or(false));
+        match idx {
+            Some(i) => {
+                let prev = if i == 0 { task_ids.len() - 1 } else { i - 1 };
+                self.selected_background_task = Some(task_ids[prev].clone());
+            }
+            None => self.selected_background_task = Some(task_ids.last().unwrap().clone()),
+        }
+    }
+
+    pub(crate) fn get_selected_background_task(&self) -> Option<&str> {
+        self.selected_background_task.as_deref()
+    }
+
+    pub(crate) fn render_background_tasks_panel(
+        &self,
+        tasks: &[crate::background_task::BackgroundTask],
+        width: usize,
+    ) -> Vec<ratatui::prelude::Line<'static>> {
+        use ratatui::prelude::*;
+        use ratatui::widgets::*;
+
+        let mut lines = Vec::new();
+
+        if tasks.is_empty() {
+            lines.push(Line::from(" No background tasks ".fg(Color::Gray)));
+            return lines;
+        }
+
+        let header = Line::from(vec![
+            " Background Tasks ".bold(),
+            format!(" ({}) ", tasks.len()).fg(Color::Gray),
+        ]);
+        lines.push(header);
+
+        for task in tasks {
+            let is_selected = self
+                .selected_background_task
+                .as_ref()
+                .map(|s| s == &task.id)
+                .unwrap_or(false);
+
+            let prefix = if is_selected { "▸ " } else { "  " };
+
+            let status_color = match task.status {
+                crate::background_task::BackgroundTaskStatus::Pending => Color::Yellow,
+                crate::background_task::BackgroundTaskStatus::Running => Color::Cyan,
+                crate::background_task::BackgroundTaskStatus::Completed => Color::Green,
+                crate::background_task::BackgroundTaskStatus::Failed => Color::Red,
+                crate::background_task::BackgroundTaskStatus::Cancelled => Color::DarkGray,
+                crate::background_task::BackgroundTaskStatus::OOMKilled => Color::Magenta,
+            };
+
+            let runtime = task
+                .runtime_seconds()
+                .map(|s| format!("{}s", s))
+                .unwrap_or_else(|| "-".to_string());
+
+            let row = format!(
+                "{}{} [{}] Mem:{}MB Time:{}",
+                prefix,
+                task.name,
+                task.status.to_string().fg(status_color),
+                task.memory_usage_mb,
+                runtime
+            );
+
+            let line = if is_selected {
+                Line::from(row.fg(Color::White).bg(Color::DarkGray))
+            } else {
+                Line::from(row.fg(Color::Gray))
+            };
+            lines.push(line);
+        }
+
+        lines
+    }
+
     pub(crate) fn notify(&mut self, message: &str) {
-        self.push_telemetry("notice", message);
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::Session,
+            crate::claude_ui::NoticePersistence::EphemeralPromptHint,
+            message,
+        );
+    }
+
+    pub(crate) fn push_budget_notice(&mut self, message: &str) {
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::Budget,
+            crate::claude_ui::NoticePersistence::TranscriptCollapsible,
+            message,
+        );
+    }
+
+    pub(crate) fn push_compaction_notice(&mut self, message: &str) {
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::Compaction,
+            crate::claude_ui::NoticePersistence::TranscriptCollapsible,
+            message,
+        );
+    }
+
+    pub(crate) fn push_stop_notice(&mut self, message: &str) {
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::StopReason,
+            crate::claude_ui::NoticePersistence::TranscriptPersistent,
+            message,
+        );
     }
 
     pub(crate) fn enqueue_submission(&mut self, input: String) {
         self.queued_submissions.push_back(input);
-        self.push_telemetry(
-            "queue",
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::Queue,
+            crate::claude_ui::NoticePersistence::TranscriptCollapsible,
             "1 message queued (will run after current response)",
         );
     }
@@ -534,14 +695,14 @@ impl TerminalUI {
         }
     }
 
-    /// Estimate total tokens visible in the transcript (including large tool traces).
+    #[cfg(test)]
     fn estimate_transcript_tokens(&self) -> u64 {
         use crate::claude_ui::ClaudeMessage;
         let mut total = 0u64;
         for msg in &self.claude.transcript.messages {
             let text = match msg {
                 ClaudeMessage::User { content } => content.as_str(),
-                ClaudeMessage::Assistant { content } => content.as_str(),
+                ClaudeMessage::Assistant { content } => content.raw_markdown.as_str(),
                 ClaudeMessage::Thinking { content, .. } => content.as_str(),
                 ClaudeMessage::ToolTrace {
                     command, status, ..
@@ -561,6 +722,7 @@ impl TerminalUI {
                     continue;
                 }
                 ClaudeMessage::System { content } => content.as_str(),
+                ClaudeMessage::Notice(notice) => notice.content.as_str(),
                 _ => continue,
             };
             total += text.len() as u64 / 4;
@@ -634,7 +796,7 @@ impl TerminalUI {
         let streaming_tokens =
             (self.claude.streaming.thinking.len() + self.claude.streaming.content.len()) as u64 / 4;
         let model_context_tokens_estimate = self.state.footer.context_current + streaming_tokens;
-        let transcript_tokens_estimate = self.estimate_transcript_tokens();
+        let transcript_tokens_estimate = self.transcript_token_estimate;
 
         // Compact status: always show context bar, using model budget
         let ctx_pct = if self.state.footer.context_max > 0 {
@@ -648,17 +810,20 @@ impl TerminalUI {
         let filled = (ctx_pct * bar_width / 100) as usize;
         let bar = format!("{}{}", "█".repeat(filled), "░".repeat(bar_width - filled));
 
-        let base = if self.state.header.verbose
+        let transcript_metric = if self.state.header.verbose
             && transcript_tokens_estimate > model_context_tokens_estimate + 500
         {
-            format!(
-                "{}% {}  {}  (transcript: {})",
-                ctx_pct, bar, self.state.footer.model, transcript_tokens_estimate
-            )
+            Some(format!("tx {}", transcript_tokens_estimate))
         } else {
-            format!("{}% {}  {}", ctx_pct, bar, self.state.footer.model)
+            None
         };
-        self.claude.set_status_line(Some(base));
+        let _ = bar;
+        self.claude
+            .set_footer_model(Some(crate::claude_ui::claude_render::FooterModel {
+                context_pct: Some(ctx_pct),
+                model_label: Some(self.state.footer.model.clone()),
+                transcript_metric,
+            }));
 
         if let Some(terminal) = &mut self.terminal {
             terminal.draw(|f| {
@@ -1137,8 +1302,9 @@ impl TerminalUI {
                                     self.input.clear();
                                     self.ctrl_c_armed_until =
                                         Some(Instant::now() + Duration::from_millis(1200));
-                                    self.push_telemetry(
-                                        "input",
+                                    self.push_notice(
+                                        crate::claude_ui::UiNoticeKind::InputHint,
+                                        crate::claude_ui::NoticePersistence::EphemeralPromptHint,
                                         "Prompt cleared (Ctrl+C again to exit)",
                                     );
                                     self.pending_draw = true;
@@ -1149,7 +1315,11 @@ impl TerminalUI {
                                     }
                                     self.ctrl_c_armed_until =
                                         Some(now + Duration::from_millis(1200));
-                                    self.push_telemetry("input", "Press Ctrl+C again to exit");
+                                    self.push_notice(
+                                        crate::claude_ui::UiNoticeKind::InputHint,
+                                        crate::claude_ui::NoticePersistence::EphemeralPromptHint,
+                                        "Press Ctrl+C again to exit",
+                                    );
                                     self.pending_draw = true;
                                 }
                             }
@@ -1159,7 +1329,11 @@ impl TerminalUI {
                                     return Ok(None);
                                 }
                                 self.ctrl_d_armed_until = Some(now + Duration::from_millis(1200));
-                                self.push_telemetry("input", "Press Ctrl+D again to exit");
+                                self.push_notice(
+                                    crate::claude_ui::UiNoticeKind::InputHint,
+                                    crate::claude_ui::NoticePersistence::EphemeralPromptHint,
+                                    "Press Ctrl+D again to exit",
+                                );
                                 self.pending_draw = true;
                             }
                             'u' => {
@@ -1368,12 +1542,20 @@ impl TerminalUI {
                             let now = Instant::now();
                             if self.esc_armed_until.map(|t| now <= t).unwrap_or(false) {
                                 self.input.clear();
-                                self.push_telemetry("input", "Prompt cleared");
+                                self.push_notice(
+                                    crate::claude_ui::UiNoticeKind::InputHint,
+                                    crate::claude_ui::NoticePersistence::EphemeralPromptHint,
+                                    "Prompt cleared",
+                                );
                                 self.esc_armed_until = None;
                                 self.pending_draw = true;
                             } else {
                                 self.esc_armed_until = Some(now + Duration::from_millis(900));
-                                self.push_telemetry("input", "Press Esc again to clear prompt");
+                                self.push_notice(
+                                    crate::claude_ui::UiNoticeKind::InputHint,
+                                    crate::claude_ui::NoticePersistence::EphemeralPromptHint,
+                                    "Press Esc again to clear prompt",
+                                );
                                 self.pending_draw = true;
                             }
                         }
@@ -1830,36 +2012,6 @@ impl TerminalUI {
                     }
                     self.pending_draw = true;
                 }
-                KeyCode::PageUp => {
-                    self.claude.scroll_up(5);
-                    self.pending_draw = true;
-                }
-                KeyCode::PageDown => {
-                    self.claude.scroll_down(5);
-                    self.pending_draw = true;
-                }
-                KeyCode::Up => {
-                    // Claude Code behavior: Up/Down scroll transcript, never history
-                    if self.claude.is_picker_active() {
-                        self.claude.picker_select_up();
-                    } else if self.state.autocomplete.active {
-                        self.state.autocomplete.select_up();
-                    } else {
-                        self.claude.scroll_up(3);
-                    }
-                    self.pending_draw = true;
-                }
-                KeyCode::Down => {
-                    // Claude Code behavior: Up/Down scroll transcript, never history
-                    if self.claude.is_picker_active() {
-                        self.claude.picker_select_down();
-                    } else if self.state.autocomplete.active {
-                        self.state.autocomplete.select_down();
-                    } else {
-                        self.claude.scroll_down(3);
-                    }
-                    self.pending_draw = true;
-                }
                 KeyCode::Esc => {
                     if self.claude.is_picker_active() {
                         self.claude.close_picker();
@@ -1871,7 +2023,11 @@ impl TerminalUI {
                         let now = Instant::now();
                         if self.esc_armed_until.map(|t| now <= t).unwrap_or(false) {
                             self.input.clear();
-                            self.push_telemetry("input", "Prompt cleared");
+                            self.push_notice(
+                                crate::claude_ui::UiNoticeKind::InputHint,
+                                crate::claude_ui::NoticePersistence::EphemeralPromptHint,
+                                "Prompt cleared",
+                            );
                             self.esc_armed_until = None;
                             self.pending_draw = true;
                         } else {
@@ -1909,6 +2065,15 @@ impl TerminalUI {
             self.raw_mode = false;
         }
         Ok(())
+    }
+}
+
+impl Drop for TerminalUI {
+    fn drop(&mut self) {
+        // Best-effort cleanup — errors are not propagable from Drop.
+        // The explicit cleanup() call in the chat loop handles the clean-exit case;
+        // this Drop handles panics and propagated errors.
+        let _ = self.cleanup();
     }
 }
 
