@@ -67,10 +67,10 @@ fn google_oauth_client_id() -> String {
 
 fn google_oauth_client_secret() -> String {
     std::env::var("GEMINI_OAUTH_CLIENT_SECRET").unwrap_or_else(|_| {
-        // Public installed-app client secret from the Gemini CLI
-        // Assembled from parts to satisfy secret scanners
-        let parts: &[&str] = &["GOCSPX-", "4uHgMPm-1o7", "Sk-geV6Cu5clXFsxl"];
-        parts.concat()
+        // Do not store actual client secrets in source control.
+        // The default secret should be provided via GEMINI_OAUTH_CLIENT_SECRET
+        // or discovered from an installed Gemini CLI on the host.
+        String::new()
     })
 }
 

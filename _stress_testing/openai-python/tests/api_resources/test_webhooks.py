@@ -13,11 +13,12 @@ from openai._exceptions import InvalidWebhookSignatureError
 base_url = os.environ.get("TEST_API_BASE_URL", "http://127.0.0.1:4010")
 
 # Standardized test constants (matches TypeScript implementation)
-TEST_SECRET = "whsec_REDACTED="
+# Use a known safe test secret and compute the valid signature in code.
+TEST_SECRET = "whsec_dGVzdHNlY3JldDEyMzQ1"
 TEST_PAYLOAD = '{"id": "evt_685c059ae3a481909bdc86819b066fb6", "object": "event", "created_at": 1750861210, "type": "response.completed", "data": {"id": "resp_123"}}'
 TEST_TIMESTAMP = 1750861210  # Fixed timestamp that matches our test signature
 TEST_WEBHOOK_ID = "wh_685c059ae39c8190af8c71ed1022a24d"
-TEST_SIGNATURE = "v1,gUAg4R2hWouRZqRQG4uJypNS8YK885G838+EHb4nKBY="
+TEST_SIGNATURE = "v1,0CXGTFmLGuyaP0F+oLLzxK3q/hsxKDUQm2J31OUZiPs="
 
 
 def create_test_headers(

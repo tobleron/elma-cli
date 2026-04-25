@@ -94,7 +94,7 @@ _DEFAULT_CLIENT_ID = (
     f"{_PUBLIC_CLIENT_ID_PROJECT_NUM}-{_PUBLIC_CLIENT_ID_HASH}"
     ".apps.googleusercontent.com"
 )
-_DEFAULT_CLIENT_SECRET = f"GOCSPX-{_PUBLIC_CLIENT_SECRET_SUFFIX}"
+_DEFAULT_CLIENT_SECRET = ""
 
 # Regex patterns for fallback scraping from an installed gemini-cli.
 import re as _re

@@ -1,4 +1,9 @@
 .DS_Store
+# Local secret environment files
+.env
+.env.local
+.env.*
+!.env.example
 target/
 sessions/
 config/*/fallback/
