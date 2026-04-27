@@ -887,11 +887,60 @@ pub(crate) async fn handle_program_step(
         ),
     }
 
+    // Task 287: Add evidence ledger entry for legacy execution path
+    if let Some(result) = state.step_results.last() {
+        let is_evidence_step = !matches!(kind.as_str(), "reply" | "respond" | "plan" | "masterplan" | "decide" | "select" | "summarize");
+        if result.ok && is_evidence_step {
+            let source = match kind.as_str() {
+                "shell" => {
+                    let cmd = result.command.clone().unwrap_or_default();
+                    crate::evidence_ledger::EvidenceSource::Shell {
+                        command: cmd,
+                        exit_code: result.exit_code.unwrap_or(0),
+                    }
+                }
+                "read" => {
+                    let path = result.summary.split_whitespace().next().unwrap_or("").to_string();
+                    crate::evidence_ledger::EvidenceSource::Read { path }
+                }
+                "search" => {
+                    crate::evidence_ledger::EvidenceSource::Tool {
+                        name: "search".to_string(),
+                        input: result.summary.chars().take(100).collect(),
+                    }
+                }
+                "write" | "edit" | "delete" => {
+                    if let Some(path) = result.summary.split_whitespace().next() {
+                        crate::evidence_ledger::with_session_ledger(|ledger| {
+                            ledger.mark_path_modified(path);
+                        });
+                    }
+                    crate::evidence_ledger::EvidenceSource::Tool {
+                        name: kind.clone(),
+                        input: result.summary.chars().take(100).collect(),
+                    }
+                }
+                _ => crate::evidence_ledger::EvidenceSource::Tool {
+                    name: kind.clone(),
+                    input: result.summary.chars().take(100).collect(),
+                },
+            };
+            if let Some(raw) = &result.raw_output {
+                crate::evidence_ledger::with_session_ledger(|ledger| {
+                    ledger.add_entry(source, raw);
+                });
+            }
+        }
+    }
+
     if is_tool_step {
         if let Some(ref mut t) = tui {
             let last_result = state.step_results.last();
             let success = last_result.map(|r| r.ok).unwrap_or(false);
-            let output = last_result.map(|r| r.summary.clone()).unwrap_or_default();
+            // Use raw_output for full content, fallback to summary if raw is missing
+            let output = last_result
+                .and_then(|r| r.raw_output.clone())
+                .unwrap_or_else(|| last_result.map(|r| r.summary.clone()).unwrap_or_default());
             t.handle_ui_event(crate::claude_ui::UiEvent::ToolFinished {
                 name: kind.clone(),
                 success,

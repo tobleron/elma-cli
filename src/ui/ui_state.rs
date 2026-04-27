@@ -320,6 +320,7 @@ pub(crate) struct UIState {
     pub show_thinking: bool,
     pub autocomplete: AutocompleteState,
     pub streaming: StreamingState,
+    pub status_thread: crate::ui_status_thread::StatusThread,
 }
 
 impl UIState {
@@ -426,6 +427,20 @@ impl UIState {
 
     pub(crate) fn clear_activity(&mut self) {
         self.activity = ActivityState::Idle;
+    }
+
+    // --- Status thread ---
+
+    pub(crate) fn start_status(&mut self, description: &str) {
+        self.status_thread.start(description);
+    }
+
+    pub(crate) fn complete_status(&mut self, description: &str) {
+        self.status_thread.complete(description);
+    }
+
+    pub(crate) fn clear_status(&mut self) {
+        self.status_thread.clear();
     }
 
     // --- Footer ---

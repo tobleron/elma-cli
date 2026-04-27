@@ -379,7 +379,7 @@ mod tests {
                     common: StepCommon {
                         purpose: "execute the requested shell command directly".to_string(),
                         interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 },
                 Step::Reply {
@@ -389,7 +389,7 @@ mod tests {
                         purpose: "present the shell result to the user".to_string(),
                         depends_on: vec!["s1".to_string()],
                         interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 },
             ],

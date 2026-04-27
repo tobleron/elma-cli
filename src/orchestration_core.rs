@@ -46,7 +46,10 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
         let registry = crate::tool_registry::get_registry();
         let mut lines = String::new();
         for tool in registry.default_tools() {
-            lines.push_str(&format!("- {}: {}\n", tool.function.name, tool.function.description));
+            lines.push_str(&format!(
+                "- {}: {}\n",
+                tool.function.name, tool.function.description
+            ));
         }
         lines
     };
@@ -80,6 +83,16 @@ SKILL CONTEXT:
 
 TOOLS AVAILABLE (always loaded):
 {}
+
+RULES OF ENGAGEMENT (Task 290: Example-Driven Prompting):
+Use these concrete examples to guide your behavior:
+1. User asks "what time is it?" → Use `tool_search` then `shell` with `date` command.
+2. User asks "how much disk space is available?" → Use `shell` with `df -h` command.
+3. User asks "what files are in the src folder?" → Use `shell` with `find` or `ls` command, NOT `search`.
+4. User asks "where does this variable get used?" → Use `tool_search` to load the search tool, then search.
+5. User asks "what's in that configuration file?" → Use `tool_search` to load the read tool, then `read` the file.
+6. User asks "should I try this?" OR "is this correct?" → Respond directly after gathering evidence, do NOT guess.
+7. Fact-checking queries MUST use tools before `respond` — never provide grounded facts without tool output.
 
 DYNAMIC TOOL LOADING:
 Additional tools (shell, read, search, update_todo_list) are not loaded by default to reduce token usage. Use `tool_search` with capability hints to load them on demand. Example queries: "execute shell command", "read file contents", "search text in files", "manage todo list".
@@ -185,6 +198,8 @@ pub(crate) async fn run_tool_calling_pipeline(
         "tool_calling: direct model planning (no Maestro)",
     );
 
+    tui.start_status("Working...");
+
     let result = run_tool_loop(
         &runtime.args,
         &runtime.client,
@@ -200,6 +215,8 @@ pub(crate) async fn run_tool_calling_pipeline(
         Some(&runtime.profiles.summarizer_cfg),
     )
     .await?;
+
+    tui.complete_status("Done");
 
     runtime.last_stop_outcome = result.stop_outcome.clone();
 
@@ -433,7 +450,7 @@ pub(crate) async fn build_program_from_maestro(
                 is_read_only: true,
                 is_destructive: false,
                 is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+                interrupt_behavior: InterruptBehavior::Graceful,
             },
         });
         all_steps.push(Step::Respond {
@@ -449,7 +466,7 @@ pub(crate) async fn build_program_from_maestro(
                 is_read_only: true,
                 is_destructive: false,
                 is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+                interrupt_behavior: InterruptBehavior::Graceful,
             },
         });
     } else if !last_step_is_reply && all_steps.len() == 1 {
@@ -466,7 +483,7 @@ pub(crate) async fn build_program_from_maestro(
                 is_read_only: true,
                 is_destructive: false,
                 is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+                interrupt_behavior: InterruptBehavior::Graceful,
             },
         });
     }

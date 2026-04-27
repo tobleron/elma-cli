@@ -55,6 +55,9 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         decider_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("decider.toml"))?,
         selector_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("selector.toml"))?,
         summarizer_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("summarizer.toml"))?,
+        turn_summary_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("turn_summary.toml"),
+        )?,
         formatter_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("formatter.toml"))?,
         json_outputter_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("json_outputter.toml"),

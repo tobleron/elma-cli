@@ -19,6 +19,9 @@ pub(crate) fn build_complexity_narrative(
     workspace_facts: &str,
     workspace_brief: &str,
     conversation: &[ChatMessage],
+    intent_surface: &serde_json::Value,
+    intent_real: &serde_json::Value,
+    user_expectation: &serde_json::Value,
 ) -> String {
     let conversation_text = format_conversation_excerpt(conversation, 12);
 
@@ -39,7 +42,16 @@ Workspace brief:
 {brief}
 
 Conversation so far (most recent last):
-{conversation}"#,
+{conversation}
+
+Intent surface analysis:
+{intent_surface}
+
+Intent real analysis:
+{intent_real}
+
+User expectation analysis:
+{user_expectation}"#,
         user_message = user_message,
         route = route_decision.route,
         dist = crate::routing_calc::format_route_distribution(&route_decision.distribution),
@@ -48,6 +60,9 @@ Conversation so far (most recent last):
         facts = workspace_facts.trim(),
         brief = workspace_brief.trim(),
         conversation = conversation_text,
+        intent_surface = render_json_value(intent_surface),
+        intent_real = render_json_value(intent_real),
+        user_expectation = render_json_value(user_expectation),
     )
 }
 
@@ -206,6 +221,9 @@ pub(crate) fn build_formula_selector_narrative(
     scope: &ScopePlan,
     memory_candidates: &Value,
     conversation: &[ChatMessage],
+    intent_surface: &serde_json::Value,
+    intent_real: &serde_json::Value,
+    user_expectation: &serde_json::Value,
 ) -> String {
     let conversation_text = format_conversation_excerpt(conversation, 12);
 
@@ -227,7 +245,16 @@ MEMORY CANDIDATES:
 {memory_candidates}
 
 CONVERSATION SO FAR (most recent last):
-{conversation}"#,
+{conversation}
+
+INTENT SURFACE ANALYSIS:
+{intent_surface}
+
+INTENT REAL ANALYSIS:
+{intent_real}
+
+USER EXPECTATION ANALYSIS:
+{user_expectation}"#,
         user_message = user_message.trim(),
         route = route_decision.route,
         speech_act = route_decision.speech_act.choice,
@@ -235,6 +262,9 @@ CONVERSATION SO FAR (most recent last):
         scope = serde_json::to_string_pretty(scope).unwrap_or_default(),
         memory_candidates = render_json_value(memory_candidates),
         conversation = conversation_text,
+        intent_surface = render_json_value(intent_surface),
+        intent_real = render_json_value(intent_real),
+        user_expectation = render_json_value(user_expectation),
     )
 }
 
@@ -295,7 +325,7 @@ pub(crate) fn build_claim_check_narrative(
     step_results: &[crate::StepResult],
 ) -> String {
     let step_results_narrative =
-        crate::intel_narrative_steps::build_step_results_narrative(step_results);
+        crate::intel_narrative_steps::build_step_results_narrative(step_results, None);
 
     format!(
         r#"USER MESSAGE:

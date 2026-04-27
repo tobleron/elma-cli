@@ -9,6 +9,9 @@ use crate::decomposition::{decompose_to_subgoals, generate_masterplan, needs_dec
 use crate::execution_ladder::{
     assess_execution_level, assessment_needs_decomposition, ExecutionLadderAssessment,
 };
+use crate::intel_units::{
+    AssumptionTrackerUnit, DomainDifficultyUnit, EdgeCaseEvaluatorUnit, FreshnessRequirementUnit,
+};
 use crate::*;
 
 fn planning_intel_context(
@@ -48,6 +51,161 @@ async fn trait_plan_workflow(
         .map_err(|e| anyhow::anyhow!("Failed to parse workflow planner output: {}", e))
 }
 
+async fn trait_assess_intent_surface(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<serde_json::Value> {
+    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = IntentSurfaceUnit::new(cfg.clone())
+        .execute_with_fallback(&ctx)
+        .await?;
+    Ok(output.data)
+}
+
+async fn trait_assess_intent_real(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<serde_json::Value> {
+    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = IntentRealUnit::new(cfg.clone())
+        .execute_with_fallback(&ctx)
+        .await?;
+    Ok(output.data)
+}
+
+async fn trait_assess_user_expectation(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<serde_json::Value> {
+    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = UserExpectationUnit::new(cfg.clone())
+        .execute_with_fallback(&ctx)
+        .await?;
+    Ok(output.data)
+}
+
+async fn trait_assess_domain_difficulty(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<serde_json::Value> {
+    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = DomainDifficultyUnit::new(cfg.clone())
+        .execute_with_fallback(&ctx)
+        .await?;
+    Ok(output.data)
+}
+
+async fn trait_assess_freshness_requirement(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<serde_json::Value> {
+    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = FreshnessRequirementUnit::new(cfg.clone())
+        .execute_with_fallback(&ctx)
+        .await?;
+    Ok(output.data)
+}
+
+async fn trait_track_assumptions(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<serde_json::Value> {
+    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = AssumptionTrackerUnit::new(cfg.clone())
+        .execute_with_fallback(&ctx)
+        .await?;
+    Ok(output.data)
+}
+
+async fn trait_evaluate_edge_cases(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> Result<serde_json::Value> {
+    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let output = EdgeCaseEvaluatorUnit::new(cfg.clone())
+        .execute_with_fallback(&ctx)
+        .await?;
+    Ok(output.data)
+}
+
+/// Run all advanced assessment units and collect their outputs.
+/// Units run sequentially but with fallbacks so failures don't block the pipeline.
+async fn run_advanced_assessments(
+    client: &reqwest::Client,
+    cfg: &Profile,
+    line: &str,
+    route_decision: &RouteDecision,
+    ws: &str,
+    ws_brief: &str,
+    messages: &[ChatMessage],
+) -> (
+    Option<serde_json::Value>,
+    Option<serde_json::Value>,
+    Option<serde_json::Value>,
+    Option<serde_json::Value>,
+) {
+    let domain_difficulty =
+        trait_assess_domain_difficulty(client, cfg, line, route_decision, ws, ws_brief, messages)
+            .await
+            .ok();
+    let freshness = trait_assess_freshness_requirement(
+        client,
+        cfg,
+        line,
+        route_decision,
+        ws,
+        ws_brief,
+        messages,
+    )
+    .await
+    .ok();
+    let assumptions =
+        trait_track_assumptions(client, cfg, line, route_decision, ws, ws_brief, messages)
+            .await
+            .ok();
+    let edge_cases =
+        trait_evaluate_edge_cases(client, cfg, line, route_decision, ws, ws_brief, messages)
+            .await
+            .ok();
+
+    (domain_difficulty, freshness, assumptions, edge_cases)
+}
+
 async fn trait_assess_complexity(
     client: &reqwest::Client,
     cfg: &Profile,
@@ -56,8 +214,14 @@ async fn trait_assess_complexity(
     ws: &str,
     ws_brief: &str,
     messages: &[ChatMessage],
+    intent_surface: &serde_json::Value,
+    intent_real: &serde_json::Value,
+    user_expectation: &serde_json::Value,
 ) -> Result<ComplexityAssessment> {
-    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages);
+    let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages)
+        .with_intent_surface(intent_surface.clone())
+        .with_intent_real(intent_real.clone())
+        .with_user_expectation(user_expectation.clone());
     let output = ComplexityAssessmentUnit::new(cfg.clone())
         .execute_with_fallback(&ctx)
         .await?;
@@ -73,11 +237,17 @@ async fn trait_build_scope(
     ws: &str,
     ws_brief: &str,
     messages: &[ChatMessage],
+    intent_surface: &serde_json::Value,
+    intent_real: &serde_json::Value,
+    user_expectation: &serde_json::Value,
 ) -> Result<ScopePlan> {
     let mut cfg = cfg.clone();
     cfg.timeout_s = cfg.timeout_s.min(45);
     let ctx = planning_intel_context(client, line, route_decision, ws, ws_brief, messages)
-        .with_complexity(complexity.clone());
+        .with_complexity(complexity.clone())
+        .with_intent_surface(intent_surface.clone())
+        .with_intent_real(intent_real.clone())
+        .with_user_expectation(user_expectation.clone());
     let output = ScopeBuilderUnit::new(cfg)
         .execute_with_fallback(&ctx)
         .await?;
@@ -94,6 +264,9 @@ async fn trait_select_formula(
     scope: &ScopePlan,
     memories: &[FormulaMemoryRecord],
     messages: &[ChatMessage],
+    intent_surface: &serde_json::Value,
+    intent_real: &serde_json::Value,
+    user_expectation: &serde_json::Value,
 ) -> Result<FormulaSelection> {
     let memory_candidates = memories.iter().map(|m| serde_json::json!({
         "id": m.id, "title": m.title, "route": m.route, "complexity": m.complexity, "formula": m.formula,
@@ -105,6 +278,9 @@ async fn trait_select_formula(
     cfg.timeout_s = cfg.timeout_s.min(45);
     let ctx = planning_intel_context(client, line, route_decision, "", "", messages)
         .with_complexity(complexity.clone())
+        .with_intent_surface(intent_surface.clone())
+        .with_intent_real(intent_real.clone())
+        .with_user_expectation(user_expectation.clone())
         .with_extra("scope", scope)?
         .with_extra("memory_candidates", memory_candidates)?;
     let output = FormulaSelectorUnit::new(cfg)
@@ -298,6 +474,41 @@ pub(crate) async fn derive_planning_prior(
         let (complexity, scope, formula) = build_chat_fallback(line, "Direct conversational turn");
         return (None, complexity, scope, formula, false);
     }
+
+    // Assess intent early for better planning
+    let intent_surface = trait_assess_intent_surface(
+        client,
+        complexity_cfg,
+        line,
+        route_decision,
+        ws,
+        ws_brief,
+        messages,
+    )
+    .await
+    .unwrap_or(serde_json::json!({}));
+    let intent_real = trait_assess_intent_real(
+        client,
+        complexity_cfg,
+        line,
+        route_decision,
+        ws,
+        ws_brief,
+        messages,
+    )
+    .await
+    .unwrap_or(serde_json::json!({}));
+    let user_expectation = trait_assess_user_expectation(
+        client,
+        complexity_cfg,
+        line,
+        route_decision,
+        ws,
+        ws_brief,
+        messages,
+    )
+    .await
+    .unwrap_or(serde_json::json!({}));
     if let Ok(workflow_plan) = trait_plan_workflow(
         client,
         workflow_planner_cfg,
@@ -320,6 +531,9 @@ pub(crate) async fn derive_planning_prior(
             &scope,
             memories,
             messages,
+            &intent_surface,
+            &intent_real,
+            &user_expectation,
         )
         .await
         .unwrap_or_else(|_| FormulaSelection {
@@ -338,6 +552,9 @@ pub(crate) async fn derive_planning_prior(
         ws,
         ws_brief,
         messages,
+        &intent_surface,
+        &intent_real,
+        &user_expectation,
     )
     .await
     .unwrap_or_default();
@@ -350,6 +567,9 @@ pub(crate) async fn derive_planning_prior(
         ws,
         ws_brief,
         messages,
+        &intent_surface,
+        &intent_real,
+        &user_expectation,
     )
     .await
     .unwrap_or_default();
@@ -362,6 +582,9 @@ pub(crate) async fn derive_planning_prior(
         &scope,
         memories,
         messages,
+        &intent_surface,
+        &intent_real,
+        &user_expectation,
     )
     .await
     .unwrap_or_default();
@@ -500,6 +723,19 @@ pub async fn derive_planning_prior_with_ladder(
     };
 
     let complexity = complexity_from_ladder(&route_decision.route, &ladder);
+
+    // Run advanced assessments to enrich planning context
+    let (domain_difficulty, freshness, assumptions, edge_cases) = run_advanced_assessments(
+        client,
+        complexity_cfg,
+        line,
+        route_decision,
+        ws,
+        ws_brief,
+        messages,
+    )
+    .await;
+
     let scope = trait_build_scope(
         client,
         scope_builder_cfg,
@@ -509,6 +745,9 @@ pub async fn derive_planning_prior_with_ladder(
         ws,
         ws_brief,
         messages,
+        &serde_json::Value::Null,
+        &serde_json::Value::Null,
+        &serde_json::Value::Null,
     )
     .await
     .unwrap_or_else(|_| ScopePlan {
@@ -524,6 +763,9 @@ pub async fn derive_planning_prior_with_ladder(
         &scope,
         memories,
         messages,
+        &serde_json::Value::Null,
+        &serde_json::Value::Null,
+        &serde_json::Value::Null,
     )
     .await
     .unwrap_or_else(|_| FormulaSelection {
@@ -532,6 +774,59 @@ pub async fn derive_planning_prior_with_ladder(
         reason: format!("ladder level: {}", ladder.level),
         memory_id: String::new(),
     });
+
+    // Adjust formula based on advanced assessments
+    if let Some(ref domain) = domain_difficulty {
+        if let Some(domain_type) = domain.get("domain_type").and_then(|v| v.as_str()) {
+            if domain_type == "expert" || domain_type == "niche" {
+                formula.reason = format!(
+                    "{}; domain={} (expert/niche requires careful evidence)",
+                    formula.reason, domain_type
+                );
+            }
+        }
+        if let Some(sensitive) = domain.get("sensitive").and_then(|v| v.as_bool()) {
+            if sensitive {
+                formula.reason = format!(
+                    "{}; sensitive domain (conservative approach)",
+                    formula.reason
+                );
+            }
+        }
+    }
+
+    if let Some(ref freshness) = freshness {
+        if let Some(freshness_needed) = freshness.get("freshness_needed").and_then(|v| v.as_str()) {
+            if freshness_needed == "high" {
+                formula.reason = format!(
+                    "{}; high freshness needed (may require live data)",
+                    formula.reason
+                );
+            }
+        }
+    }
+
+    if let Some(ref assumptions) = assumptions {
+        if let Some(needs_verification) = assumptions
+            .get("needs_verification")
+            .and_then(|v| v.as_bool())
+        {
+            if needs_verification {
+                formula.reason = format!("{}; assumptions need verification", formula.reason);
+            }
+        }
+    }
+
+    if let Some(ref edge_cases) = edge_cases {
+        if let Some(high_risk) = edge_cases.get("high_risk_count").and_then(|v| v.as_u64()) {
+            if high_risk > 0 {
+                formula.reason = format!(
+                    "{}; {} high-risk edge cases identified",
+                    formula.reason, high_risk
+                );
+            }
+        }
+    }
 
     let allowed = alignment_for_level(ladder.level);
     if !allowed
@@ -625,6 +920,7 @@ mod tests {
                 margin: 1.0,
                 entropy: 0.0,
             },
+            evidence_required: false,
         }
     }
 

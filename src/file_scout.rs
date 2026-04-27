@@ -5,8 +5,11 @@
 //! to later formula stages.
 
 use crate::*;
+use itertools::Itertools;
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct ScoutResult {
@@ -43,8 +46,7 @@ pub(crate) fn default_scout_exclusions() -> HashSet<String> {
 /// Stays read-only. Discloses searched and skipped roots.
 pub(crate) fn scout_files(query: &str, roots: &[PathBuf], explicit_roots: bool) -> ScoutResult {
     let exclusions = default_scout_exclusions();
-    let mut result = ScoutResult::default();
-    let mut seen = HashSet::new();
+    let query_lower = query.to_ascii_lowercase();
 
     let effective_roots: Vec<PathBuf> = if roots.is_empty() {
         vec![PathBuf::from("/")]
@@ -52,49 +54,60 @@ pub(crate) fn scout_files(query: &str, roots: &[PathBuf], explicit_roots: bool) 
         roots.to_vec()
     };
 
-    for root in &effective_roots {
-        let root_str = root.display().to_string();
+    // Separate skipped and searched roots
+    let (searched_roots, skipped_roots): (Vec<PathBuf>, Vec<String>) =
+        effective_roots.into_iter().partition_map(|root| {
+            let root_str = root.display().to_string();
+            if !explicit_roots && exclusions.contains(&root_str) {
+                itertools::Either::Right(root_str)
+            } else {
+                itertools::Either::Left(root)
+            }
+        });
 
-        // Check exclusion
-        if !explicit_roots && exclusions.contains(&root_str) {
-            result.skipped_roots.push(root_str);
-            continue;
-        }
+    // Process searched roots in parallel
+    let all_candidates: Mutex<Vec<ScoutCandidate>> = Mutex::new(Vec::new());
+    let seen: Mutex<HashSet<PathBuf>> = Mutex::new(HashSet::new());
 
-        result.searched_roots.push(root_str.clone());
-
-        // Use find via shell-like walk (bounded)
+    searched_roots.par_iter().for_each(|root| {
         if let Ok(entries) = walk_dir_bounded(root, 3) {
             for path in entries {
-                if seen.contains(&path) {
+                let mut seen_guard = seen.lock().unwrap();
+                if seen_guard.contains(&path) {
                     continue;
                 }
                 let fname = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
-                if fname
-                    .to_ascii_lowercase()
-                    .contains(&query.to_ascii_lowercase())
-                {
-                    result.candidate_files.push(ScoutCandidate {
+                if fname.to_ascii_lowercase().contains(&query_lower) {
+                    all_candidates.lock().unwrap().push(ScoutCandidate {
                         path: path.display().to_string(),
                         reason: "name matches query".to_string(),
                     });
-                    seen.insert(path);
+                    seen_guard.insert(path);
                 }
             }
         }
-    }
+    });
 
+    let mut candidate_files = all_candidates.into_inner().unwrap_or_default();
     // Limit candidates
-    result.candidate_files.truncate(20);
-    result.inspected_files = result
-        .candidate_files
+    candidate_files.truncate(20);
+
+    let searched_roots_str: Vec<String> = searched_roots
         .iter()
-        .map(|c| c.path.clone())
+        .map(|r| r.display().to_string())
         .collect();
-    result
+
+    let inspected_files: Vec<String> = candidate_files.iter().map(|c| c.path.clone()).collect();
+
+    ScoutResult {
+        searched_roots: searched_roots_str,
+        skipped_roots,
+        candidate_files,
+        inspected_files,
+    }
 }
 
 fn walk_dir_bounded(root: &Path, max_depth: usize) -> Result<Vec<PathBuf>> {

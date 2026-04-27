@@ -4,9 +4,10 @@
 //! for txt, md, html, pdf, and epub formats.
 
 use crate::*;
+use rayon::prelude::*;
+use std::fs;
 use std::path::Path;
 use std::time::Instant;
-use std::fs;
 
 /// Canonical document format registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,10 +155,7 @@ impl DocumentFormat {
             ),
             DocumentFormat::Epub => ("Full text", Some("OPF/spine/TOC/chapter-aware")),
             DocumentFormat::Mobi => ("Full text", Some("Legacy MOBI text and metadata")),
-            DocumentFormat::Azw => (
-                "Full/degraded",
-                Some("Usually MOBI-like; may be DRM"),
-            ),
+            DocumentFormat::Azw => ("Full/degraded", Some("Usually MOBI-like; may be DRM")),
             DocumentFormat::Azw3 | DocumentFormat::Kfx => (
                 "Full/degraded",
                 Some("Evaluate boko; DRM remains unsupported"),
@@ -200,10 +198,9 @@ impl DocumentFormat {
                 "Full/degraded for PalmDoc only",
                 Some("Must not confuse with Microsoft debug PDB"),
             ),
-            DocumentFormat::Lrf | DocumentFormat::Lrx => (
-                "Unsupported/degraded",
-                Some("Legacy Sony BBeB"),
-            ),
+            DocumentFormat::Lrf | DocumentFormat::Lrx => {
+                ("Unsupported/degraded", Some("Legacy Sony BBeB"))
+            }
             DocumentFormat::Unknown(_) => ("Unsupported", Some("Unknown format")),
         }
     }
@@ -299,7 +296,7 @@ pub(crate) struct DocumentUnit {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct DocumentChunkV2 {
     pub index: usize,
-    pub chunk_index: usize, // Index within this unit's chunks
+    pub chunk_index: usize,  // Index within this unit's chunks
     pub total_chunks: usize, // Total chunks for this unit
     pub text: String,
     pub provenance: DocumentProvenance,
@@ -357,7 +354,10 @@ impl From<&DocumentProvenance> for String {
             }
         }
         if !provenance.section_heading_path.is_empty() {
-            parts.push(format!("section_path:{}", provenance.section_heading_path.join(" > ")));
+            parts.push(format!(
+                "section_path:{}",
+                provenance.section_heading_path.join(" > ")
+            ));
         }
         if let Some(archive_path) = &provenance.archive_entry_path {
             parts.push(format!("archive_entry:{}", archive_path));
@@ -438,7 +438,10 @@ pub(crate) fn convert_v2_to_v1_result(
         metadata_map.insert("likely_ocr".to_string(), "true".to_string());
     }
     if let Some(coverage) = quality.text_coverage_percent {
-        metadata_map.insert("text_coverage_percent".to_string(), format!("{:.1}", coverage));
+        metadata_map.insert(
+            "text_coverage_percent".to_string(),
+            format!("{:.1}", coverage),
+        );
     }
 
     DocumentExtractionResult {
@@ -522,8 +525,10 @@ impl DocumentIndexCache {
                 // Check if file has been modified since indexing
                 if let Ok(metadata) = std::fs::metadata(path) {
                     if let Ok(modified) = metadata.modified() {
-                        let current_mtime = modified.duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default().as_secs();
+                        let current_mtime = modified
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
                         return current_mtime > entry.last_modified;
                     }
                 }
@@ -559,8 +564,10 @@ pub(crate) fn calculate_document_signature(path: &Path) -> Result<String> {
     file_size.hash(&mut hasher);
 
     if let Ok(modified) = metadata.modified() {
-        let mtime = modified.duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default().as_secs();
+        let mtime = modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         mtime.hash(&mut hasher);
     }
 
@@ -596,17 +603,17 @@ pub(crate) fn read_file_smart(path: &Path) -> Result<(String, String)> {
 }
 
 /// Context-aware document reading with budget constraints.
-pub(crate) fn read_file_with_budget(path: &Path, budget: DocumentReadBudget) -> Result<(String, String)> {
+pub(crate) fn read_file_with_budget(
+    path: &Path,
+    budget: DocumentReadBudget,
+) -> Result<(String, String)> {
     let format = DocumentFormat::detect(path);
 
     match format {
         DocumentFormat::Txt | DocumentFormat::Code | DocumentFormat::Markdown => {
             // Plaintext files — read directly
             match std::fs::read_to_string(path) {
-                Ok(content) => Ok((
-                    content,
-                    format!("File: {}", path.display()),
-                )),
+                Ok(content) => Ok((content, format!("File: {}", path.display()))),
                 Err(e) => Err(anyhow::anyhow!("Failed to read {}: {}", path.display(), e)),
             }
         }
@@ -624,7 +631,10 @@ pub(crate) fn read_file_with_budget(path: &Path, budget: DocumentReadBudget) -> 
                 let summary = format_extraction_summary(&result);
                 let text = select_content_by_budget(&result, &budget);
                 Ok((
-                    format!("{}\n\n{}\n\n(Use search to find specific content in this document)", summary, text),
+                    format!(
+                        "{}\n\n{}\n\n(Use search to find specific content in this document)",
+                        summary, text
+                    ),
                     format!("Document: {} ({})", path.display(), result.backend),
                 ))
             } else {
@@ -639,10 +649,7 @@ pub(crate) fn read_file_with_budget(path: &Path, budget: DocumentReadBudget) -> 
         _ => {
             // Unsupported format — try plaintext read, will likely fail for binaries
             match std::fs::read_to_string(path) {
-                Ok(content) => Ok((
-                    content,
-                    format!("File: {}", path.display()),
-                )),
+                Ok(content) => Ok((content, format!("File: {}", path.display()))),
                 Err(e) => Err(anyhow::anyhow!("Failed to read {}: {}", path.display(), e)),
             }
         }
@@ -678,7 +685,10 @@ pub(crate) enum DocumentReadMode {
     Scoped(Vec<String>),
 }
 
-fn extract_document_with_budget(path: &Path, budget: &DocumentReadBudget) -> DocumentExtractionResult {
+fn extract_document_with_budget(
+    path: &Path,
+    budget: &DocumentReadBudget,
+) -> DocumentExtractionResult {
     let start_time = Instant::now();
     let format = DocumentFormat::detect(path);
 
@@ -686,7 +696,11 @@ fn extract_document_with_budget(path: &Path, budget: &DocumentReadBudget) -> Doc
     let modified_time = std::fs::metadata(path)
         .ok()
         .and_then(|m| m.modified().ok())
-        .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs());
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        });
 
     let base_metadata = DocumentMetadata {
         format: format!("{:?}", format),
@@ -728,7 +742,9 @@ fn extract_document_with_budget(path: &Path, budget: &DocumentReadBudget) -> Doc
                 metadata: [
                     ("format".to_string(), format!("{:?}", format)),
                     ("file_size".to_string(), file_size.to_string()),
-                ].into_iter().collect(),
+                ]
+                .into_iter()
+                .collect(),
                 ok: false,
                 error: Some(format!(
                     "Unsupported format: {} ({}, {})",
@@ -741,18 +757,29 @@ fn extract_document_with_budget(path: &Path, budget: &DocumentReadBudget) -> Doc
     }
 }
 
-fn select_content_by_budget(result: &DocumentExtractionResult, budget: &DocumentReadBudget) -> String {
+fn select_content_by_budget(
+    result: &DocumentExtractionResult,
+    budget: &DocumentReadBudget,
+) -> String {
     match &budget.mode {
         DocumentReadMode::Full => {
             // Return all chunks if under budget
             if result.chunks.iter().map(|c| c.text.len()).sum::<usize>() <= budget.max_chars {
-                result.chunks.iter().map(|c| c.text.as_str()).collect::<Vec<_>>().join("\n\n")
+                result
+                    .chunks
+                    .iter()
+                    .map(|c| c.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
             } else {
-                select_content_by_budget(result, &DocumentReadBudget {
-                    max_chars: budget.max_chars,
-                    mode: DocumentReadMode::Balanced,
-                    focus_sections: budget.focus_sections.clone(),
-                })
+                select_content_by_budget(
+                    result,
+                    &DocumentReadBudget {
+                        max_chars: budget.max_chars,
+                        mode: DocumentReadMode::Balanced,
+                        focus_sections: budget.focus_sections.clone(),
+                    },
+                )
             }
         }
         DocumentReadMode::Balanced => {
@@ -772,7 +799,12 @@ fn select_content_by_budget(result: &DocumentExtractionResult, budget: &Document
 
             let content = selected.join("\n\n");
             if chunk_count < result.total_chunks {
-                format!("{}\n\n... (document continues with {} more chunks, {} total)", content, result.total_chunks - chunk_count, result.total_chunks)
+                format!(
+                    "{}\n\n... (document continues with {} more chunks, {} total)",
+                    content,
+                    result.total_chunks - chunk_count,
+                    result.total_chunks
+                )
             } else {
                 content
             }
@@ -791,16 +823,22 @@ fn select_content_by_budget(result: &DocumentExtractionResult, budget: &Document
                 if total_chars + chunk.text.len() > budget.max_chars {
                     break;
                 }
-                if sections.is_empty() ||
-                   sections.iter().any(|s| chunk.text.contains(s) ||
-                                       chunk.section.as_ref().map_or(false, |sec| sec.contains(s))) {
+                if sections.is_empty()
+                    || sections.iter().any(|s| {
+                        chunk.text.contains(s)
+                            || chunk.section.as_ref().map_or(false, |sec| sec.contains(s))
+                    })
+                {
                     selected.push(chunk.text.as_str());
                     total_chars += chunk.text.len();
                 }
             }
 
             if selected.is_empty() {
-                format!("No content found matching specified sections: {:?}", sections)
+                format!(
+                    "No content found matching specified sections: {:?}",
+                    sections
+                )
             } else {
                 selected.join("\n\n")
             }
@@ -809,7 +847,10 @@ fn select_content_by_budget(result: &DocumentExtractionResult, budget: &Document
 }
 
 /// Extract document with caching support.
-pub(crate) fn extract_document_cached(path: &Path, cache: &mut DocumentIndexCache) -> DocumentExtractionResult {
+pub(crate) fn extract_document_cached(
+    path: &Path,
+    cache: &mut DocumentIndexCache,
+) -> DocumentExtractionResult {
     // Check cache first
     if !cache.is_stale(path) {
         if let Some(entry) = cache.get(path) {
@@ -826,7 +867,9 @@ pub(crate) fn extract_document_cached(path: &Path, cache: &mut DocumentIndexCach
             let entry = DocumentIndexEntry {
                 path: path.to_string_lossy().to_string(),
                 signature,
-                last_modified: result.metadata.get("modified_time")
+                last_modified: result
+                    .metadata
+                    .get("modified_time")
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0),
                 extraction_result: result.clone(),
@@ -851,7 +894,11 @@ pub(crate) fn extract_document(path: &Path) -> DocumentExtractionResult {
     let modified_time = std::fs::metadata(path)
         .ok()
         .and_then(|m| m.modified().ok())
-        .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs());
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        });
 
     let base_metadata = DocumentMetadata {
         format: format!("{:?}", format),
@@ -869,12 +916,16 @@ pub(crate) fn extract_document(path: &Path) -> DocumentExtractionResult {
         DocumentFormat::Txt | DocumentFormat::Code | DocumentFormat::Markdown => {
             extract_plaintext(path, base_metadata.clone(), start_time)
         }
-        DocumentFormat::Html | DocumentFormat::Xml => extract_html(path, base_metadata.clone(), start_time),
+        DocumentFormat::Html | DocumentFormat::Xml => {
+            extract_html(path, base_metadata.clone(), start_time)
+        }
         // Prefer page-aware extraction for PDFs (Task 250)
         DocumentFormat::Pdf => extract_pdf_page_aware(path, base_metadata.clone(), start_time),
         DocumentFormat::Epub => extract_epub(path, base_metadata.clone(), start_time),
         DocumentFormat::DjVu => extract_epub(path, base_metadata.clone(), start_time),
-        DocumentFormat::Mobi | DocumentFormat::Azw => extract_epub(path, base_metadata.clone(), start_time),
+        DocumentFormat::Mobi | DocumentFormat::Azw => {
+            extract_epub(path, base_metadata.clone(), start_time)
+        }
         DocumentFormat::FictionBook => extract_epub(path, base_metadata.clone(), start_time),
         DocumentFormat::Docx => extract_epub(path, base_metadata.clone(), start_time),
         DocumentFormat::Rtf => extract_epub(path, base_metadata.clone(), start_time),
@@ -899,162 +950,49 @@ pub(crate) fn extract_document(path: &Path) -> DocumentExtractionResult {
 }
 
 pub(crate) fn document_capabilities() -> Vec<DocumentCapabilityReport> {
-    vec![
-        // Plain text and code
-        DocumentCapabilityReport {
-            format: "txt".to_string(),
-            backend: "native".to_string(),
-            available: true,
-            quality_note: Some("Encoding-aware plain text".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "md/markdown".to_string(),
-            backend: "native".to_string(),
-            available: true,
-            quality_note: None,
-        },
-        DocumentCapabilityReport {
-            format: "code (rs, py, js, etc)".to_string(),
-            backend: "native".to_string(),
-            available: true,
-            quality_note: None,
-        },
-        // Structured text
-        DocumentCapabilityReport {
-            format: "html/xhtml".to_string(),
-            backend: "html2text".to_string(),
-            available: true,
-            quality_note: Some("HTML cleanup and structure labels".to_string()),
-        },
-        // Ebooks - Full text
-        DocumentCapabilityReport {
-            format: "epub".to_string(),
-            backend: "epub".to_string(),
-            available: true,
-            quality_note: Some("OPF/spine/TOC/chapter-aware".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "pdf".to_string(),
-            backend: "pdf-extract".to_string(),
-            available: true,
-            quality_note: Some("Full text when text layer exists; no OCR by default".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "mobi".to_string(),
-            backend: "mobi".to_string(),
-            available: true,
-            quality_note: Some("Legacy MOBI text and metadata".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "fb2".to_string(),
-            backend: "quick-xml".to_string(),
-            available: true,
-            quality_note: Some("XML FictionBook".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "djvu".to_string(),
-            backend: "djvu-rs".to_string(),
-            available: true,
-            quality_note: Some("Full text when text layer exists; image-only files fail clearly".to_string()),
-        },
-        // Ebooks - Full/degraded
-        DocumentCapabilityReport {
-            format: "azw".to_string(),
-            backend: "mobi".to_string(),
-            available: true,
-            quality_note: Some("Full/degraded; usually MOBI-like, may be DRM".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "azw3".to_string(),
-            backend: "none (use boko)".to_string(),
-            available: false,
-            quality_note: Some("Full/degraded; evaluate boko, DRM remains unsupported".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "kfx".to_string(),
-            backend: "none (use boko)".to_string(),
-            available: false,
-            quality_note: Some("Full/degraded; evaluate boko, DRM remains unsupported".to_string()),
-        },
-        // Office formats
-        DocumentCapabilityReport {
-            format: "docx".to_string(),
-            backend: "zip+quick-xml".to_string(),
-            available: true,
-            quality_note: Some("Full text; ZIP/XML extraction".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "doc".to_string(),
-            backend: "none (legacy CFB)".to_string(),
-            available: false,
-            quality_note: Some("Degraded/full if feasible; legacy CFB Word parsing is limited".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "rtf".to_string(),
-            backend: "rtf-parser".to_string(),
-            available: true,
-            quality_note: Some("Full/degraded; evaluate parser and fallback cleaner".to_string()),
-        },
-        // Comic books
-        DocumentCapabilityReport {
-            format: "cbz".to_string(),
-            backend: "zip+image-meta".to_string(),
-            available: true,
-            quality_note: Some("Metadata/degraded; text only if metadata/text sidecars exist unless OCR feature lands".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "cbr".to_string(),
-            backend: "rar (license-gated)".to_string(),
-            available: false,
-            quality_note: Some("Metadata/degraded or unsupported; RAR backend must be feature/license gated".to_string()),
-        },
-        // Apple books
-        DocumentCapabilityReport {
-            format: "iba".to_string(),
-            backend: "zip+embedded-assets".to_string(),
-            available: true,
-            quality_note: Some("Full/degraded; ZIP package with embedded HTML/XHTML/EPUB-like assets".to_string()),
-        },
-        // Legacy formats
-        DocumentCapabilityReport {
-            format: "chm".to_string(),
-            backend: "chm-parser (evaluate)".to_string(),
-            available: false,
-            quality_note: Some("Degraded/unsupported; CHM extraction backend requires explicit decision".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "lit".to_string(),
-            backend: "none (CHM-derived)".to_string(),
-            available: false,
-            quality_note: Some("Unsupported/degraded; CHM-derived legacy format, no false claims".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "pdb (PalmDoc)".to_string(),
-            backend: "none (legacy PalmDB)".to_string(),
-            available: false,
-            quality_note: Some("Full/degraded for PalmDoc only; must not confuse with Microsoft debug PDB".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "lrf".to_string(),
-            backend: "none (Sony BeBook)".to_string(),
-            available: false,
-            quality_note: Some("Unsupported/degraded; legacy Sony BeBook".to_string()),
-        },
-        DocumentCapabilityReport {
-            format: "lrx".to_string(),
-            backend: "none (Sony BeBook)".to_string(),
-            available: false,
-            quality_note: Some("Unsupported; DRM-oriented Sony BeBook variant".to_string()),
-        },
-    ]
+    let formats = vec![
+        ("txt", "native", true, Some("Encoding-aware plain text")),
+        ("md/markdown", "native", true, None),
+        ("code (rs, py, js, etc)", "native", true, None),
+        ("html/xhtml", "html2text", true, Some("HTML cleanup and structure labels")),
+        ("epub", "epub", true, Some("OPF/spine/TOC/chapter-aware")),
+        ("pdf", "pdf-extract", true, Some("Full text when text layer exists; no OCR by default")),
+        ("mobi", "mobi", true, Some("Legacy MOBI text and metadata")),
+        ("fb2", "quick-xml", true, Some("XML FictionBook")),
+        ("djvu", "djvu-rs", true, Some("Full text when text layer exists; image-only files fail clearly")),
+        ("azw", "mobi", true, Some("Full/degraded; usually MOBI-like, may be DRM")),
+        ("azw3", "none (use boko)", false, Some("Full/degraded; evaluate boko, DRM remains unsupported")),
+        ("kfx", "none (use boko)", false, Some("Full/degraded; evaluate boko, DRM remains unsupported")),
+        ("docx", "zip+quick-xml", true, Some("Full text; ZIP/XML extraction")),
+        ("doc", "none (legacy CFB)", false, Some("Degraded/full if feasible; legacy CFB Word parsing is limited")),
+        ("rtf", "rtf-parser", true, Some("Full/degraded; evaluate parser and fallback cleaner")),
+        ("cbz", "zip+image-meta", true, Some("Metadata/degraded; text only if metadata/text sidecars exist unless OCR feature lands")),
+        ("cbr", "rar (license-gated)", false, Some("Metadata/degraded or unsupported; RAR backend must be feature/license gated")),
+        ("iba", "zip+embedded-assets", true, Some("Full/degraded; ZIP package with embedded HTML/XHTML/EPUB-like assets")),
+        ("chm", "chm-parser (evaluate)", false, Some("Degraded/unsupported; CHM extraction backend requires explicit decision")),
+        ("lit", "none (CHM-derived)", false, Some("Unsupported/degraded; CHM-derived legacy format, no false claims")),
+        ("pdb (PalmDoc)", "none (legacy PalmDB)", false, Some("Full/degraded for PalmDoc only; must not confuse with Microsoft debug PDB")),
+        ("lrf", "none (Sony BeBook)", false, Some("Unsupported/degraded; legacy Sony BeBook")),
+        ("lrx", "none (Sony BeBook)", false, Some("Unsupported; DRM-oriented Sony BeBook variant")),
+    ];
+
+    formats
+        .par_iter()
+        .map(
+            |(format, backend, available, quality_note)| DocumentCapabilityReport {
+                format: format.to_string(),
+                backend: backend.to_string(),
+                available: *available,
+                quality_note: quality_note.map(|s| s.to_string()),
+            },
+        )
+        .collect()
 }
 
 fn format_extraction_summary(result: &DocumentExtractionResult) -> String {
     let mut summary = format!(
         "Document Extraction ({}):\n- Backend: {}\n- Total chunks: {}",
-        result.source_path,
-        result.backend,
-        result.total_chunks
+        result.source_path, result.backend, result.total_chunks
     );
     if let Some(title) = result.metadata.get("title") {
         summary.push_str(&format!("\n- Title: {}", title));
@@ -1074,17 +1012,25 @@ fn format_extraction_summary(result: &DocumentExtractionResult) -> String {
 pub(crate) fn format_document_telemetry(result: &DocumentExtractionResult) -> String {
     format!(
         "📄 Document Processed\n   Format: {}\n   Backend: {}\n   Chunks: {}\n   Status: {}",
-        result.metadata.get("format").map(|s| s.as_str()).unwrap_or("unknown"),
+        result
+            .metadata
+            .get("format")
+            .map(|s| s.as_str())
+            .unwrap_or("unknown"),
         result.backend,
         result.total_chunks,
-        if result.ok { "✅ Success" } else { "❌ Failed" }
+        if result.ok {
+            "✅ Success"
+        } else {
+            "❌ Failed"
+        }
     )
 }
 
 pub(crate) fn format_retrieval_telemetry(
     query: &str,
     results: &[(usize, String)],
-    total_chunks: usize
+    total_chunks: usize,
 ) -> String {
     format!(
         "🔍 Retrieval Results\n   Query: {}\n   Matches: {}/{}\n   Top results shown",
@@ -1094,7 +1040,11 @@ pub(crate) fn format_retrieval_telemetry(
     )
 }
 
-fn extract_plaintext(path: &Path, _metadata: DocumentMetadata, _start_time: Instant) -> DocumentExtractionResult {
+fn extract_plaintext(
+    path: &Path,
+    _metadata: DocumentMetadata,
+    _start_time: Instant,
+) -> DocumentExtractionResult {
     match std::fs::read_to_string(path) {
         Ok(content) => {
             let chunks = chunk_text(&content, 2000, &path.display().to_string());
@@ -1122,7 +1072,11 @@ fn extract_plaintext(path: &Path, _metadata: DocumentMetadata, _start_time: Inst
     }
 }
 
-fn extract_html(path: &Path, _metadata: DocumentMetadata, _start_time: Instant) -> DocumentExtractionResult {
+fn extract_html(
+    path: &Path,
+    _metadata: DocumentMetadata,
+    _start_time: Instant,
+) -> DocumentExtractionResult {
     match std::fs::read_to_string(path) {
         Ok(content) => {
             let text = html2text::from_read(content.as_bytes(), 120).unwrap_or(content);
@@ -1152,18 +1106,22 @@ fn extract_html(path: &Path, _metadata: DocumentMetadata, _start_time: Instant) 
 }
 
 /// PDF page-aware extraction using pdf-extract crate
-fn extract_pdf_page_aware_internal(path: &Path, _metadata: DocumentMetadata, _start_time: Instant) -> Result<(Vec<DocumentUnit>, DocumentQualityReport)> {
+fn extract_pdf_page_aware_internal(
+    path: &Path,
+    _metadata: DocumentMetadata,
+    _start_time: Instant,
+) -> Result<(Vec<DocumentUnit>, DocumentQualityReport)> {
     use pdf_extract::extract_text_by_pages;
     use std::fs;
-    
+
     let file_size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    
+
     // Extract text by pages
     let mut pages = Vec::new();
     let mut empty_pages: Vec<u32> = Vec::new();
     let mut low_quality_pages: Vec<u32> = Vec::new();
     let mut replacement_chars: Vec<u32> = Vec::new();
-    
+
     match extract_text_by_pages(path) {
         Ok(page_texts) => {
             for (page_num, page_text) in page_texts.into_iter().enumerate() {
@@ -1184,16 +1142,14 @@ fn extract_pdf_page_aware_internal(path: &Path, _metadata: DocumentMetadata, _st
             }
         }
         Err(e) => {
-            return Err(anyhow::anyhow!(
-                "Failed to extract pages from PDF: {}",
-                e
-            ));
+            return Err(anyhow::anyhow!("Failed to extract pages from PDF: {}", e));
         }
     }
-    
+
     // Detect likely OCR by checking for high replacement character usage
     let total_chars: usize = pages.iter().map(|p| p.len()).sum();
-    let replacement_count: usize = pages.iter()
+    let replacement_count: usize = pages
+        .iter()
         .map(|p| {
             p.chars()
                 .filter(|c| *c == '\u{FFFD}' || *c == '\u{2013}') // ? or –
@@ -1204,49 +1160,81 @@ fn extract_pdf_page_aware_internal(path: &Path, _metadata: DocumentMetadata, _st
     let has_high_replacement = replacement_count > total_chars.saturating_mul(5) / 10;
     let likely_ocr = empty_pages.is_empty() && has_high_replacement;
 
-    // Build units with page metadata
+    // Build units with page metadata - parallel for large PDFs
     let total_pages = pages.len();
-    let mut units = Vec::new();
-    for (idx, page_text) in pages.into_iter().enumerate() {
-        let page_num = (idx + 1) as u32;
-        
-        // Normalize whitespace and repair common issues
-        let normalized = normalize_pdf_text(&page_text);
-        let normalized_len = normalized.len();
+    let units: Vec<DocumentUnit> = if total_pages >= 10 {
+        pages
+            .into_par_iter()
+            .enumerate()
+            .map(|(idx, page_text)| {
+                let page_num = (idx + 1) as u32;
+                let normalized = normalize_pdf_text(&page_text);
+                let normalized_len = normalized.len();
 
-        units.push(DocumentUnit {
-            index: idx,
-            text: normalized,
-            provenance: DocumentProvenance {
-                source_path: path.display().to_string(),
-                format: DocumentFormat::Pdf,
-                backend: "pdf-extract-page-aware".to_string(),
-                page_number: Some(page_num),
-                chapter_index: None, // PDF doesn't have chapters by default
-                chapter_title: None,
-                section_heading_path: Vec::new(),
-                archive_entry_path: None,
-                byte_offset_start: None,
-                byte_offset_end: None,
-                char_offset_start: Some(idx as u64),
-                char_offset_end: Some(idx as u64 + normalized_len as u64),
-            },
-        });
-    }
-    
+                DocumentUnit {
+                    index: idx,
+                    text: normalized,
+                    provenance: DocumentProvenance {
+                        source_path: path.display().to_string(),
+                        format: DocumentFormat::Pdf,
+                        backend: "pdf-extract-page-aware".to_string(),
+                        page_number: Some(page_num),
+                        chapter_index: None,
+                        chapter_title: None,
+                        section_heading_path: Vec::new(),
+                        archive_entry_path: None,
+                        byte_offset_start: None,
+                        byte_offset_end: None,
+                        char_offset_start: Some(idx as u64),
+                        char_offset_end: Some(idx as u64 + normalized_len as u64),
+                    },
+                }
+            })
+            .collect()
+    } else {
+        pages
+            .into_iter()
+            .enumerate()
+            .map(|(idx, page_text)| {
+                let page_num = (idx + 1) as u32;
+                let normalized = normalize_pdf_text(&page_text);
+                let normalized_len = normalized.len();
+
+                DocumentUnit {
+                    index: idx,
+                    text: normalized,
+                    provenance: DocumentProvenance {
+                        source_path: path.display().to_string(),
+                        format: DocumentFormat::Pdf,
+                        backend: "pdf-extract-page-aware".to_string(),
+                        page_number: Some(page_num),
+                        chapter_index: None,
+                        chapter_title: None,
+                        section_heading_path: Vec::new(),
+                        archive_entry_path: None,
+                        byte_offset_start: None,
+                        byte_offset_end: None,
+                        char_offset_start: Some(idx as u64),
+                        char_offset_end: Some(idx as u64 + normalized_len as u64),
+                    },
+                }
+            })
+            .collect()
+    };
+
     // Calculate quality metrics
     let empty_pages_ratio = if total_pages > 0 {
         empty_pages.len() as f32 / total_pages as f32
     } else {
         0.0
     };
-    
+
     let replacement_ratio = if total_chars > 0 {
         replacement_count as f32 / total_chars as f32
     } else {
         0.0
     };
-    
+
     // Estimate text coverage (simplified)
     let empty_pages_count = empty_pages.len();
     let text_coverage_percent = if total_pages > 0 && empty_pages_count > 0 {
@@ -1255,37 +1243,44 @@ fn extract_pdf_page_aware_internal(path: &Path, _metadata: DocumentMetadata, _st
         Some(0.0)
     };
 
-    Ok((units, DocumentQualityReport {
-        extraction_warnings: if empty_pages_count > 0 {
-            vec![format!("{} empty page(s) detected", empty_pages_count)]
-        } else { vec![] },
-        text_coverage_percent,
-        empty_pages,
-        encoding_repairs: vec![], // Would track specific repairs
-        encrypted_or_drm: false,  // pdf-extract handles encryption errors separately
-        image_only: empty_pages_count as u32 >= total_pages as u32 && !likely_ocr,
-        likely_ocr,
-    }))
+    Ok((
+        units,
+        DocumentQualityReport {
+            extraction_warnings: if empty_pages_count > 0 {
+                vec![format!("{} empty page(s) detected", empty_pages_count)]
+            } else {
+                vec![]
+            },
+            text_coverage_percent,
+            empty_pages,
+            encoding_repairs: vec![], // Would track specific repairs
+            encrypted_or_drm: false,  // pdf-extract handles encryption errors separately
+            image_only: empty_pages_count as u32 >= total_pages as u32 && !likely_ocr,
+            likely_ocr,
+        },
+    ))
 }
 
 /// Normalize PDF extracted text - common cleanup operations
 fn normalize_pdf_text(text: &str) -> String {
     let mut result = text.to_string();
-    
+
     // Remove repeated null bytes and control characters (but preserve newlines)
     result = result.replace("\x00", "");
-    result = result.chars()
+    result = result
+        .chars()
         .filter(|c| *c == '\n' || !c.is_control())
         .collect();
-    
+
     // Normalize whitespace
     result = result.replace("  ", " ");
     result = result.trim_end().to_string();
-    
+
     // Repair hyphenated line breaks (common in PDF text extraction)
     // Pattern: word-hyphen-newline-word -> word-hyphen-word
     let mut repaired = result;
-    for _ in 0..10 { // Limit iterations to avoid infinite loops
+    for _ in 0..10 {
+        // Limit iterations to avoid infinite loops
         let before_len = repaired.len();
         repaired = repaired.replace("-\n[A-Za-z]", "-");
         if repaired.len() == before_len {
@@ -1303,7 +1298,7 @@ pub(crate) fn extract_pdf_page_aware(
     _start_time: Instant,
 ) -> DocumentExtractionResult {
     let start_time = _start_time;
-    
+
     match extract_pdf_page_aware_internal(path, _metadata, start_time) {
         Ok((units, quality)) => {
             let units_len = units.len();
@@ -1319,19 +1314,24 @@ pub(crate) fn extract_pdf_page_aware(
                 })
                 .map(|v2_chunk| v2_chunk.to_v1_chunk())
                 .collect();
-            
+
             let metadata: HashMap<String, String> = [
                 ("format".to_string(), "pdf".to_string()),
                 ("backend".to_string(), "pdf-extract-page-aware".to_string()),
                 ("source_path".to_string(), path.display().to_string()),
-                ("file_size".to_string(), fs::metadata(path).map(|m| m.len()).unwrap_or(0).to_string()),
-            ].into_iter().collect();
-            
+                (
+                    "file_size".to_string(),
+                    fs::metadata(path).map(|m| m.len()).unwrap_or(0).to_string(),
+                ),
+            ]
+            .into_iter()
+            .collect();
+
             let id = DocumentId {
                 canonical_path: path.display().to_string(),
                 content_signature: calculate_document_signature(path).unwrap_or_default(),
             };
-            
+
             DocumentExtractionResult {
                 source_path: path.display().to_string(),
                 backend: "pdf-extract-page-aware".to_string(),
@@ -1341,7 +1341,9 @@ pub(crate) fn extract_pdf_page_aware(
                 ok: quality.extraction_warnings.is_empty() && !quality.encrypted_or_drm,
                 error: if !quality.extraction_warnings.is_empty() {
                     Some(quality.extraction_warnings.join("; "))
-                } else { None },
+                } else {
+                    None
+                },
             }
         }
         Err(e) => DocumentExtractionResult {
@@ -1357,7 +1359,11 @@ pub(crate) fn extract_pdf_page_aware(
 }
 
 /// Extract PDF using legacy whole-document approach (for backward compatibility)
-pub(crate) fn extract_pdf(path: &Path, _metadata: DocumentMetadata, _start_time: Instant) -> DocumentExtractionResult {
+pub(crate) fn extract_pdf(
+    path: &Path,
+    _metadata: DocumentMetadata,
+    _start_time: Instant,
+) -> DocumentExtractionResult {
     match pdf_extract::extract_text(path) {
         Ok(content) => {
             let chunks = chunk_text(&content, 2000, &path.display().to_string());
@@ -1387,14 +1393,27 @@ pub(crate) fn extract_pdf(path: &Path, _metadata: DocumentMetadata, _start_time:
 
 /// Chunk text into smaller pieces for retrieval.
 fn chunk_text(text: &str, chunk_size: usize, provenance: &str) -> Vec<DocumentChunk> {
-    let mut chunks = Vec::new();
-
     // Split into structural units first (paragraphs, sections)
     let paragraphs: Vec<&str> = text
         .split("\n\n")
         .filter(|p| !p.trim().is_empty())
         .collect();
 
+    // For large documents (100+ paragraphs), use parallel processing
+    if paragraphs.len() >= 100 {
+        chunk_text_parallel(&paragraphs, chunk_size, provenance)
+    } else {
+        chunk_text_sequential(&paragraphs, chunk_size, provenance)
+    }
+}
+
+/// Sequential chunking for smaller documents.
+fn chunk_text_sequential(
+    paragraphs: &[&str],
+    chunk_size: usize,
+    provenance: &str,
+) -> Vec<DocumentChunk> {
+    let mut chunks = Vec::new();
     let mut current_chunk = String::new();
     let mut index = 0;
 
@@ -1435,7 +1454,13 @@ fn chunk_text(text: &str, chunk_size: usize, provenance: &str) -> Vec<DocumentCh
 
         // If current chunk is getting too large, split it
         if current_chunk.len() > chunk_size {
-            split_large_chunk(&current_chunk, chunk_size, provenance, &mut chunks, &mut index);
+            split_large_chunk(
+                &current_chunk,
+                chunk_size,
+                provenance,
+                &mut chunks,
+                &mut index,
+            );
             current_chunk.clear();
         }
     }
@@ -1452,6 +1477,44 @@ fn chunk_text(text: &str, chunk_size: usize, provenance: &str) -> Vec<DocumentCh
             confidence: calculate_chunk_quality(&current_chunk),
             method: "structure_aware_chunking".to_string(),
         });
+    }
+
+    chunks
+}
+
+/// Parallel chunking for large documents (100+ paragraphs).
+/// Splits paragraphs into batches, processes each batch in parallel,
+/// then merges results while maintaining chunk order.
+fn chunk_text_parallel(
+    paragraphs: &[&str],
+    chunk_size: usize,
+    provenance: &str,
+) -> Vec<DocumentChunk> {
+    // Determine number of batches (aim for ~50 paragraphs per batch)
+    let num_batches = (paragraphs.len() + 49) / 50;
+    let batch_size = (paragraphs.len() + num_batches - 1) / num_batches;
+
+    // Split paragraphs into batches
+    let batches: Vec<Vec<&str>> = paragraphs
+        .chunks(batch_size)
+        .map(|chunk| chunk.to_vec())
+        .collect();
+
+    // Process each batch in parallel
+    let batch_results: Vec<Vec<DocumentChunk>> = batches
+        .par_iter()
+        .map(|batch| chunk_text_sequential(batch, chunk_size, provenance))
+        .collect();
+
+    // Merge results and re-index
+    let mut chunks = Vec::new();
+    let mut index = 0;
+    for mut batch_chunks in batch_results {
+        for chunk in batch_chunks.iter_mut() {
+            chunk.index = index;
+            index += 1;
+            chunks.push(chunk.clone());
+        }
     }
 
     chunks
@@ -1560,7 +1623,11 @@ fn calculate_chunk_quality(text: &str) -> f64 {
 
     let char_count = trimmed.chars().count();
     let word_count = trimmed.split_whitespace().count();
-    let avg_word_length = if word_count > 0 { char_count as f64 / word_count as f64 } else { 0.0 };
+    let avg_word_length = if word_count > 0 {
+        char_count as f64 / word_count as f64
+    } else {
+        0.0
+    };
 
     // Quality factors:
     // - Prefer chunks with reasonable word count (not too few, not too many)
@@ -1586,7 +1653,11 @@ fn calculate_chunk_quality(text: &str) -> f64 {
     (word_score * length_score).min(1.0).max(0.0)
 }
 
-fn extract_epub(path: &Path, _metadata: DocumentMetadata, _start_time: Instant) -> DocumentExtractionResult {
+fn extract_epub(
+    path: &Path,
+    _metadata: DocumentMetadata,
+    _start_time: Instant,
+) -> DocumentExtractionResult {
     // EPUB extraction implementation - framework established for Task 251
     // TODO: Complete full EPUB extraction with metadata, spine, TOC, and content parsing
     DocumentExtractionResult {
@@ -1599,8 +1670,83 @@ fn extract_epub(path: &Path, _metadata: DocumentMetadata, _start_time: Instant) 
             ("backend".to_string(), "epub".to_string()),
             ("source_path".to_string(), path.display().to_string()),
             ("status".to_string(), "framework_implemented".to_string()),
-        ].into_iter().collect(),
+        ]
+        .into_iter()
+        .collect(),
         ok: false,
-        error: Some("EPUB extraction framework implemented (Task 251) - full implementation pending".to_string()),
+        error: Some(
+            "EPUB extraction framework implemented (Task 251) - full implementation pending"
+                .to_string(),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chunk_text_small_document_uses_sequential() {
+        // Small document (< 100 paragraphs) should use sequential chunking
+        let text = "Paragraph 1.\n\nParagraph 2.\n\nParagraph 3.";
+        let chunks = chunk_text(text, 1000, "test");
+        assert!(!chunks.is_empty());
+        assert!(chunks.iter().all(|c| !c.text.is_empty()));
+    }
+
+    #[test]
+    fn test_chunk_text_large_document_uses_parallel() {
+        // Large document (100+ paragraphs) should use parallel chunking
+        let paragraphs: Vec<String> = (0..150)
+            .map(|i| format!("Paragraph number {} with some content.", i))
+            .collect();
+        let text = paragraphs.join("\n\n");
+        let chunks = chunk_text(&text, 500, "test");
+        assert!(!chunks.is_empty());
+        // Verify chunks are properly indexed
+        for (i, chunk) in chunks.iter().enumerate() {
+            assert_eq!(chunk.index, i);
+        }
+    }
+
+    #[test]
+    fn test_chunk_text_produces_valid_chunks() {
+        let text = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.";
+        let chunks = chunk_text(text, 100, "test");
+        assert!(!chunks.is_empty());
+        for chunk in &chunks {
+            assert!(!chunk.text.is_empty());
+            assert_eq!(chunk.provenance, "test");
+            assert_eq!(chunk.method, "structure_aware_chunking");
+        }
+    }
+
+    #[test]
+    fn test_document_capabilities_parallel() {
+        let caps = document_capabilities();
+        assert!(!caps.is_empty());
+        // Should have all expected formats
+        let formats: Vec<&str> = caps.iter().map(|c| c.format.as_str()).collect();
+        assert!(formats.contains(&"txt"));
+        assert!(formats.contains(&"pdf"));
+        assert!(formats.contains(&"epub"));
+        assert!(formats.contains(&"mobi"));
+    }
+
+    #[test]
+    fn test_calculate_chunk_quality() {
+        // Good quality chunk
+        let good = "This is a well-formed sentence with reasonable length.";
+        let quality = calculate_chunk_quality(good);
+        assert!(quality > 0.0);
+
+        // Empty chunk
+        let empty = "";
+        assert_eq!(calculate_chunk_quality(empty), 0.0);
+
+        // Very short chunk
+        let short = "Hi";
+        let short_quality = calculate_chunk_quality(short);
+        assert!(short_quality < 1.0);
     }
 }

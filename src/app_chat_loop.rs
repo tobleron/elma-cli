@@ -198,12 +198,7 @@ async fn handle_chat_command(
             }
             handled!()
         }
-        "/sessions" | "/sessions cleanup" | "/sessions cleanup-all" => {
-            let session_root = runtime.session.root.clone();
-            let response = session_cleanup::sessions_savings(2, &session_root);
-            tui.add_message(MessageRole::Assistant, response);
-            handled!()
-        }
+
         "/reset" => {
             runtime.messages.truncate(1);
             crate::permission_gate::reset_permission_cache();
@@ -271,7 +266,7 @@ async fn handle_chat_command(
                  /help      Show this help\n\
                  /models    Switch model/provider\n\
                  /usage     Token and cost stats\n\
-                 /sessions  Session manager\n\
+
                  /approve   Tool approval policy\n\
                  /compact   Compact context\n\
                  /reset     Clear history\n\
@@ -467,7 +462,9 @@ pub(crate) async fn execute_tool(
 ) -> Result<String> {
     use tool_discovery::ToolCapability;
 
-    let tool = runtime.tool_registry.get_tool(tool_name)
+    let tool = runtime
+        .tool_registry
+        .get_tool(tool_name)
         .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", tool_name))?;
 
     if !tool.available {
@@ -757,10 +754,36 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Task 107: Start effort timer for this turn
         let turn_timer = crate::ui_effort::EffortTimer::start();
 
+        // Clear previous turn's status thread (respects min-visible window)
+        tui.clear_status();
+
         tui.add_message(MessageRole::User, line.to_string());
         runtime
             .messages
             .push(ChatMessage::simple("user", &line.to_string()));
+        let _ = save_user_prompt_display(&runtime.session, line);
+
+        // Phase 2 (Task 310): Apply pending turn summary from previous turn
+        if let Ok(Some((turn_num, summary))) =
+            crate::session_write::load_pending_turn_summary(&runtime.session.root)
+        {
+            let mut user_msg_count = 0;
+            let mut boundary_idx = 0;
+            for (i, msg) in runtime.messages.iter().enumerate() {
+                if msg.role == "user" && msg.name != Some("turn_summary".to_string()) {
+                    user_msg_count += 1;
+                    if user_msg_count == turn_num + 1 {
+                        boundary_idx = i;
+                        break;
+                    }
+                }
+            }
+            for msg in runtime.messages.iter_mut().take(boundary_idx) {
+                msg.mark_summarized();
+            }
+            crate::effective_history::inject_turn_summary(&mut runtime.messages, &summary);
+            let _ = crate::session_write::mark_summary_applied(&runtime.session.root, turn_num);
+        }
 
         // Show activity indicator while processing
         tui.set_activity("Analyzing", "Processing your request...");
@@ -823,6 +846,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             speech_act: ProbabilityDecision::default(),
             workflow: ProbabilityDecision::default(),
             mode: ProbabilityDecision::default(),
+            evidence_required: needs_evidence,
         };
         let complexity = ComplexityAssessment {
             complexity: if likely_conversational {
@@ -997,6 +1021,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             runtime
                 .messages
                 .push(ChatMessage::simple("assistant", &final_text));
+            let _ = save_final_answer_display(&runtime.session, &final_text);
         }
 
         // Clear activity indicator now that processing is complete
@@ -1048,6 +1073,79 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             refresh_runtime_workspace(runtime)?;
         }
         let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
+
+        // Phase 1 (Task 310): Spawn background turn summarizer (fire-and-forget)
+        let turn_number = runtime
+            .messages
+            .iter()
+            .filter(|m| m.role == "user" && m.name != Some("turn_summary".to_string()))
+            .count()
+            .saturating_sub(1);
+        let tools_used: Vec<String> = step_results
+            .iter()
+            .filter(|sr| sr.kind == "tool_call")
+            .filter_map(|sr| sr.command.clone())
+            .collect();
+        let step_results_json: Vec<serde_json::Value> = step_results
+            .iter()
+            .map(|sr| {
+                serde_json::json!({
+                    "id": sr.id,
+                    "kind": sr.kind,
+                    "ok": sr.ok,
+                    "summary": sr.summary.chars().take(200).collect::<String>(),
+                })
+            })
+            .collect();
+        {
+            let session_root = runtime.session.root.clone();
+            let client = runtime.client.clone();
+            let summarizer_cfg = runtime.profiles.turn_summary_cfg.clone();
+            let final_text_clone = final_text.clone();
+            let route_clone = route_decision.clone();
+            let formula_clone = formula.clone();
+            let user_message_clone = line.to_string();
+            tokio::spawn(async move {
+                let unit =
+                    crate::intel_units::TurnSummaryUnit::new(summarizer_cfg);
+                let context = crate::intel_trait::IntelContext::new(
+                    user_message_clone,
+                    route_clone,
+                    String::new(),
+                    String::new(),
+                    Vec::new(),
+                    client,
+                )
+                .with_extra("final_text", &final_text_clone)
+                .and_then(|c| c.with_extra("step_results", &step_results_json))
+                .and_then(|c| c.with_extra("tools_used", &tools_used.join(",")))
+                .and_then(|c| c.with_extra("formula", &formula_clone));
+                match context {
+                    Ok(ctx) => {
+                        match unit.execute_with_fallback(&ctx).await {
+                            Ok(output) => {
+                                if let Ok(summary) =
+                                    serde_json::from_value::<TurnSummaryOutput>(output.data)
+                                {
+                                    let _ = crate::session_write::save_turn_summary(
+                                        &session_root,
+                                        turn_number,
+                                        &summary,
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::debug!("Turn summary failed: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!("Turn summary context build failed: {}", e);
+                    }
+                }
+            });
+        }
+
         queued_inputs.extend(tui.take_queued_submissions());
     };
 

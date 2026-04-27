@@ -2,22 +2,72 @@
 //!
 //! Routing - Inference Functions
 
+use crate::routing_config::RoutingConfig;
 use crate::*;
+
+/// Helper function to check if a ProbabilityDecision confidently matches a specific choice
+fn is_choice_confident(
+    decision: &ProbabilityDecision,
+    choice: &str,
+    min_margin: f64,
+    max_entropy: f64,
+) -> bool {
+    decision.choice.eq_ignore_ascii_case(choice)
+        && decision.margin >= min_margin
+        && decision.entropy <= max_entropy
+}
+
+/// Helper function to check if a ProbabilityDecision confidently matches a specific choice using config
+fn is_choice_confident_with_config(
+    decision: &ProbabilityDecision,
+    choice: &str,
+    config: &RoutingConfig,
+) -> bool {
+    match choice {
+        "CHAT" => {
+            decision.choice.eq_ignore_ascii_case("CHAT")
+                && decision.margin >= config.speech_chat_margin_threshold
+                && decision.entropy <= config.speech_chat_entropy_threshold
+        }
+        "WORKFLOW" => {
+            decision.choice.eq_ignore_ascii_case("WORKFLOW")
+                && decision.margin >= config.workflow_confident_margin_threshold
+                && decision.entropy <= config.workflow_confident_entropy_threshold
+        }
+        "INSTRUCT" => {
+            decision.choice.eq_ignore_ascii_case("INSTRUCT")
+                && decision.margin >= config.speech_confident_instruct_margin_threshold
+                && decision.entropy <= config.speech_confident_instruct_entropy_threshold
+        }
+        "DECIDE" => {
+            decision.choice.eq_ignore_ascii_case("DECIDE")
+            && decision.margin >= 0.0  // No specific threshold for DECIDE in original code
+            && decision.entropy <= 1.0
+        }
+        _ => false,
+    }
+}
 
 fn should_short_circuit_chat_route(
     speech_act: &ProbabilityDecision,
     workflow: &ProbabilityDecision,
+    routing_config: &RoutingConfig,
 ) -> bool {
-    speech_act.choice.eq_ignore_ascii_case("CHAT")
-        && speech_act.entropy <= 0.20
-        && speech_act.margin >= 0.70
-        && workflow.choice.eq_ignore_ascii_case("CHAT")
-        && workflow.entropy <= 0.20
-        && workflow.margin >= 0.70
+    // Use confidence-based assessment with config instead of hardcoded thresholds
+    let is_chat_speech = is_choice_confident_with_config(speech_act, "CHAT", routing_config);
+    let is_chat_workflow = is_choice_confident_with_config(workflow, "CHAT", routing_config);
+
+    is_chat_speech
+        && speech_act.entropy <= routing_config.speech_chat_entropy_threshold
+        && speech_act.margin >= routing_config.speech_chat_margin_threshold
+        && is_chat_workflow
+        && workflow.entropy <= routing_config.workflow_chat_entropy_threshold
+        && workflow.margin >= routing_config.workflow_chat_margin_threshold
 }
 
 fn should_apply_speech_chat_boost(workflow: &ProbabilityDecision) -> bool {
-    workflow.choice.eq_ignore_ascii_case("CHAT")
+    // Use confidence-based assessment instead of hardcoded string comparisons
+    is_choice_confident(workflow, "CHAT", 0.0, 1.0)  // Any confidence level for CHAT
         || workflow.margin < 0.15
         || workflow.entropy > 0.50
 }
@@ -195,7 +245,7 @@ Conversation so far (most recent last):
     )
     .await
     .unwrap_or_else(|_| {
-        let choice = if speech_act.choice.eq_ignore_ascii_case("CHAT") {
+        let choice = if is_choice_confident(&speech_act, "CHAT", 0.0, 1.0) {
             "CHAT"
         } else {
             "WORKFLOW"
@@ -203,7 +253,9 @@ Conversation so far (most recent last):
         fallback_probability_decision(choice, workflow_code_pairs(), "fallback")
     });
 
-    if should_short_circuit_chat_route(&speech_act, &workflow) {
+    // Create a default routing config for now - in practice this would come from application state
+    let routing_config = RoutingConfig::default();
+    if should_short_circuit_chat_route(&speech_act, &workflow, &routing_config) {
         let workflow = ProbabilityDecision {
             choice: "CHAT".to_string(),
             source: "speech_short_circuit".to_string(),
@@ -239,6 +291,7 @@ Conversation so far (most recent last):
             speech_act,
             workflow,
             mode,
+            evidence_required: false,
         });
     }
 
@@ -262,9 +315,9 @@ Conversation so far (most recent last):
     )
     .await
     .unwrap_or_else(|_| {
-        let choice = if workflow.choice.eq_ignore_ascii_case("CHAT") {
+        let choice = if is_choice_confident(&workflow, "CHAT", 0.0, 1.0) {
             "DECIDE"
-        } else if speech_act.choice.eq_ignore_ascii_case("INSTRUCT") {
+        } else if is_choice_confident(&speech_act, "INSTRUCT", 0.0, 1.0) {
             "EXECUTE"
         } else {
             "INSPECT"
@@ -329,19 +382,13 @@ Conversation so far (most recent last):
     let margin = route_margin(&distribution);
     let entropy = route_entropy(&distribution);
     let path_scoped_request = extract_first_path_from_user_text(user_message).is_some();
-    let workflow_confident = workflow.choice.eq_ignore_ascii_case("WORKFLOW")
-        && workflow.margin >= 0.30
-        && workflow.entropy <= 0.60;
-    let speech_confident_chat = speech_act.choice.eq_ignore_ascii_case("CHAT")
-        && speech_act.margin >= 0.50
-        && speech_act.entropy <= 0.40;
-    let speech_confident_instruct = speech_act.choice.eq_ignore_ascii_case("INSTRUCT")
-        && speech_act.margin >= 0.30
-        && speech_act.entropy <= 0.60;
+    let workflow_confident = is_choice_confident(&workflow, "WORKFLOW", 0.30, 0.60);
+    let speech_confident_chat = is_choice_confident(&speech_act, "CHAT", 0.50, 0.40);
+    let speech_confident_instruct = is_choice_confident(&speech_act, "INSTRUCT", 0.30, 0.60);
 
     // PRINCIPLE: Under-execute when uncertain.
     // If entropy is high (> 0.6) or margin is low (< 0.2), fallback to CHAT if speech act is CHAT.
-    let fallback_to_chat = (speech_act.choice.eq_ignore_ascii_case("CHAT")
+    let fallback_to_chat = (is_choice_confident(&speech_act, "CHAT", 0.0, 1.0)
         && (margin < 0.20 || entropy > 0.60))
         || (margin < 0.12); // Hard fallback for any case where we are absolutely guessing
     let preserve_workflow_route = path_scoped_request
@@ -377,10 +424,10 @@ Conversation so far (most recent last):
 
     // PRINCIPLE: Distinguish selection from categorization.
     // Categorization (DECIDE) needs a label. Selection (SELECT) needs a choice from workspace items.
-    let identify_request = ["identify", "choose", "select", "which"]
-        .iter()
-        .any(|w| user_message.to_lowercase().contains(w));
-    let route = if identify_request && route.eq_ignore_ascii_case("DECIDE") {
+    // Use speech act classification to determine if this is a selection request
+    let is_selection_request = is_choice_confident(&speech_act, "INQUIRE", 0.0, 1.0)
+        || is_choice_confident(&speech_act, "INSTRUCT", 0.0, 1.0);
+    let route = if is_selection_request && is_choice_confident(&workflow, "DECIDE", 0.0, 1.0) {
         "SELECT".to_string()
     } else {
         route
@@ -395,6 +442,7 @@ Conversation so far (most recent last):
         speech_act,
         workflow,
         mode,
+        evidence_required: false, // Task 290: Will be set by evidence classifier
     })
 }
 
@@ -416,14 +464,24 @@ mod tests {
     fn chat_short_circuit_requires_consensus() {
         let speech = decision("CHAT", 0.0, 1.0);
         let workflow = decision("WORKFLOW", 0.0, 1.0);
-        assert!(!should_short_circuit_chat_route(&speech, &workflow));
+        let routing_config = RoutingConfig::default();
+        assert!(!should_short_circuit_chat_route(
+            &speech,
+            &workflow,
+            &routing_config
+        ));
     }
 
     #[test]
     fn chat_short_circuit_allows_high_confidence_agreement() {
         let speech = decision("CHAT", 0.0, 1.0);
         let workflow = decision("CHAT", 0.0, 1.0);
-        assert!(should_short_circuit_chat_route(&speech, &workflow));
+        let routing_config = RoutingConfig::default();
+        assert!(should_short_circuit_chat_route(
+            &speech,
+            &workflow,
+            &routing_config
+        ));
     }
 
     #[test]

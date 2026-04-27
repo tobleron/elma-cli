@@ -1,7 +1,10 @@
 //! @efficiency-role: data-model
 //!
 //! Session - Error Reporting (Task 018)
+//!
+//! Also handles session index updates on status changes (Task 282)
 
+use crate::session_index::{self, build_index_entry};
 use crate::*;
 
 /// Session error types for structured error reporting
@@ -94,7 +97,7 @@ pub(crate) fn write_session_error(session_root: &PathBuf, error: &SessionError) 
     Ok(path)
 }
 
-/// Write session status marker
+/// Write session status marker and update index
 pub(crate) fn write_session_status(
     session_root: &PathBuf,
     status: &str,
@@ -103,19 +106,36 @@ pub(crate) fn write_session_status(
     error_summary: Option<&str>,
 ) -> Result<PathBuf> {
     let path = session_root.join("session_status.json");
+    let ended_unix_s = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let status_obj = serde_json::json!({
         "status": status,
         "turns_completed": turns_completed,
         "last_turn": last_turn,
         "error_summary": error_summary,
-        "ended_unix_s": SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        "ended_unix_s": ended_unix_s,
     });
     let json = serde_json::to_string_pretty(&status_obj).context("serialize session status")?;
     std::fs::write(&path, json)
         .with_context(|| format!("write session status {}", path.display()))?;
+
+    // Update session index (fire-and-forget, don't fail the write if index update fails)
+    if let Some(entry) = session_index::build_index_entry(
+        session_root,
+        &session_root
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy(),
+    ) {
+        let sessions_root = session_root.parent().unwrap_or(session_root);
+        if let Ok(mut index) = session_index::SessionIndex::load(sessions_root) {
+            index.upsert_entry(entry);
+            let _ = index.save(sessions_root);
+        }
+    }
+
     Ok(path)
 }
 

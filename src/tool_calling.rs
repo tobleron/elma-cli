@@ -62,6 +62,7 @@ pub(crate) async fn execute_tool_call(
         "search" => exec_search(&args_value, workdir, &call_id, tui).await,
         "respond" => exec_respond(&args_value, &call_id, tui),
         "update_todo_list" => exec_update_todo_list(&args_value, &call_id, tui),
+        "read_evidence" => exec_read_evidence(&args_value, &call_id, tui),
         unknown => ToolExecutionResult {
             tool_call_id: call_id,
             tool_name: tool_name.clone(),
@@ -154,8 +155,11 @@ async fn exec_shell(
     }
 
     // Task 117: Permission gate for destructive/caution commands
+    // Use classify_command to determine actual risk level instead of hardcoding destructive
+    let risk = shell_preflight::classify_command(&command);
+    let is_dangerous = matches!(risk, shell_preflight::RiskLevel::Dangerous(_));
     emit_tool_progress(&mut tui, "shell", "checking permissions");
-    if !permission_gate::check_permission(args, &command, true, tui.as_deref_mut()).await {
+    if !permission_gate::check_permission(args, &command, is_dangerous, tui.as_deref_mut()).await {
         trace(args, "tool_call: shell DENIED by permission gate");
         let denied_msg = "Permission denied. You declined to execute this command.\nTo proceed, approve the command or use a safer alternative.".to_string();
         emit_tool_result(&mut tui, "shell", false, &denied_msg);
@@ -225,7 +229,7 @@ async fn exec_shell(
     // However, I still need to update the TUI when command execution is complete.
     emit_tool_progress(&mut tui, "shell", "executing command");
 
-    match run_shell_one_liner(&command, workdir, None).await {
+    match run_shell_persistent(&command, workdir).await {
         Ok(er) => {
             let success = er.exit_code == 0;
             if let Some(t) = tui.as_mut() {}
@@ -289,6 +293,7 @@ async fn exec_shell(
                 )
             };
             emit_tool_result(&mut tui, "shell", success, &content);
+            let _ = save_tool_display(session, "shell", &command, &content, success);
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
                 tool_name: "shell".to_string(),
@@ -299,6 +304,7 @@ async fn exec_shell(
         Err(e) => {
             let error_msg = format!("Shell execution error: {}", e);
             emit_tool_result(&mut tui, "shell", false, &error_msg);
+            let _ = save_tool_display(session, "shell", &command, &error_msg, false);
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
                 tool_name: "shell".to_string(),
@@ -597,6 +603,45 @@ fn exec_update_todo_list(
         tool_call_id: call_id.to_string(),
         tool_name: "update_todo_list".to_string(),
         ok: !content.starts_with("Error:"),
+        content,
+    }
+}
+
+fn exec_read_evidence(
+    av: &serde_json::Value,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let ids: Vec<String> = av["ids"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    emit_tool_start(&mut tui, "read_evidence", &format!("ids: {:?}", ids));
+
+    let result = crate::evidence_ledger::with_session_ledger(|ledger| {
+        crate::tools::tool_evidence::execute_read_evidence(ledger, ids)
+    });
+
+    let (content, ok) = match result {
+        Some(Ok(text)) => (text, true),
+        Some(Err(e)) => (format!("Error: {}", e), false),
+        None => (
+            "Error: Evidence ledger not initialized for this session.".to_string(),
+            false,
+        ),
+    };
+
+    emit_tool_result(&mut tui, "read_evidence", ok, &content);
+
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "read_evidence".to_string(),
+        ok,
         content,
     }
 }

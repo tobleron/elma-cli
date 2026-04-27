@@ -139,6 +139,7 @@ impl JsonRepairUnit {
                 margin: 1.0,
                 entropy: 0.0,
             },
+            evidence_required: false,
         };
 
         let context = IntelContext::new(

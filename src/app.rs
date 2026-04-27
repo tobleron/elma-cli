@@ -13,6 +13,7 @@ pub(crate) struct LoadedProfiles {
     pub(crate) decider_cfg: Profile,
     pub(crate) selector_cfg: Profile,
     pub(crate) summarizer_cfg: Profile,
+    pub(crate) turn_summary_cfg: Profile,
     pub(crate) formatter_cfg: Profile,
     pub(crate) json_outputter_cfg: Profile,
     pub(crate) final_answer_extractor_cfg: Profile,
@@ -75,5 +76,31 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let Some(mut runtime) = app_bootstrap::bootstrap_app(args).await? else {
         return Ok(());
     };
-    app_chat::run_chat_loop(&mut runtime).await
+
+    // Auto-cleanup old sessions (older than 30 days)
+    let sessions_root = runtime
+        .session
+        .root
+        .parent()
+        .unwrap_or(&runtime.session.root)
+        .to_path_buf();
+    if let Ok((count, size)) = crate::session_gc::auto_cleanup_sessions(&sessions_root, 30) {
+        if count > 0 {
+            tracing::info!("Auto-cleaned {} sessions, reclaimed {} bytes", count, size);
+        }
+    }
+
+    let result = app_chat::run_chat_loop(&mut runtime).await;
+    // Finalize session status (Task 282: index update)
+    let session_root = runtime.session.root.clone();
+    match &result {
+        Ok(()) => {
+            let _ = crate::write_session_status(&session_root, "completed", 0, None, None);
+        }
+        Err(e) => {
+            let _ =
+                crate::write_session_status(&session_root, "error", 0, None, Some(&e.to_string()));
+        }
+    }
+    result
 }

@@ -43,6 +43,18 @@ impl IntelUnit for ComplexityAssessmentUnit {
                 &context.workspace_facts,
                 &context.workspace_brief,
                 &context.conversation_excerpt,
+                &context
+                    .intent_surface
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
+                &context
+                    .intent_real
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
+                &context
+                    .user_expectation
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
             ),
         );
 
@@ -480,6 +492,18 @@ impl IntelUnit for FormulaSelectorUnit {
                 &serde_json::from_value(scope).unwrap_or_default(),
                 &memory_candidates,
                 &context.conversation_excerpt,
+                &context
+                    .intent_surface
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
+                &context
+                    .intent_real
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
+                &context
+                    .user_expectation
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
             ),
         )
         .await?;

@@ -2,6 +2,7 @@
 //! App Chat - Fast Path Detection and Direct Execution
 
 use crate::app_chat_core::program_safety_check;
+use crate::routing_config::RoutingConfig;
 use crate::tool_discovery::command_exists;
 use crate::*;
 
@@ -13,25 +14,41 @@ fn direct_shell_command_head(line: &str) -> Option<&str> {
     Some(head)
 }
 
-fn looks_like_literal_shell_command(line: &str) -> bool {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return false;
+fn looks_like_literal_shell_command(
+    line: &str,
+    route_decision: &RouteDecision,
+    workflow_plan: Option<&WorkflowPlannerOutput>,
+    complexity: &ComplexityAssessment,
+    routing_config: &RoutingConfig,
+) -> bool {
+    // If confidence-based routing is disabled, fall back to original behavior for safety
+    if !routing_config.is_confidence_based_routing_enabled() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        if trimmed.ends_with('.') || trimmed.ends_with('?') || trimmed.ends_with('!') {
+            return false;
+        }
+        let Some(head) = direct_shell_command_head(trimmed) else {
+            return false;
+        };
+        if head
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+        {
+            return false;
+        }
+        return true;
     }
-    if trimmed.ends_with('.') || trimmed.ends_with('?') || trimmed.ends_with('!') {
-        return false;
-    }
-    let Some(head) = direct_shell_command_head(trimmed) else {
-        return false;
-    };
-    if head
-        .chars()
-        .next()
-        .is_some_and(|ch| ch.is_ascii_uppercase())
-    {
-        return false;
-    }
-    true
+
+    // Confidence-based assessment
+    let combined_confidence =
+        routing_config.calculate_combined_confidence(route_decision, workflow_plan, complexity);
+
+    // Only allow direct shell execution if confidence is sufficiently high
+    combined_confidence > 0.5
 }
 
 pub(crate) fn should_use_direct_shell_fast_path(
@@ -62,7 +79,15 @@ pub(crate) fn should_use_direct_shell_fast_path(
         return false;
     };
 
-    if !looks_like_literal_shell_command(line) {
+    // Create a default routing config for now - in practice this would come from application state
+    let routing_config = RoutingConfig::default();
+    if !looks_like_literal_shell_command(
+        line,
+        route_decision,
+        workflow_plan,
+        complexity,
+        &routing_config,
+    ) {
         return false;
     }
 
@@ -100,7 +125,7 @@ pub(crate) fn build_direct_reply_program(line: &str) -> Program {
         objective: line.to_string(),
         steps: vec![Step::Reply {
             id: "r1".to_string(),
-            instructions: "Answer the user's message directly in plain terminal text. If the user asks who you are or what you do, reply in first person, start with `I'm Elma,`, and describe yourself as the local autonomous CLI agent for this workspace. Do not call yourself an AI language model. Use known runtime context facts if relevant. Do not invent configuration, workspace, or tool details."
+            instructions: "Answer the user's message directly in plain terminal text. If the user asks who you are or what you do, reply in first person, start with `I'm Elma,`, and describe yourself as the local autonomous CLI agent for this workspace. Do not call yourself an AI language model. Do NOT dump workspace context facts (platform, git branch, OS, cwd, model info) unless the user specifically asks about them. Keep greetings brief and natural — no status reports or capability lists. Do not invent configuration, workspace, or tool details."
                 .to_string(),
             common: StepCommon {
                 purpose: "direct grounded reply".to_string(),

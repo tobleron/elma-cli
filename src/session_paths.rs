@@ -13,6 +13,7 @@ pub(crate) struct SessionPaths {
     pub(crate) plans_dir: PathBuf,
     pub(crate) decisions_dir: PathBuf,
     pub(crate) tune_dir: PathBuf,
+    pub(crate) display_dir: PathBuf,
 }
 
 pub(crate) fn new_session_id() -> Result<String> {
@@ -34,6 +35,7 @@ pub(crate) fn ensure_session_layout(sessions_root: &PathBuf) -> Result<SessionPa
     let plans_dir = root.join("plans");
     let decisions_dir = root.join("decisions");
     let tune_dir = root.join("tune");
+    let display_dir = root.join("display");
 
     std::fs::create_dir_all(&shell_dir)
         .with_context(|| format!("mkdir {}", shell_dir.display()))?;
@@ -46,6 +48,8 @@ pub(crate) fn ensure_session_layout(sessions_root: &PathBuf) -> Result<SessionPa
     std::fs::create_dir_all(&decisions_dir)
         .with_context(|| format!("mkdir {}", decisions_dir.display()))?;
     std::fs::create_dir_all(&tune_dir).with_context(|| format!("mkdir {}", tune_dir.display()))?;
+    std::fs::create_dir_all(&display_dir)
+        .with_context(|| format!("mkdir {}", display_dir.display()))?;
 
     let master = plans_dir.join("_master.md");
     if !master.exists() {
@@ -64,5 +68,6 @@ pub(crate) fn ensure_session_layout(sessions_root: &PathBuf) -> Result<SessionPa
         plans_dir,
         decisions_dir,
         tune_dir,
+        display_dir,
     })
 }

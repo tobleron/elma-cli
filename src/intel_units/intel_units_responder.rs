@@ -237,6 +237,18 @@ impl IntelUnit for ResultPresenterUnit {
                 &response_advice,
                 &reply_instructions,
                 &step_results,
+                &context
+                    .intent_surface
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
+                &context
+                    .intent_real
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
+                &context
+                    .user_expectation
+                    .clone()
+                    .unwrap_or(serde_json::Value::Null),
             ),
         )
         .await?;

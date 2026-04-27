@@ -30,6 +30,7 @@ mod tests {
             speech_act: test_probability_decision("INSTRUCT"),
             workflow: test_probability_decision("WORKFLOW"),
             mode: test_probability_decision("DECIDE"),
+            evidence_required: false,
         }
     }
 
@@ -403,7 +404,7 @@ mod tests {
                 depth: None,
                 unit_type: None,
                 interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+                ..Default::default()
             },
         });
 
@@ -516,7 +517,7 @@ mod tests {
                     is_read_only: false,
                     is_destructive: true,
                     is_concurrency_safe: false,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+                    interrupt_behavior: InterruptBehavior::Graceful,
                 },
             },
             Step::Reply {
@@ -532,7 +533,7 @@ mod tests {
                     is_read_only: true,
                     is_destructive: false,
                     is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+                    interrupt_behavior: InterruptBehavior::Graceful,
                 },
             },
         ]);

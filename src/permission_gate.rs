@@ -7,6 +7,7 @@
 //! - Session-aware approval caching (approve once, reuse)
 //! - Non-interactive mode: auto-deny with guidance
 
+use crate::safe_mode::{get_safe_mode, SafeMode};
 use crate::shell_preflight::{classify_command, RiskLevel};
 use crate::ui_theme::*;
 use crate::*;
@@ -73,9 +74,7 @@ fn approval_cache() -> &'static Mutex<ApprovalCache> {
 
 /// Reset the approval cache (called on /reset or new session).
 pub(crate) fn reset_permission_cache() {
-    let mut cache = approval_cache()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let mut cache = approval_cache().lock().unwrap_or_else(|e| e.into_inner());
     cache.approved.clear();
 }
 
@@ -94,28 +93,53 @@ pub(crate) async fn check_permission(
     }
 
     let risk = classify_command(command);
+    let mode = get_safe_mode();
 
-    // Safe commands pass without approval
-    if matches!(risk, RiskLevel::Safe) {
+    // Safe mode "off": auto-approve everything except truly dangerous commands
+    if mode == SafeMode::Off {
+        if !matches!(risk, RiskLevel::Dangerous(_)) {
+            trace(
+                args,
+                &format!(
+                    "permission_gate: AUTO-APPROVED (safe_mode=off): {}",
+                    command
+                ),
+            );
+            return true;
+        }
+    }
+
+    // Safe commands pass without approval (unless safe_mode=on)
+    if matches!(risk, RiskLevel::Safe) && mode.allows_safe_auto_approve() {
         return true;
     }
 
     // Check approval cache (single lock acquisition; recover from poisoning)
     let (already_approved, is_non_interactive) = {
-        let cache = approval_cache()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let cache = approval_cache().lock().unwrap_or_else(|e| e.into_inner());
         (cache.is_approved(command), cache.non_interactive)
     };
     if already_approved {
         return true;
     }
+
+    // Non-interactive mode handling based on safe mode
     if is_non_interactive {
+        if mode.allows_non_interactive_auto() && !matches!(risk, RiskLevel::Dangerous(_)) {
+            trace(
+                args,
+                &format!(
+                    "permission_gate: ALLOWED (non-interactive, safe_mode={}): {}",
+                    mode, command
+                ),
+            );
+            return true;
+        }
         trace(
             args,
             &format!(
-                "permission_gate: DENIED (non-interactive mode): {}",
-                command
+                "permission_gate: DENIED (non-interactive mode, safe_mode={}): {}",
+                mode, command
             ),
         );
         return false;
@@ -138,8 +162,8 @@ pub(crate) async fn check_permission(
         trace(
             args,
             &format!(
-                "permission_gate: DENIED (non-TTY stdin, likely TUI/PTY): {}",
-                command
+                "permission_gate: DENIED (non-TTY stdin, likely TUI/PTY, safe_mode={}): {}",
+                mode, command
             ),
         );
         return false;
@@ -149,9 +173,7 @@ pub(crate) async fn check_permission(
 
 /// Record that the user approved this command (for session caching).
 pub(crate) fn record_approval(command: &str) {
-    let mut cache = approval_cache()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let mut cache = approval_cache().lock().unwrap_or_else(|e| e.into_inner());
     cache.approve(command);
 }
 
@@ -184,9 +206,7 @@ fn ask_permission(args: &Args, command: &str, risk: &RiskLevel) -> bool {
 
 /// Get a display string for the approval cache (for debug/status).
 pub(crate) fn approval_cache_summary() -> String {
-    let cache = approval_cache()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let cache = approval_cache().lock().unwrap_or_else(|e| e.into_inner());
     if cache.approved.is_empty() {
         "no approvals cached".to_string()
     } else {
@@ -237,7 +257,7 @@ mod tests {
     fn test_approval_prefix_does_not_bypass_boundary() {
         let mut cache = ApprovalCache::new(false);
         cache.approve("rm /tmp/test");
-        assert!(cache.is_approved("rm /tmp/test"));      // exact match
+        assert!(cache.is_approved("rm /tmp/test")); // exact match
         assert!(!cache.is_approved("rm /tmp/test_other")); // underscore ≠ word boundary
         assert!(cache.is_approved("rm /tmp/test file2")); // space boundary → ok
         assert!(cache.is_approved("rm /tmp/test/file2")); // slash boundary → ok

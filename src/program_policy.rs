@@ -449,7 +449,7 @@ pub(crate) fn apply_capability_guard(
             depth: None,
             unit_type: None,
             interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+            ..Default::default()
         },
     }];
     true
@@ -475,7 +475,8 @@ pub(crate) fn validate_step_flags(program: &Program) -> Vec<String> {
             ));
         }
         // Check interrupt_behavior consistency
-        if common.is_destructive && matches!(common.interrupt_behavior, InterruptBehavior::Complete) {
+        if common.is_destructive && matches!(common.interrupt_behavior, InterruptBehavior::Complete)
+        {
             errors.push(format!(
                 "Step {}: destructive steps should not use Complete interrupt behavior",
                 crate::step_id(step)

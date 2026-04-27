@@ -19,13 +19,6 @@ pub(crate) fn config_root_path(config_root: &str) -> Result<PathBuf> {
 }
 
 pub(crate) fn sessions_root_path(sessions_root: &str) -> Result<PathBuf> {
-    if sessions_root == "sessions" {
-        if let Some(paths) = ElmaPaths::new() {
-            let path = paths.sessions_dir();
-            let _ = std::fs::create_dir_all(&path);
-            return Ok(path);
-        }
-    }
     Ok(repo_root()?.join(sessions_root))
 }
 

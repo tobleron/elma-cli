@@ -111,10 +111,7 @@ pub(crate) async fn execute_tools_batch(
                 match interrupt_behavior {
                     InterruptBehavior::Cancel => {
                         // Cancel immediately, return current results
-                        let results = safe_results
-                            .into_iter()
-                            .filter_map(|r| r)
-                            .collect();
+                        let results = safe_results.into_iter().filter_map(|r| r).collect();
                         return StreamingExecResult {
                             results,
                             any_error: true,

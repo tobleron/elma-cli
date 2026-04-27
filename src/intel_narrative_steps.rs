@@ -11,7 +11,12 @@ use crate::{Program, Step, StepResult};
 /// Shared helper: build steps narrative
 ///
 /// Converts program steps and their results into readable narrative format.
-pub(crate) fn build_steps_narrative(program: &Program, step_results: &[StepResult]) -> String {
+/// If a ledger is provided, compact evidence summaries are included in the output.
+pub(crate) fn build_steps_narrative(
+    program: &Program,
+    step_results: &[StepResult],
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
     program
         .steps
         .iter()
@@ -21,7 +26,7 @@ pub(crate) fn build_steps_narrative(program: &Program, step_results: &[StepResul
             let step_type = step_kind(step);
             let step_detail = step_detail(step);
             let purpose = step_purpose(step);
-            let result = step_result_text(step, step_results);
+            let result = step_result_text_with_ledger(step, step_results, ledger);
 
             format!(
                 "Step {step_num} ({step_type}): {step_detail}\n  To: {purpose}\n  Result: {result}",
@@ -36,7 +41,10 @@ pub(crate) fn build_steps_narrative(program: &Program, step_results: &[StepResul
         .join("\n\n")
 }
 
-pub(crate) fn build_step_results_narrative(step_results: &[StepResult]) -> String {
+pub(crate) fn build_step_results_narrative(
+    step_results: &[StepResult],
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
     if step_results.is_empty() {
         return "No step results available.".to_string();
     }
@@ -51,6 +59,15 @@ pub(crate) fn build_step_results_narrative(step_results: &[StepResult]) -> Strin
                 .map(snippet)
                 .unwrap_or_else(|| "none".to_string());
 
+            let evidence_tag = ledger.and_then(|l| {
+                l.entries.iter()
+                    .find(|e| {
+                        step_result.id.contains(&e.id) ||
+                        e.summary.contains(&step_result.summary.chars().take(30).collect::<String>())
+                    })
+                    .map(|e| format!("[{}] ", e.id))
+            }).unwrap_or_default();
+
             format!(
                 "Result {step_num} ({kind}) id={id}\n  Purpose: {purpose}\n  Status: ok={ok}, exit_code={exit_code:?}, outcome={outcome}\n  Summary: {summary}\n  Output: {output}",
                 step_num = idx + 1,
@@ -60,7 +77,7 @@ pub(crate) fn build_step_results_narrative(step_results: &[StepResult]) -> Strin
                 ok = step_result.ok,
                 exit_code = step_result.exit_code,
                 outcome = step_result.outcome_status.as_deref().unwrap_or("unknown"),
-                summary = fallback_text(&step_result.summary, "none"),
+                summary = format!("{}{}", evidence_tag, fallback_text(&step_result.summary, "none")),
                 output = output_excerpt,
             )
         })
@@ -154,6 +171,14 @@ pub(crate) fn step_purpose(step: &Step) -> String {
 
 /// Extract step result text
 pub(crate) fn step_result_text(step: &Step, step_results: &[StepResult]) -> String {
+    step_result_text_with_ledger(step, step_results, None)
+}
+
+pub(crate) fn step_result_text_with_ledger(
+    step: &Step,
+    step_results: &[StepResult],
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
     let step_id = step_id(step);
 
     // Find matching result
@@ -173,19 +198,41 @@ pub(crate) fn step_result_text(step: &Step, step_results: &[StepResult]) -> Stri
             // Get output preview
             let output_preview = r.raw_output.as_ref().map(|o: &String| {
                 if o.len() > 200 {
-                    format!("{}...", &o[..200])
+                    let end = if o.is_char_boundary(200) {
+                        200
+                    } else {
+                        let mut pos = 200;
+                        while pos > 0 && !o.is_char_boundary(pos) {
+                            pos -= 1;
+                        }
+                        pos
+                    };
+                    format!("{}...", &o[..end])
                 } else {
                     o.clone()
                 }
             });
 
+            // Add evidence tag if ledger is provided
+            let evidence_tag = ledger
+                .and_then(|l| {
+                    l.entries
+                        .iter()
+                        .find(|e| step_id.contains(&e.id) || e.id.contains(&step_id))
+                        .map(|e| format!("[{}] ", e.id))
+                })
+                .unwrap_or_default();
+
             match (exit_code_text, output_preview) {
                 (Some(exit), Some(output)) => {
-                    format!("Command executed {} (output: {})", exit, output)
+                    format!(
+                        "Command executed {} ({}output: {})",
+                        exit, evidence_tag, output
+                    )
                 }
-                (Some(exit), None) => format!("Command executed {}", exit),
-                (None, Some(output)) => format!("Output: {}", output),
-                (None, None) => "Completed".to_string(),
+                (Some(exit), None) => format!("Command executed {}{}", exit, evidence_tag),
+                (None, Some(output)) => format!("{}Output: {}", evidence_tag, output),
+                (None, None) => format!("Completed{}", evidence_tag),
             }
         }
         None => "Not yet executed".to_string(),
@@ -222,7 +269,8 @@ pub(crate) fn make_shell_step(id: &str, cmd: &str, purpose: &str) -> Step {
         common: StepCommon {
             purpose: purpose.to_string(),
             depends_on: vec![],
-            success_condition: "done".to_string(),..Default::default()
+            success_condition: "done".to_string(),
+            ..Default::default()
         },
     }
 }
@@ -236,7 +284,8 @@ pub(crate) fn make_reply_step(id: &str, instructions: &str, purpose: &str) -> St
         common: StepCommon {
             purpose: purpose.to_string(),
             depends_on: vec![],
-            success_condition: "done".to_string(),..Default::default()
+            success_condition: "done".to_string(),
+            ..Default::default()
         },
     }
 }
@@ -259,12 +308,14 @@ mod tests {
             StepResult {
                 id: "s1".to_string(),
                 exit_code: Some(0),
-                raw_output: Some("file1.txt\nfile2.txt".to_string()),..Default::default()
+                raw_output: Some("file1.txt\nfile2.txt".to_string()),
+                ..Default::default()
             },
             StepResult {
                 id: "r1".to_string(),
                 exit_code: None,
-                raw_output: Some("Response generated".to_string()),..Default::default()
+                raw_output: Some("Response generated".to_string()),
+                ..Default::default()
             },
         ];
 
@@ -290,7 +341,8 @@ mod tests {
         let step_results = vec![StepResult {
             id: "s1".to_string(),
             exit_code: Some(0),
-            raw_output: Some("file1\nfile2".to_string()),..Default::default()
+            raw_output: Some("file1\nfile2".to_string()),
+            ..Default::default()
         }];
 
         let result = step_result_text(&step, &step_results);
@@ -304,7 +356,8 @@ mod tests {
         let step_results = vec![StepResult {
             id: "s1".to_string(),
             exit_code: Some(2),
-            raw_output: Some("error: not found".to_string()),..Default::default()
+            raw_output: Some("error: not found".to_string()),
+            ..Default::default()
         }];
 
         let result = step_result_text(&step, &step_results);
@@ -328,7 +381,8 @@ mod tests {
             purpose: "List all files".to_string(),
             ok: true,
             exit_code: Some(0),
-            raw_output: Some("file1.txt\nfile2.txt".to_string()),..Default::default()
+            raw_output: Some("file1.txt\nfile2.txt".to_string()),
+            ..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_sufficiency_narrative(
@@ -358,7 +412,8 @@ mod tests {
             purpose: "List all files".to_string(),
             ok: true,
             exit_code: Some(0),
-            raw_output: Some("file1.txt\nfile2.txt".to_string()),..Default::default()
+            raw_output: Some("file1.txt\nfile2.txt".to_string()),
+            ..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_reviewer_narrative(
@@ -382,7 +437,8 @@ mod tests {
             ok: true,
             summary: "Command succeeded".to_string(),
             raw_output: Some("file1.txt\nfile2.txt".to_string()),
-            exit_code: Some(0),..Default::default()
+            exit_code: Some(0),
+            ..Default::default()
         }];
 
         let narrative = crate::intel_narrative::build_claim_check_narrative(

@@ -143,6 +143,12 @@ pub(crate) async fn run_autonomous_loop(
     let mut reasoning_clean = true;
     let strict = !route_decision.route.eq_ignore_ascii_case("CHAT");
 
+    // Task 287: Initialize evidence ledger for this session
+    let session_id = session.root.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    crate::evidence_ledger::init_session_ledger(&session_id, &session.root);
+
     loop {
         if let Some(t) = tui.as_deref_mut() {
             let _ = t.pump_ui();
@@ -265,6 +271,25 @@ pub(crate) async fn run_autonomous_loop(
             continue;
         }
         if route_decision.route.eq_ignore_ascii_case("CHAT") {
+            // Task 287: Evidence grounding enforcement gate for CHAT route
+            if let Some(ref reply) = final_reply {
+                if let Some(verdict) = crate::evidence_ledger::get_session_ledger().map(|ledger| {
+                    crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger)
+                }) {
+                    let ungrounded = verdict.ungrounded_claims();
+                    if !ungrounded.is_empty() {
+                        trace(
+                            args,
+                            &format!(
+                                "evidence_grounding: {} ungrounded claims detected",
+                                ungrounded.len()
+                            ),
+                        );
+                        reasoning_clean = false;
+                    }
+                }
+            }
+            crate::evidence_ledger::persist_session_ledger().ok();
             return Ok(AutonomousLoopOutcome {
                 program: merged_program_from_history(&plan),
                 step_results,
@@ -449,6 +474,26 @@ pub(crate) async fn run_autonomous_loop(
         )
         .await?;
 
+        // Task 287: Evidence grounding enforcement gate
+        if let Some(ref reply) = final_reply {
+            if let Some(verdict) = crate::evidence_ledger::get_session_ledger().map(|ledger| {
+                crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger)
+            }) {
+                let ungrounded = verdict.ungrounded_claims();
+                if !ungrounded.is_empty() {
+                    trace(
+                        args,
+                        &format!(
+                            "evidence_grounding: {} ungrounded claims detected",
+                            ungrounded.len()
+                        ),
+                    );
+                    reasoning_clean = false;
+                }
+            }
+        }
+        crate::evidence_ledger::persist_session_ledger().ok();
+
         return Ok(AutonomousLoopOutcome {
             program: merged,
             step_results,
@@ -456,6 +501,27 @@ pub(crate) async fn run_autonomous_loop(
             reasoning_clean,
         });
     }
+
+    // Task 287: Evidence grounding enforcement gate (loop exit path)
+    if let Some(ref reply) = final_reply {
+        if let Some(verdict) = crate::evidence_ledger::get_session_ledger().map(|ledger| {
+            crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger)
+        }) {
+            let ungrounded = verdict.ungrounded_claims();
+            if !ungrounded.is_empty() {
+                trace(
+                    args,
+                    &format!(
+                        "evidence_grounding: {} ungrounded claims detected",
+                        ungrounded.len()
+                    ),
+                );
+                reasoning_clean = false;
+            }
+        }
+    }
+    crate::evidence_ledger::persist_session_ledger().ok();
+
     Ok(AutonomousLoopOutcome {
         program: merged_program_from_history(&plan),
         step_results,

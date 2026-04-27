@@ -23,7 +23,12 @@ pub struct ToolDefinitionExt {
 }
 
 impl ToolDefinitionExt {
-    pub fn new(name: &str, description: &str, parameters: serde_json::Value, hints: Vec<&str>) -> Self {
+    pub fn new(
+        name: &str,
+        description: &str,
+        parameters: serde_json::Value,
+        hints: Vec<&str>,
+    ) -> Self {
         Self {
             tool_type: "function".to_string(),
             function: ToolFunction {
@@ -89,7 +94,9 @@ pub struct DynamicToolRegistry {
 
 impl DynamicToolRegistry {
     pub fn new() -> Self {
-        let mut registry = Self { tools: HashMap::new() };
+        let mut registry = Self {
+            tools: HashMap::new(),
+        };
         registry.register_default_tools();
         registry
     }
@@ -102,7 +109,7 @@ impl DynamicToolRegistry {
                 tool_type: "function".to_string(),
                 function: ToolFunction {
                     name: "tool_search".to_string(),
-                    description: "Search for available tools by capability. Returns tool definitions that can be used in subsequent requests. Use this to discover tools needed for a task.".to_string(),
+                    description: "Search for additional or extension tools by capability. The core tools (shell, read, search, respond, update_todo_list) are always available — use this only to discover specialty tools beyond the core set.".to_string(),
                     parameters: Some(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -124,15 +131,15 @@ impl DynamicToolRegistry {
             },
         );
 
-        // Shell tool - deferred, loaded on demand
+        // Shell tool - always available (core tool)
         self.tools.insert(
             "shell".to_string(),
             ToolDefinitionExt::new(
                 "shell",
-                "Execute a shell command and return its output.",
+                "Execute a shell command and return its output. Use this to list files, get the current time, run builds, inspect git status, or perform any system operation.",
                 serde_json::json!({
                     "type": "object",
-                    "properties": {"command": {"type": "string"}},
+                    "properties": {"command": {"type": "string", "description": "The shell command to execute (e.g. 'ls docs/', 'date', 'cargo build')"}},
                     "required": ["command"]
                 }),
                 vec![
@@ -141,19 +148,23 @@ impl DynamicToolRegistry {
                     "execute bash command",
                     "run terminal command",
                     "execute system command",
+                    "list directory files",
+                    "get current time date",
+                    "run build test",
                 ],
-            ),
+            )
+            .not_deferred(),
         );
 
-        // Read tool - deferred
+        // Read tool - always available (core tool)
         self.tools.insert(
             "read".to_string(),
             ToolDefinitionExt::new(
                 "read",
-                "Read the contents of a file.",
+                "Read the contents of a file (source code, documents, config files, PDFs, EPUBs). Prefer this over shell cat for structured document types.",
                 serde_json::json!({
                     "type": "object",
-                    "properties": {"path": {"type": "string"}},
+                    "properties": {"path": {"type": "string", "description": "Absolute or workspace-relative path to the file to read"}},
                     "required": ["path"]
                 }),
                 vec![
@@ -161,21 +172,24 @@ impl DynamicToolRegistry {
                     "open file for reading",
                     "view file content",
                     "display file contents",
+                    "read source code",
+                    "read document",
                 ],
-            ),
+            )
+            .not_deferred(),
         );
 
-        // Search tool - deferred
+        // Search tool - always available (core tool)
         self.tools.insert(
             "search".to_string(),
             ToolDefinitionExt::new(
                 "search",
-                "Search for text patterns in files using ripgrep.",
+                "Search for text patterns in files using ripgrep. Use this to find function definitions, usages, config keys, or any text across the workspace.",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
-                        "pattern": {"type": "string"},
-                        "path": {"type": "string"}
+                        "pattern": {"type": "string", "description": "The text or regex pattern to search for"},
+                        "path": {"type": "string", "description": "Optional directory or file path to restrict the search scope"}
                     },
                     "required": ["pattern"]
                 }),
@@ -185,8 +199,11 @@ impl DynamicToolRegistry {
                     "grep search files",
                     "search file contents",
                     "find text pattern",
+                    "find function definition",
+                    "search workspace code",
                 ],
-            ),
+            )
+            .not_deferred(),
         );
 
         // Respond tool - always available (not deferred)
@@ -217,12 +234,12 @@ impl DynamicToolRegistry {
             .not_deferred(),
         );
 
-        // Update todo list - deferred
+        // Update todo list - always available (core tool)
         self.tools.insert(
             "update_todo_list".to_string(),
             ToolDefinitionExt::new(
                 "update_todo_list",
-                "Create and update a local task/todo list for multi-step work.",
+                "Create and update a local task/todo list for multi-step work. Use this to track progress when handling requests with multiple steps.",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -238,8 +255,37 @@ impl DynamicToolRegistry {
                     "create task list",
                     "update task status",
                     "track tasks",
+                    "multi-step task tracking",
                 ],
-            ),
+            )
+            .not_deferred(),
+        );
+
+        // Read evidence tool - always available (core tool, Task 287)
+        self.tools.insert(
+            "read_evidence".to_string(),
+            ToolDefinitionExt::new(
+                "read_evidence",
+                "Retrieve full raw evidence content by evidence ID. Use when compact summaries in the narrative are insufficient. Evidence IDs look like 'e_001', 'e_002', etc.",
+                serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of evidence IDs to retrieve (e.g., [\"e_001\", \"e_002\"])"
+                        }
+                    },
+                    "required": ["ids"]
+                }),
+                vec![
+                    "read evidence content",
+                    "retrieve raw evidence",
+                    "get full tool output",
+                    "access evidence ledger",
+                ],
+            )
+            .not_deferred(),
         );
     }
 
@@ -256,7 +302,12 @@ impl DynamicToolRegistry {
             }
 
             // Search in description
-            if tool.function.description.to_lowercase().contains(&query_lower) {
+            if tool
+                .function
+                .description
+                .to_lowercase()
+                .contains(&query_lower)
+            {
                 results.push(tool);
                 continue;
             }
@@ -324,13 +375,13 @@ pub fn get_registry() -> &'static DynamicToolRegistry {
 pub fn build_current_tools() -> Vec<ToolDefinition> {
     let registry = get_registry();
     let mut tools = registry.default_tools();
-    
+
     // Add discovered tools
     let discovered = get_discovered();
     if !discovered.is_empty() {
         tools.extend(registry.get_tools(&discovered));
     }
-    
+
     tools
 }
 
@@ -381,15 +432,18 @@ mod tests {
     }
 
     #[test]
-    fn test_default_tools_excludes_deferred() {
+    fn test_default_tools_includes_core_tools() {
         let registry = DynamicToolRegistry::new();
         let default_tools = registry.default_tools();
-        let tool_names: Vec<String> = default_tools.iter().map(|t| t.function.name.clone()).collect();
-        assert!(!tool_names.contains(&"shell".to_string()));
-        assert!(!tool_names.contains(&"read".to_string()));
-        assert!(!tool_names.contains(&"search".to_string()));
-        assert!(!tool_names.contains(&"update_todo_list".to_string()));
-        // tool_search and respond should be in default
+        let tool_names: Vec<String> = default_tools
+            .iter()
+            .map(|t| t.function.name.clone())
+            .collect();
+        // All core tools must be present by default — no discovery step required
+        assert!(tool_names.contains(&"shell".to_string()));
+        assert!(tool_names.contains(&"read".to_string()));
+        assert!(tool_names.contains(&"search".to_string()));
+        assert!(tool_names.contains(&"update_todo_list".to_string()));
         assert!(tool_names.contains(&"tool_search".to_string()));
         assert!(tool_names.contains(&"respond".to_string()));
     }
@@ -421,31 +475,21 @@ mod tests {
     }
 
     #[test]
-    fn test_build_current_tools_with_discovered() {
-        // Clear discovered to start clean
+    fn test_build_current_tools_includes_all_core() {
+        // All core tools must be in the default set — no discovery required
         if let Ok(mut set) = discovered_tools().write() {
             set.clear();
         }
 
         let tools = build_current_tools();
-        // Should only have default tools (tool_search, respond)
         let tool_names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
+        // Core tools always present
+        assert!(tool_names.contains(&"shell".to_string()));
+        assert!(tool_names.contains(&"read".to_string()));
+        assert!(tool_names.contains(&"search".to_string()));
+        assert!(tool_names.contains(&"update_todo_list".to_string()));
         assert!(tool_names.contains(&"tool_search".to_string()));
         assert!(tool_names.contains(&"respond".to_string()));
-        assert!(!tool_names.contains(&"shell".to_string()));
-        assert!(!tool_names.contains(&"read".to_string()));
-        assert!(!tool_names.contains(&"search".to_string()));
-        assert!(!tool_names.contains(&"update_todo_list".to_string()));
-
-        // Mark shell and read as discovered
-        mark_discovered(&vec!["shell".to_string(), "read".to_string()]);
-        let tools_with_discovered = build_current_tools();
-        let names: Vec<String> = tools_with_discovered.iter().map(|t| t.function.name.clone()).collect();
-        assert!(names.contains(&"shell".to_string()));
-        assert!(names.contains(&"read".to_string()));
-        // Defaults still present
-        assert!(names.contains(&"tool_search".to_string()));
-        assert!(names.contains(&"respond".to_string()));
     }
 
     #[test]

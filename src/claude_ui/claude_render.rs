@@ -9,15 +9,19 @@
 
 use super::claude_input::{InputMode, PickerState, SLASH_COMMANDS};
 use super::claude_markdown::AssistantContent;
-use crate::ui_autocomplete;
 use super::claude_state::{
     ClaudeMessage, ClaudeTranscript, NoticePersistence, UiNotice, FOOTER_HINTS,
 };
 use super::claude_stream::StreamingUI;
+use crate::ui_autocomplete;
+use crate::ui_state::trace_log_state;
 use crate::ui_theme::*;
+use chrono::Local;
 use ratatui::prelude::*;
 use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::*;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -74,6 +78,7 @@ pub(crate) struct ClaudeRenderer {
     pub transcript_mode: TranscriptMode,
     modal_state: Option<crate::ui_state::ModalState>,
     scrollbar_state: ScrollbarState,
+    pub(crate) status_thread: crate::ui_status_thread::StatusThread,
     // Animation frame counter for streaming indicators
     anim_frame: usize,
     // Hit-testing state for click-to-expand tool traces
@@ -104,6 +109,7 @@ impl ClaudeRenderer {
             transcript_mode: TranscriptMode::Normal,
             modal_state: None,
             scrollbar_state: ScrollbarState::default(),
+            status_thread: crate::ui_status_thread::StatusThread::new(),
             anim_frame: 0,
             last_content_area: None,
             last_start_line: 0,
@@ -112,7 +118,97 @@ impl ClaudeRenderer {
     }
 
     pub(crate) fn push_message(&mut self, msg: ClaudeMessage) {
+        let m = msg.clone();
         self.transcript.push(msg);
+
+        // Attempt to append the pushed message to the per-session transcript
+        if let Ok(guard) = trace_log_state().lock() {
+            if let Some(ref trace_path) = *guard {
+                if let Some(session_root) = trace_path.parent() {
+                    let display_dir = session_root.join("display");
+                    let _ = std::fs::create_dir_all(&display_dir);
+                    let tpath = display_dir.join("terminal_transcript.txt");
+                    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&tpath) {
+                        let ts = Local::now().to_rfc3339();
+                        let mut line = String::new();
+                        match m {
+                            ClaudeMessage::User { content } => {
+                                line = format!("{} USER: {}\n", ts, content);
+                            }
+                            ClaudeMessage::Assistant { content } => {
+                                line = format!("{} ASSISTANT: {}\n", ts, content.raw_markdown);
+                            }
+                            ClaudeMessage::Thinking { content, .. } => {
+                                line = format!("{} THINKING: {}\n", ts, content);
+                            }
+                            ClaudeMessage::ToolStart { name, input } => {
+                                line = format!("{} TOOL START: {} input={:?}\n", ts, name, input);
+                            }
+                            ClaudeMessage::ToolProgress { name, message } => {
+                                line = format!("{} TOOL PROGRESS: {} {}\n", ts, name, message);
+                            }
+                            ClaudeMessage::ToolResult {
+                                name,
+                                success,
+                                output,
+                                duration_ms,
+                            } => {
+                                line = format!(
+                                    "{} TOOL RESULT: {} success={} duration={:?}\n{}\n",
+                                    ts, name, success, duration_ms, output
+                                );
+                            }
+                            ClaudeMessage::ToolTrace {
+                                name,
+                                command,
+                                status,
+                                ..
+                            } => match status {
+                                crate::claude_ui::claude_state::ToolTraceStatus::Running => {
+                                    line = format!(
+                                        "{} TOOL TRACE RUNNING: {} {}\n",
+                                        ts, name, command
+                                    );
+                                }
+                                crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                                    success,
+                                    output,
+                                    duration_ms,
+                                } => {
+                                    line = format!("{} TOOL TRACE COMPLETED: {} success={} duration={:?}\n{}\n", ts, name, success, duration_ms, output);
+                                }
+                            },
+                            ClaudeMessage::PermissionRequest { command, reason } => {
+                                line =
+                                    format!("{} PERMISSION: {} reason={:?}\n", ts, command, reason);
+                            }
+                            ClaudeMessage::CompactBoundary => {
+                                line = format!("{} COMPACT BOUNDARY\n", ts);
+                            }
+                            ClaudeMessage::CompactSummary {
+                                message_count,
+                                context_preview,
+                            } => {
+                                line = format!(
+                                    "{} COMPACT SUMMARY: {} preview={:?}\n",
+                                    ts, message_count, context_preview
+                                );
+                            }
+                            ClaudeMessage::System { content } => {
+                                line = format!("{} SYSTEM: {}\n", ts, content);
+                            }
+                            ClaudeMessage::Notice(notice) => {
+                                line = format!(
+                                    "{} NOTICE: {:?} {}\n",
+                                    ts, notice.kind, notice.content
+                                );
+                            }
+                        }
+                        let _ = f.write_all(line.as_bytes());
+                    }
+                }
+            }
+        }
     }
 
     pub(crate) fn clear_transcript(&mut self) {
@@ -629,7 +725,17 @@ impl ClaudeRenderer {
         if show_sticky {
             if let Some(prompt) = self.transcript.last_user_message() {
                 let truncated = if prompt.len() > transcript_area.width as usize - 4 {
-                    format!("{}…", &prompt[..transcript_area.width as usize - 5])
+                    let byte_pos = transcript_area.width as usize - 5;
+                    let end = if prompt.is_char_boundary(byte_pos) {
+                        byte_pos
+                    } else {
+                        let mut pos = byte_pos;
+                        while pos > 0 && !prompt.is_char_boundary(pos) {
+                            pos -= 1;
+                        }
+                        pos
+                    };
+                    format!("{}…", &prompt[..end])
                 } else {
                     prompt
                 };
@@ -681,7 +787,19 @@ impl ClaudeRenderer {
         let content_width = content_area_width_guess(text_area.width as usize);
 
         let (transcript_lines, line_mapping) = self.transcript.render_ratatui(content_width);
-        let total_lines = transcript_lines.len();
+
+        // Inject status thread line at the end of the transcript
+        let mut all_lines = transcript_lines;
+        let mut all_mapping = line_mapping.clone();
+        if let Some(status_line) = self.status_thread.render() {
+            let status_span = Line::from(vec![Span::styled(
+                status_line,
+                Style::default().fg(theme.fg_dim.to_ratatui_color()),
+            )]);
+            all_lines.push(status_span);
+            all_mapping.push(all_mapping.last().copied().unwrap_or(0));
+        }
+        let total_lines = all_lines.len();
 
         // Manual line slicing: compute visible window based on scroll_offset
         // scroll_offset=0 means at bottom (latest), scroll_offset increases = scrolled up
@@ -702,7 +820,7 @@ impl ClaudeRenderer {
         self.last_line_mapping = line_mapping;
 
         // Slice visible lines from the transcript
-        let visible_lines: Vec<Line<'static>> = transcript_lines
+        let visible_lines: Vec<Line<'static>> = all_lines
             .into_iter()
             .skip(start_line)
             .take(height)
@@ -783,107 +901,104 @@ impl ClaudeRenderer {
         }
         f.render_widget(Paragraph::new(input_content), input_area);
 
-// Picker overlay (slash commands or file mentions)
-         if picker_height > 0 {
-             let mut picker_lines = match &self.picker_state {
-                 PickerState::Slash { query, selected } => {
-                     let filtered = self.filtered_slash_commands();
-                     let mut lines = vec![Line::from(vec![
-                         Span::styled(
-                             " Commands ",
-                             Style::default()
-                                 .fg(theme.accent_primary.to_ratatui_color())
-                                 .add_modifier(Modifier::BOLD),
-                         ),
-                         Span::raw(query),
-                     ])];
-                     lines.push(Line::from(""));
-                     for (i, cmd) in filtered.iter().enumerate().take(8) {
-                         let is_sel = i == *selected;
-                         let arrow = if is_sel {
-                             Span::styled(
-                                 "▸ ",
-                                 Style::default().fg(theme.accent_primary.to_ratatui_color()),
-                             )
-                         } else {
-                             Span::raw("  ")
-                         };
-                         let name_style = if is_sel {
-                             Style::default()
-                                 .fg(theme.accent_primary.to_ratatui_color())
-                                 .add_modifier(Modifier::BOLD)
-                         } else {
-                             Style::default().fg(theme.fg_dim.to_ratatui_color())
-                         };
-                         lines.push(Line::from(vec![
-                             arrow,
-                             Span::styled(cmd.name, name_style),
-                             Span::raw("  "),
-                             Span::styled(
-                                 cmd.description,
-                                 Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                             ),
-                         ]));
-                     }
-                     lines
-                 }
-                 PickerState::File { query, selected } => {
-                     let mut lines = vec![Line::from(vec![
-                         Span::styled(
-                             " Files ",
-                             Style::default()
-                                 .fg(theme.accent_secondary.to_ratatui_color())
-                                 .add_modifier(Modifier::BOLD),
-                         ),
-                         Span::raw(query),
-                     ])];
-                     lines.push(Line::from(""));
-                     for (i, path) in self.file_matches.iter().enumerate().take(8) {
-                         let is_sel = i == *selected;
-                         let arrow = if is_sel {
-                             Span::styled(
-                                 "▸ ",
-                                 Style::default().fg(theme.accent_primary.to_ratatui_color()),
-                             )
-                         } else {
-                             Span::raw("  ")
-                         };
-                         let path_style = if is_sel {
-                             Style::default()
-                                 .fg(theme.accent_primary.to_ratatui_color())
-                                 .add_modifier(Modifier::BOLD)
-                         } else {
-                             Style::default().fg(theme.fg_dim.to_ratatui_color())
-                         };
-                         lines.push(Line::from(vec![arrow, Span::styled(path, path_style)]));
-                     }
-                     lines
-                 }
-                 PickerState::None => vec![],
-             };
-// Add autocomplete suggestions if active
-             if let Some(state) = &self.autocomplete_state {
-                 if state.active && !state.matches.is_empty() {
-                     let max_width = picker_area.width as usize;
-                     let max_items = (picker_height - picker_lines.len() as u16).min(10) as usize;
-                     let autocomplete_lines = ui_autocomplete::render_autocomplete(
-                         state,
-                         max_width,
-                         max_items,
-                     );
-                     picker_lines.extend(autocomplete_lines.into_iter().map(Line::from));
-                 }
-             }
-             if !picker_lines.is_empty() {
-                 f.render_widget(Clear, picker_area);
-                 let picker_block = Paragraph::new(picker_lines).block(
-                     ratatui::widgets::Block::default()
-                         .borders(ratatui::widgets::Borders::ALL)
-                         .border_style(Style::default().fg(theme.border.to_ratatui_color())),
-                 );
-                 f.render_widget(picker_block, picker_area);
-             }
-         }
+        // Picker overlay (slash commands or file mentions)
+        if picker_height > 0 {
+            let mut picker_lines = match &self.picker_state {
+                PickerState::Slash { query, selected } => {
+                    let filtered = self.filtered_slash_commands();
+                    let mut lines = vec![Line::from(vec![
+                        Span::styled(
+                            " Commands ",
+                            Style::default()
+                                .fg(theme.accent_primary.to_ratatui_color())
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(query),
+                    ])];
+                    lines.push(Line::from(""));
+                    for (i, cmd) in filtered.iter().enumerate().take(8) {
+                        let is_sel = i == *selected;
+                        let arrow = if is_sel {
+                            Span::styled(
+                                "▸ ",
+                                Style::default().fg(theme.accent_primary.to_ratatui_color()),
+                            )
+                        } else {
+                            Span::raw("  ")
+                        };
+                        let name_style = if is_sel {
+                            Style::default()
+                                .fg(theme.accent_primary.to_ratatui_color())
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(theme.fg_dim.to_ratatui_color())
+                        };
+                        lines.push(Line::from(vec![
+                            arrow,
+                            Span::styled(cmd.name, name_style),
+                            Span::raw("  "),
+                            Span::styled(
+                                cmd.description,
+                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                            ),
+                        ]));
+                    }
+                    lines
+                }
+                PickerState::File { query, selected } => {
+                    let mut lines = vec![Line::from(vec![
+                        Span::styled(
+                            " Files ",
+                            Style::default()
+                                .fg(theme.accent_secondary.to_ratatui_color())
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(query),
+                    ])];
+                    lines.push(Line::from(""));
+                    for (i, path) in self.file_matches.iter().enumerate().take(8) {
+                        let is_sel = i == *selected;
+                        let arrow = if is_sel {
+                            Span::styled(
+                                "▸ ",
+                                Style::default().fg(theme.accent_primary.to_ratatui_color()),
+                            )
+                        } else {
+                            Span::raw("  ")
+                        };
+                        let path_style = if is_sel {
+                            Style::default()
+                                .fg(theme.accent_primary.to_ratatui_color())
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(theme.fg_dim.to_ratatui_color())
+                        };
+                        lines.push(Line::from(vec![arrow, Span::styled(path, path_style)]));
+                    }
+                    lines
+                }
+                PickerState::None => vec![],
+            };
+            // Add autocomplete suggestions if active
+            if let Some(state) = &self.autocomplete_state {
+                if state.active && !state.matches.is_empty() {
+                    let max_width = picker_area.width as usize;
+                    let max_items = (picker_height - picker_lines.len() as u16).min(10) as usize;
+                    let autocomplete_lines =
+                        ui_autocomplete::render_autocomplete(state, max_width, max_items);
+                    picker_lines.extend(autocomplete_lines.into_iter().map(Line::from));
+                }
+            }
+            if !picker_lines.is_empty() {
+                f.render_widget(Clear, picker_area);
+                let picker_block = Paragraph::new(picker_lines).block(
+                    ratatui::widgets::Block::default()
+                        .borders(ratatui::widgets::Borders::ALL)
+                        .border_style(Style::default().fg(theme.border.to_ratatui_color())),
+                );
+                f.render_widget(picker_block, picker_area);
+            }
+        }
 
         self.clear_expired_prompt_hint();
 

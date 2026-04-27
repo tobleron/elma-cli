@@ -289,6 +289,60 @@ fn run_shell_one_liner_redirected(
     })
 }
 
+pub(crate) async fn run_shell_persistent(
+    cmd: &str,
+    workdir: &PathBuf,
+) -> Result<ShellExecutionResult> {
+    let shell_mutex = crate::persistent_shell::get_shell(workdir)?;
+    let mut shell = shell_mutex
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Shell mutex poisoned"))?;
+
+    let start = Instant::now();
+    let (exit_code, output) = shell.execute(cmd, MAX_WALL_SECS)?;
+    let duration = start.elapsed();
+
+    let bytes_written = output.len() as u64;
+    let inline_text = sanitize_pty_transcript(output.as_bytes());
+
+    Ok(ShellExecutionResult {
+        exit_code,
+        inline_text,
+        bytes_written,
+        truncated: false, // Persistent shell handles long output via marker
+        timed_out: duration.as_secs() >= MAX_WALL_SECS,
+        artifact_path: None,
+        artifact_kind: None,
+    })
+}
+
+pub(crate) fn run_shell_persistent_sync(
+    cmd: &str,
+    workdir: &PathBuf,
+) -> Result<ShellExecutionResult> {
+    let shell_mutex = crate::persistent_shell::get_shell(workdir)?;
+    let mut shell = shell_mutex
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Shell mutex poisoned"))?;
+
+    let start = Instant::now();
+    let (exit_code, output) = shell.execute(cmd, MAX_WALL_SECS)?;
+    let duration = start.elapsed();
+
+    let bytes_written = output.len() as u64;
+    let inline_text = sanitize_pty_transcript(output.as_bytes());
+
+    Ok(ShellExecutionResult {
+        exit_code,
+        inline_text,
+        bytes_written,
+        truncated: false,
+        timed_out: duration.as_secs() >= MAX_WALL_SECS,
+        artifact_path: None,
+        artifact_kind: None,
+    })
+}
+
 struct PtyCapture {
     exit_code: i32,
     inline_text: String,
@@ -462,7 +516,7 @@ fn sanitize_pty_transcript(bytes: &[u8]) -> String {
         output.push_str(&current_line);
     }
 
-    output
+    output.trim_start().to_string()
 }
 
 fn finalize_shell_preview(

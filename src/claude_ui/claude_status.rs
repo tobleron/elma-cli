@@ -85,7 +85,21 @@ impl StatusLine {
 
         if let Some(ref workspace) = self.workspace {
             let ws = if workspace.len() > 30 {
-                format!("…{}", &workspace[workspace.len() - 30..])
+                let start = if workspace.len() >= 30 {
+                    let pos = workspace.len() - 30;
+                    if workspace.is_char_boundary(pos) {
+                        pos
+                    } else {
+                        let mut p = pos;
+                        while !workspace.is_char_boundary(p) {
+                            p += 1;
+                        }
+                        p
+                    }
+                } else {
+                    0
+                };
+                format!("…{}", &workspace[start..])
             } else {
                 workspace.clone()
             };

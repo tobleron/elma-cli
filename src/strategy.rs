@@ -495,6 +495,7 @@ mod tests {
                 margin: 0.6,
                 entropy: 0.3,
             },
+            evidence_required: false,
         }
     }
 }

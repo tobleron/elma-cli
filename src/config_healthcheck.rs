@@ -60,6 +60,7 @@ pub(crate) fn run_config_healthcheck(
     validate_profile(&profiles.decider_cfg, "decider", &mut issues);
     validate_profile(&profiles.selector_cfg, "selector", &mut issues);
     validate_profile(&profiles.summarizer_cfg, "summarizer", &mut issues);
+    validate_profile(&profiles.turn_summary_cfg, "turn_summary", &mut issues);
     validate_profile(&profiles.formatter_cfg, "formatter", &mut issues);
     validate_profile(&profiles.json_outputter_cfg, "json_outputter", &mut issues);
     validate_profile(

@@ -4,12 +4,7 @@
 
 use crate::*;
 
-pub(crate) fn shell_step(
-    id: &str,
-    cmd: &str,
-    purpose: &str,
-    success_condition: &str,
-) -> Step {
+pub(crate) fn shell_step(id: &str, cmd: &str, purpose: &str, success_condition: &str) -> Step {
     Step::Shell {
         id: id.to_string(),
         cmd: cmd.to_string(),
@@ -23,7 +18,7 @@ pub(crate) fn shell_step(
             is_read_only: false,
             is_destructive: true,
             is_concurrency_safe: false,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+            interrupt_behavior: InterruptBehavior::Graceful,
         },
     }
 }
@@ -48,7 +43,7 @@ pub(crate) fn shell_step_with_deps(
             is_read_only: false,
             is_destructive: true,
             is_concurrency_safe: false,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+            interrupt_behavior: InterruptBehavior::Graceful,
         },
     }
 }
@@ -73,7 +68,7 @@ pub(crate) fn reply_step(
             is_read_only: true,
             is_destructive: false,
             is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+            interrupt_behavior: InterruptBehavior::Graceful,
         },
     }
 }
@@ -98,7 +93,7 @@ pub(crate) fn select_step(
             is_read_only: true,
             is_destructive: false,
             is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+            interrupt_behavior: InterruptBehavior::Graceful,
         },
     }
 }
@@ -124,7 +119,7 @@ pub(crate) fn select_step_with_unit(
             is_read_only: true,
             is_destructive: false,
             is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+            interrupt_behavior: InterruptBehavior::Graceful,
         },
     }
 }
@@ -150,17 +145,12 @@ pub(crate) fn summarize_step(
             is_read_only: true,
             is_destructive: false,
             is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+            interrupt_behavior: InterruptBehavior::Graceful,
         },
     }
 }
 
-pub(crate) fn read_step(
-    id: &str,
-    path: &str,
-    purpose: &str,
-    success_condition: &str,
-) -> Step {
+pub(crate) fn read_step(id: &str, path: &str, purpose: &str, success_condition: &str) -> Step {
     Step::Read {
         id: id.to_string(),
         path: path.to_string(),
@@ -174,7 +164,7 @@ pub(crate) fn read_step(
             is_read_only: true,
             is_destructive: false,
             is_concurrency_safe: true,
-                        interrupt_behavior: InterruptBehavior::Graceful,
+            interrupt_behavior: InterruptBehavior::Graceful,
         },
     }
 }

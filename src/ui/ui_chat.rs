@@ -8,6 +8,35 @@ use futures::stream::StreamExt;
 use std::sync::OnceLock;
 
 // ============================================================================
+// Response Completeness Validation
+// ============================================================================
+
+/// Check if a response appears to be truncated (incomplete)
+///
+/// Returns true if the response appears to be cut off mid-sentence or abruptly.
+fn is_response_truncated(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // Check for incomplete JSON
+    let json_start_count = trimmed.matches('{').count();
+    let json_end_count = trimmed.matches('}').count();
+    if json_start_count > json_end_count {
+        return true;
+    }
+
+    // Check for incomplete code blocks
+    let code_block_start = trimmed.matches("```").count();
+    if code_block_start % 2 != 0 {
+        return true;
+    }
+
+    false
+}
+
+// ============================================================================
 // Config Root for Grammar Loading
 // ============================================================================
 
@@ -181,7 +210,40 @@ async fn chat_once_base(
         append_trace_log_line(&format!("[HTTP_ATTEMPT] attempt={}/3", attempt + 1));
 
         match attempt_chat_request(client, chat_url, &effective_req, timeout_secs).await {
-            AttemptOutcome::Success(resp) => return Ok(resp),
+            AttemptOutcome::Success(mut resp) => {
+                // Check if response is truncated and retry if needed
+                if attempt < 2 {
+                    // Only retry on attempts 0 and 1
+                    // If the model stopped naturally (finish_reason="stop"),
+                    // the response is complete regardless of last character.
+                    let finish_reason = resp
+                        .choices
+                        .first()
+                        .and_then(|c| c.finish_reason.as_deref());
+                    let truncated = if finish_reason == Some("stop") {
+                        false
+                    } else {
+                        resp.choices
+                            .first()
+                            .and_then(|c| c.message.content.as_ref())
+                            .map(|content| is_response_truncated(content))
+                            .unwrap_or(false)
+                    };
+
+                    if truncated {
+                        append_trace_log_line("[HTTP_RETRY] response appears truncated, retrying with increased max_tokens...");
+                        // Retry with increased max_tokens
+                        let mut retry_req = effective_req.clone();
+                        retry_req.max_tokens = retry_req.max_tokens.saturating_mul(2).min(4096);
+                        // Also try without grammar if it was injected
+                        retry_req.grammar = None;
+
+                        tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
+                        continue;
+                    }
+                }
+                return Ok(resp);
+            }
             AttemptOutcome::RetryableError(err) => {
                 if err.contains("timeout") || err.contains("Tokio timeout") {
                     is_timeout = true;

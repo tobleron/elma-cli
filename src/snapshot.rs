@@ -4,9 +4,9 @@
 
 use crate::*;
 use itertools::Itertools;
-use tap::Tap;
-use tracing::{info,trace};
 use std::collections::HashSet;
+use tap::Tap;
+use tracing::{info, trace};
 
 const SNAPSHOT_MANIFEST_VERSION: u32 = 1;
 
@@ -95,7 +95,10 @@ pub(crate) fn rollback_workspace_snapshot(
 
     let mut restored_files = 0u64;
     let mut verified_files = 0u64;
-    let file_count = manifest.files.len().tap(|c| tracing::debug!("restoring {} files from snapshot", c));
+    let file_count = manifest
+        .files
+        .len()
+        .tap(|c| tracing::debug!("restoring {} files from snapshot", c));
     for rel_str in &manifest.files {
         let rel = PathBuf::from(rel_str);
         let src = files_dir.join(&rel);
@@ -271,7 +274,12 @@ fn file_bytes_equal(a: &Path, b: &Path) -> Result<bool> {
     Ok(a_bytes == b_bytes)
 }
 
-fn remove_extra_files_after_restore(repo_root: &Path, current_files: &[PathBuf], expected_set: &HashSet<String>, removed_files: &mut u64) -> Result<()> {
+fn remove_extra_files_after_restore(
+    repo_root: &Path,
+    current_files: &[PathBuf],
+    expected_set: &HashSet<String>,
+    removed_files: &mut u64,
+) -> Result<()> {
     for rel in current_files {
         let rel_string = rel.display().to_string();
         if expected_set.contains(&rel_string) {

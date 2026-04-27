@@ -140,7 +140,8 @@ impl TaskManager {
     pub(crate) fn available_memory_mb(&self) -> u64 {
         let used_by_tasks = {
             let tasks = self.tasks.blocking_read();
-            tasks.values()
+            tasks
+                .values()
                 .map(|t| t.blocking_lock().memory_usage_mb)
                 .sum::<u64>()
         };
@@ -150,7 +151,8 @@ impl TaskManager {
     pub(crate) async fn can_start_task(&self, memory_required_mb: u64) -> bool {
         let active_count = {
             let tasks = self.tasks.read().await;
-            tasks.values()
+            tasks
+                .values()
                 .filter(|t| matches!(t.blocking_lock().status, BackgroundTaskStatus::Running))
                 .count()
         };
@@ -182,18 +184,13 @@ impl TaskManager {
         let timeout = timeout_seconds.unwrap_or(self.config.default_timeout_seconds);
 
         if !self.can_start_task(memory_limit).await {
-            return Err("Cannot start task: concurrent limit reached or insufficient memory".to_string());
+            return Err(
+                "Cannot start task: concurrent limit reached or insufficient memory".to_string(),
+            );
         }
 
         let id = format!("task_{}", uuid_simple());
-        let task = BackgroundTask::new(
-            id.clone(),
-            name,
-            command,
-            workdir,
-            memory_limit,
-            timeout,
-        );
+        let task = BackgroundTask::new(id.clone(), name, command, workdir, memory_limit, timeout);
 
         let task_arc = Arc::new(Mutex::new(task));
         self.tasks.write().await.insert(id.clone(), task_arc);
@@ -402,7 +399,10 @@ impl TaskManager {
         let mut tasks = self.tasks.write().await;
         tasks.retain(|_, t| {
             let status = t.blocking_lock().status;
-            matches!(status, BackgroundTaskStatus::Running | BackgroundTaskStatus::Pending)
+            matches!(
+                status,
+                BackgroundTaskStatus::Running | BackgroundTaskStatus::Pending
+            )
         });
     }
 }
@@ -419,11 +419,7 @@ fn get_system_memory_kb() -> u64 {
     #[cfg(target_os = "macos")]
     {
         use std::process::Command;
-        if let Ok(output) = Command::new("sysctl")
-            .arg("-n")
-            .arg("hw.memsize")
-            .output()
-        {
+        if let Ok(output) = Command::new("sysctl").arg("-n").arg("hw.memsize").output() {
             if let Ok(s) = String::from_utf8(output.stdout) {
                 return s.trim().parse::<u64>().unwrap_or(4_000_000) / 1024;
             }
@@ -439,12 +435,7 @@ fn get_system_memory_kb() -> u64 {
                 content
                     .lines()
                     .find(|l| l.starts_with("MemTotal:"))
-                    .and_then(|l| {
-                        l.split_whitespace()
-                            .nth(1)?
-                            .parse::<u64>()
-                            .ok()
-                    })
+                    .and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())
             })
             .unwrap_or(4_000_000)
     }
@@ -460,13 +451,7 @@ fn get_system_memory_kb() -> u64 {
                 return s
                     .lines()
                     .find(|l| l.starts_with("TotalVisibleMemorySize="))
-                    .and_then(|l| {
-                        l.split('=')
-                            .nth(1)?
-                            .trim()
-                            .parse::<u64>()
-                            .ok()
-                    })
+                    .and_then(|l| l.split('=').nth(1)?.trim().parse::<u64>().ok())
                     .unwrap_or(4_000_000);
             }
         }

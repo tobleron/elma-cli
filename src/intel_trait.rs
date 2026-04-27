@@ -55,6 +55,15 @@ pub(crate) struct IntelContext {
     /// Complexity assessment (may be set by prior unit)
     pub complexity: Option<ComplexityAssessment>,
 
+    /// Intent surface analysis (surface intent, output type, format pref)
+    pub intent_surface: Option<serde_json::Value>,
+
+    /// Intent real analysis (real intent, problem type, decision needed)
+    pub intent_real: Option<serde_json::Value>,
+
+    /// User expectation analysis (expectation type, depth, certainty, effort)
+    pub user_expectation: Option<serde_json::Value>,
+
     /// Shared HTTP client for all intel units (prevents connection pool exhaustion)
     pub client: reqwest::Client,
 
@@ -78,6 +87,9 @@ impl IntelContext {
             workspace_brief,
             conversation_excerpt,
             complexity: None,
+            intent_surface: None,
+            intent_real: None,
+            user_expectation: None,
             client,
             extras: serde_json::Map::new(),
         }
@@ -85,6 +97,21 @@ impl IntelContext {
 
     pub fn with_complexity(mut self, complexity: ComplexityAssessment) -> Self {
         self.complexity = Some(complexity);
+        self
+    }
+
+    pub fn with_intent_surface(mut self, intent_surface: serde_json::Value) -> Self {
+        self.intent_surface = Some(intent_surface);
+        self
+    }
+
+    pub fn with_intent_real(mut self, intent_real: serde_json::Value) -> Self {
+        self.intent_real = Some(intent_real);
+        self
+    }
+
+    pub fn with_user_expectation(mut self, user_expectation: serde_json::Value) -> Self {
+        self.user_expectation = Some(user_expectation);
         self
     }
 
@@ -353,7 +380,7 @@ pub(crate) fn trace_fallback(unit_name: &str, error: &str) {
 
 fn trace_verbose(verbose: bool, message: &str) {
     if verbose {
-        eprintln!("[INTEL_VERBOSE] {}", message);
+        append_trace_log_line(&format!("[INTEL_VERBOSE] {}", message));
     }
 }
 
@@ -382,6 +409,7 @@ pub(crate) fn neutral_route_decision() -> RouteDecision {
         speech_act: base.clone(),
         workflow: base.clone(),
         mode: base,
+        evidence_required: false,
     }
 }
 
@@ -584,6 +612,7 @@ mod tests {
             speech_act: pd("CHAT"),
             workflow: pd("CHAT"),
             mode: pd("INSPECT"),
+            evidence_required: false,
         };
         let client = reqwest::Client::new();
         let context = IntelContext::new(

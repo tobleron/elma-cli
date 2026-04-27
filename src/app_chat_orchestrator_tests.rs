@@ -35,6 +35,7 @@ fn test_route_decision(route: &str) -> RouteDecision {
         speech_act: test_probability_decision("INSTRUCT"),
         workflow: test_probability_decision("WORKFLOW"),
         mode: test_probability_decision("EXECUTE"),
+        evidence_required: false,
     }
 }
 
@@ -160,6 +161,7 @@ fn direct_reply_fast_path_rejects_path_scoped_architecture_audit() {
             margin: 0.1,
             entropy: 0.9,
         },
+        evidence_required: false,
     };
     let complexity = ComplexityAssessment {
         complexity: "DIRECT".to_string(),

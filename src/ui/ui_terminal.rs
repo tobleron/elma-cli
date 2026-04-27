@@ -424,6 +424,23 @@ impl TerminalUI {
         self.pending_draw = true;
     }
 
+    // --- Status thread ---
+
+    pub(crate) fn start_status(&mut self, description: &str) {
+        self.state.start_status(description);
+        self.pending_draw = true;
+    }
+
+    pub(crate) fn complete_status(&mut self, description: &str) {
+        self.state.complete_status(description);
+        self.pending_draw = true;
+    }
+
+    pub(crate) fn clear_status(&mut self) {
+        self.state.clear_status();
+        self.pending_draw = true;
+    }
+
     // --- Header info ---
 
     pub(crate) fn set_header_info(&mut self, header: HeaderInfo) {
@@ -737,6 +754,10 @@ impl TerminalUI {
     /// Non-blocking UI pump — call between async steps to keep UI alive.
     /// Forces a redraw if pending, and briefly polls for resize events.
     pub(crate) fn pump_ui(&mut self) -> io::Result<()> {
+        // Keep repainting while the status thread is active (spinner animation)
+        if self.state.status_thread.is_working() {
+            self.pending_draw = true;
+        }
         if !self.raw_mode {
             return self.draw();
         }
@@ -824,6 +845,9 @@ impl TerminalUI {
                 model_label: Some(self.state.footer.model.clone()),
                 transcript_metric,
             }));
+
+        // Sync status thread state (UIState is authoritative, ClaudeRenderer renders it)
+        self.claude.status_thread = self.state.status_thread.clone();
 
         if let Some(terminal) = &mut self.terminal {
             terminal.draw(|f| {
@@ -2053,6 +2077,108 @@ impl TerminalUI {
                 .map(|d| d.join("sessions").join("history.txt"));
             if let Some(ref path) = history_path {
                 self.save_history(path);
+            }
+            // Persist visible transcript (plain-text) so terminal output is saved
+            // under sessions/ for debugging and replay.
+            let transcript_path = std::env::current_dir()
+                .ok()
+                .map(|d| d.join("sessions").join("terminal_transcript.txt"));
+            if let Some(ref tpath) = transcript_path {
+                if let Some(parent) = tpath.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let mut out = String::new();
+                out.push_str(&format!(
+                    "=== Terminal Transcript ({}) ===\n\n",
+                    chrono::Local::now().to_rfc3339()
+                ));
+                for msg in &self.claude.transcript.messages {
+                    use crate::claude_ui::claude_state::ClaudeMessage;
+                    match msg {
+                        ClaudeMessage::User { content } => {
+                            out.push_str(&format!("> {}\n\n", content));
+                        }
+                        ClaudeMessage::Assistant { content } => {
+                            out.push_str(&format!("● {}\n\n", content.raw_markdown));
+                        }
+                        ClaudeMessage::Thinking { content, .. } => {
+                            out.push_str(&format!("∴ Thinking: {}\n\n", content));
+                        }
+                        ClaudeMessage::ToolStart { name, input } => {
+                            out.push_str(&format!("▸ Tool start: {}\n", name));
+                            if let Some(i) = input {
+                                out.push_str(&format!("input: {}\n", i));
+                            }
+                            out.push_str("\n");
+                        }
+                        ClaudeMessage::ToolProgress { name, message } => {
+                            out.push_str(&format!("▸ Tool progress ({}): {}\n\n", name, message));
+                        }
+                        ClaudeMessage::ToolResult {
+                            name,
+                            success,
+                            output,
+                            duration_ms,
+                        } => {
+                            out.push_str(&format!(
+                                "✓ Tool result ({}): success={} duration_ms={:?}\n{}\n\n",
+                                name, success, duration_ms, output
+                            ));
+                        }
+                        ClaudeMessage::ToolTrace {
+                            name,
+                            command,
+                            status,
+                            ..
+                        } => {
+                            out.push_str(&format!("▸ Tool trace ({}): {}\n", name, command));
+                            match status {
+                                crate::claude_ui::claude_state::ToolTraceStatus::Running => {
+                                    out.push_str("status: running\n\n");
+                                }
+                                crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                                    success,
+                                    output,
+                                    duration_ms,
+                                } => {
+                                    out.push_str(&format!(
+                                        "status: completed success={} duration_ms={:?}\n{}\n\n",
+                                        success, duration_ms, output
+                                    ));
+                                }
+                            }
+                        }
+                        ClaudeMessage::PermissionRequest { command, reason } => {
+                            out.push_str(&format!(
+                                "? Permission requested: {} reason={:?}\n\n",
+                                command, reason
+                            ));
+                        }
+                        ClaudeMessage::CompactBoundary => {
+                            out.push_str("✻ Conversation compacted\n\n");
+                        }
+                        ClaudeMessage::CompactSummary {
+                            message_count,
+                            context_preview,
+                        } => {
+                            out.push_str(&format!(
+                                "✻ Compact summary: {} messages\n{}\n\n",
+                                message_count,
+                                context_preview.as_deref().unwrap_or("")
+                            ));
+                        }
+                        ClaudeMessage::System { content } => {
+                            out.push_str(&format!("system: {}\n\n", content));
+                        }
+                        ClaudeMessage::Notice(notice) => {
+                            out.push_str(&format!(
+                                "◦ NOTICE ({:?}): {}\n\n",
+                                notice.kind, notice.content
+                            ));
+                        }
+                    }
+                }
+                let _ = std::fs::write(tpath, out);
             }
             execute!(
                 io::stdout(),

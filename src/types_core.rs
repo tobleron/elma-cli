@@ -89,6 +89,24 @@ pub(crate) enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Session garbage collection: list/delete/compress old sessions (Task 282)
+    SessionGc {
+        /// Consider sessions older than N days
+        #[arg(long, default_value_t = 14)]
+        older_than_days: u64,
+        /// Show what would be done without doing it
+        #[arg(long)]
+        dry_run: bool,
+        /// Actually delete sessions
+        #[arg(long)]
+        confirm: bool,
+        /// Create .tar.gz archive before deletion
+        #[arg(long)]
+        compress: bool,
+        /// Directory for archives (default: sessions/.archive/)
+        #[arg(long)]
+        archive_dir: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -485,6 +503,7 @@ pub(crate) struct RouteDecision {
     pub(crate) speech_act: ProbabilityDecision,
     pub(crate) workflow: ProbabilityDecision,
     pub(crate) mode: ProbabilityDecision,
+    pub(crate) evidence_required: bool, // Task 290: Block respond if no tool results for fact-queries
 }
 
 #[derive(Debug, Clone)]

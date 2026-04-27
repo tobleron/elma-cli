@@ -1,67 +1,106 @@
 //! Session cleanup utilities for querying and calculating space savings
 //!
 //! Provides functions to calculate disk space savings from deleting
-//! sessions older than a specified time period without requiring
-//! complex chained shell commands.
+//! sessions older than a specified time period using the session index.
 
 use crate::*;
 use std::path::PathBuf;
-use std::os::unix::process::ExitStatusExt;
 
 /// Calculate space savings from deleting sessions older than `days` days.
 ///
-/// This internally runs shell commands but presents them as a single
-/// analytical operation to avoid budget issues.
+/// Uses the session index (sessions/index.json) for fast lookup.
 pub(crate) fn sessions_savings(days: u64, workdir: &PathBuf) -> String {
-    let total_size = run_shell_one_liner_sync(&format!("du -sh ./sessions"), workdir, None);
-    let old_count = run_shell_one_liner_sync(&format!("find ./sessions -type f -mtime +{} | wc -l", days), workdir, None);
-    let old_size = run_shell_one_liner_sync(&format!("find ./sessions -type f -mtime +{} -exec du -ch {{}} + | tail -1", days), workdir, None);
+    let sessions_root = workdir.join("sessions");
+    let index = match crate::session_index::SessionIndex::load(&sessions_root) {
+        Ok(idx) => idx,
+        Err(_) => {
+            return "=== Session Cleanup Analysis ===\n\
+                    Error: Could not load session index. Run 'elma-cli session-gc' for detailed analysis.\n\
+                    === End Analysis ===".to_string();
+        }
+    };
 
-    format!(
-        "=== Session Cleanup Analysis ({} days) ===\n\
-         Total sessions directory size: {}\n\
-         Files older than {} days: {}\n\
-         Space in old files: {}\n\
-         === End Analysis ===",
-        days, total_size.trim(), days, old_count.trim(), old_size.trim()
-    )
+    let cutoff = current_unix() - (days * 86400);
+    let old_sessions: Vec<&crate::session_index::SessionIndexEntry> = index
+        .sessions
+        .iter()
+        .filter(|s| s.last_modified_unix < cutoff)
+        .collect();
+
+    let total_size: u64 = old_sessions.iter().map(|s| s.size_bytes).sum();
+    let count = old_sessions.len();
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "=== Session Cleanup Analysis ({} days) ===\n",
+        days
+    ));
+    out.push_str(&format!(
+        "Total sessions directory size: {}\n",
+        human_size(index.total_size_bytes)
+    ));
+    out.push_str(&format!("Sessions older than {} days: {}\n", days, count));
+    out.push_str(&format!(
+        "Space in old sessions: {}\n",
+        human_size(total_size)
+    ));
+    if count > 0 {
+        out.push_str("\nOld sessions:\n");
+        for s in &old_sessions {
+            out.push_str(&format!(
+                "- {} ({}, status: {})\n",
+                s.id,
+                human_size(s.size_bytes),
+                s.status
+            ));
+        }
+    }
+    out.push_str("=== End Analysis ===");
+    out
 }
 
 /// Quick check: get total sessions size
 pub(crate) fn sessions_total_size(workdir: &PathBuf) -> String {
-    run_shell_one_liner_sync("du -sh ./sessions", workdir, None).trim().to_string()
+    let sessions_root = workdir.join("sessions");
+    if let Ok(index) = crate::session_index::SessionIndex::load(&sessions_root) {
+        human_size(index.total_size_bytes)
+    } else {
+        "N/A (no index)".to_string()
+    }
 }
 
 /// Quick check: count old files
 pub(crate) fn sessions_old_count(days: u64, workdir: &PathBuf) -> String {
-    run_shell_one_liner_sync(&format!("find ./sessions -type f -mtime +{} | wc -l", days), workdir, None).trim().to_string()
+    let sessions_root = workdir.join("sessions");
+    if let Ok(index) = crate::session_index::SessionIndex::load(&sessions_root) {
+        let count = index
+            .sessions
+            .iter()
+            .filter(|s| s.last_modified_unix < current_unix() - (days * 86400))
+            .count();
+        count.to_string()
+    } else {
+        "0".to_string()
+    }
 }
 
-fn run_shell_one_liner_sync(cmd: &str, workdir: &PathBuf, timeout: Option<u64>) -> String {
-    use std::process::Command;
-    
-    let output = match timeout {
-        Some(t) => Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(workdir)
-            .output()
-            .unwrap_or_else(|_| std::process::Output {
-                status: std::process::ExitStatus::from_raw(1),
-                stdout: Vec::new(),
-                stderr: format!("timeout: {}ms", t).into_bytes(),
-            }),
-        None => Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .current_dir(workdir)
-            .output()
-            .unwrap_or_else(|_| std::process::Output {
-                status: std::process::ExitStatus::from_raw(1),
-                stdout: Vec::new(),
-                stderr: b"command failed".to_vec(),
-            }),
-    };
+fn human_size(bytes: u64) -> String {
+    let kb = bytes as f64 / 1024.0;
+    let mb = kb / 1024.0;
+    let gb = mb / 1024.0;
+    if gb >= 1.0 {
+        format!("{:.1} GB", gb)
+    } else if mb >= 1.0 {
+        format!("{:.1} MB", mb)
+    } else {
+        format!("{:.0} KB", kb)
+    }
+}
 
-    String::from_utf8_lossy(&output.stdout).to_string()
+fn current_unix() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }

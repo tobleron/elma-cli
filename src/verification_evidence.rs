@@ -62,7 +62,7 @@ mod tests {
                     cmd: "ls".to_string(),
                     common: StepCommon {
                         interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 },
                 Step::Select {
@@ -127,7 +127,7 @@ mod tests {
                     },
                     common: StepCommon {
                         interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 },
                 Step::Read {
@@ -136,7 +136,7 @@ mod tests {
                     common: StepCommon {
                         depends_on: vec!["e1".to_string()],
                         interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 },
             ],
@@ -181,7 +181,7 @@ mod tests {
                     },
                     common: StepCommon {
                         interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 },
                 Step::Read {
@@ -190,7 +190,7 @@ mod tests {
                     common: StepCommon {
                         depends_on: vec!["e1".to_string()],
                         interrupt_behavior: InterruptBehavior::Graceful,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 },
             ],

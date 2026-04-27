@@ -108,9 +108,7 @@ fn normalize_command_pattern(cmd: &str) -> String {
 /// Check if a command pattern has already been executed. Returns true if it's a duplicate.
 fn is_duplicate_command(cmd: &str) -> bool {
     let pattern = normalize_command_pattern(cmd);
-    let mut cache = EXECUTED_COMMANDS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let mut cache = EXECUTED_COMMANDS.lock().unwrap_or_else(|e| e.into_inner());
     if cache.contains(&pattern) {
         return true;
     }
@@ -120,9 +118,7 @@ fn is_duplicate_command(cmd: &str) -> bool {
 
 /// Clear the executed commands cache (for testing).
 pub(crate) fn clear_executed_commands_cache() {
-    let mut cache = EXECUTED_COMMANDS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let mut cache = EXECUTED_COMMANDS.lock().unwrap_or_else(|e| e.into_inner());
     cache.clear();
 }
 
@@ -280,14 +276,7 @@ pub(crate) async fn execute_and_process_shell(
     trace(args, &format!("shell_saved={}", path.display()));
     shell_command_trace(args, &cmd);
     let compatibility = probe_command_compatibility(&cmd, workdir);
-    let mut shell_result = run_shell_one_liner(
-        &cmd,
-        workdir,
-        artifact_reservation
-            .as_ref()
-            .map(|(_, path)| (path, artifact_kind.as_str())),
-    )
-    .await?;
+    let mut shell_result = run_shell_persistent(&cmd, workdir).await?;
     let mut code = shell_result.exit_code;
     let mut output = shell_result.inline_text.clone();
     let mut output_path_base = path.clone();
@@ -422,13 +411,19 @@ pub(crate) async fn execute_and_process_shell(
         }
     }
 
+    // Task 283: Flush shell result to session transcript and artifacts (clone before move)
+    let flush_kind = kind.clone();
+    let flush_sid = sid.clone();
+    let flush_output = output.clone();
+    let flush_ok = code == 0;
+
     state.step_results.push(StepResult {
         id: sid,
         kind,
         purpose: purpose_str,
         depends_on,
         success_condition,
-        ok: code == 0,
+        ok: flush_ok,
         summary: if let Some(repaired) = repaired_cmd {
             format!("repaired_cmd: {}\n{}", repaired, compact_summary)
         } else {
@@ -448,6 +443,15 @@ pub(crate) async fn execute_and_process_shell(
         outcome_status: None,
         outcome_reason: None,
     });
+
+    crate::session_flush::flush_tool_result(
+        &session.root,
+        &flush_sid,
+        &flush_kind,
+        &flush_output,
+        flush_ok,
+    );
+
     Ok(())
 }
 
@@ -644,14 +648,7 @@ async fn try_command_repair(
     trace(args, &format!("shell_saved={}", repair_path.display()));
     shell_command_trace(args, &repaired);
 
-    let shell_result = run_shell_one_liner(
-        &repaired,
-        workdir,
-        artifact_reservation
-            .as_ref()
-            .map(|(_, path)| (path, artifact_kind)),
-    )
-    .await?;
+    let shell_result = run_shell_persistent(&repaired, workdir).await?;
     let code = shell_result.exit_code;
     let output = shell_result.inline_text.clone();
 

@@ -118,10 +118,31 @@ impl ClaudeMessage {
                 let content_str = if content.is_empty() {
                     String::new()
                 } else if content.len() > 10000 {
-                    // Hard-cap at 10,000 chars: head 2,500 + ellipsis + tail 2,500
-                    let head = &content[..2500];
-                    let tail = &content[content.len() - 2500..];
-                    let skipped_lines = content[2500..content.len() - 2500].lines().count();
+                    let head = if content.is_char_boundary(2500) {
+                        content[..2500].to_string()
+                    } else {
+                        let mut end = 2500;
+                        while !content.is_char_boundary(end) && end > 0 {
+                            end -= 1;
+                        }
+                        content[..end].to_string()
+                    };
+                    let tail_start = if content.len() >= 2500 {
+                        let pos = content.len() - 2500;
+                        if content.is_char_boundary(pos) {
+                            pos
+                        } else {
+                            let mut start = pos;
+                            while !content.is_char_boundary(start) {
+                                start += 1;
+                            }
+                            start
+                        }
+                    } else {
+                        0
+                    };
+                    let tail = content[tail_start..].to_string();
+                    let skipped_lines = content[2500..tail_start].lines().count();
                     format!("{}\n… +{} lines …\n{}", head, skipped_lines, tail)
                 } else {
                     content.clone()

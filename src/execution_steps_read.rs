@@ -1,8 +1,8 @@
 //! @efficiency-role: util-pure
 //! Read Step Execution
 
-use crate::*;
 use crate::format::file_size;
+use crate::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_read_step(
@@ -58,7 +58,10 @@ pub(crate) async fn handle_read_step(
             let full_content = format!("{}\n{}", header, content);
             state.artifacts.insert(sid.clone(), full_content.clone());
 
-            trace(args, &format!("read_ok bytes={}", file_size(full_content.len() as u64)));
+            trace(
+                args,
+                &format!("read_ok bytes={}", file_size(full_content.len() as u64)),
+            );
 
             state.step_results.push(StepResult {
                 id: sid,

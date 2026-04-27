@@ -355,7 +355,7 @@ fn check_glob_unscoped(cmd: &str, workdir: &PathBuf) -> Option<UnscopedResult> {
 
 fn estimate_find_count(cmd: &str, workdir: &PathBuf) -> usize {
     let dry_cmd = format!("{} -print 2>/dev/null | wc -l", cmd);
-    match crate::run_shell_one_liner_sync(&dry_cmd, workdir, None) {
+    match crate::program_utils::run_shell_persistent_sync(&dry_cmd, workdir) {
         Ok(r) => r.inline_text.trim().parse::<usize>().unwrap_or(0),
         Err(_) => 0,
     }
@@ -631,6 +631,25 @@ pub(crate) fn preflight_command(command: &str, workdir: &PathBuf) -> PreflightRe
     }
 }
 
+/// Strip `/dev/null` redirects from a command so the bare `>` mutation
+/// check does not flag harmless stderr suppression (e.g. `2>/dev/null`).
+fn sanitize_null_redirects(command: &str) -> String {
+    let patterns: &[&str] = &[
+        "2>/dev/null",
+        "1>/dev/null",
+        ">/dev/null",
+        ">>/dev/null",
+        "&>/dev/null",
+        "2>>/dev/null",
+        "1>>/dev/null",
+    ];
+    let mut sanitized = command.to_string();
+    for pat in patterns {
+        sanitized = sanitized.replace(pat, "");
+    }
+    sanitized
+}
+
 fn check_protected_paths(command: &str) -> Option<String> {
     let cmd = command.trim();
     let read_only = [
@@ -642,6 +661,12 @@ fn check_protected_paths(command: &str) -> Option<String> {
             return None;
         }
     }
+
+    // Sanitize the command: strip harmless /dev/null redirects before
+    // checking for mutation prefixes. The bare `>` prefix matches
+    // `2>/dev/null` which is a harmless stderr suppression, not a
+    // file-system mutation.
+    let sanitized = sanitize_null_redirects(cmd);
 
     let mutation_prefixes = [
         "rm ",
@@ -661,7 +686,7 @@ fn check_protected_paths(command: &str) -> Option<String> {
     ];
     let is_mutation = mutation_prefixes
         .iter()
-        .any(|p| cmd.starts_with(*p) || cmd.contains(*p));
+        .any(|p| sanitized.starts_with(*p) || sanitized.contains(*p));
     if !is_mutation {
         return None;
     }

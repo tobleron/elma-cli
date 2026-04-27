@@ -31,12 +31,12 @@ mod app_chat_handlers;
 mod app_chat_helpers;
 mod app_chat_loop;
 mod app_chat_orchestrator;
-#[cfg(test)]
 mod app_chat_orchestrator_tests;
 mod app_chat_patterns;
 mod app_chat_trace;
 mod auto_compact; // Task 114: Auto-Compact (Context Window Management)
 mod background_task; // Task 268: Background Task Management
+mod claude_ui;
 mod command_budget; // Task 121: Command Budget & Rate Limiting
 mod decomposition; // Task 023: Hierarchical decomposition
 mod defaults;
@@ -47,10 +47,14 @@ mod defaults_router;
 mod diagnostics;
 mod dirs;
 mod document_adapter; // Task 197: Document intelligence skill stack
+mod effective_history; // Task 310: Deferred Pre-Turn Summary
+mod env_utils; // Task 290: Clean environment injection for persistent shell
 mod evaluation;
 mod evaluation_response;
 mod evaluation_routing;
 mod evaluation_workflow;
+mod evidence_ledger; // Task 287: Evidence Ledger
+mod evidence_summary; // Task 287: Evidence Summarization
 mod execution;
 mod execution_ladder; // Execution ladder for minimum-sufficient orchestration
 mod execution_steps;
@@ -58,19 +62,22 @@ mod execution_steps_compat;
 mod execution_steps_edit;
 mod execution_steps_read;
 mod execution_steps_search;
-mod format;
 mod execution_steps_selectors;
 mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
 mod file_scout; // Task 198: Read-only whole-system file scout
+mod format;
 mod formulas;
 mod fs_intel; // Task 072: Specialized Filesystem Intel
 mod guardrails; // State-aware guardrails for context drift (Task 011)
 mod guardrails_refinement; // Guardrails refinement phase (Task 011)
 mod hook_system; // Tasks 123, 124, 125: Extensible hook framework
+mod hybrid_search; // Task 273: Hybrid Search Memory System With FTS And Vector Search
 mod input_parser; // Task 013: Smart Input Prefixes And Command Modes
 mod intel_narrative; // Narrative transformation for intel units
+mod intel_narrative_advanced; // Advanced assessment narrative functions
+mod intel_narrative_intent; // Intent analysis narrative functions
 mod intel_narrative_planning; // Planning-related narrative functions
 mod intel_narrative_steps; // Step-related narrative functions and helpers
 mod intel_narrative_utils; // Shared narrative utility helpers
@@ -81,6 +88,7 @@ mod json_grammar; // GBNF grammar loading and injection
 mod json_parser; // Robust JSON parsing for intel unit outputs
 mod json_parser_extract; // Extraction helpers for json_parser
 mod json_tuning; // JSON temperature tuning
+mod llm_provider; // Task 278: Native Rust LLM API Client
 mod logging;
 mod metrics;
 mod models_api;
@@ -91,14 +99,14 @@ mod orchestration;
 mod orchestration_core;
 mod orchestration_helpers;
 mod orchestration_loop;
-mod orchestration_loop_helpers;
+mod orchestration_loop_helpers; // Orchestration Loop - Helper Functions
 mod orchestration_loop_reviewers;
 mod orchestration_loop_verdicts;
-mod orchestration_planning;
-mod orchestration_retry;
-mod orchestration_retry_tests;
+mod orchestration_planning; // Planning Prior and Hierarchical Decomposition Module
+mod orchestration_retry; // Retry orchestration and meta-review
 mod paths;
 mod permission_gate; // Task 117: Permission Gate for Destructive Commands
+mod persistent_shell; // Task 288: Persistent Guarded Shell
 mod profile_sets;
 mod program;
 mod program_policy;
@@ -115,16 +123,23 @@ mod reflection;
 mod repo_explorer; // Task 196: Repo explorer and analyzer skill
 mod routing;
 mod routing_calc;
+mod routing_config; // Routing configuration for confidence-based decisions
 mod routing_infer;
 mod routing_parse;
 mod runtime_task;
+mod safe_mode; // Task 272: Safe Mode Toggle System For Permission Levels
 mod scenarios;
 mod session;
 mod session_cleanup;
+mod session_display;
 mod session_error;
+mod session_gc; // Task 282: Session Garbage Collector
 mod session_hierarchy;
+mod session_index; // Task 282: Session Index
+mod session_flush; // Task 283: Session Transcript Flush
 mod session_paths;
 mod session_seq;
+mod session_store; // Task 277: SQLite Session Storage
 mod session_write;
 mod shell_preflight; // Task 116: Destructive Command Detection & Preflight
 mod shutdown; // Task 017: Graceful Shutdown And Panic Recovery
@@ -133,7 +148,7 @@ mod snapshot;
 mod stop_policy;
 mod storage;
 mod strategy; // Multi-strategy planning with fallback chains (Task 010)
-mod streaming_tool_executor; // Task 115: Streaming Tool Execution
+mod streaming_tool_executor; // Task 115: Streaming Token Execution
 mod task_steward; // Task 202: Project task steward skill
 mod temp;
 mod text_utils;
@@ -143,7 +158,9 @@ mod tool_discovery;
 mod tool_loop;
 mod tool_registry;
 mod tool_result_storage; // Task 113: Tool Result Budget & Disk Persistence
-mod tools;
+mod tools; // Tools Module - Combined tools.rs (cache + registry)
+mod trajectory; // Task 271: Trajectory Compression For Long-Running Sessions
+mod trash;
 mod tune;
 mod tune_runtime;
 mod tune_scenario;
@@ -156,40 +173,12 @@ mod types_api;
 mod types_core;
 mod types_core_impl;
 mod types_hierarchy;
-mod trash;
 mod ui;
-// UI modules are now organized under the `ui` namespace.
-// Backward-compatible re-exports to preserve existing absolute paths (crate::ui_*).
-pub use ui::ui_autocomplete;
-pub use ui::ui_chat;
-pub use ui::ui_chat::*;
-pub use ui::ui_colors;
-pub use ui::ui_context_bar;
-pub use ui::ui_coordinator_status;
-pub use ui::ui_diff;
-pub use ui::ui_effort;
-pub use ui::ui_input;
-pub use ui::ui_interact;
-pub use ui::ui_layout;
-pub use ui::ui_markdown;
-pub use ui::ui_modal;
-pub use ui::ui_modal_search;
-pub use ui::ui_model_picker;
-pub use ui::ui_progress;
-pub use ui::ui_render_legacy;
-pub use ui::ui_spinner;
-pub use ui::ui_state;
-pub use ui::ui_state::*;
-pub use ui::ui_syntax;
-pub use ui::ui_terminal;
-pub use ui::ui_theme;
-pub use ui::ui_theme::*;
-pub use ui::ui_trace::*;
-mod claude_ui; // Task 169: Claude Code-style Terminal UI
+mod ui_status_thread; // Task 311: Persistent Status Thread
 mod verification;
 mod verification_evidence;
 mod workspace;
-mod workspace_tree;
+mod workspace_tree; // Task 169: Claude Code-style Terminal UI
 
 pub(crate) use decomposition::*; // Task 023
 pub(crate) use defaults::*;
@@ -224,6 +213,8 @@ pub(crate) use routing::*;
 pub(crate) use runtime_task::*;
 pub(crate) use scenarios::*;
 pub(crate) use session::*;
+pub(crate) use session_display::*;
+pub(crate) use session_flush::*; // Task 283: Session Transcript Flush
 pub(crate) use skills::*;
 pub(crate) use snapshot::*;
 pub(crate) use stop_policy::*;
@@ -251,6 +242,34 @@ async fn main() {
                 use clap::CommandFactory;
                 let mut cmd = crate::types::Args::command();
                 clap_complete::generate(*shell, &mut cmd, "elma-cli", &mut std::io::stdout());
+                return;
+            }
+            crate::types::Commands::SessionGc {
+                older_than_days,
+                dry_run,
+                confirm,
+                compress,
+                archive_dir,
+            } => {
+                // Convert sessions_root to PathBuf
+                let sessions_root = match crate::paths::sessions_root_path(&args.sessions_root) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        eprintln!("Error resolving sessions root: {}", e);
+                        return;
+                    }
+                };
+                let gc_args = crate::session_gc::SessionGcArgs {
+                    older_than_days: *older_than_days,
+                    dry_run: *dry_run,
+                    confirm: *confirm,
+                    compress: *compress,
+                    archive_dir: archive_dir.as_ref().map(PathBuf::from),
+                };
+                match crate::session_gc::run_session_gc(&sessions_root, &gc_args) {
+                    Ok(output) => println!("{}", output),
+                    Err(e) => eprintln!("Error: {}", e),
+                }
                 return;
             }
         }

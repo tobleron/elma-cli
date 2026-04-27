@@ -15,8 +15,8 @@
 //! Discovery only happens when explicitly requested or when needed,
 //! not on every conversation turn.
 
-use crate::*;
 use crate::tools::discovery::ToolCategory;
+use crate::*;
 use std::collections::HashMap;
 use std::env;
 #[cfg(unix)]
@@ -150,8 +150,10 @@ impl ToolRegistry {
         if !system.is_empty() {
             output.push_str("**Verified System Tools:**\n");
             for tool in &system {
-                output.push_str(&format!("- `{}`: {} ({} available)\n", 
-                    tool.name, tool.description, 
+                output.push_str(&format!(
+                    "- `{}`: {} ({} available)\n",
+                    tool.name,
+                    tool.description,
                     if tool.available { "✓" } else { "✗" }
                 ));
             }
@@ -168,7 +170,8 @@ impl ToolRegistry {
 
     /// Get tools by category
     pub fn by_category(&self, category: ToolCategory) -> Vec<&ToolCapability> {
-        self.tools.values()
+        self.tools
+            .values()
             .filter(|tool| match (&tool.source, &category) {
                 (ToolSource::Script(_), ToolCategory::CustomScript) => true,
                 (ToolSource::MakefileTarget, ToolCategory::ProjectSpecific) => true,
@@ -180,9 +183,7 @@ impl ToolRegistry {
 
     /// Get tools that are currently available
     pub fn available_tools(&self) -> Vec<&ToolCapability> {
-        self.tools.values()
-            .filter(|tool| tool.available)
-            .collect()
+        self.tools.values().filter(|tool| tool.available).collect()
     }
 }
 

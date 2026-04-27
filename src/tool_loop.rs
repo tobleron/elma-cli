@@ -15,7 +15,7 @@ use futures::stream::StreamExt;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::future::Future;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // Legacy constants absorbed into StopPolicy (StageBudget::default).
 // Kept briefly for reference; remove after validation.
@@ -30,7 +30,7 @@ where
     tokio::pin!(future);
     loop {
         tokio::select! {
-            result = &mut future => return result,
+           result = &mut future => return result,
             _ = tokio::time::sleep(Duration::from_millis(40)) => {
                 let _ = tui.pump_ui();
                 if let Ok(Some(queued)) = tui.poll_busy_submission() {
@@ -95,6 +95,7 @@ async fn request_tool_loop_model_turn_streaming(
     chat_url: &Url,
     mut req: ChatCompletionRequest,
     timeout_s: u64,
+    session: &SessionPaths,
 ) -> Result<ToolLoopModelTurn> {
     req.stream = true;
     req.reasoning_format = Some("auto".to_string());
@@ -120,6 +121,7 @@ async fn request_tool_loop_model_turn_streaming(
     let mut content_started = false;
     let mut in_think_block = false;
     let mut pending_think_tag = String::new();
+    let mut thinking_accumulated = String::new();
 
     loop {
         let chunk_result_opt = tokio::select! {
@@ -180,7 +182,10 @@ async fn request_tool_loop_model_turn_streaming(
                         tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
                         let _ = tui.pump_ui();
                     }
-                    tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(reasoning));
+                    tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
+                        reasoning.clone(),
+                    ));
+                    thinking_accumulated.push_str(&reasoning);
                     let _ = tui.pump_ui();
                 }
 
@@ -200,8 +205,9 @@ async fn request_tool_loop_model_turn_streaming(
                             let _ = tui.pump_ui();
                         }
                         tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
-                            thinking_delta,
+                            thinking_delta.clone(),
                         ));
+                        thinking_accumulated.push_str(&thinking_delta);
                         let _ = tui.pump_ui();
                     }
 
@@ -209,6 +215,8 @@ async fn request_tool_loop_model_turn_streaming(
                         if thinking_started && !in_think_block {
                             thinking_started = false;
                             tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+                            let _ = save_thinking_display(session, &thinking_accumulated);
+                            thinking_accumulated.clear();
                             let _ = tui.pump_ui();
                         }
                         content.push_str(&assistant_delta);
@@ -229,6 +237,8 @@ async fn request_tool_loop_model_turn_streaming(
 
     if thinking_started {
         tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+        let _ = save_thinking_display(session, &thinking_accumulated);
+        thinking_accumulated.clear();
         let _ = tui.pump_ui();
     }
     if content_started {
@@ -248,6 +258,8 @@ pub(crate) struct ToolLoopResult {
     pub(crate) tool_calls_made: usize,
     pub(crate) stopped_by_max: bool,
     pub(crate) stop_outcome: Option<StopOutcome>,
+    pub(crate) total_elapsed_s: f64,
+    pub(crate) timeout_reason: Option<String>,
 }
 
 struct ToolLoopModelTurn {
@@ -293,7 +305,7 @@ fn normalize_final_answer_candidate(text: &str) -> String {
 
 fn final_answer_needs_retry(text: &str) -> bool {
     let trimmed = text.trim();
-    trimmed.is_empty() || is_tool_call_markup(trimmed)
+    trimmed.is_empty() || is_tool_call_markup(trimmed) || is_intent_only_response(trimmed)
 }
 
 fn build_fallback_from_recent_tool_evidence(messages: &[ChatMessage]) -> String {
@@ -309,19 +321,103 @@ fn build_fallback_from_recent_tool_evidence(messages: &[ChatMessage]) -> String 
             .map(|l| l.trim().to_string());
         if let Some(first_line) = line {
             facts.push(first_line);
-            if facts.len() >= 3 {
+            if facts.len() >= 10 {
                 break;
             }
         }
     }
+    facts.reverse();
     if facts.is_empty() {
         "I couldn't produce a reliable final summary from the tool loop; please retry with a more specific prompt.".to_string()
+    } else if facts.len() == 1 {
+        format!(
+            "Based on the evidence gathered:\n{}\n\n(This is the best answer I could extract. Consider rephrasing your request.)",
+            facts[0]
+        )
     } else {
         format!(
-            "I couldn't finalize cleanly, but here are the most recent grounded findings:\n- {}",
+            "Based on the evidence gathered:\n- {}",
             facts.join("\n- ")
         )
     }
+}
+
+/// Build a clean finalization context that discards tool-call history and
+/// presents only the user's request + compact evidence summary. Small models
+/// get stuck in tool-calling mode when conversation history is saturated with
+/// tool calls; a fresh context breaks the loop.
+async fn request_final_answer_from_evidence(
+    tui: &mut crate::ui_terminal::TerminalUI,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    model_id: &str,
+    original_user_request: &str,
+    messages: &[ChatMessage],
+    max_tokens: u32,
+) -> Result<String> {
+    // Collect all tool results as compact evidence
+    let mut evidence_lines: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for msg in messages.iter().rev() {
+        if msg.role != "tool" {
+            continue;
+        }
+        let content = msg.content.trim();
+        if content.is_empty() || !seen.insert(content.to_string()) {
+            continue;
+        }
+        evidence_lines.push(content.to_string());
+    }
+    evidence_lines.reverse();
+
+    let evidence_block = if evidence_lines.is_empty() {
+        "(no tool results)".to_string()
+    } else if evidence_lines.len() <= 3 {
+        evidence_lines.join("\n")
+    } else {
+        // Truncate to avoid blowing context; first N entries are usually most
+        // relevant since they're the initial findings.
+        let display_count = evidence_lines.len().min(20);
+        let truncated: Vec<_> = evidence_lines.iter().take(display_count).cloned().collect();
+        truncated.join("\n")
+    };
+
+    let clean_messages = vec![
+        ChatMessage::simple(
+            "user",
+            &format!(
+                "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer concisely using only the evidence above. Do not call tools.",
+                original_user_request,
+                evidence_block
+            ),
+        ),
+    ];
+
+    let req = ChatCompletionRequest {
+        model: model_id.to_string(),
+        messages: clean_messages,
+        temperature: 0.2,
+        top_p: 1.0,
+        stream: false,
+        max_tokens: max_tokens.min(1024),
+        n_probs: None,
+        repeat_penalty: None,
+        reasoning_format: Some("none".to_string()),
+        grammar: None,
+        tools: None,
+    };
+    let resp = await_with_busy_input(
+        tui,
+        crate::ui_chat::chat_once_with_timeout(client, chat_url, &req, 60),
+    )
+    .await?;
+    Ok(normalize_final_answer_candidate(
+        &resp
+            .choices
+            .first()
+            .map(|c| c.message.content.clone().unwrap_or_default())
+            .unwrap_or_default(),
+    ))
 }
 
 async fn request_final_answer_without_tools(
@@ -443,20 +539,32 @@ pub(crate) async fn run_tool_loop(
     system_prompt: &str,
     user_message: &str,
     workdir: &PathBuf,
-    session: &SessionPaths,
+    sess: &SessionPaths,
     temperature: f64,
     max_tokens: u32,
     tui: &mut crate::ui_terminal::TerminalUI,
     summarizer_cfg: Option<&Profile>,
 ) -> Result<ToolLoopResult> {
     let budget = StageBudget::default();
+    let total_timeout = Duration::from_secs(30 * 60); // 30 minutes
+    let loop_start = Instant::now();
+    let original_user_request = user_message.to_string();
     trace(
         args,
         &format!(
-            "tool_loop: starting max_iterations={} stagnation_threshold={}",
-            budget.max_iterations, budget.max_stagnation_cycles
+            "tool_loop: starting max_iterations={} stagnation_threshold={} timeout={}m",
+            budget.max_iterations, budget.max_stagnation_cycles, 30
         ),
     );
+
+    // Task 287: Initialize evidence ledger for this session
+    let session_id = sess
+        .root
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    crate::evidence_ledger::init_session_ledger(&session_id, &sess.root);
+
     let mut messages: Vec<ChatMessage> = vec![
         ChatMessage::simple("system", system_prompt),
         ChatMessage::simple("user", user_message),
@@ -476,6 +584,38 @@ pub(crate) async fn run_tool_loop(
     update_context_estimate(&messages, tui);
 
     loop {
+        // Check 30-minute timeout
+        let elapsed = loop_start.elapsed();
+        if elapsed > total_timeout {
+            let elapsed_mins = elapsed.as_secs() as f64 / 60.0;
+            let timeout_reason = format!(
+                "30-minute timeout exceeded after {:.1} minutes",
+                elapsed_mins
+            );
+            trace(args, &format!("tool_loop: TIMEOUT {}", timeout_reason));
+            return Ok(ToolLoopResult {
+                final_answer: format!(
+                    "⏱️ **Timeout After {:.1} Minutes**\n\n\
+                     The task was cancelled due to exceeding the 30-minute time limit.\n\n\
+                     **Time spent:** {:.1} minutes\n\
+                     **Iterations completed:** {}\n\
+                     **Tool calls made:** {}\n\n\
+                     **Cause:** Slow model response time (local model)\n\n\
+                     Try simplifying the request or breaking it into smaller steps.",
+                    elapsed_mins,
+                    elapsed_mins,
+                    stop_policy.iteration(),
+                    stop_policy.total_tool_calls()
+                ),
+                iterations: stop_policy.iteration(),
+                tool_calls_made: stop_policy.total_tool_calls(),
+                stopped_by_max: false,
+                stop_outcome: None,
+                total_elapsed_s: elapsed.as_secs() as f64,
+                timeout_reason: Some(timeout_reason),
+            });
+        }
+
         // Check stop policy before starting this iteration
         if let Some(outcome) = stop_policy.start_iteration() {
             trace(
@@ -507,6 +647,8 @@ pub(crate) async fn run_tool_loop(
                 tool_calls_made: stop_policy.total_tool_calls(),
                 stopped_by_max: true,
                 stop_outcome: Some(outcome),
+                total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                timeout_reason: None,
             });
         }
 
@@ -585,32 +727,33 @@ pub(crate) async fn run_tool_loop(
             grammar: None,
             tools: Some(crate::tool_calling::build_tool_definitions(&PathBuf::new())),
         };
-        let turn =
-            match request_tool_loop_model_turn_streaming(tui, client, chat_url, req.clone(), 120)
-                .await
-            {
-                Ok(turn) => turn,
-                Err(error) => {
-                    append_trace_log_line(&format!("[TOOL_LOOP_STREAM_FALLBACK] {}", error));
-                    let mut fallback_req = req;
-                    fallback_req.stream = false;
-                    let resp = await_with_busy_input(
-                        tui,
-                        crate::ui_chat::chat_once_with_timeout(
-                            client,
-                            chat_url,
-                            &fallback_req,
-                            120,
-                        ),
-                    )
-                    .await?;
-                    let choice = resp.choices.get(0).context("No choices in response")?;
-                    ToolLoopModelTurn {
-                        content: choice.message.content.clone().unwrap_or_default(),
-                        tool_calls: choice.message.tool_calls.clone().unwrap_or_default(),
-                    }
+        let turn = match request_tool_loop_model_turn_streaming(
+            tui,
+            client,
+            chat_url,
+            req.clone(),
+            120,
+            sess,
+        )
+        .await
+        {
+            Ok(turn) => turn,
+            Err(error) => {
+                append_trace_log_line(&format!("[TOOL_LOOP_STREAM_FALLBACK] {}", error));
+                let mut fallback_req = req;
+                fallback_req.stream = false;
+                let resp = await_with_busy_input(
+                    tui,
+                    crate::ui_chat::chat_once_with_timeout(client, chat_url, &fallback_req, 120),
+                )
+                .await?;
+                let choice = resp.choices.get(0).context("No choices in response")?;
+                ToolLoopModelTurn {
+                    content: choice.message.content.clone().unwrap_or_default(),
+                    tool_calls: choice.message.tool_calls.clone().unwrap_or_default(),
                 }
-            };
+            }
+        };
         let content = turn.content;
         if !turn.tool_calls.is_empty() {
             // Track tool calls through stop policy
@@ -619,12 +762,9 @@ pub(crate) async fn run_tool_loop(
                     args,
                     &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
                 );
-                messages.push(ChatMessage::simple(
-                    "user",
-                    "Tool loop budget exceeded. Finalize now with the best grounded answer from existing evidence.",
-                ));
-                let mut final_content = request_final_answer_without_tools(
-                    tui, client, chat_url, model_id, &messages, max_tokens, false,
+                let mut final_content = request_final_answer_from_evidence(
+                    tui, client, chat_url, model_id,
+                    &original_user_request, &messages, max_tokens,
                 )
                 .await?;
                 if final_answer_needs_retry(&final_content) {
@@ -644,6 +784,8 @@ pub(crate) async fn run_tool_loop(
                     tool_calls_made: stop_policy.total_tool_calls(),
                     stopped_by_max: true,
                     stop_outcome: Some(outcome),
+                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                    timeout_reason: None,
                 });
             }
 
@@ -675,12 +817,9 @@ pub(crate) async fn run_tool_loop(
                     args,
                     "tool_loop: stagnation threshold reached; forcing finalization",
                 );
-                messages.push(ChatMessage::simple(
-                    "user",
-                    "Tool loop appears repetitive. Finalize now with the best grounded answer from existing evidence.",
-                ));
-                let mut final_content = request_final_answer_without_tools(
-                    tui, client, chat_url, model_id, &messages, max_tokens, false,
+                let mut final_content = request_final_answer_from_evidence(
+                    tui, client, chat_url, model_id,
+                    &original_user_request, &messages, max_tokens,
                 )
                 .await?;
                 if final_answer_needs_retry(&final_content) {
@@ -700,6 +839,8 @@ pub(crate) async fn run_tool_loop(
                     tool_calls_made: stop_policy.total_tool_calls(),
                     stopped_by_max: false,
                     stop_outcome: Some(outcome),
+                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                    timeout_reason: None,
                 });
             } else {
                 trace(
@@ -762,13 +903,72 @@ pub(crate) async fn run_tool_loop(
                     args,
                     tc,
                     workdir,
-                    session,
+                    sess,
                     client,
                     chat_url,
                     user_message,
                     Some(&mut *tui),
                 )
                 .await;
+
+                // Task 283: Flush tool result to session transcript and artifacts
+                crate::session_flush::flush_tool_result(
+                    &sess.root,
+                    &tc.id,
+                    &tc.function.name,
+                    &result.content,
+                    result.ok,
+                );
+
+                // Task 287: Add evidence ledger entry for tool result
+                if tc.function.name != "read_evidence"
+                    && tc.function.name != "respond"
+                    && tc.function.name != "update_todo_list"
+                    && tc.function.name != "tool_search"
+                {
+                    let source = match tc.function.name.as_str() {
+                        "shell" => {
+                            let cmd =
+                                serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+                                    .ok()
+                                    .and_then(|v| v["command"].as_str().map(String::from))
+                                    .unwrap_or_default();
+                            crate::evidence_ledger::EvidenceSource::Shell {
+                                command: cmd,
+                                exit_code: if result.ok { 0 } else { 1 },
+                            }
+                        }
+                        "read" => {
+                            let path =
+                                serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+                                    .ok()
+                                    .and_then(|v| v["path"].as_str().map(String::from))
+                                    .unwrap_or_default();
+                            crate::evidence_ledger::EvidenceSource::Read { path }
+                        }
+                        "search" => {
+                            let args_val =
+                                serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+                                    .ok();
+                            let pattern = args_val
+                                .as_ref()
+                                .and_then(|v| v["pattern"].as_str().map(String::from))
+                                .unwrap_or_default();
+                            let path = args_val
+                                .as_ref()
+                                .and_then(|v| v["path"].as_str().map(String::from))
+                                .unwrap_or_default();
+                            crate::evidence_ledger::EvidenceSource::Search { path, pattern }
+                        }
+                        _ => crate::evidence_ledger::EvidenceSource::Tool {
+                            name: tc.function.name.clone(),
+                            input: tc.function.arguments.chars().take(100).collect(),
+                        },
+                    };
+                    crate::evidence_ledger::with_session_ledger(|ledger| {
+                        ledger.add_entry(source, &result.content);
+                    });
+                }
 
                 stop_policy.record_tool_result(tc, &result);
 
@@ -785,8 +985,10 @@ pub(crate) async fn run_tool_loop(
                             final_answer: trimmed,
                             iterations: stop_policy.iteration(),
                             tool_calls_made: stop_policy.total_tool_calls(),
-                            stopped_by_max: false,
+                            stopped_by_max: true,
                             stop_outcome: None,
+                            total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                            timeout_reason: None,
                         });
                     }
                 }
@@ -797,10 +999,11 @@ pub(crate) async fn run_tool_loop(
                     name: None,
                     tool_calls: Some(vec![tc.clone()]),
                     tool_call_id: None,
+                    summarized: false,
                 });
                 // Apply result budget — persist large outputs to disk, keep inline for small ones
                 let budgeted = apply_tool_result_budget(
-                    session,
+                    sess,
                     &tc.id,
                     &tc.function.name,
                     &result.content,
@@ -812,6 +1015,7 @@ pub(crate) async fn run_tool_loop(
                     name: Some(tc.function.name.clone()),
                     tool_calls: None,
                     tool_call_id: Some(tc.id.clone()),
+                    summarized: false,
                 });
             }
 
@@ -823,12 +1027,9 @@ pub(crate) async fn run_tool_loop(
                     args,
                     &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
                 );
-                messages.push(ChatMessage::simple(
-                    "user",
-                    "Tool loop budget exceeded. Finalize now with the best grounded answer from existing evidence.",
-                ));
-                let mut final_content = request_final_answer_without_tools(
-                    tui, client, chat_url, model_id, &messages, max_tokens, false,
+                let mut final_content = request_final_answer_from_evidence(
+                    tui, client, chat_url, model_id,
+                    &original_user_request, &messages, max_tokens,
                 )
                 .await?;
                 if final_answer_needs_retry(&final_content) {
@@ -848,21 +1049,78 @@ pub(crate) async fn run_tool_loop(
                     tool_calls_made: stop_policy.total_tool_calls(),
                     stopped_by_max: true,
                     stop_outcome: Some(outcome),
+                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                    timeout_reason: None,
                 });
             }
 
             continue;
         }
         if !content.trim().is_empty() {
-            return Ok(ToolLoopResult {
-                final_answer: normalize_final_answer_candidate(&content),
-                iterations: stop_policy.iteration(),
-                tool_calls_made: stop_policy.total_tool_calls(),
-                stopped_by_max: false,
-                stop_outcome: None,
-            });
+            // Check if this looks like an intent-only response without actual evidence
+            let trimmed = content.trim();
+            if is_intent_only_response(&trimmed) && !has_recent_tool_evidence(&messages) {
+                // Force continuation to gather actual evidence instead of accepting intent-only answer
+                trace(args, "tool_loop: detected intent-only response without evidence, continuing to gather proof");
+                // Push a user nudge to force action
+                messages.push(ChatMessage::simple("user", "You haven't executed any tools yet. Please execute the necessary tools to answer my request accurately."));
+                continue;
+            } else {
+                return Ok(ToolLoopResult {
+                    final_answer: normalize_final_answer_candidate(&content),
+                    iterations: stop_policy.iteration(),
+                    tool_calls_made: stop_policy.total_tool_calls(),
+                    stopped_by_max: false,
+                    stop_outcome: None,
+                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                    timeout_reason: None,
+                });
+            }
         }
     }
+}
+
+/// Check if the response looks like an intent-only statement without actual evidence gathering
+fn is_intent_only_response(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    // Patterns that indicate intent without action
+    let intent_patterns = [
+        "the user is",
+        "let me show",
+        "let me demonstrate",
+        "i will show",
+        "i will demonstrate",
+        "allow me to show",
+        "i can show",
+        "i could show",
+        "let me explain how",
+        "i determined by",
+        "i came to this conclusion",
+        "my conclusion was based on",
+        "i figured this out by",
+        "here's how i",
+        "this is how i",
+    ];
+
+    intent_patterns
+        .iter()
+        .any(|&pattern| lower.contains(pattern))
+}
+
+/// Check if recent messages contain actual tool evidence (not just intent statements)
+fn has_recent_tool_evidence(messages: &[ChatMessage]) -> bool {
+    // Look at last few tool messages for actual execution evidence
+    for msg in messages.iter().rev().take(5) {
+        if msg.role == "tool" {
+            // Tool messages with actual content indicate evidence gathering
+            let content = msg.content.trim();
+            if !content.is_empty() && !content.contains("<tool_call>") && !content.contains("```") {
+                // Contains actual tool output, not just markup
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Extract a short preview of a tool argument.
@@ -931,6 +1189,7 @@ mod tests {
                 name: Some("shell".to_string()),
                 tool_calls: None,
                 tool_call_id: Some("t1".to_string()),
+                summarized: false,
             },
         ];
         let out = build_fallback_from_recent_tool_evidence(&msgs);

@@ -5,20 +5,34 @@
 //! This module contains Elma's trait-based intel units.
 //! Re-exports from sub-modules for backward compatibility.
 
+mod intel_units_advanced;
+mod intel_units_claim_mapper;
 mod intel_units_classifier;
 mod intel_units_core;
+mod intel_units_evidence_quality;
+mod intel_units_evidence_staleness;
+mod intel_units_evidence_sufficiency;
+mod intel_units_intent;
 pub(crate) mod intel_units_maestro;
 mod intel_units_repair;
 mod intel_units_responder;
+mod intel_units_turn_summary;
 
 // Re-export maestro types for external use
 pub(crate) use intel_units_maestro::{MaestroInstruction, MaestroOutput, MaestroUnit};
 
 // Re-export all intel units for backward compatibility
+pub(crate) use intel_units_advanced::*;
+pub(crate) use intel_units_claim_mapper::*;
 pub(crate) use intel_units_classifier::*;
 pub(crate) use intel_units_core::*;
+pub(crate) use intel_units_evidence_quality::*;
+pub(crate) use intel_units_evidence_staleness::*;
+pub(crate) use intel_units_evidence_sufficiency::*;
+pub(crate) use intel_units_intent::*;
 pub(crate) use intel_units_repair::*;
 pub(crate) use intel_units_responder::*;
+pub(crate) use intel_units_turn_summary::*;
 
 use crate::intel_trait::*;
 use crate::*;

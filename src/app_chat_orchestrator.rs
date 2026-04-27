@@ -61,22 +61,22 @@ pub(crate) async fn build_program_with_temp(
             // Return as a single Respond step for the execution framework
             Program {
                 objective: line.to_string(),
-            steps: vec![Step::Respond {
-                id: "r1".to_string(),
-                instructions: answer,
-                common: StepCommon {
-                    purpose: "respond to user".to_string(),
-                    depends_on: Vec::new(),
-                    success_condition: "user receives answer".to_string(),
-                    parent_id: None,
-                    depth: None,
-                    unit_type: None,
-                    is_read_only: true,
-                    is_destructive: false,
-                    is_concurrency_safe: true,
-                                interrupt_behavior: InterruptBehavior::Graceful,
-                },
-            }],
+                steps: vec![Step::Respond {
+                    id: "r1".to_string(),
+                    instructions: answer,
+                    common: StepCommon {
+                        purpose: "respond to user".to_string(),
+                        depends_on: Vec::new(),
+                        success_condition: "user receives answer".to_string(),
+                        parent_id: None,
+                        depth: None,
+                        unit_type: None,
+                        is_read_only: true,
+                        is_destructive: false,
+                        is_concurrency_safe: true,
+                        interrupt_behavior: InterruptBehavior::Graceful,
+                    },
+                }],
             }
         }
         Err(e) => {

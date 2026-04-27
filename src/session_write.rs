@@ -2,7 +2,9 @@
 //!
 //! Session - Write Helpers
 
+use crate::intel_units::TurnSummaryOutput;
 use crate::*;
+use std::collections::HashSet;
 
 pub(crate) fn write_shell_action(shell_dir: &PathBuf, cmd_line: &str) -> Result<PathBuf> {
     let n = next_shell_seq(shell_dir)?;
@@ -97,4 +99,79 @@ pub(crate) fn load_goal_state(session_root: &PathBuf) -> Option<GoalState> {
     }
     let json = std::fs::read_to_string(&path).ok()?;
     serde_json::from_str(&json).ok()
+}
+
+// ============================================================================
+// Turn Summary Persistence (Task 310)
+// ============================================================================
+
+/// Write turn summary to session/summaries/turn_N_summary.json
+pub(crate) fn save_turn_summary(
+    session_root: &Path,
+    turn_number: usize,
+    summary: &TurnSummaryOutput,
+) -> Result<()> {
+    let summaries_dir = session_root.join("summaries");
+    std::fs::create_dir_all(&summaries_dir)?;
+    let path = summaries_dir.join(format!("turn_{}_summary.json", turn_number));
+    let json = serde_json::to_string_pretty(summary)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+/// Load the most recent pending (unapplied) turn summary
+pub(crate) fn load_pending_turn_summary(
+    session_root: &Path,
+) -> Result<Option<(usize, TurnSummaryOutput)>> {
+    let summaries_dir = session_root.join("summaries");
+    if !summaries_dir.exists() {
+        return Ok(None);
+    }
+    let applied = load_applied_summaries(session_root)?;
+    let mut entries: Vec<_> = std::fs::read_dir(&summaries_dir)?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            let stem = path.file_stem()?.to_string_lossy().to_string();
+            let ext = path.extension()?.to_string_lossy().to_string();
+            if ext != "json" {
+                return None;
+            }
+            let turn_num = stem
+                .strip_prefix("turn_")?
+                .strip_suffix("_summary")?
+                .parse::<usize>()
+                .ok()?;
+            Some((turn_num, path))
+        })
+        .collect();
+    entries.sort_by_key(|(n, _)| *n);
+    for (turn_num, path) in entries.into_iter().rev() {
+        if !applied.contains(&turn_num) {
+            let content = std::fs::read_to_string(&path)?;
+            let summary: TurnSummaryOutput = serde_json::from_str(&content)?;
+            return Ok(Some((turn_num, summary)));
+        }
+    }
+    Ok(None)
+}
+
+/// Mark a turn summary as applied so it won't be re-injected
+pub(crate) fn mark_summary_applied(session_root: &Path, turn_number: usize) -> Result<()> {
+    let mut applied = load_applied_summaries(session_root)?;
+    applied.insert(turn_number);
+    let path = session_root.join("summaries").join("applied.json");
+    let json = serde_json::to_string(&applied)?;
+    std::fs::write(&path, json)?;
+    Ok(())
+}
+
+fn load_applied_summaries(session_root: &Path) -> Result<HashSet<usize>> {
+    let path = session_root.join("summaries").join("applied.json");
+    if path.exists() {
+        let content = std::fs::read_to_string(&path)?;
+        Ok(serde_json::from_str(&content)?)
+    } else {
+        Ok(HashSet::new())
+    }
 }

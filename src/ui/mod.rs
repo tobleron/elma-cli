@@ -21,3 +21,9 @@ pub mod ui_terminal;
 pub mod ui_theme;
 pub mod ui_trace;
 pub mod ui_wrap;
+
+// Re-export key functions so they're available via `use crate::*;`
+pub(crate) use ui_chat::*;
+pub(crate) use ui_state::*;
+pub(crate) use ui_theme::*;
+pub(crate) use ui_trace::*;

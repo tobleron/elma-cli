@@ -44,7 +44,29 @@ pub(crate) fn build_evidence_mode_narrative(
     has_command_execution: bool,
     has_artifact: bool,
 ) -> String {
-    let step_results_narrative = build_step_results_narrative(step_results);
+    build_evidence_mode_narrative_with_ledger(
+        user_message,
+        route_decision,
+        reply_instructions,
+        step_results,
+        has_command_request,
+        has_command_execution,
+        has_artifact,
+        None,
+    )
+}
+
+pub(crate) fn build_evidence_mode_narrative_with_ledger(
+    user_message: &str,
+    route_decision: &RouteDecision,
+    reply_instructions: &str,
+    step_results: &[StepResult],
+    has_command_request: bool,
+    has_command_execution: bool,
+    has_artifact: bool,
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
+    let step_results_narrative = build_step_results_narrative(step_results, ledger);
 
     format!(
         r#"USER MESSAGE:
@@ -133,6 +155,9 @@ pub(crate) fn build_result_presenter_narrative(
     response_advice: &Value,
     reply_instructions: &Value,
     step_results: &Value,
+    intent_surface: &serde_json::Value,
+    intent_real: &serde_json::Value,
+    user_expectation: &serde_json::Value,
 ) -> String {
     let step_results_narrative = render_json_value(step_results);
 
@@ -159,6 +184,15 @@ REPLY INSTRUCTIONS:
 OBSERVED STEP RESULTS (GROUNDING DATA):
 {step_results}
 
+INTENT SURFACE ANALYSIS:
+{intent_surface}
+
+INTENT REAL ANALYSIS:
+{intent_real}
+
+USER EXPECTATION ANALYSIS:
+{user_expectation}
+
 PRESENTATION RULES:
 1. ONLY use the provided STEP RESULTS for technical claims.
 2. If the results are empty or do not support the user's request, state that clearly and honestly.
@@ -173,6 +207,9 @@ PRESENTATION RULES:
         response_advice = render_json_value(response_advice),
         reply_instructions = render_json_value(reply_instructions),
         step_results = step_results_narrative,
+        intent_surface = render_json_value(intent_surface),
+        intent_real = render_json_value(intent_real),
+        user_expectation = render_json_value(user_expectation),
     )
 }
 
@@ -273,7 +310,18 @@ pub(crate) fn build_critic_narrative(
     attempt: u32,
     max_retries: u32,
 ) -> String {
-    let steps_narrative = build_steps_narrative(program, step_results);
+    build_critic_narrative_with_ledger(objective, program, step_results, attempt, max_retries, None)
+}
+
+pub(crate) fn build_critic_narrative_with_ledger(
+    objective: &str,
+    program: &Program,
+    step_results: &[StepResult],
+    attempt: u32,
+    max_retries: u32,
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
+    let steps_narrative = build_steps_narrative(program, step_results, ledger);
 
     format!(
         r#"OBJECTIVE:
@@ -302,7 +350,16 @@ pub(crate) fn build_sufficiency_narrative(
     program: &Program,
     step_results: &[StepResult],
 ) -> String {
-    let steps_narrative = build_steps_narrative(program, step_results);
+    build_sufficiency_narrative_with_ledger(objective, program, step_results, None)
+}
+
+pub(crate) fn build_sufficiency_narrative_with_ledger(
+    objective: &str,
+    program: &Program,
+    step_results: &[StepResult],
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
+    let steps_narrative = build_steps_narrative(program, step_results, ledger);
 
     format!(
         r#"OBJECTIVE:
@@ -328,7 +385,17 @@ pub(crate) fn build_reviewer_narrative(
     step_results: &[StepResult],
     review_type: &str,
 ) -> String {
-    let steps_narrative = build_steps_narrative(program, step_results);
+    build_reviewer_narrative_with_ledger(objective, program, step_results, review_type, None)
+}
+
+pub(crate) fn build_reviewer_narrative_with_ledger(
+    objective: &str,
+    program: &Program,
+    step_results: &[StepResult],
+    review_type: &str,
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
+    let steps_narrative = build_steps_narrative(program, step_results, ledger);
 
     let task_description = match review_type {
         "logical" => {
