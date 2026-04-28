@@ -274,13 +274,13 @@ pub fn build_tools_for_context(
 
     let allowed_names: Vec<String> = match context.as_str() {
         "chat" => vec![
-            "read_evidence".to_string(),
             "respond".to_string(),
+            "summary".to_string(),
         ],
         "shell" => vec![
             "read".to_string(),
-            "read_evidence".to_string(),
             "respond".to_string(),
+            "summary".to_string(),
             "search".to_string(),
             "shell".to_string(),
             "tool_search".to_string(),
@@ -288,16 +288,16 @@ pub fn build_tools_for_context(
         ],
         "plan" => vec![
             "read".to_string(),
-            "read_evidence".to_string(),
             "respond".to_string(),
+            "summary".to_string(),
             "search".to_string(),
             "tool_search".to_string(),
             "update_todo_list".to_string(),
         ],
         "decide" => vec![
             "read".to_string(),
-            "read_evidence".to_string(),
             "respond".to_string(),
+            "summary".to_string(),
             "search".to_string(),
             "update_todo_list".to_string(),
         ],
@@ -437,8 +437,7 @@ mod tests {
         assert!(names.contains(&"respond".to_string()));
         assert!(!names.contains(&"shell".to_string()));
         assert!(!names.contains(&"read".to_string()));
-        assert_eq!(tools.first().unwrap().function.name, "read_evidence");
-        assert_eq!(tools.last().unwrap().function.name, "respond");
+        assert_eq!(tools.first().unwrap().function.name, "respond");
     }
 
     #[test]

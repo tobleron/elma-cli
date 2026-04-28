@@ -132,7 +132,7 @@ pub(crate) async fn run_tool_calling_pipeline(
         &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         &runtime.session,
         0.2, // temperature — low for reliability
-        2048,
+        16384,
         tui,
         Some(&runtime.profiles.summarizer_cfg),
         context_hint,

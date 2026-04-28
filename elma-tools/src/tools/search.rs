@@ -4,12 +4,14 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "search",
-            "Search for text patterns in files using ripgrep. Use this to find function definitions, usages, config keys, or any text across the workspace.",
+            "Search for text patterns in files using ripgrep. Use this to find function definitions, usages, config keys, or any text across the workspace. Set literal_text=true to search for literal text without regex escaping.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string", "description": "The text or regex pattern to search for"},
-                    "path": {"type": "string", "description": "Optional directory or file path to restrict the search scope"}
+                    "path": {"type": "string", "description": "Optional directory or file path to restrict the search scope"},
+                    "literal_text": {"type": "boolean", "description": "If true, treat pattern as literal text (auto-escapes regex special chars)"},
+                    "include": {"type": "string", "description": "File pattern to filter by (e.g. '*.rs', '*.{ts,tsx}')"}
                 },
                 "required": ["pattern"]
             }),

@@ -91,6 +91,7 @@ mod json_parser_extract; // Extraction helpers for json_parser
 mod json_tuning; // JSON temperature tuning
 mod llm_provider; // Task 278: Native Rust LLM API Client
 mod logging;
+mod markdown_ansi; // Markdown-to-ANSI terminal rendering
 mod metrics;
 mod models_api;
 mod optimization;

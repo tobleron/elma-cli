@@ -89,6 +89,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ansi-term-styles"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b119b153e819a07938cb791f098dc22c7d6fd37c057705e01b459fea8c35c27"
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1022,6 +1028,7 @@ dependencies = [
  "epub",
  "flate2",
  "futures",
+ "glob",
  "html2text",
  "humansize",
  "ignore",
@@ -1031,13 +1038,15 @@ dependencies = [
  "insta",
  "itertools 0.13.0",
  "jsonrepair-rs",
+ "libc",
+ "markdown-to-ansi",
  "miette",
  "mime_guess",
  "mobi",
  "once_cell",
  "pdf-extract",
  "portable-pty",
- "pulldown-cmark",
+ "pulldown-cmark 0.12.2",
  "quick-xml 0.37.5",
  "ratatui",
  "rayon",
@@ -1077,6 +1086,8 @@ dependencies = [
 name = "elma-tools"
 version = "0.1.0"
 dependencies = [
+ "glob",
+ "ignore",
  "serde",
  "serde_json",
  "which",
@@ -1504,6 +1515,12 @@ name = "gimli"
 version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
+
+[[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "globset"
@@ -2106,9 +2123,9 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "libm"
@@ -2249,6 +2266,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "markdown-to-ansi"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a66e6535583756d1703412b5645add6f7480facf8b3d570755aa727833058ee"
+dependencies = [
+ "ansi-term-styles",
+ "pulldown-cmark 0.13.3",
+ "sublime-syntaxes",
+ "syntect",
 ]
 
 [[package]]
@@ -2814,6 +2843,17 @@ dependencies = [
  "getopts",
  "memchr",
  "pulldown-cmark-escape",
+ "unicase",
+]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c3a14896dfa883796f1cb410461aef38810ea05f2b2c33c5aded3649095fdad"
+dependencies = [
+ "bitflags 2.11.0",
+ "memchr",
  "unicase",
 ]
 
@@ -3753,6 +3793,15 @@ dependencies = [
  "quote",
  "rustversion",
  "syn",
+]
+
+[[package]]
+name = "sublime-syntaxes"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a844c25d301e35eb40346932b9ddafe0790a60e35ab587c42d98e9dc9da041fc"
+dependencies = [
+ "syntect",
 ]
 
 [[package]]

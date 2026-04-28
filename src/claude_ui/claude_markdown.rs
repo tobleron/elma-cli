@@ -38,6 +38,35 @@ pub(crate) enum AssistantBlock {
     Callout(String),
 }
 
+// ─── Structured Markdown IR ───────────────────────────────────────────────
+
+/// Intermediate representation of a rendered markdown block.
+/// Separates parsing from rendering: `parse_markdown` produces these blocks,
+/// then `render_blocks_to_lines` converts them to Ratatui `Line`s.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum RenderBlock {
+    Paragraph(Vec<Line<'static>>),
+    Heading {
+        level: u8,
+        content: Vec<Line<'static>>,
+    },
+    CodeBlock {
+        language: Option<String>,
+        lines: Vec<String>,
+    },
+    List {
+        ordered: bool,
+        start: Option<u64>,
+        items: Vec<Vec<Line<'static>>>,
+    },
+    BlockQuote(Vec<Line<'static>>),
+    Table {
+        headers: Vec<String>,
+        rows: Vec<Vec<String>>,
+    },
+    Rule,
+}
+
 impl AssistantContent {
     pub(crate) fn from_markdown(text: &str) -> Self {
         let normalized = normalize_terminal_markdown(text);
@@ -57,18 +86,6 @@ pub(crate) fn get_theme_set() -> &'static ThemeSet {
     THEME_SET.get_or_init(ThemeSet::load_defaults)
 }
 
-fn push_blank_line(lines: &mut Vec<Line<'static>>) {
-    if !matches!(lines.last(), Some(last) if last.spans.is_empty()) {
-        lines.push(Line::default());
-    }
-}
-
-fn push_current_line(lines: &mut Vec<Line<'static>>, current_spans: &mut Vec<Span<'static>>) {
-    if !current_spans.is_empty() {
-        lines.push(Line::from(std::mem::take(current_spans)));
-    }
-}
-
 fn trim_blank_lines(lines: &mut Vec<Line<'static>>) {
     while matches!(lines.first(), Some(line) if line.spans.is_empty()) {
         lines.remove(0);
@@ -77,6 +94,586 @@ fn trim_blank_lines(lines: &mut Vec<Line<'static>>) {
         lines.pop();
     }
 }
+
+// ─── Parser Phase: Markdown → Vec<RenderBlock> ──────────────────────────
+
+/// Parse markdown into structured blocks with inline styles applied to `Span`s.
+/// Code blocks store raw lines (syntect applied later by renderer).
+/// Tables store raw cell strings (column alignment applied later).
+pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
+    let theme = current_theme();
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_FOOTNOTES);
+    options.insert(Options::ENABLE_TASKLISTS);
+
+    let parser = Parser::new_ext(text, options);
+    let mut blocks = Vec::new();
+    let mut current_spans: Vec<Span<'static>> = Vec::new();
+    let mut current_lines: Vec<Line<'static>> = Vec::new();
+    let mut in_code_block = false;
+    let mut code_block_lines: Vec<String> = Vec::new();
+    let mut code_block_lang: Option<String> = None;
+    let mut in_list = false;
+    let mut list_ordered = false;
+    let mut list_start: Option<u64> = None;
+    let mut list_items: Vec<Vec<Line<'static>>> = Vec::new();
+    let mut current_item_lines: Vec<Line<'static>> = Vec::new();
+    let mut in_blockquote = false;
+    let mut blockquote_lines: Vec<Line<'static>> = Vec::new();
+    let mut in_table = false;
+    let mut table_headers: Vec<String> = Vec::new();
+    let mut table_rows: Vec<Vec<String>> = Vec::new();
+    let mut current_row: Vec<String> = Vec::new();
+    let mut pending_cell = String::new();
+    let mut seen_first_table_row = false; // Header cells come before the first TableRow
+    let mut in_bold = false;
+    let mut in_italic = false;
+    let mut in_strikethrough = false;
+    let mut in_link = false;
+    let mut link_text = String::new();
+    let mut link_url = String::new();
+    let mut pending_text = String::new();
+
+    // Helper: flush pending inline text into spans with current style
+    fn do_flush(
+        pending: &mut String,
+        spans: &mut Vec<Span<'static>>,
+        bold: bool,
+        italic: bool,
+        strikethrough: bool,
+        theme: &Theme,
+    ) {
+        if !pending.is_empty() {
+            spans.push(Span::styled(
+                std::mem::take(pending),
+                get_current_style(bold, italic, strikethrough, theme),
+            ));
+        }
+    }
+
+    // Helper: push accumulated spans as a line
+    fn do_push(spans: &mut Vec<Span<'static>>, lines: &mut Vec<Line<'static>>) {
+        if !spans.is_empty() {
+            lines.push(Line::from(std::mem::take(spans)));
+        }
+    }
+
+    for event in parser {
+        match event {
+            Event::Start(tag) => match tag {
+                Tag::CodeBlock(kind) => {
+                    in_code_block = true;
+                    code_block_lang = match &kind {
+                        CodeBlockKind::Fenced(lang) => {
+                            if lang.is_empty() { None } else { Some(lang.to_string()) }
+                        }
+                        CodeBlockKind::Indented => None,
+                    };
+                    code_block_lines.clear();
+                }
+                Tag::Heading { level, .. } => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_push(&mut current_spans, &mut current_lines);
+                    current_spans.push(Span::styled(
+                        String::new(),
+                        Style::default()
+                            .fg(theme.fg.to_ratatui_color())
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+                Tag::Paragraph => {}
+                Tag::List(start) => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_push(&mut current_spans, &mut current_lines);
+                    if !current_lines.is_empty() {
+                        blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
+                    }
+                    in_list = true;
+                    list_ordered = start.is_some();
+                    list_start = start;
+                    list_items.clear();
+                }
+                Tag::Item => {
+                    do_push(&mut current_spans, &mut current_item_lines);
+                    current_item_lines.clear();
+                }
+                Tag::BlockQuote(_) => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_push(&mut current_spans, &mut current_lines);
+                    if !current_lines.is_empty() {
+                        blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
+                    }
+                    in_blockquote = true;
+                    blockquote_lines.clear();
+                }
+                Tag::Table(_) => {
+                    in_table = true;
+                    seen_first_table_row = false;
+                    table_headers.clear();
+                    table_rows.clear();
+                }
+                Tag::TableHead => {}
+                Tag::TableRow => {
+                    seen_first_table_row = true;
+                }
+                Tag::TableCell => {
+                    pending_cell.clear();
+                }
+                Tag::Emphasis => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    in_italic = true;
+                }
+                Tag::Strong => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    in_bold = true;
+                }
+                Tag::Strikethrough => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    in_strikethrough = true;
+                }
+                Tag::Link { dest_url, .. } => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    in_link = true;
+                    link_url = dest_url.to_string();
+                    link_text.clear();
+                }
+                _ => {}
+            },
+            Event::End(tag_end) => match tag_end {
+                TagEnd::CodeBlock => {
+                    in_code_block = false;
+                    // Trim trailing newlines from last line
+                    if let Some(last) = code_block_lines.last_mut() {
+                        while last.ends_with('\n') {
+                            last.pop();
+                        }
+                    }
+                    // Remove empty lines at end
+                    while code_block_lines.last().map_or(false, |l| l.is_empty()) {
+                        code_block_lines.pop();
+                    }
+                    blocks.push(RenderBlock::CodeBlock {
+                        language: code_block_lang.take(),
+                        lines: std::mem::take(&mut code_block_lines),
+                    });
+                }
+                TagEnd::Heading(level) => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_push(&mut current_spans, &mut current_lines);
+                    let heading_lines = std::mem::take(&mut current_lines);
+                    blocks.push(RenderBlock::Heading {
+                        level: match level {
+                            HeadingLevel::H1 => 1,
+                            HeadingLevel::H2 => 2,
+                            HeadingLevel::H3 => 3,
+                            HeadingLevel::H4 => 4,
+                            HeadingLevel::H5 => 5,
+                            HeadingLevel::H6 => 6,
+                        },
+                        content: heading_lines,
+                    });
+                }
+                TagEnd::Paragraph => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_push(&mut current_spans, &mut current_lines);
+                    if in_blockquote {
+                        blockquote_lines.append(&mut current_lines);
+                    } else if !current_lines.is_empty() {
+                        blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
+                    }
+                }
+                TagEnd::List(_) => {
+                    in_list = false;
+                    // Flush last item
+                    if !current_item_lines.is_empty() {
+                        list_items.push(std::mem::take(&mut current_item_lines));
+                    }
+                    if !list_items.is_empty() {
+                        blocks.push(RenderBlock::List {
+                            ordered: list_ordered,
+                            start: list_start,
+                            items: std::mem::take(&mut list_items),
+                        });
+                    }
+                }
+                TagEnd::Item => {
+                    do_push(&mut current_spans, &mut current_item_lines);
+                    if !current_item_lines.is_empty() || !pending_text.is_empty() {
+                        do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                        do_push(&mut current_spans, &mut current_item_lines);
+                    }
+                    if !current_item_lines.is_empty() {
+                        list_items.push(std::mem::take(&mut current_item_lines));
+                    }
+                    current_item_lines.clear();
+                }
+                TagEnd::BlockQuote(_) => {
+                    in_blockquote = false;
+                    if !blockquote_lines.is_empty() {
+                        blocks.push(RenderBlock::BlockQuote(std::mem::take(&mut blockquote_lines)));
+                    }
+                }
+                TagEnd::Table => {
+                    in_table = false;
+                    // Flush any pending row
+                    if !current_row.is_empty() {
+                        table_rows.push(std::mem::take(&mut current_row));
+                    }
+                    blocks.push(RenderBlock::Table {
+                        headers: std::mem::take(&mut table_headers),
+                        rows: std::mem::take(&mut table_rows),
+                    });
+                }
+                TagEnd::TableRow => {
+                    if !current_row.is_empty() {
+                        table_rows.push(std::mem::take(&mut current_row));
+                    }
+                    pending_cell.clear();
+                }
+                TagEnd::TableHead => {}
+                TagEnd::TableCell => {
+                    if !seen_first_table_row {
+                        table_headers.push(std::mem::take(&mut pending_cell));
+                    } else {
+                        current_row.push(std::mem::take(&mut pending_cell));
+                    }
+                }
+                TagEnd::Emphasis => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    in_italic = false;
+                }
+                TagEnd::Strong => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    in_bold = false;
+                }
+                TagEnd::Strikethrough => {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    in_strikethrough = false;
+                }
+                TagEnd::Link => {
+                    in_link = false;
+                    current_spans.push(Span::styled(
+                        if link_text.is_empty() {
+                            link_url.clone()
+                        } else {
+                            std::mem::take(&mut link_text)
+                        },
+                        Style::default()
+                            .fg(theme.accent_secondary.to_ratatui_color())
+                            .add_modifier(Modifier::UNDERLINED),
+                    ));
+                    link_url.clear();
+                }
+                _ => {}
+            },
+            Event::Text(text) => {
+                if in_code_block {
+                    code_block_lines.push(text.to_string());
+                } else if in_link {
+                    link_text.push_str(&text);
+                } else if in_blockquote {
+                    // Accumulate blockquote text as lines; inline styling applied normally
+                    pending_text.push_str(&text);
+                } else if in_table {
+                    pending_cell.push_str(&text);
+                } else {
+                    pending_text.push_str(&text);
+                }
+            }
+            Event::Code(text) => {
+                if in_code_block {
+                    code_block_lines.push(text.to_string());
+                } else {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    current_spans.push(Span::styled(
+                        format!("`{}`", text),
+                        Style::default()
+                            .fg(theme.accent_secondary.to_ratatui_color())
+                            .add_modifier(Modifier::DIM),
+                    ));
+                }
+            }
+            Event::SoftBreak => {
+                if in_code_block {
+                    // Append to last line (code block lines are raw)
+                    if let Some(last) = code_block_lines.last_mut() {
+                        last.push('\n');
+                    }
+                } else {
+                    pending_text.push(' ');
+                }
+            }
+            Event::HardBreak => {
+                if in_code_block {
+                    if let Some(last) = code_block_lines.last_mut() {
+                        last.push('\n');
+                    }
+                } else {
+                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_push(&mut current_spans, &mut current_lines);
+                }
+            }
+            Event::Rule => {
+                do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_push(&mut current_spans, &mut current_lines);
+                    if !current_lines.is_empty() {
+                        blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
+                    }
+                blocks.push(RenderBlock::Rule);
+            }
+            Event::FootnoteReference(_) | Event::TaskListMarker(_) => {}
+            _ => {}
+        }
+    }
+
+    // Flush any remaining content
+    if in_blockquote {
+        do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+        do_push(&mut current_spans, &mut blockquote_lines);
+        if !blockquote_lines.is_empty() {
+            blocks.push(RenderBlock::BlockQuote(std::mem::take(&mut blockquote_lines)));
+        }
+    } else {
+        do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+        do_push(&mut current_spans, &mut current_lines);
+        if !current_lines.is_empty() {
+            blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
+        }
+    }
+
+    // If no blocks produced, create a single paragraph from the raw text
+    if blocks.is_empty() {
+        blocks.push(RenderBlock::Paragraph(vec![Line::from(vec![Span::styled(
+            text.to_string(),
+            Style::default().fg(theme.fg.to_ratatui_color()),
+        )])]));
+    }
+
+    blocks
+}
+
+// ─── Renderer Phase: Vec<RenderBlock> → Vec<Line<'static>> ──────────────
+
+/// Render structured blocks to Ratatui `Line`s with block-level styling:
+/// code highlighting, table borders, heading spacing, list markers, etc.
+pub(crate) fn render_blocks_to_lines(
+    blocks: &[RenderBlock],
+    theme: &Theme,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let mut output = Vec::new();
+
+    for block in blocks {
+        if !output.is_empty() {
+            // Don't add blank line for the first block
+            match block {
+                RenderBlock::Paragraph(_) => {}
+                _ => {
+                    output.push(Line::default());
+                }
+            }
+        }
+
+        match block {
+            RenderBlock::Paragraph(lines) => {
+                output.extend(lines.clone());
+            }
+            RenderBlock::Heading { level, content } => {
+                let heading_style = Style::default()
+                    .fg(match level {
+                        1 => theme.accent_primary.to_ratatui_color(),
+                        _ => theme.fg.to_ratatui_color(),
+                    })
+                    .add_modifier(Modifier::BOLD);
+                for line in content {
+                    let styled_spans: Vec<Span<'static>> = line
+                        .spans
+                        .iter()
+                        .map(|s| Span::styled(s.content.clone(), heading_style))
+                        .collect();
+                    output.push(Line::from(styled_spans));
+                }
+            }
+            RenderBlock::CodeBlock { language, lines } => {
+                let code_text = lines.join("\n");
+                let code_output = render_code_block(
+                    &code_text,
+                    language.as_deref().unwrap_or(""),
+                    theme,
+                    width,
+                    false,
+                );
+                output.extend(code_output);
+            }
+            RenderBlock::List {
+                ordered,
+                start,
+                items,
+            } => {
+                let mut counter = start.unwrap_or(1);
+                for item in items {
+                    let marker = if *ordered {
+                        let m = format!("{}. ", counter);
+                        counter += 1;
+                        m
+                    } else {
+                        format!("{} ", BULLET)
+                    };
+                    if let Some(first_line) = item.first() {
+                        let mut spans = vec![Span::styled(
+                            marker,
+                            Style::default().fg(theme.accent_secondary.to_ratatui_color()),
+                        )];
+                        spans.extend(first_line.spans.clone());
+                        output.push(Line::from(spans));
+                        for remaining in &item[1..] {
+                            let mut indent_spans = vec![Span::raw("  ")];
+                            indent_spans.extend(remaining.spans.clone());
+                            output.push(Line::from(indent_spans));
+                        }
+                    }
+                }
+            }
+            RenderBlock::BlockQuote(lines) => {
+                for line in lines {
+                    output.push(Line::from(vec![
+                        Span::styled(
+                            format!("{} ", BLOCKQUOTE_BAR),
+                            Style::default().fg(theme.accent_secondary.to_ratatui_color()),
+                        ),
+                        Span::styled(
+                            line.spans
+                                .iter()
+                                .map(|s| s.content.as_ref())
+                                .collect::<Vec<_>>()
+                                .join(""),
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ),
+                    ]));
+                }
+            }
+            RenderBlock::Table { headers, rows } => {
+                let all_rows: Vec<Vec<String>> = if headers.is_empty() {
+                    rows.clone()
+                } else {
+                    let mut h = vec![headers.clone()];
+                    h.extend(rows.clone());
+                    h
+                };
+                let table_lines = render_table_boxed(&all_rows, headers.is_empty(), theme, width);
+                output.extend(table_lines);
+            }
+            RenderBlock::Rule => {
+                output.push(Line::from(vec![Span::styled(
+                    "─".repeat(width.saturating_sub(2).max(6)),
+                    Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                )]));
+            }
+        }
+    }
+
+    // Add trailing blank line
+    if !output.is_empty() {
+        output.push(Line::default());
+    }
+
+    trim_blank_lines(&mut output);
+    collapse_blank_runs(output)
+}
+
+// ─── New table renderer with box-drawing borders ───────────────────────
+
+fn render_table_boxed(
+    rows: &[Vec<String>],
+    _no_header: bool,
+    theme: &Theme,
+    width: usize,
+) -> Vec<Line<'static>> {
+    if rows.is_empty() {
+        return Vec::new();
+    }
+
+    let num_cols = rows[0].len();
+    if num_cols == 0 {
+        return Vec::new();
+    }
+
+    // Compute column widths capped by available width
+    let max_col_width = (width.saturating_sub(3 * num_cols + 1) / num_cols).max(3);
+    let mut col_widths = vec![0; num_cols];
+    for row in rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < num_cols {
+                col_widths[i] = col_widths[i].max(cell.len().min(max_col_width));
+            }
+        }
+    }
+    // Ensure minimum width
+    for w in col_widths.iter_mut() {
+        *w = (*w).max(1);
+    }
+
+    let border_style = Style::default().fg(theme.fg_dim.to_ratatui_color());
+    let header_style = Style::default()
+        .fg(theme.fg.to_ratatui_color())
+        .add_modifier(Modifier::BOLD);
+    let cell_style = Style::default().fg(theme.fg.to_ratatui_color());
+
+    let mut output = Vec::new();
+
+    // Build a horizontal border line
+    let make_border = |left: &str, mid: &str, right: &str| -> Line<'static> {
+        let mut spans = Vec::new();
+        spans.push(Span::styled(left.to_string(), border_style));
+        for (i, w) in col_widths.iter().enumerate() {
+            spans.push(Span::styled("─".repeat(*w + 2), border_style));
+            if i < num_cols - 1 {
+                spans.push(Span::styled(mid.to_string(), border_style));
+            }
+        }
+        spans.push(Span::styled(right.to_string(), border_style));
+        Line::from(spans)
+    };
+
+    // Top border
+    output.push(make_border("┌", "┬", "┐"));
+
+    // Rows
+    for (row_idx, row) in rows.iter().enumerate() {
+        let mut spans = Vec::new();
+        spans.push(Span::styled("│ ", border_style));
+        for (col_idx, cell) in row.iter().enumerate() {
+            let width = col_widths[col_idx];
+            let truncated: String = cell.chars().take(width).collect();
+            let padded = format!("{:<width$}", truncated, width = width);
+            let style = if row_idx == 0 {
+                header_style
+            } else {
+                cell_style
+            };
+            spans.push(Span::styled(padded, style));
+            if col_idx < num_cols - 1 {
+                spans.push(Span::styled(" │ ", border_style));
+            }
+        }
+        spans.push(Span::styled(" │", border_style));
+        output.push(Line::from(spans));
+
+        // Separator after header row
+        if row_idx == 0 && rows.len() > 1 {
+            output.push(make_border("├", "┼", "┤"));
+        }
+    }
+
+    // Bottom border
+    output.push(make_border("└", "┴", "┘"));
+
+    output
+}
+
+// ─── Refactored render_markdown_ratatui (thin wrapper) ──────────────────
 
 fn collapse_blank_runs(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
     let mut normalized = Vec::new();
@@ -92,371 +689,9 @@ fn collapse_blank_runs(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
     normalized
 }
 
-fn flush_pending_text(
-    pending_text: &mut String,
-    current_spans: &mut Vec<Span<'static>>,
-    style: Style,
-) {
-    if !pending_text.is_empty() {
-        current_spans.push(Span::styled(std::mem::take(pending_text), style));
-    }
-}
-
 pub(crate) fn render_markdown_ratatui(text: &str) -> Vec<Line<'static>> {
-    let theme = current_theme();
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-    options.insert(Options::ENABLE_TABLES);
-    options.insert(Options::ENABLE_FOOTNOTES);
-    options.insert(Options::ENABLE_TASKLISTS);
-
-    let parser = Parser::new_ext(text, options);
-    let mut output_lines = Vec::new();
-    let mut current_spans: Vec<Span<'static>> = Vec::new();
-    let mut in_code_block = false;
-    let mut code_block_content = String::new();
-    let mut code_block_lang = String::new();
-    let mut in_list = false;
-    let mut list_level = 0;
-    let mut list_counter: Vec<u64> = Vec::new();
-    let mut in_blockquote = false;
-    let mut blockquote_lines: Vec<String> = Vec::new();
-    let mut in_table = false;
-    let mut table_rows: Vec<Vec<String>> = Vec::new();
-    let mut current_row: Vec<String> = Vec::new();
-    let mut in_bold = false;
-    let mut in_italic = false;
-    let mut in_strikethrough = false;
-    let mut in_link = false;
-    let mut link_text = String::new();
-    let mut link_url = String::new();
-    let mut pending_text = String::new();
-
-    for event in parser {
-        match event {
-            Event::Start(tag) => match tag {
-                Tag::CodeBlock(kind) => {
-                    in_code_block = true;
-                    code_block_lang = match &kind {
-                        CodeBlockKind::Fenced(lang) => lang.to_string(),
-                        CodeBlockKind::Indented => String::new(),
-                    };
-                    code_block_content.clear();
-                }
-                Tag::Heading { level, .. } => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    push_current_line(&mut output_lines, &mut current_spans);
-                    push_blank_line(&mut output_lines);
-                    current_spans.push(Span::styled(
-                        String::new(),
-                        Style::default()
-                            .fg(theme.fg.to_ratatui_color())
-                            .add_modifier(Modifier::BOLD)
-                            .bg(match level {
-                                HeadingLevel::H1 => Color::Reset,
-                                _ => Color::Reset,
-                            }),
-                    ));
-                }
-                Tag::Paragraph => {}
-                Tag::List(start) => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    push_current_line(&mut output_lines, &mut current_spans);
-                    push_blank_line(&mut output_lines);
-                    in_list = true;
-                    list_level += 1;
-                    if let Some(n) = start {
-                        while list_counter.len() < list_level {
-                            list_counter.push(0);
-                        }
-                        list_counter[list_level - 1] = n;
-                    } else {
-                        while list_counter.len() < list_level {
-                            list_counter.push(0);
-                        }
-                        list_counter[list_level - 1] = 0;
-                    }
-                }
-                Tag::Item => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    push_current_line(&mut output_lines, &mut current_spans);
-
-                    // We rely on ratatui wrapping, so we just add the marker at the beginning
-                    // of the item. Any subsequent paragraphs inside the item will just start
-                    // at the beginning of the line, which is acceptable in a simple terminal
-                    // renderer.
-
-                    let indent = "  ".repeat(list_level.saturating_sub(1));
-                    let counter = list_counter.get(list_level - 1).copied().unwrap_or(0);
-                    if counter > 0 {
-                        list_counter[list_level - 1] = counter + 1;
-                        let marker = format!("{}{}. ", indent, counter);
-                        current_spans.push(Span::styled(
-                            marker,
-                            Style::default().fg(theme.accent_secondary.to_ratatui_color()),
-                        ));
-                    } else {
-                        let marker = format!("{}{} ", indent, BULLET);
-                        current_spans.push(Span::styled(
-                            marker,
-                            Style::default().fg(theme.accent_secondary.to_ratatui_color()),
-                        ));
-                    }
-                }
-                Tag::BlockQuote(_) => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    push_current_line(&mut output_lines, &mut current_spans);
-                    push_blank_line(&mut output_lines);
-                    in_blockquote = true;
-                    blockquote_lines.clear();
-                }
-                Tag::Table(_) => {
-                    in_table = true;
-                    table_rows.clear();
-                }
-                Tag::TableHead => {}
-                Tag::TableRow => {}
-                Tag::TableCell => {
-                    pending_text.clear();
-                }
-                Tag::Emphasis => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    in_italic = true;
-                }
-                Tag::Strong => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    in_bold = true;
-                }
-                Tag::Strikethrough => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    in_strikethrough = true;
-                }
-                Tag::Link { dest_url, .. } => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    in_link = true;
-                    link_url = dest_url.to_string();
-                    link_text.clear();
-                }
-                _ => {}
-            },
-            Event::End(tag_end) => match tag_end {
-                TagEnd::CodeBlock => {
-                    in_code_block = false;
-                    let code_lines =
-                        render_code_block(&code_block_content, &code_block_lang, theme, 80, false);
-                    push_blank_line(&mut output_lines);
-                    output_lines.extend(code_lines);
-                    code_block_content.clear();
-                    code_block_lang.clear();
-                }
-                TagEnd::Heading(_) => {
-                    push_current_line(&mut output_lines, &mut current_spans);
-                }
-                TagEnd::Paragraph => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    push_current_line(&mut output_lines, &mut current_spans);
-                }
-                TagEnd::List(_) => {
-                    in_list = false;
-                    if list_level > 0 {
-                        list_level -= 1;
-                    }
-                }
-                TagEnd::BlockQuote(_) => {
-                    in_blockquote = false;
-                    for line in &blockquote_lines {
-                        output_lines.push(Line::from(vec![
-                            Span::styled(
-                                format!("{} ", BLOCKQUOTE_BAR),
-                                Style::default().fg(theme.accent_secondary.to_ratatui_color()),
-                            ),
-                            Span::styled(
-                                line.clone(),
-                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                            ),
-                        ]));
-                    }
-                    blockquote_lines.clear();
-                }
-                TagEnd::Table => {
-                    in_table = false;
-                    let table_lines = render_table_ratatui(&table_rows, theme);
-                    push_blank_line(&mut output_lines);
-                    output_lines.extend(table_lines);
-                    table_rows.clear();
-                }
-                TagEnd::TableRow => {
-                    if !current_row.is_empty() {
-                        table_rows.push(current_row.clone());
-                        current_row.clear();
-                    }
-                    pending_text.clear();
-                }
-                TagEnd::TableCell => {
-                    current_row.push(pending_text.clone());
-                    pending_text.clear();
-                }
-                TagEnd::Emphasis => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    in_italic = false;
-                }
-                TagEnd::Strong => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    in_bold = false;
-                }
-                TagEnd::Strikethrough => {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    in_strikethrough = false;
-                }
-                TagEnd::Link => {
-                    in_link = false;
-                    current_spans.push(Span::styled(
-                        if link_text.is_empty() {
-                            link_url.clone()
-                        } else {
-                            link_text.clone()
-                        },
-                        Style::default()
-                            .fg(theme.accent_secondary.to_ratatui_color())
-                            .add_modifier(Modifier::UNDERLINED),
-                    ));
-                    link_text.clear();
-                    link_url.clear();
-                }
-                _ => {}
-            },
-            Event::Text(text) => {
-                if in_code_block {
-                    code_block_content.push_str(&text);
-                } else if in_link {
-                    link_text.push_str(&text);
-                } else if in_blockquote {
-                    blockquote_lines.push(text.to_string());
-                } else if in_table {
-                    pending_text.push_str(&text);
-                } else {
-                    pending_text.push_str(&text);
-                }
-            }
-            Event::Code(text) => {
-                if in_code_block {
-                    code_block_content.push_str(&text);
-                } else {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    current_spans.push(Span::styled(
-                        format!("`{}`", text),
-                        Style::default()
-                            .fg(theme.accent_secondary.to_ratatui_color())
-                            .add_modifier(Modifier::DIM),
-                    ));
-                }
-            }
-            Event::SoftBreak => {
-                if in_code_block {
-                    code_block_content.push('\n');
-                } else {
-                    pending_text.push(' ');
-                }
-            }
-            Event::HardBreak => {
-                if in_code_block {
-                    code_block_content.push('\n');
-                } else {
-                    flush_pending_text(
-                        &mut pending_text,
-                        &mut current_spans,
-                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                    );
-                    push_current_line(&mut output_lines, &mut current_spans);
-                }
-            }
-            Event::Rule => {
-                flush_pending_text(
-                    &mut pending_text,
-                    &mut current_spans,
-                    get_current_style(in_bold, in_italic, in_strikethrough, theme),
-                );
-                push_current_line(&mut output_lines, &mut current_spans);
-                push_blank_line(&mut output_lines);
-                output_lines.push(Line::from(vec![Span::styled(
-                    "─".repeat(40),
-                    Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                )]));
-                push_blank_line(&mut output_lines);
-            }
-            Event::FootnoteReference(_) | Event::TaskListMarker(_) => {}
-            _ => {}
-        }
-    }
-
-    flush_pending_text(
-        &mut pending_text,
-        &mut current_spans,
-        get_current_style(in_bold, in_italic, in_strikethrough, theme),
-    );
-    push_current_line(&mut output_lines, &mut current_spans);
-
-    if output_lines.is_empty() {
-        output_lines.push(Line::from(vec![Span::styled(
-            text.to_string(),
-            Style::default().fg(theme.fg.to_ratatui_color()),
-        )]));
-    }
-
-    trim_blank_lines(&mut output_lines);
-    collapse_blank_runs(output_lines)
+    let blocks = parse_markdown(text);
+    render_blocks_to_lines(&blocks, current_theme(), 80)
 }
 
 fn get_current_style(bold: bool, italic: bool, strikethrough: bool, theme: &Theme) -> Style {
@@ -765,71 +1000,6 @@ fn classify_markdown_block(text: &str) -> AssistantBlock {
     }
 }
 
-fn render_table_ratatui(rows: &[Vec<String>], theme: &Theme) -> Vec<Line<'static>> {
-    if rows.is_empty() {
-        return Vec::new();
-    }
-
-    let num_cols = rows[0].len();
-    if num_cols == 0 {
-        return Vec::new();
-    }
-
-    let mut col_widths = vec![0; num_cols];
-    for row in rows {
-        for (i, cell) in row.iter().enumerate() {
-            if i < num_cols {
-                col_widths[i] = col_widths[i].max(cell.len());
-            }
-        }
-    }
-
-    let mut output = Vec::new();
-    let border_style = Style::default().fg(theme.fg_dim.to_ratatui_color());
-    let header_style = Style::default()
-        .fg(theme.fg.to_ratatui_color())
-        .add_modifier(Modifier::BOLD);
-
-    for (row_idx, row) in rows.iter().enumerate() {
-        let mut spans = Vec::new();
-        spans.push(Span::styled("| ", border_style));
-
-        for (col_idx, cell) in row.iter().enumerate() {
-            let width = col_widths.get(col_idx).copied().unwrap_or(0);
-            let padded = format!("{:<width$}", cell, width = width);
-            let style = if row_idx == 0 {
-                header_style
-            } else {
-                Style::default().fg(theme.fg.to_ratatui_color())
-            };
-            spans.push(Span::styled(padded, style));
-
-            if col_idx < num_cols - 1 {
-                spans.push(Span::styled(" | ", border_style));
-            }
-        }
-
-        spans.push(Span::styled(" |", border_style));
-        output.push(Line::from(spans));
-
-        if row_idx == 0 {
-            let mut separator = Vec::new();
-            separator.push(Span::styled("|-", border_style));
-            for (col_idx, width) in col_widths.iter().enumerate() {
-                separator.push(Span::styled("-".repeat(*width), border_style));
-                if col_idx < num_cols - 1 {
-                    separator.push(Span::styled("-|-", border_style));
-                } else {
-                    separator.push(Span::styled("-|", border_style));
-                }
-            }
-            output.push(Line::from(separator));
-        }
-    }
-
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -994,5 +1164,154 @@ mod tests {
         let lines = render_assistant_content(&content, 60);
         let blank_count = lines.iter().filter(|line| line.spans.is_empty()).count();
         assert!(blank_count <= 1);
+    }
+
+    // ─── New pipeline tests (parse_markdown + render_blocks_to_lines) ───
+
+    #[test]
+    fn test_parse_bold_italic_nesting() {
+        let md = "**bold *and italic***";
+        let blocks = parse_markdown(md);
+        assert!(!blocks.is_empty(), "Should produce at least one block");
+        // Check that we got a paragraph with styled spans
+        match &blocks[0] {
+            RenderBlock::Paragraph(lines) => {
+                let text = lines
+                    .iter()
+                    .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+                    .collect::<String>();
+                assert!(text.contains("bold"));
+                assert!(text.contains("and italic"));
+            }
+            _ => panic!("Expected Paragraph, got {:?}", blocks[0]),
+        }
+    }
+
+    #[test]
+    fn test_parse_headings_levels() {
+        let md = "# H1\n## H2\n### H3";
+        let blocks = parse_markdown(md);
+        assert_eq!(blocks.len(), 3);
+        assert!(matches!(blocks[0], RenderBlock::Heading { level: 1, .. }));
+        assert!(matches!(blocks[1], RenderBlock::Heading { level: 2, .. }));
+        assert!(matches!(blocks[2], RenderBlock::Heading { level: 3, .. }));
+    }
+
+    #[test]
+    fn test_parse_ordered_list() {
+        let md = "1. First\n2. Second\n3. Third";
+        let blocks = parse_markdown(md);
+        assert!(
+            matches!(&blocks[0], RenderBlock::List { ordered: true, items, .. } if items.len() == 3),
+            "Expected ordered list with 3 items"
+        );
+    }
+
+    #[test]
+    fn test_parse_unordered_list() {
+        let md = "- Item A\n- Item B";
+        let blocks = parse_markdown(md);
+        assert!(
+            matches!(&blocks[0], RenderBlock::List { ordered: false, items, .. } if items.len() == 2),
+            "Expected unordered list with 2 items"
+        );
+    }
+
+    #[test]
+    fn test_parse_table_headers_and_rows() {
+        let md = "| Name | Value |\n|------|-------|\n| Foo  | 42    |\n| Bar  | 99    |";
+        let blocks = parse_markdown(md);
+        eprintln!("Table blocks: {:?}", blocks);
+        match &blocks[0] {
+            RenderBlock::Table { headers, rows } => {
+                assert_eq!(headers, &["Name", "Value"]);
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0], &["Foo", "42"]);
+            }
+            other => panic!("Expected Table, got {:?}", other),
+        }
+    }
+
+
+    #[test]
+    fn test_render_table_boxed_borders() {
+        let md = "| A | B |\n|---|---|\n| 1 | 2 |";
+        let lines = render_markdown_ratatui(md);
+        let text = extract_text(&lines);
+        // Should contain box-drawing characters
+        assert!(text.contains('│'), "Should have vertical box borders, got: {}", text);
+        assert!(text.contains('─'), "Should have horizontal box borders, got: {}", text);
+        assert!(text.contains('A'), "Should contain header cell A");
+        assert!(text.contains('1'), "Should contain data cell 1");
+    }
+
+    #[test]
+    fn test_parse_code_block_language() {
+        let md = "```rust\nfn main() {}\n```";
+        let blocks = parse_markdown(md);
+        match &blocks[0] {
+            RenderBlock::CodeBlock { language, lines } => {
+                assert_eq!(language.as_deref(), Some("rust"));
+                assert_eq!(lines, &["fn main() {}"]);
+            }
+            other => panic!("Expected CodeBlock, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_blockquote() {
+        let md = "> This is a quote";
+        let blocks = parse_markdown(md);
+        eprintln!("Blocks for blockquote: {:?}", blocks);
+        assert!(
+            matches!(&blocks[0], RenderBlock::BlockQuote(_)),
+            "Expected BlockQuote, got {:?}",
+            blocks
+        );
+    }
+
+    #[test]
+    fn test_parse_hard_break() {
+        let md = "Line one  \nLine two";
+        let blocks = parse_markdown(md);
+        // Trailing double-space + newline = HardBreak → two lines
+        match &blocks[0] {
+            RenderBlock::Paragraph(lines) => {
+                assert_eq!(lines.len(), 2, "Hard break should produce two lines");
+            }
+            _ => panic!("Expected Paragraph"),
+        }
+    }
+
+    #[test]
+    fn test_parse_soft_break() {
+        let md = "Line one\nLine two";
+        let blocks = parse_markdown(md);
+        match &blocks[0] {
+            RenderBlock::Paragraph(lines) => {
+                assert_eq!(lines.len(), 1, "Soft break should produce one line");
+            }
+            _ => panic!("Expected Paragraph"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rule() {
+        let md = "Before\n\n---\n\nAfter";
+        let blocks = parse_markdown(md);
+        assert!(
+            blocks.iter().any(|b| matches!(b, RenderBlock::Rule)),
+            "Should contain a Rule block"
+        );
+        // Should have Para, Rule, Para = 3 blocks
+        assert_eq!(blocks.len(), 3);
+    }
+
+    #[test]
+    fn test_blocks_to_lines_produces_output() {
+        let blocks = parse_markdown("Hello world");
+        let lines = render_blocks_to_lines(&blocks, current_theme(), 80);
+        assert!(!lines.is_empty());
+        assert!(!lines[0].spans.is_empty());
     }
 }

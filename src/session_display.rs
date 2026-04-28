@@ -2,8 +2,12 @@
 //!
 //! Session Display Capture - Captures user-visible terminal output for debugging.
 //! Saves what the user actually sees on the terminal.
+//!
+//! Markdown answers are saved as .md files for later summarization.
+//! Terminal display uses markdown-to-ansi for smooth ANSI rendering.
 
 use crate::*;
+use crate::markdown_ansi::render_markdown_to_ansi;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static DISPLAY_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -30,7 +34,7 @@ pub(crate) enum DisplayEntry {
 pub(crate) fn save_display_entry(session: &SessionPaths, entry: DisplayEntry) -> Result<PathBuf> {
     let display_dir = &session.display_dir;
     let counter = DISPLAY_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let (filename, content) = match entry {
+    let (filename, content) = match &entry {
         DisplayEntry::Tool {
             name,
             command,
@@ -41,7 +45,7 @@ pub(crate) fn save_display_entry(session: &SessionPaths, entry: DisplayEntry) ->
                 "{:04}_tool_{}_{}.txt",
                 counter,
                 name,
-                if success { "success" } else { "fail" }
+                if *success { "success" } else { "fail" }
             ),
             format!(
                 "=== Tool: {} ===\nCommand: {}\n\nOutput:\n{}\n",
@@ -52,10 +56,20 @@ pub(crate) fn save_display_entry(session: &SessionPaths, entry: DisplayEntry) ->
             format!("{:04}_thinking.txt", counter),
             format!("=== Thinking ===\n{}\n", content),
         ),
-        DisplayEntry::FinalAnswer { content } => (
-            format!("{:04}_final_answer.txt", counter),
-            format!("=== Final Answer ===\n{}\n", content),
-        ),
+        DisplayEntry::FinalAnswer { content } => {
+            // Save raw markdown as .md for later summarization
+            let md_path = display_dir.join(format!("{:04}_final_answer.md", counter));
+            std::fs::write(&md_path, content.as_bytes())
+                .with_context(|| format!("write {}", md_path.display()))?;
+            // Also save ansi-rendered .txt for terminal viewing
+            (
+                format!("{:04}_final_answer.txt", counter),
+                format!(
+                    "=== Final Answer ===\n{}\n",
+                    render_markdown_to_ansi(content)
+                ),
+            )
+        }
         DisplayEntry::UserPrompt { content } => (
             format!("{:04}_user_prompt.txt", counter),
             format!("=== User Prompt ===\n{}\n", content),

@@ -13,6 +13,7 @@ pub(crate) struct SystemSnapshot {
     pub mem_used_gb: f64,
     pub mem_pct: f64,
     pub num_cpus: u32,
+    pub process_mem_mb: f64,
     pub sampled_at: Instant,
 }
 
@@ -37,6 +38,9 @@ fn collect_snapshot() -> Option<SystemSnapshot> {
     // CPU
     let cpu_pct = get_cpu_pct(num_cpus);
 
+    // Elma process memory
+    let process_mem_mb = get_process_memory_mb();
+
     Some(SystemSnapshot {
         cpu_pct,
         mem_total_gb,
@@ -47,6 +51,7 @@ fn collect_snapshot() -> Option<SystemSnapshot> {
             0.0
         },
         num_cpus,
+        process_mem_mb,
         sampled_at: Instant::now(),
     })
 }
@@ -195,6 +200,47 @@ fn get_cpu_pct(_num_cpus: u32) -> f64 {
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn get_cpu_pct(_num_cpus: u32) -> f64 {
+    0.0
+}
+
+/// Get approximate RSS (resident set size) of the current process in MB.
+fn get_process_memory_mb() -> f64 {
+    #[cfg(target_os = "macos")]
+    {
+        let pid = unsafe { libc::getpid() };
+        let mut task_info = std::mem::MaybeUninit::<libc::proc_taskinfo>::uninit();
+        let size = std::mem::size_of::<libc::proc_taskinfo>() as i32;
+        let ret = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTASKINFO,
+                0,
+                task_info.as_mut_ptr() as *mut libc::c_void,
+                size,
+            )
+        };
+        if ret > 0 {
+            let info = unsafe { task_info.assume_init() };
+            // pti_resident_size is in bytes
+            return info.pti_resident_size as f64 / 1_048_576.0;
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(content) = std::fs::read_to_string("/proc/self/status") {
+            for line in content.lines() {
+                if line.starts_with("VmRSS:") {
+                    if let Some(kb) = line.split_whitespace().nth(1) {
+                        if let Ok(kb_val) = kb.parse::<u64>() {
+                            return kb_val as f64 / 1024.0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     0.0
 }
 

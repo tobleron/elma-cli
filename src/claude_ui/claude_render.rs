@@ -13,6 +13,7 @@ use super::claude_state::{
     ClaudeMessage, ClaudeTranscript, NoticePersistence, UiNotice, FOOTER_HINTS,
 };
 use super::claude_stream::StreamingUI;
+use crate::markdown_ansi::render_markdown_inline_to_ansi;
 use crate::system_monitor;
 use crate::ui_autocomplete;
 use crate::ui_state::trace_log_state;
@@ -1126,7 +1127,10 @@ impl ClaudeRenderer {
         let mut lines = self.transcript.render();
 
         if self.streaming.is_streaming_content && !self.streaming.content.is_empty() {
-            lines.push(format!("… {}", &self.streaming.content));
+            let rendered = render_markdown_inline_to_ansi(&self.streaming.content);
+            for line in rendered.lines() {
+                lines.push(format!("  {}", line));
+            }
         }
 
         let streaming_hint = if self.streaming.is_streaming_thinking {
@@ -1319,28 +1323,36 @@ fn str_display_width(s: &str) -> usize {
 fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterModel>) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
+    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
 
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    // Pad: 1 space left padding inside the panel
-    let pad = " ";
+    // Pad: 2 spaces left padding inside the panel
+    let pad = "  ";
 
     // Available text width (account for left border + padding)
-    let text_width = area.width.saturating_sub(2) as usize;
+    let text_width = area.width.saturating_sub(3) as usize;
 
-    // ELMA logo in roman figlet style
+    // ELMA logo in roman figlet style (with left margin)
     let logo_color = Style::default().fg(theme.accent_primary.to_ratatui_color());
-    let logo = r#"          oooo                              
-          `888                              
- .ooooo.   888  ooo. .oo.  .oo.    .oooo.   
-d88' `88b  888  `888P"Y88bP"Y88b  `P  )88b  
-888ooo888  888   888   888   888   .oP"888  
-888    .o  888   888   888   888  d8(  888  
-`Y8bod8P' o888o o888o o888o o888o `Y888""8o 
+    let logo = r#"            oooo                              
+            `888                              
+   .ooooo.   888  ooo. .oo.  .oo.    .oooo.   
+  d88' `88b  888  `888P"Y88bP"Y88b  `P  )88b  
+  888ooo888  888   888   888   888   .oP"888  
+  888    .o  888   888   888   888  d8(  888  
+  `Y8bod8P' o888o o888o o888o o888o `Y888""8o 
 "#;
     for logo_line in logo.lines() {
         lines.push(Line::from(vec![Span::styled(logo_line, logo_color)]));
     }
+
+    // Version tagline
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "Local first terminal agent v0.1.0",
+        dim,
+    )]));
     lines.push(Line::from(""));
 
     // System info
@@ -1361,7 +1373,22 @@ d88' `88b  888  `888P"Y88bP"Y88b  `P  )88b
         )]));
 
         lines.push(Line::from(vec![Span::styled(
+            format!("{}ELMA {:.0} MB", pad, snap.process_mem_mb),
+            accent,
+        )]));
+
+        lines.push(Line::from(vec![Span::styled(
             format!("{}COR {} cores", pad, snap.num_cpus),
+            dim,
+        )]));
+    }
+
+    // Workspace path
+    if let Ok(cwd) = std::env::current_dir() {
+        let ws_path = cwd.display().to_string();
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::styled(
+            truncate_to_width(&format!("{}📁 {}", pad, ws_path), text_width),
             dim,
         )]));
     }
@@ -1372,7 +1399,7 @@ d88' `88b  888  `888P"Y88bP"Y88b  `P  )88b
             lines.push(Line::from(""));
             lines.push(Line::from(vec![Span::styled(
                 truncate_to_width(&format!("{}{}", pad, model), text_width),
-                dim,
+                accent,
             )]));
         }
     }
@@ -1420,9 +1447,6 @@ fn render_footer_plain(model: &FooterModel, streaming_state: Option<String>) -> 
             "░".repeat(bar_width.saturating_sub(filled))
         ));
     }
-    if let Some(label) = &model.model_label {
-        parts.push(label.clone());
-    }
     if let Some(tx) = &model.transcript_metric {
         parts.push(tx.clone());
     }
@@ -1457,14 +1481,6 @@ fn render_footer_line(
         .to_string();
     let left_width = left.chars().count();
 
-    // Right section: model name
-    let right = model
-        .model_label
-        .as_deref()
-        .unwrap_or("")
-        .to_string();
-    let right_width = right.chars().count();
-
     // Center section: context bar + streaming state
     let mut center_parts: Vec<String> = Vec::new();
     if let Some(ctx) = model.context_pct {
@@ -1486,16 +1502,8 @@ fn render_footer_line(
     let center = center_parts.join("  ");
     let center_width = center.chars().count();
 
-    // Calculate spacing
     let left_pad = if left.is_empty() { 0 } else { left_width + 2 };
-    let right_pad = if right.is_empty() { 0 } else { right_width + 1 };
-
-    let available_center = width.saturating_sub(left_pad + right_pad);
-    let right_offset = if right.is_empty() {
-        0
-    } else {
-        width.saturating_sub(right_width)
-    };
+    let available_center = width.saturating_sub(left_pad);
 
     let mut spans: Vec<Span> = Vec::new();
 
@@ -1507,13 +1515,11 @@ fn render_footer_line(
 
     // Center: context info (truncate if needed)
     let center_text = if center_width > available_center && center_parts.len() >= 2 {
-        // Drop the transcript metric to save space
         let shortened: Vec<String> = center_parts.iter().enumerate().filter_map(|(i, p)| {
             if i == 1 { None } else { Some(p.clone()) }
         }).collect();
         shortened.join("  ")
     } else if center_width > available_center {
-        // Last resort: truncate
         let mut t = center.clone();
         while t.chars().count() > available_center {
             t.pop();
@@ -1523,16 +1529,6 @@ fn render_footer_line(
         center.clone()
     };
     spans.push(Span::styled(center_text, dim_style));
-
-    // Pad before right section
-    if !right.is_empty() {
-        let current_len: usize = spans.iter().map(|s| s.width()).sum();
-        let need_pad = right_offset.saturating_sub(current_len);
-        if need_pad > 0 {
-            spans.push(Span::styled(" ".repeat(need_pad), dim_style));
-        }
-        spans.push(Span::styled(right, dim_style));
-    }
 
     Line::from(spans).style(footer_bg)
 }
@@ -1890,7 +1886,7 @@ mod tests {
     }
 
     #[test]
-    fn test_footer_keeps_full_model_label_when_width_allows() {
+    fn test_footer_model_label_removed_from_bottom_bar() {
         let model = FooterModel {
             context_pct: Some(40),
             model_label: Some("granite-4.0-h-micro-UD-Q8_K_XL.gguf".to_string()),
@@ -1903,7 +1899,8 @@ mod tests {
             .iter()
             .map(|span| span.content.as_ref())
             .collect();
-        assert!(text.contains("granite-4.0-h-micro-UD-Q8_K_XL.gguf"));
+        assert!(!text.contains("granite"));
+        assert!(text.contains("ctx 40%"));
     }
 
     fn fragments_contain(line: &ratatui::text::Line, needle: &str) -> bool {

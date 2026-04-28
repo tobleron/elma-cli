@@ -172,7 +172,6 @@ pub(crate) fn request_requires_workspace_evidence(
 ) -> bool {
     complexity.needs_evidence
         || formula.primary.starts_with("inspect_")
-        || (route_decision.route.eq_ignore_ascii_case("DECIDE") && complexity.needs_evidence)
 }
 
 pub(crate) fn program_has_workspace_evidence_steps(program: &Program) -> bool {

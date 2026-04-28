@@ -59,15 +59,6 @@ pub(crate) fn build_step_results_narrative(
                 .map(snippet)
                 .unwrap_or_else(|| "none".to_string());
 
-            let evidence_tag = ledger.and_then(|l| {
-                l.entries.iter()
-                    .find(|e| {
-                        step_result.id.contains(&e.id) ||
-                        e.summary.contains(&step_result.summary.chars().take(30).collect::<String>())
-                    })
-                    .map(|e| format!("[{}] ", e.id))
-            }).unwrap_or_default();
-
             format!(
                 "Result {step_num} ({kind}) id={id}\n  Purpose: {purpose}\n  Status: ok={ok}, exit_code={exit_code:?}, outcome={outcome}\n  Summary: {summary}\n  Output: {output}",
                 step_num = idx + 1,
@@ -77,7 +68,7 @@ pub(crate) fn build_step_results_narrative(
                 ok = step_result.ok,
                 exit_code = step_result.exit_code,
                 outcome = step_result.outcome_status.as_deref().unwrap_or("unknown"),
-                summary = format!("{}{}", evidence_tag, fallback_text(&step_result.summary, "none")),
+                summary = fallback_text(&step_result.summary, "none"),
                 output = output_excerpt,
             )
         })

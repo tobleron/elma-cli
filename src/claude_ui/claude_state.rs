@@ -11,6 +11,7 @@
 //! - Compact boundary: "✻ Conversation compacted"
 
 use crate::claude_ui::{render_assistant_content, render_markdown_ratatui, AssistantContent};
+use crate::markdown_ansi::render_markdown_to_ansi;
 use crate::ui_theme::*;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -616,10 +617,11 @@ impl ClaudeMessage {
                 lines
             }
             ClaudeMessage::Assistant { content } => {
-                let mut raw_lines = content.raw_markdown.lines();
-                let first = raw_lines.next().unwrap_or_default();
+                let rendered = render_markdown_to_ansi(&content.raw_markdown);
+                let mut md_lines = rendered.lines();
+                let first = md_lines.next().unwrap_or_default();
                 let mut lines = vec![format!("● {}", first)];
-                for line in raw_lines {
+                for line in md_lines {
                     lines.push(format!("  {}", line));
                 }
                 lines

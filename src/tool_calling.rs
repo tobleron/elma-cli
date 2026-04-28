@@ -76,8 +76,8 @@ pub(crate) async fn execute_tool_call(
         "read" => exec_read(&args_value, workdir, &call_id, tui),
         "search" => exec_search(&args_value, workdir, &call_id, tui).await,
         "respond" => exec_respond(&args_value, &call_id, tui),
+        "summary" => exec_summary(&args_value, &call_id, tui),
         "update_todo_list" => exec_update_todo_list(&args_value, &call_id, tui),
-        "read_evidence" => exec_read_evidence(&args_value, &call_id, tui),
         unknown => ToolExecutionResult {
             tool_call_id: call_id,
             tool_name: tool_name.clone(),
@@ -440,11 +440,11 @@ async fn exec_search(
     }
     let cmd = if let Some(p) = &sp {
         format!(
-            "rg --line-number --no-heading --color=never '{}' '{}'",
+            "rg -i --line-number --no-heading --color=never '{}' '{}'",
             pattern, p
         )
     } else {
-        format!("rg --line-number --no-heading --color=never '{}'", pattern)
+        format!("rg -i --line-number --no-heading --color=never '{}'", pattern)
     };
 
     emit_tool_start(&mut tui, "search", &cmd);
@@ -503,6 +503,26 @@ fn exec_respond(
         tool_call_id: call_id.to_string(),
         tool_name: "respond".to_string(),
         content: answer,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_summary(
+    av: &serde_json::Value,
+    call_id: &str,
+    _tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let content = av["content"]
+        .as_str()
+        .map(crate::text_utils::strip_thinking_blocks)
+        .unwrap_or_default();
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "summary".to_string(),
+        content,
         ok: true,
         exit_code: None,
         timed_out: false,
@@ -679,48 +699,6 @@ fn exec_update_todo_list(
         tool_call_id: call_id.to_string(),
         tool_name: "update_todo_list".to_string(),
         ok: !content.starts_with("Error:"),
-        content,
-        exit_code: None,
-        timed_out: false,
-        signal_killed: None,
-    }
-}
-
-fn exec_read_evidence(
-    av: &serde_json::Value,
-    call_id: &str,
-    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
-) -> ToolExecutionResult {
-    let ids: Vec<String> = av["ids"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    emit_tool_start(&mut tui, "read_evidence", &format!("ids: {:?}", ids));
-
-    let result = crate::evidence_ledger::with_session_ledger(|ledger| {
-        crate::tools::tool_evidence::execute_read_evidence(ledger, ids)
-    });
-
-    let (content, ok) = match result {
-        Some(Ok(text)) => (text, true),
-        Some(Err(e)) => (format!("Error: {}", e), false),
-        None => (
-            "Error: Evidence ledger not initialized for this session.".to_string(),
-            false,
-        ),
-    };
-
-    emit_tool_result(&mut tui, "read_evidence", ok, &content);
-
-    ToolExecutionResult {
-        tool_call_id: call_id.to_string(),
-        tool_name: "read_evidence".to_string(),
-        ok,
         content,
         exit_code: None,
         timed_out: false,

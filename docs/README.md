@@ -63,20 +63,23 @@ elma-cli/
 ├── src/                    # Rust source (160+ modules)
 │   ├── main.rs             # Entry point, module registry
 │   ├── app_chat_loop.rs    # Main interactive loop
-│   ├── tool_loop.rs        # Tool-calling execution loop
+│   ├── tool_loop.rs        # Tool-calling execution loop (1518 lines)
 │   ├── tool_calling.rs     # Per-tool dispatch (shell, read, search, respond)
-│   ├── orchestration_core.rs # System prompt construction
-│   ├── llm_provider.rs     # Provider abstraction (OpenAI, Anthropic, etc.)
-│   ├── skills.rs           # Skill registry and formula selector
-│   ├── evidence_ledger.rs  # Evidence tracking and claim enforcement
+│   ├── orchestration_core.rs # System prompt construction (747 lines)
+│   ├── llm_provider.rs     # Provider abstraction (OpenAI, Anthropic, etc.) (860 lines)
+│   ├── skills.rs           # Skill registry and formula selector (466 lines)
+│   ├── formulas/           # Formula patterns and scoring (patterns.rs, scores.rs)
+│   ├── evidence_ledger.rs  # Evidence tracking and claim enforcement (809 lines)
 │   ├── session_*.rs        # Session management modules
 │   ├── safe_mode.rs        # Permission toggle (ask/on/off)
 │   ├── permission_gate.rs  # Destructive command confirmation
-│   ├── shell_preflight.rs  # Command risk classification
-│   ├── document_adapter.rs # Multi-format document extraction
+│   ├── shell_preflight.rs  # Command risk classification (964 lines)
+│   ├── document_adapter.rs # Multi-format document extraction (1752 lines)
 │   ├── tool_registry.rs    # Dynamic tool registry
 │   ├── hybrid_search.rs    # FTS + similarity search
-│   └── trajectory.rs       # Session trajectory compression
+│   ├── stop_policy.rs      # Tool loop termination (1099 lines)
+│   ├── claude_ui/          # Terminal UI components
+│   └── intel_units/        # Intel unit implementations
 ├── config/                 # TOML configuration
 │   ├── defaults/           # Intel unit prompt templates (~70 profiles)
 │   ├── grammars/           # GBNF grammar files for constrained JSON output

@@ -3,10 +3,8 @@
 //! discovery.rs remains as a separate submodule
 
 pub mod discovery;
-pub mod tool_evidence;
 
 pub use discovery::*;
-pub use tool_evidence::*;
 
 // ── Cache types and functions ──────────────────────────────────────────────
 

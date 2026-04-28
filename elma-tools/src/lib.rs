@@ -14,3 +14,6 @@ pub use registry::{
     mark_discovered_filtered, DynamicToolRegistry, RegistryBuilder, ToolDefinitionExt,
 };
 pub use types::{ToolDefinition, ToolFunction};
+
+// Re-export patch parsing for use by the main binary
+pub use tools::patch::{parse_patch, ParsedPatch, PatchOperation, PatchParseError};

@@ -177,7 +177,7 @@ pub(crate) async fn evaluate_runtime_scenario(
         && workflow_ok
         && mode_ok.unwrap_or(true)
         && route_ok
-        && (!scope_eval_ok || scope_eval_ok)
+        && scope_eval_ok
         && program_eval.parsed
         && program_eval.shape_ok
         && program_eval.policy_ok

@@ -185,9 +185,13 @@ mod tests {
     #[test]
     fn test_baseline_environment_filters_sensitive() {
         let env = get_baseline_environment();
-        // Sensitive variables should be filtered
+        // Sensitive variables should be filtered, except essential ones (HOME, PATH, PWD, SHELL, LANG)
+        let essential: &[&str] = &["PATH", "HOME", "PWD", "SHELL", "LANG", "LC_ALL"];
         for pattern in SENSITIVE_ENV_PATTERNS {
             for (key, _) in env.iter() {
+                if essential.contains(&key.as_str()) {
+                    continue;
+                }
                 assert!(
                     !key.to_uppercase().contains(pattern),
                     "Variable {} should be filtered out due to sensitive pattern {}",

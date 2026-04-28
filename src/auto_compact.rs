@@ -78,9 +78,14 @@ impl CompactTracker {
         let buf = buffer.unwrap_or(DEFAULT_COMPACT_BUFFER_TOKENS);
         let threshold = ctx.saturating_sub(buf);
 
+        // Emergency threshold scales with context window: compact even with
+        // few turns if we exceed 80% of the window. Floor at 12K to preserve
+        // the original backstop for small models (8K–16K context).
+        let emergency = (ctx * 8 / 10).max(EMERGENCY_TOKEN_THRESHOLD);
+
         let should = (self.total_tokens >= threshold
             && self.turn_count >= MIN_TURNS_BEFORE_COMPACT)
-            || (self.total_tokens >= EMERGENCY_TOKEN_THRESHOLD);
+            || (self.total_tokens >= emergency);
 
         let should = should && self.compact_failures < MAX_COMPACT_FAILURES;
 

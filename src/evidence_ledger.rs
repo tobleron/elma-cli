@@ -304,6 +304,10 @@ impl EvidenceLedger {
             .join("; ")
     }
 
+    pub(crate) fn get_latest_reflection(&self) -> Option<String> {
+        self.entries.last().map(|e| e.summary.clone())
+    }
+
     pub(crate) fn persist(&self) -> Result<()> {
         let evidence_dir = PathBuf::from(&self.base_dir)
             .join("evidence")

@@ -46,9 +46,10 @@ You are Elma, a local-first terminal agent.
 Understand the user's request and take action. Deliver direct answers for conversational queries. Use tools to gather evidence for factual requests.
 
 Tool workflow:
-1. Discover capabilities with tool_search
-2. Execute commands with shell, read, or search
-3. Call respond when evidence answers the request
+1. Discover extra capabilities with tool_search
+2. Execute commands: shell (terminal), read (view files), search (ripgrep), glob (file patterns), ls (directory tree), fetch (web), write (create), edit (modify), patch (multi-file), update_todo_list (tasks)
+3. Use respond for interim status updates (loops)
+4. Use summary when you have enough evidence that the user request, inquiry, or task is resolved and accomplished
 
 Prefer `rg` for text search and file listing — it respects .gitignore and skips hidden files automatically.
 
@@ -123,7 +124,7 @@ mod tests {
 
         // This hash represents the approved version of the prompt.
         // Update it ONLY after user review and scenario validation.
-        let approved_hash: u64 = 0xc48d0f4d105999d1;
+        let approved_hash: u64 = 0x54da215bbfee1019;
 
         // If this assertion fails, the prompt has been modified.
         // See the module documentation for the change process.
