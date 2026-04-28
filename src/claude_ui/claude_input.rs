@@ -24,6 +24,16 @@ pub(crate) struct SlashCommand {
 
 pub(crate) const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
+        name: "/approve",
+        description: "Tool approval policy",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/clear",
+        description: "Clear conversation",
+        second_action: None,
+    },
+    SlashCommand {
         name: "/compact",
         description: "Summarize conversation",
         second_action: None,
@@ -34,8 +44,8 @@ pub(crate) const SLASH_COMMANDS: &[SlashCommand] = &[
         second_action: None,
     },
     SlashCommand {
-        name: "/clear",
-        description: "Clear conversation",
+        name: "/goals",
+        description: "Show current goal state",
         second_action: None,
     },
     SlashCommand {
@@ -49,8 +59,13 @@ pub(crate) const SLASH_COMMANDS: &[SlashCommand] = &[
         second_action: None,
     },
     SlashCommand {
-        name: "/retry",
-        description: "Retry last assistant response",
+        name: "/models",
+        description: "Switch model/provider",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/reasoning",
+        description: "Toggle reasoning visibility",
         second_action: None,
     },
     SlashCommand {
@@ -59,13 +74,63 @@ pub(crate) const SLASH_COMMANDS: &[SlashCommand] = &[
         second_action: None,
     },
     SlashCommand {
+        name: "/reset",
+        description: "Clear history and reset state",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/reset-goals",
+        description: "Clear goals",
+        second_action: None,
+    },
+    SlashCommand {
         name: "/resume",
         description: "Resume previous session",
         second_action: None,
     },
     SlashCommand {
+        name: "/retry",
+        description: "Retry last assistant response",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/sessions",
+        description: "Session manager",
+        second_action: None,
+    },
+    SlashCommand {
         name: "/skills",
         description: "Show available Elma skills",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/snapshot",
+        description: "Create workspace snapshot",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/tools",
+        description: "Discover available tools",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/tune",
+        description: "Run model tuning",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/usage",
+        description: "Token and cost stats",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/verbose",
+        description: "Toggle verbose mode",
+        second_action: None,
+    },
+    SlashCommand {
+        name: "/quit",
+        description: "Exit Elma",
         second_action: None,
     },
 ];
@@ -97,10 +162,19 @@ impl PickerState {
         if query.is_empty() {
             SLASH_COMMANDS.iter().collect()
         } else {
-            SLASH_COMMANDS
-                .iter()
-                .filter(|c| c.name.contains(query) || c.description.contains(query))
-                .collect()
+            let q = query.to_lowercase();
+            let mut exact: Vec<&SlashCommand> = Vec::new();
+            let mut prefix: Vec<&SlashCommand> = Vec::new();
+            for cmd in SLASH_COMMANDS.iter() {
+                let name = cmd.name.trim_start_matches('/').to_lowercase();
+                if name == q {
+                    exact.push(cmd);
+                } else if name.starts_with(&q) {
+                    prefix.push(cmd);
+                }
+            }
+            exact.extend(prefix);
+            exact
         }
     }
 

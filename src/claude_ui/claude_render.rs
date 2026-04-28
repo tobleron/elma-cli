@@ -56,6 +56,7 @@ pub(crate) struct FooterModel {
     pub context_pct: Option<usize>,
     pub model_label: Option<String>,
     pub transcript_metric: Option<String>,
+    pub mode_label: Option<String>,
 }
 
 pub(crate) struct ClaudeRenderer {
@@ -85,6 +86,8 @@ pub(crate) struct ClaudeRenderer {
     pub(crate) last_content_area: Option<ratatui::layout::Rect>,
     pub(crate) last_start_line: usize,
     pub(crate) last_line_mapping: Vec<usize>,
+    // Whether the ELMA splash has been shown (shows at top of transcript)
+    pub(crate) splash_active: bool,
 }
 
 impl ClaudeRenderer {
@@ -114,6 +117,7 @@ impl ClaudeRenderer {
             last_content_area: None,
             last_start_line: 0,
             last_line_mapping: Vec::new(),
+            splash_active: true,
         }
     }
 
@@ -345,7 +349,11 @@ impl ClaudeRenderer {
     // --- Slash Picker / File Picker / Input Mode (Task 173) ---
 
     pub(crate) fn open_slash_picker(&mut self, query: String) {
-        self.picker_state = PickerState::Slash { query, selected: 0 };
+        let selected = match &self.picker_state {
+            PickerState::Slash { selected, .. } => *selected,
+            _ => 0,
+        };
+        self.picker_state = PickerState::Slash { query, selected };
     }
 
     pub(crate) fn open_file_picker(&mut self, query: String, workdir: &PathBuf) {
@@ -417,10 +425,20 @@ impl ClaudeRenderer {
                     SLASH_COMMANDS.iter().collect()
                 } else {
                     let q = query.to_lowercase();
-                    SLASH_COMMANDS
-                        .iter()
-                        .filter(|c| c.name.contains(&q) || c.description.contains(&q))
-                        .collect()
+                    // Exact matches first, then prefix matches on command name
+                    // (strip leading / from name since query is content after /)
+                    let mut exact: Vec<&super::claude_input::SlashCommand> = Vec::new();
+                    let mut prefix: Vec<&super::claude_input::SlashCommand> = Vec::new();
+                    for cmd in SLASH_COMMANDS.iter() {
+                        let name = cmd.name.trim_start_matches('/').to_lowercase();
+                        if name == q {
+                            exact.push(cmd);
+                        } else if name.starts_with(&q) {
+                            prefix.push(cmd);
+                        }
+                    }
+                    exact.extend(prefix);
+                    exact
                 }
             }
             _ => vec![],
@@ -666,9 +684,18 @@ impl ClaudeRenderer {
         // frames or prior alternate-screen sessions cannot survive in
         // transcript/input/footer regions when the layout changes.
         f.render_widget(
-            Block::default().style(Style::default().bg(Color::Black)),
+            Block::default().style(Style::default().bg(theme.bg.to_ratatui_color())),
             area,
         );
+
+        // Horizontal gutter (1 column each side) so content doesn't touch edges
+        let gutter = 1u16;
+        let content_area = ratatui::layout::Rect {
+            x: area.x + gutter,
+            y: area.y,
+            width: area.width.saturating_sub(gutter * 2),
+            height: area.height,
+        };
 
         let picker_height = match &self.picker_state {
             PickerState::Slash { .. } => {
@@ -691,18 +718,21 @@ impl ClaudeRenderer {
         // 1. Transcript (scrollable, takes all available space)
         // 2. Task list (if visible)
         // 3. Picker (if active)
-        // 4. Input (fixed at bottom)
+        // 4. Input (fixed at bottom, dynamically sized based on wrapped lines)
         // 5. Footer (1 row)
+        let input_display_width = content_area.width.saturating_sub(2) as usize;
+        let wrapped_input = wrap_input_lines(&self.input_lines, input_display_width);
+        let input_height = wrapped_input.len().min(10) as u16;
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),
                 Constraint::Length(task_height),
                 Constraint::Length(picker_height),
-                Constraint::Length(self.input_lines.len() as u16),
+                Constraint::Length(input_height),
                 Constraint::Length(1),
             ])
-            .split(area);
+            .split(content_area);
 
         let transcript_area = main_chunks[0];
         let task_area = main_chunks[1];
@@ -788,9 +818,25 @@ impl ClaudeRenderer {
 
         let (transcript_lines, line_mapping) = self.transcript.render_ratatui(content_width);
 
-        // Inject status thread line at the end of the transcript
-        let mut all_lines = transcript_lines;
-        let mut all_mapping = line_mapping.clone();
+        // Inject ELMA splash at the top of the transcript (scrolls with content)
+        let mut all_lines: Vec<Line<'static>>;
+        let mut all_mapping;
+        if self.splash_active {
+            let transcript_len = transcript_lines.len();
+            let splash_lines = render_splash(&theme, content_width);
+            all_lines = splash_lines;
+            all_lines.extend(transcript_lines);
+            // Mapping: splash lines map to index 0 (first "message")
+            all_mapping = vec![0usize; all_lines.len()];
+            // Fix mapping for actual transcript lines
+            for (i, &m) in line_mapping.iter().enumerate() {
+                all_mapping[all_lines.len() - transcript_len + i] = m;
+            }
+            self.splash_active = false;
+        } else {
+            all_lines = transcript_lines;
+            all_mapping = line_mapping.clone();
+        }
         if let Some(status_line) = self.status_thread.render() {
             let status_span = Line::from(vec![Span::styled(
                 status_line,
@@ -831,10 +877,11 @@ impl ClaudeRenderer {
             .position(start_line)
             .viewport_content_length(height);
 
-        // Render transcript without ratatui re-wrapping. We already control the
-        // row model; letting Paragraph wrap again can produce stray edge glyphs
-        // and broken line mapping for long tool rows.
-        let paragraph = Paragraph::new(visible_lines);
+        // Render transcript with word wrapping at terminal width.
+        // Per-row line mapping is still tracked for hit-testing
+        // (click-to-expand tool traces), but the visible line row will
+        // shift when wrapping produces more output rows than mapped.
+        let paragraph = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, text_area);
 
@@ -872,50 +919,47 @@ impl ClaudeRenderer {
             }
         }
 
-        // Input
+        // Input with wrapping
         let mut input_content = Vec::new();
-        for (i, line) in self.input_lines.iter().enumerate() {
-            let prefix = if i == 0 {
-                match self.input_mode {
-                    InputMode::Bash => Span::styled(
-                        "! ",
-                        Style::default()
-                            .fg(theme.accent_secondary.to_ratatui_color())
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    InputMode::Background => Span::styled(
-                        "& ",
-                        Style::default()
-                            .fg(theme.warning.to_ratatui_color())
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    _ => Span::styled(
-                        "> ",
-                        Style::default().fg(theme.accent_primary.to_ratatui_color()),
-                    ),
+        let prefix_width = 2;
+        let text_width = input_area.width.saturating_sub(prefix_width as u16) as usize;
+        let display_wrapped = wrap_input_lines(&self.input_lines, text_width.max(10));
+        for line in &display_wrapped {
+            input_content.push(Line::from(vec![Span::raw(line.clone())]));
+        }
+
+        // Ghost text: show autocomplete completion inline when the cursor
+        // is at the end of input (the common prefix-typing case).
+        if let Some(ref autocomplete) = self.autocomplete_state {
+            if autocomplete.active && !autocomplete.matches.is_empty() {
+                let sel = autocomplete.selected.min(autocomplete.matches.len() - 1);
+                let label = &autocomplete.matches[sel].label;
+                let prefix = &autocomplete.prefix;
+                if label.len() > prefix.len()
+                    && label.starts_with(prefix.as_str())
+                    && self.input_cursor_row + 1 == self.input_lines.len()
+                    && self.input_cursor_col == self.input_lines[self.input_cursor_row].len()
+                {
+                    let ghost = &label[prefix.len()..];
+                    if let Some(last) = input_content.last_mut() {
+                        let mut spans = last.spans.clone();
+                        spans.push(Span::styled(
+                            ghost.to_string(),
+                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        ));
+                        *last = Line::from(spans);
+                    }
                 }
-            } else {
-                Span::raw("  ")
-            };
-            input_content.push(Line::from(vec![prefix, Span::raw(line.clone())]));
+            }
         }
         f.render_widget(Paragraph::new(input_content), input_area);
 
         // Picker overlay (slash commands or file mentions)
         if picker_height > 0 {
             let mut picker_lines = match &self.picker_state {
-                PickerState::Slash { query, selected } => {
+                PickerState::Slash { query: _, selected } => {
                     let filtered = self.filtered_slash_commands();
-                    let mut lines = vec![Line::from(vec![
-                        Span::styled(
-                            " Commands ",
-                            Style::default()
-                                .fg(theme.accent_primary.to_ratatui_color())
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw(query),
-                    ])];
-                    lines.push(Line::from(""));
+                    let mut lines = Vec::new();
                     for (i, cmd) in filtered.iter().enumerate().take(8) {
                         let is_sel = i == *selected;
                         let arrow = if is_sel {
@@ -979,9 +1023,11 @@ impl ClaudeRenderer {
                 }
                 PickerState::None => vec![],
             };
-            // Add autocomplete suggestions if active
+            // Add autocomplete suggestions if active (skip when slash picker is active
+            // since the picker already provides slash command selection)
             if let Some(state) = &self.autocomplete_state {
-                if state.active && !state.matches.is_empty() {
+                let is_slash_picker = matches!(self.picker_state, PickerState::Slash { .. });
+                if state.active && !state.matches.is_empty() && !is_slash_picker {
                     let max_width = picker_area.width as usize;
                     let max_items = (picker_height - picker_lines.len() as u16).min(10) as usize;
                     let autocomplete_lines =
@@ -1004,27 +1050,47 @@ impl ClaudeRenderer {
 
         if let Some(hint) = &self.prompt_hint {
             let line = Line::from(vec![
-                Span::styled("◦ ", Style::default().fg(theme.fg_dim.to_ratatui_color())),
+                Span::styled(
+                    "◦ ",
+                    Style::default()
+                        .fg(theme.fg_dim.to_ratatui_color())
+                        .bg(theme.bg_footer.to_ratatui_color()),
+                ),
                 Span::styled(
                     hint.content.clone(),
-                    Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                    Style::default()
+                        .fg(theme.fg_dim.to_ratatui_color())
+                        .bg(theme.bg_footer.to_ratatui_color()),
                 ),
             ]);
-            f.render_widget(Paragraph::new(line), footer_area);
+            f.render_widget(
+                Paragraph::new(line)
+                    .style(Style::default().bg(theme.bg_footer.to_ratatui_color())),
+                footer_area,
+            );
         } else if let Some(model) = &self.footer_model {
             let line = render_footer_line(model, self.footer_streaming_state(), footer_area.width);
-            f.render_widget(Paragraph::new(line), footer_area);
+            f.render_widget(
+                Paragraph::new(line),
+                footer_area,
+            );
         } else {
             let hints: Vec<Span> = FOOTER_HINTS
                 .iter()
                 .map(|s| {
                     Span::styled(
                         format!("{}  ", s),
-                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                        Style::default()
+                            .fg(theme.fg_dim.to_ratatui_color())
+                            .bg(theme.bg_footer.to_ratatui_color()),
                     )
                 })
                 .collect();
-            f.render_widget(Paragraph::new(Line::from(hints)), footer_area);
+            f.render_widget(
+                Paragraph::new(Line::from(hints))
+                    .style(Style::default().bg(theme.bg_footer.to_ratatui_color())),
+                footer_area,
+            );
         }
 
         // Render modal if active (Claude-style absolute overlay)
@@ -1038,10 +1104,13 @@ impl ClaudeRenderer {
         // Render model picker if visible
         self.model_picker.render(area, f);
 
+        // Compute cursor position in the wrapped display
+        let (cursor_display_row, cursor_display_col) =
+            cursor_in_wrapped(&self.input_lines, self.input_cursor_row, self.input_cursor_col, text_width.max(10));
         // Set cursor
         f.set_cursor(
-            input_area.x + 2 + self.input_cursor_col as u16,
-            input_area.y + self.input_cursor_row as u16,
+            input_area.x + cursor_display_col as u16,
+            input_area.y + cursor_display_row as u16,
         );
     }
 
@@ -1132,6 +1201,141 @@ fn shorten_model_label(label: &str, max_chars: usize) -> String {
     }
 }
 
+/// Wrap input lines to fit within `display_width` columns, breaking at word
+/// boundaries. Returns lines with "> " or "  " prefix already included.
+fn wrap_input_lines(input_lines: &[String], display_width: usize) -> Vec<String> {
+    let mut result = Vec::new();
+    let prefix_width = 2; // "> " or "  "
+    let text_width = display_width.saturating_sub(prefix_width);
+
+    for (i, line) in input_lines.iter().enumerate() {
+        let prefix = if i == 0 { "> " } else { "  " };
+        if line.is_empty() {
+            result.push(prefix.to_string());
+            continue;
+        }
+
+        let mut remaining = line.as_str();
+        let mut first = true;
+        loop {
+            let current_prefix = if first { prefix } else { "  " };
+            let remaining_width = str_display_width(remaining);
+            if remaining_width <= text_width {
+                result.push(format!("{}{}", current_prefix, remaining));
+                break;
+            }
+
+            // Find a good break point (word boundary)
+            let mut split_at = text_width;
+            let mut char_count = 0;
+            let mut last_ws = None;
+            for (ci, c) in remaining.char_indices() {
+                let char_width = char_display_width(c);
+                if char_count + char_width > text_width {
+                    break;
+                }
+                char_count += char_width;
+                split_at = ci + c.len_utf8();
+                if c == ' ' || c == '\t' {
+                    last_ws = Some(ci);
+                }
+            }
+
+            // Prefer word boundary if we found one past the midpoint
+            if let Some(ws) = last_ws {
+                if ws > text_width / 2 {
+                    split_at = ws;
+                }
+            }
+
+            let chunk = &remaining[..split_at];
+            let rest = remaining[split_at..].trim_start();
+            result.push(format!("{}{}", current_prefix, chunk));
+            remaining = rest;
+            first = false;
+        }
+    }
+    result
+}
+
+/// Map raw (cursor_row, cursor_col) in the input lines to (display_row, display_col)
+/// in the wrapped output, accounting for "> " / "  " prefixes.
+fn cursor_in_wrapped(
+    input_lines: &[String],
+    cursor_row: usize,
+    cursor_col: usize,
+    text_width: usize,
+) -> (usize, usize) {
+    let prefix_width = 2;
+    let mut display_row = 0usize;
+
+    for (li, line) in input_lines.iter().enumerate() {
+        if li == cursor_row {
+            let prefix = if li == 0 { "> " } else { "  " };
+            let prefix_chars: usize = prefix.chars().map(|c| char_display_width(c)).sum();
+
+            let before_cursor = if cursor_col == 0 {
+                ""
+            } else if cursor_col < line.len() {
+                &line[..cursor_col]
+            } else {
+                line
+            };
+            let before_width = str_display_width(before_cursor);
+
+            let wrapped_before = before_width / text_width;
+            display_row += wrapped_before;
+            let col_in_row = before_width % text_width;
+
+            return (display_row, prefix_chars + col_in_row);
+        }
+
+        if line.is_empty() {
+            display_row += 1;
+        } else {
+            let line_width = str_display_width(line);
+            display_row += 1.max((line_width + text_width - 1) / text_width.max(1));
+        }
+    }
+
+    (display_row, prefix_width + cursor_col)
+}
+
+/// Display width of a single character in terminal columns.
+fn char_display_width(c: char) -> usize {
+    unicode_width::UnicodeWidthChar::width(c).unwrap_or(0)
+}
+
+/// Display width of a string in terminal columns.
+fn str_display_width(s: &str) -> usize {
+    s.chars().map(char_display_width).sum()
+}
+
+/// Render the small ELMA ASCII splash in primary color.
+fn render_splash(theme: &Theme, width: usize) -> Vec<Line<'static>> {
+    let pink = Style::default().fg(theme.accent_primary.to_ratatui_color());
+    let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
+    let splash_art = vec![
+        "   ███████╗██╗     ███╗   ███╗ █████╗",
+        "   ██╔════╝██║     ████╗ ████║██╔══██╗",
+        "   █████╗  ██║     ██╔████╔██║███████║",
+        "   ██╔══╝  ██║     ██║╚██╔╝██║██╔══██║",
+        "   ███████╗███████╗██║ ╚═╝ ██║██║  ██║",
+        "   ╚══════╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝",
+    ];
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for art_line in &splash_art {
+        lines.push(Line::from(vec![Span::styled(art_line.to_string(), pink)]));
+    }
+    lines.push(Line::from(vec![Span::styled(
+        "   local-first AI assistant".to_string(),
+        dim,
+    )]));
+    // Blank separator line
+    lines.push(Line::from(""));
+    lines
+}
+
 fn render_footer_plain(model: &FooterModel, streaming_state: Option<String>) -> String {
     let mut parts = Vec::new();
     if let Some(ctx) = model.context_pct {
@@ -1162,69 +1366,103 @@ fn render_footer_line(
     width: u16,
 ) -> Line<'static> {
     let theme = current_theme();
-    let mut segments: Vec<(String, Style)> = Vec::new();
+    let footer_bg = Style::default().bg(theme.bg_footer.to_ratatui_color());
+    let dim_style = Style::default()
+        .fg(theme.fg_dim.to_ratatui_color())
+        .bg(theme.bg_footer.to_ratatui_color());
+    let accent_style = Style::default()
+        .fg(theme.accent_primary.to_ratatui_color())
+        .add_modifier(Modifier::BOLD)
+        .bg(theme.bg_footer.to_ratatui_color());
 
+    let width = width as usize;
+
+    // Left section: mode label (pink+bold) or empty
+    let left: String = model
+        .mode_label
+        .as_deref()
+        .unwrap_or("")
+        .to_string();
+    let left_width = left.chars().count();
+
+    // Right section: model name
+    let right = model
+        .model_label
+        .as_deref()
+        .unwrap_or("")
+        .to_string();
+    let right_width = right.chars().count();
+
+    // Center section: context bar + streaming state
+    let mut center_parts: Vec<String> = Vec::new();
     if let Some(ctx) = model.context_pct {
         let bar_width = 6usize;
         let filled = (ctx.min(100) * bar_width) / 100;
-        segments.push((
-            format!(
-                "ctx {}% {}{}",
-                ctx.min(100),
-                "█".repeat(filled),
-                "░".repeat(bar_width.saturating_sub(filled))
-            ),
-            Style::default().fg(theme.fg_dim.to_ratatui_color()),
-        ));
-    }
-    if let Some(label) = &model.model_label {
-        segments.push((
-            label.clone(),
-            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+        center_parts.push(format!(
+            "ctx {}% {}{}",
+            ctx.min(100),
+            "█".repeat(filled),
+            "░".repeat(bar_width.saturating_sub(filled))
         ));
     }
     if let Some(tx) = &model.transcript_metric {
-        segments.push((
-            tx.clone(),
-            Style::default().fg(theme.fg_dim.to_ratatui_color()),
-        ));
+        center_parts.push(tx.clone());
     }
     if let Some(state) = streaming_state {
-        segments.push((state, Style::default().fg(theme.fg_dim.to_ratatui_color())));
+        center_parts.push(state);
+    }
+    let center = center_parts.join("  ");
+    let center_width = center.chars().count();
+
+    // Calculate spacing
+    let left_pad = if left.is_empty() { 0 } else { left_width + 2 };
+    let right_pad = if right.is_empty() { 0 } else { right_width + 1 };
+
+    let available_center = width.saturating_sub(left_pad + right_pad);
+    let right_offset = if right.is_empty() {
+        0
+    } else {
+        width.saturating_sub(right_width)
+    };
+
+    let mut spans: Vec<Span> = Vec::new();
+
+    // Left: mode label
+    if !left.is_empty() {
+        spans.push(Span::styled(left, accent_style));
+        spans.push(Span::styled("  ", dim_style));
     }
 
-    let mut text_len = footer_len(&segments);
-    if text_len > width as usize && segments.len() >= 3 {
-        segments.remove(2);
-        text_len = footer_len(&segments);
-    }
-    if text_len > width as usize && segments.len() >= 3 {
-        segments.pop();
-        text_len = footer_len(&segments);
-    }
-    if text_len > width as usize && segments.len() >= 2 {
-        let reserved_without_model = footer_len(&[
-            segments[0].clone(),
-            segments
-                .last()
-                .cloned()
-                .unwrap_or_else(|| segments[1].clone()),
-        ]);
-        let available = width as usize;
-        let budget = available.saturating_sub(reserved_without_model + 2).max(12);
-        if let Some((model_text, _)) = segments.get_mut(1) {
-            *model_text = shorten_model_label(model_text, budget);
+    // Center: context info (truncate if needed)
+    let center_text = if center_width > available_center && center_parts.len() >= 2 {
+        // Drop the transcript metric to save space
+        let shortened: Vec<String> = center_parts.iter().enumerate().filter_map(|(i, p)| {
+            if i == 1 { None } else { Some(p.clone()) }
+        }).collect();
+        shortened.join("  ")
+    } else if center_width > available_center {
+        // Last resort: truncate
+        let mut t = center.clone();
+        while t.chars().count() > available_center {
+            t.pop();
         }
+        t
+    } else {
+        center.clone()
+    };
+    spans.push(Span::styled(center_text, dim_style));
+
+    // Pad before right section
+    if !right.is_empty() {
+        let current_len: usize = spans.iter().map(|s| s.width()).sum();
+        let need_pad = right_offset.saturating_sub(current_len);
+        if need_pad > 0 {
+            spans.push(Span::styled(" ".repeat(need_pad), dim_style));
+        }
+        spans.push(Span::styled(right, dim_style));
     }
 
-    let mut spans = Vec::new();
-    for (index, (text, style)) in segments.into_iter().enumerate() {
-        if index > 0 {
-            spans.push(Span::raw("  "));
-        }
-        spans.push(Span::styled(text, style));
-    }
-    Line::from(spans)
+    Line::from(spans).style(footer_bg)
 }
 
 fn footer_len(segments: &[(String, Style)]) -> usize {
@@ -1560,6 +1798,7 @@ mod tests {
                 "granite-4.0-h-micro-UD-Q8_K_XL.gguf/very/long/model/name".to_string(),
             ),
             transcript_metric: Some("tx 123456".to_string()),
+            mode_label: None,
         };
         let line = render_footer_line(&model, Some("∴ Thinking...".to_string()), 36);
         let text: String = line
@@ -1584,6 +1823,7 @@ mod tests {
             context_pct: Some(40),
             model_label: Some("granite-4.0-h-micro-UD-Q8_K_XL.gguf".to_string()),
             transcript_metric: Some("tx 1024".to_string()),
+            mode_label: None,
         };
         let line = render_footer_line(&model, None, 120);
         let text: String = line
