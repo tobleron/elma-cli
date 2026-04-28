@@ -385,7 +385,6 @@ fn sync_managed_profile(
     base_url: &str,
     model_id: &str,
 ) -> Result<()> {
-    let original_base = profile.base_url.clone();
     let original_model = profile.model.clone();
     let original_prompt = profile.system_prompt.clone();
 
@@ -393,8 +392,7 @@ fn sync_managed_profile(
     profile.model = model_id.to_string();
     apply_canonical_system_prompt(profile);
 
-    if profile.base_url != original_base
-        || profile.model != original_model
+    if profile.model != original_model
         || profile.system_prompt != original_prompt
     {
         trace(args, &format!("synced_profile={}", profile.name));

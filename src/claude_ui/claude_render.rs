@@ -13,6 +13,7 @@ use super::claude_state::{
     ClaudeMessage, ClaudeTranscript, NoticePersistence, UiNotice, FOOTER_HINTS,
 };
 use super::claude_stream::StreamingUI;
+use crate::system_monitor;
 use crate::ui_autocomplete;
 use crate::ui_state::trace_log_state;
 use crate::ui_theme::*;
@@ -24,6 +25,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
+
 
 // ============================================================================
 // Screen Buffer (Legacy/Compatibility)
@@ -86,8 +88,7 @@ pub(crate) struct ClaudeRenderer {
     pub(crate) last_content_area: Option<ratatui::layout::Rect>,
     pub(crate) last_start_line: usize,
     pub(crate) last_line_mapping: Vec<usize>,
-    // Whether the ELMA splash has been shown (shows at top of transcript)
-    pub(crate) splash_active: bool,
+
 }
 
 impl ClaudeRenderer {
@@ -117,7 +118,6 @@ impl ClaudeRenderer {
             last_content_area: None,
             last_start_line: 0,
             last_line_mapping: Vec::new(),
-            splash_active: true,
         }
     }
 
@@ -697,6 +697,23 @@ impl ClaudeRenderer {
             height: area.height,
         };
 
+        // Split horizontally: main content (left) + info panel (right)
+        // Right panel = 25% of content width
+        let panel_width = if content_area.width >= 60 {
+            ((content_area.width as f64 * 0.25) as u16).max(18)
+        } else {
+            0u16
+        };
+        let h_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(panel_width),
+            ])
+            .split(content_area);
+        let main_area = h_chunks[0];
+        let panel_area = h_chunks[1];
+
         let picker_height = match &self.picker_state {
             PickerState::Slash { .. } => {
                 let filtered = self.filtered_slash_commands();
@@ -720,7 +737,7 @@ impl ClaudeRenderer {
         // 3. Picker (if active)
         // 4. Input (fixed at bottom, dynamically sized based on wrapped lines)
         // 5. Footer (1 row)
-        let input_display_width = content_area.width.saturating_sub(2) as usize;
+        let input_display_width = main_area.width.saturating_sub(2) as usize;
         let wrapped_input = wrap_input_lines(&self.input_lines, input_display_width);
         let input_height = wrapped_input.len().min(10) as u16;
         let main_chunks = Layout::default()
@@ -732,7 +749,7 @@ impl ClaudeRenderer {
                 Constraint::Length(input_height),
                 Constraint::Length(1),
             ])
-            .split(content_area);
+            .split(main_area);
 
         let transcript_area = main_chunks[0];
         let task_area = main_chunks[1];
@@ -818,25 +835,8 @@ impl ClaudeRenderer {
 
         let (transcript_lines, line_mapping) = self.transcript.render_ratatui(content_width);
 
-        // Inject ELMA splash at the top of the transcript (scrolls with content)
-        let mut all_lines: Vec<Line<'static>>;
-        let mut all_mapping;
-        if self.splash_active {
-            let transcript_len = transcript_lines.len();
-            let splash_lines = render_splash(&theme, content_width);
-            all_lines = splash_lines;
-            all_lines.extend(transcript_lines);
-            // Mapping: splash lines map to index 0 (first "message")
-            all_mapping = vec![0usize; all_lines.len()];
-            // Fix mapping for actual transcript lines
-            for (i, &m) in line_mapping.iter().enumerate() {
-                all_mapping[all_lines.len() - transcript_len + i] = m;
-            }
-            self.splash_active = false;
-        } else {
-            all_lines = transcript_lines;
-            all_mapping = line_mapping.clone();
-        }
+        let mut all_lines = transcript_lines;
+        let mut all_mapping = line_mapping.clone();
         if let Some(status_line) = self.status_thread.render() {
             let status_span = Line::from(vec![Span::styled(
                 status_line,
@@ -896,7 +896,7 @@ impl ClaudeRenderer {
         // Render new messages pill
         if show_pill {
             let pill_text = format!(" {} new messages ▼ ", unseen_count);
-            let total_width = content_area.width as usize;
+            let total_width = pill_area.width as usize;
             let side = (total_width.saturating_sub(pill_text.len())) / 2;
             let pill_line_text = format!(
                 "{}{}{}",
@@ -1091,6 +1091,11 @@ impl ClaudeRenderer {
                     .style(Style::default().bg(theme.bg_footer.to_ratatui_color())),
                 footer_area,
             );
+        }
+
+        // Render right-side info panel
+        if panel_width > 0 {
+            render_right_panel(panel_area, f, &self.footer_model);
         }
 
         // Render modal if active (Claude-style absolute overlay)
@@ -1311,29 +1316,96 @@ fn str_display_width(s: &str) -> usize {
     s.chars().map(char_display_width).sum()
 }
 
-/// Render the small ELMA ASCII splash in primary color.
-fn render_splash(theme: &Theme, width: usize) -> Vec<Line<'static>> {
-    let pink = Style::default().fg(theme.accent_primary.to_ratatui_color());
+fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterModel>) {
+    let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
-    let splash_art = vec![
-        "   ███████╗██╗     ███╗   ███╗ █████╗",
-        "   ██╔════╝██║     ████╗ ████║██╔══██╗",
-        "   █████╗  ██║     ██╔████╔██║███████║",
-        "   ██╔══╝  ██║     ██║╚██╔╝██║██╔══██║",
-        "   ███████╗███████╗██║ ╚═╝ ██║██║  ██║",
-        "   ╚══════╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝",
-    ];
+
     let mut lines: Vec<Line<'static>> = Vec::new();
-    for art_line in &splash_art {
-        lines.push(Line::from(vec![Span::styled(art_line.to_string(), pink)]));
+
+    // Pad: 1 space left padding inside the panel
+    let pad = " ";
+
+    // Available text width (account for left border + padding)
+    let text_width = area.width.saturating_sub(2) as usize;
+
+    // ELMA logo in roman figlet style
+    let logo_color = Style::default().fg(theme.accent_primary.to_ratatui_color());
+    let logo = r#"          oooo                              
+          `888                              
+ .ooooo.   888  ooo. .oo.  .oo.    .oooo.   
+d88' `88b  888  `888P"Y88bP"Y88b  `P  )88b  
+888ooo888  888   888   888   888   .oP"888  
+888    .o  888   888   888   888  d8(  888  
+`Y8bod8P' o888o o888o o888o o888o `Y888""8o 
+"#;
+    for logo_line in logo.lines() {
+        lines.push(Line::from(vec![Span::styled(logo_line, logo_color)]));
     }
-    lines.push(Line::from(vec![Span::styled(
-        "   local-first AI assistant".to_string(),
-        dim,
-    )]));
-    // Blank separator line
     lines.push(Line::from(""));
-    lines
+
+    // System info
+    if let Some(snap) = system_monitor::get_snapshot() {
+        lines.push(Line::from(vec![Span::styled(
+            format!("{}CPU {:5.1}%", pad, snap.cpu_pct),
+            dim,
+        )]));
+
+        lines.push(Line::from(vec![Span::styled(
+            format!("{}MEM {:5.1}%", pad, snap.mem_pct),
+            dim,
+        )]));
+
+        lines.push(Line::from(vec![Span::styled(
+            format!("{}    {:.1}/{:.1} GB", pad, snap.mem_used_gb, snap.mem_total_gb),
+            dim,
+        )]));
+
+        lines.push(Line::from(vec![Span::styled(
+            format!("{}COR {} cores", pad, snap.num_cpus),
+            dim,
+        )]));
+    }
+
+    // Model name
+    if let Some(ref fm) = footer_model {
+        if let Some(ref model) = fm.model_label {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                truncate_to_width(&format!("{}{}", pad, model), text_width),
+                dim,
+            )]));
+        }
+    }
+
+    // Context usage
+    if let Some(ref fm) = footer_model {
+        if let Some(ctx) = fm.context_pct {
+            lines.push(Line::from(vec![Span::styled(
+                format!("{}CTX {}%", pad, ctx.min(100)),
+                dim,
+            )]));
+        }
+    }
+
+    let panel = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::LEFT)
+                .border_style(Style::default().fg(theme.border.to_ratatui_color()))
+                .padding(ratatui::widgets::Padding::new(0, 1, 0, 0)),
+        )
+        .style(Style::default().bg(theme.bg.to_ratatui_color()));
+
+    f.render_widget(panel, area);
+}
+
+/// Truncate a string to fit within a width, handling multi-byte characters correctly.
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    if s.chars().count() <= max_width {
+        s.to_string()
+    } else {
+        s.chars().take(max_width).collect()
+    }
 }
 
 fn render_footer_plain(model: &FooterModel, streaming_state: Option<String>) -> String {

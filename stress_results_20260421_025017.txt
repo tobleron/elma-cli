@@ -1,5 +1,0 @@
-=== Elma CLI Stress Results ===
-Date: 2026-04-21T00:50:17Z
-Base URL: http://192.168.1.186:8080
-Timeout: 120s
-

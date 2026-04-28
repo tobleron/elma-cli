@@ -30,7 +30,7 @@ pub enum ElmaDiagnostic {
     },
 
     #[error("No API base URL configured")]
-    #[diagnostic(code(elma::config::missing_base_url), help("Specify the base URL via --base-url, ELMA_BASE_URL environment variable, or in config/global.toml."))]
+    #[diagnostic(code(elma::config::missing_base_url), help("Specify the base URL via --base-url, LLAMA_BASE_URL environment variable, or in elma.toml."))]
     MissingBaseUrl,
 
     #[error("Invalid mode combination")]

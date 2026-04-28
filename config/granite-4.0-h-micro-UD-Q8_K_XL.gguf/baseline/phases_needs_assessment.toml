@@ -1,6 +1,5 @@
 version = 1
 name = "phases_needs_assessment"
-base_url = "http://192.168.1.186:8080"
 model = "granite-4.0-h-micro-UD-Q8_K_XL.gguf"
 temperature = 0.0
 top_p = 1.0

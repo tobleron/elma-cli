@@ -40,6 +40,10 @@ pub(crate) struct Theme {
     pub warning: ColorToken,
     /// Border/separator color (grey)
     pub border: ColorToken,
+    /// Background color (dark grey, not pure black)
+    pub bg: ColorToken,
+    /// Footer background (slightly lighter than bg)
+    pub bg_footer: ColorToken,
 }
 
 /// Claude Code default theme: black/white/grey + Pink/Cyan
@@ -53,6 +57,8 @@ pub(crate) fn default_theme() -> Theme {
         error: ColorToken(255, 0, 0),              // Red
         warning: ColorToken(255, 255, 0),          // Yellow
         border: ColorToken(64, 64, 64),            // Dark grey
+        bg: ColorToken(28, 28, 30),                // Very dark grey background
+        bg_footer: ColorToken(36, 36, 40),         // Slightly lighter footer bg
     }
 }
 
@@ -303,6 +309,8 @@ mod tests {
         assert_eq!(theme.error, ColorToken(255, 0, 0)); // Red
         assert_eq!(theme.warning, ColorToken(255, 255, 0)); // Yellow
         assert_eq!(theme.border, ColorToken(64, 64, 64)); // Dark grey
+        assert_eq!(theme.bg, ColorToken(28, 28, 30));
+        assert_eq!(theme.bg_footer, ColorToken(36, 36, 40));
     }
 
     #[test]

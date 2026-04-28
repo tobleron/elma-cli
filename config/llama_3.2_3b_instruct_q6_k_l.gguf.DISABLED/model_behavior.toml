@@ -1,6 +1,5 @@
 version = 3
 model = "llama_3.2_3b_instruct_q6_k_l.gguf"
-base_url = "http://192.168.1.186:8080"
 auto_reasoning_separated = false
 auto_final_clean = true
 auto_truncated_before_final = false

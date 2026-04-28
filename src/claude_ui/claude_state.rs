@@ -1073,22 +1073,36 @@ impl ClaudeTranscript {
         while i < self.messages.len() {
             let msg = &self.messages[i];
 
-            // Add blank line only on speaker changes (user → assistant transition)
-            if let ClaudeMessage::Assistant { .. } = msg {
-                if let Some(ClaudeMessage::User { .. }) = self.messages.get(i.wrapping_sub(1)) {
-                    if !lines.is_empty() {
-                        lines.push(Line::from(""));
-                        mapping.push(i); // map blank line to the assistant message too
-                    }
-                }
-            }
-
             let msg_lines =
                 self.messages[i].to_ratatui_lines(self.thinking_expanded_for_index(i), width);
+
+            // Indent non-User messages under the user prompt
+            let msg_lines: Vec<Line<'static>> = if matches!(msg, ClaudeMessage::User { .. }) {
+                msg_lines
+            } else {
+                msg_lines
+                    .into_iter()
+                    .map(|line| {
+                        let mut spans = vec![Span::raw("  ")];
+                        spans.extend(line.spans.into_iter());
+                        Line::from(spans)
+                    })
+                    .collect()
+            };
+
             for _ in &msg_lines {
                 mapping.push(i);
             }
             lines.extend(msg_lines);
+
+            // Add blank line after each conversation cycle (after Assistant, before next message)
+            if matches!(msg, ClaudeMessage::Assistant { .. }) {
+                if i + 1 < self.messages.len() && !lines.is_empty() {
+                    lines.push(Line::from(""));
+                    mapping.push(i);
+                }
+            }
+
             i += 1;
         }
         (lines, mapping)
@@ -1132,7 +1146,7 @@ impl ClaudeTranscript {
 // Footer Hints (Claude Code-style)
 // ============================================================================
 
-pub(crate) const FOOTER_HINTS: &[&str] = &["ctrl+o history · ctrl+t tasks · ctrl+c exit"];
+pub(crate) const FOOTER_HINTS: &[&str] = &["ctrl+t think · ctrl+o tasks · ctrl+c exit"];
 
 pub(crate) fn render_footer_hints() -> String {
     FOOTER_HINTS

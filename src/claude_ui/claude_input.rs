@@ -129,6 +129,11 @@ pub(crate) const SLASH_COMMANDS: &[SlashCommand] = &[
         second_action: None,
     },
     SlashCommand {
+        name: "/expand-thinking",
+        description: "Expand all thinking threads",
+        second_action: None,
+    },
+    SlashCommand {
         name: "/quit",
         description: "Exit Elma",
         second_action: None,
@@ -312,8 +317,8 @@ pub(crate) fn format_key(key: &str) -> String {
 }
 
 pub(crate) const FOOTER_HINTS: &[(&str, &str)] = &[
-    ("ctrl+o", "transcript"),
-    ("ctrl+t", "tasks"),
+    ("ctrl+t", "think"),
+    ("ctrl+o", "tasks"),
     ("ctrl+c", "interrupt"),
     ("enter", "send"),
     ("esc", "cancel"),

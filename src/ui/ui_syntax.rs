@@ -10,9 +10,11 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{Color as SyntectColor, Style, ThemeSet};
+use syntect::highlighting::{Color as SyntectColor, Style};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
+
+use crate::claude_ui::claude_markdown;
 
 /// Cached highlighted snippets to avoid re-computation.
 fn highlight_cache() -> &'static Mutex<HashMap<String, String>> {
@@ -20,10 +22,9 @@ fn highlight_cache() -> &'static Mutex<HashMap<String, String>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Load the syntax set once (expensive operation).
+/// Shared SyntaxSet (loaded once by claude_markdown).
 fn get_syntax_set() -> &'static SyntaxSet {
-    static SS: OnceLock<SyntaxSet> = OnceLock::new();
-    SS.get_or_init(SyntaxSet::load_defaults_newlines)
+    claude_markdown::get_syntax_set()
 }
 
 /// Load the theme once. Uses base16-ocean.dark for dark terminal compatibility.
@@ -31,7 +32,7 @@ fn get_theme() -> &'static syntect::highlighting::Theme {
     use std::sync::OnceLock;
     static THEME: OnceLock<syntect::highlighting::Theme> = OnceLock::new();
     THEME.get_or_init(|| {
-        let ts = ThemeSet::load_defaults();
+        let ts = claude_markdown::get_theme_set();
         ts.themes
             .get("base16-ocean.dark")
             .cloned()

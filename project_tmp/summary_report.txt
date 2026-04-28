@@ -1,0 +1,12 @@
+=== Workspace Scan Summary ===
+Scanned: Tue Apr 28 02:10:05 EEST 2026
+Source files found: 0
+
+--- Counts by Type ---
+(no files found)
+
+--- TODO/FIXME Comments ---
+(0 entries)
+
+--- Files >1MB ---
+(0 files)

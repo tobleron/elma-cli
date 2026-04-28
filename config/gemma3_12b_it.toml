@@ -1,7 +1,6 @@
 version = 1
 name = "gemma3_12b_it"
 
-base_url = "http://192.168.1.186:8080"
 model = "gemma-3-12b-it-null-space-abliterated-q6_k.gguf"
 
 temperature = 1.0

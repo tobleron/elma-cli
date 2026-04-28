@@ -1,6 +1,5 @@
 version = 3
 model = "Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf"
-base_url = "http://192.168.1.186:8080"
 auto_reasoning_separated = true
 auto_final_clean = false
 auto_truncated_before_final = true

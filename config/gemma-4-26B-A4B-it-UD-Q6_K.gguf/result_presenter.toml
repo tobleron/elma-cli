@@ -1,6 +1,5 @@
 version = 1
 name = "result_presenter"
-base_url = "http://192.168.1.186:8080"
 model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
 temperature = 0.1
 top_p = 1.0

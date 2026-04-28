@@ -1,6 +1,5 @@
 version = 1
 model = "llama_3.2_3b_instruct_q6_k_l.gguf"
-base_url = "http://192.168.1.186:8080"
 n_probs = 64
 supports_logprobs = false
 routes = [

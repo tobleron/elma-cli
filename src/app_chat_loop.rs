@@ -246,13 +246,23 @@ async fn handle_chat_command(
             ));
             handled!()
         }
+        "/expand-thinking" => {
+            let expanded = tui.claude_transcript_expanded();
+            tui.set_claude_transcript_expanded(!expanded);
+            tui.notify(&format!(
+                "Thinking {}",
+                if !expanded { "EXPANDED" } else { "COLLAPSED" }
+            ));
+            handled!()
+        }
         "/help" => {
             use crate::ui_state::ModalState;
             let help_content = format!(
                 "GLOBAL:\n\
                  Ctrl+C     Clear input / quit\n\
                  Ctrl+L     Sessions\n\
-                 Ctrl+N     New session\n\n\
+                 Ctrl+N     New session\n\
+                 Ctrl+Shift+S Toggle mouse capture (scroll vs select text)\n\n\
                  CHAT:\n\
                  Enter      Send message\n\
                 Ctrl+J     New line\n\
@@ -264,11 +274,14 @@ async fn handle_chat_command(
                  Ctrl+W     Delete word\n\
                  Ctrl+U     Delete to line start\n\
                  Home/End   Start / end of line\n\n\
+                 THINKING:\n\
+                 Ctrl+T     Expand/collapse all thinking threads\n\
+                 Ctrl+O     Toggle task list\n\n\
                  SLASH COMMANDS:\n\
                  /help      Show this help\n\
                  /models    Switch model/provider\n\
                  /usage     Token and cost stats\n\
-
+                 /expand-thinking Expand all thinking\n\
                  /approve   Tool approval policy\n\
                  /compact   Compact context\n\
                  /reset     Clear history\n\
@@ -324,30 +337,24 @@ async fn handle_chat_command(
             handled!()
         }
         "/approve" => {
-            // Cycle approval policy: yolo → auto → approve → yolo
-            let policies = ["yolo", "auto", "approve"];
-            let current = &runtime.args.disable_guards.to_string();
-            let current_idx = policies.iter().position(|p| p == current).unwrap_or(1);
-            let next_idx = (current_idx + 1) % policies.len();
-            // Note: actual policy change would require runtime mutation.
-            // For now, show the policy selection.
-            use crate::ui_state::ModalState;
-            let policy_content = format!(
-                "Current: {}\n\n\
-                 Policies:\n\
-                 yolo    — Execute everything without approval\n\
-                 auto    — Auto-approve for current session\n\
-                 approve — Always ask before executing tools\n\n\
-                 Next: {}",
-                policies[current_idx], policies[next_idx],
-            );
+            // Cycle approval policy: Off → Ask → On → Off
+            use crate::safe_mode;
+            let current = safe_mode::get_safe_mode();
+            let next = match current {
+                safe_mode::SafeMode::Off => safe_mode::SafeMode::Ask,
+                safe_mode::SafeMode::Ask => safe_mode::SafeMode::On,
+                safe_mode::SafeMode::On => safe_mode::SafeMode::Off,
+            };
+            safe_mode::set_safe_mode(next);
+            let label = match next {
+                safe_mode::SafeMode::Off => "off (yolo — approve all)",
+                safe_mode::SafeMode::Ask => "ask (auto — prompt for destructive)",
+                safe_mode::SafeMode::On => "on (review — ask before every tool)",
+            };
             tui.add_message(
                 MessageRole::Assistant,
-                format!("(approval policy: {})", policies[next_idx]).to_string(),
+                format!("(approval policy: {})", label),
             );
-            tui.set_modal(ModalState::Settings {
-                content: policy_content,
-            });
             handled!()
         }
         "/compact" => {
@@ -681,6 +688,11 @@ async fn run_reflection_loop(
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     let mut tui = TerminalUI::new().context("Failed to initialize Terminal UI")?;
 
+    // Initialize safe mode from CLI flag / env var
+    if runtime.args.disable_guards {
+        crate::safe_mode::set_safe_mode(crate::safe_mode::SafeMode::Off);
+    }
+
     // Mark TUI as active to suppress stderr status messages
     crate::ui_state::set_tui_active(true);
 
@@ -795,7 +807,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         }
 
         // Show activity indicator while processing
-        tui.set_activity("Analyzing", "Processing your request...");
+        tui.set_activity("Thinking", "Thinking...");
 
         // Immediate redraw so user sees submitted message + busy state
         tui.pump_ui()?;
@@ -913,7 +925,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         let hierarchy_goal: Option<Masterplan> = None;
 
-        tui.set_activity("Planning", "Building execution plan...");
+        tui.set_activity("Planning", "Planning...");
         tui.pump_ui()?;
 
         let mut program = build_program(
@@ -957,7 +969,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             && matches!(&program.steps[0], Step::Respond { instructions, .. } if !instructions.trim().is_empty());
 
         let mut loop_outcome = if is_trivial || is_tool_calling_result {
-            tui.set_activity("Responding", "Generating response...");
+            tui.set_activity("Responding", "Responding...");
             tui.pump_ui()?;
             AutonomousLoopOutcome {
                 program: program.clone(),
@@ -966,7 +978,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 reasoning_clean: true,
             }
         } else {
-            tui.set_activity("Executing", "Running steps...");
+            tui.set_activity("Executing", "Executing...");
             tui.pump_ui()?;
             orchestrate_with_retries(
                 &runtime.args,

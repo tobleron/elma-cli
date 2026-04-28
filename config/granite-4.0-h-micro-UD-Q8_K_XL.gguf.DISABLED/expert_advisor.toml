@@ -1,6 +1,5 @@
 version = 1
 name = "expert_advisor"
-base_url = "http://192.168.1.186:8080"
 model = "default"
 temperature = 0.3
 top_p = 1.0

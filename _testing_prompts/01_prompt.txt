@@ -1,0 +1,1 @@
+Write a shell-based automation that scans the workspace for source files (e.g., .py, .js, .sh), summarizes counts by type, extracts TODO/FIXME comments, and identifies files larger than 1MB. Write all outputs (a compact summary report and a concise log) to a `project_tmp` directory. Ensure idempotency, clear status messages, and graceful error handling.

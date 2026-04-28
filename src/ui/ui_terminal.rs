@@ -59,6 +59,8 @@ pub(crate) struct TerminalUI {
     esc_armed_until: Option<Instant>,
     ctrl_c_armed_until: Option<Instant>,
     ctrl_d_armed_until: Option<Instant>,
+    // Text selection is the default; mouse capture can be toggled with Ctrl+Shift+S
+    mouse_capture_enabled: bool,
     queued_submissions: VecDeque<String>,
     // Async permission request channel
     permission_tx: Option<tokio::sync::oneshot::Sender<bool>>,
@@ -90,7 +92,7 @@ impl TerminalUI {
         let is_interactive = is_stdin_tty() && is_stdout_tty();
         let (cols, rows) = if is_interactive {
             let _ = terminal::enable_raw_mode();
-            let _ = execute!(io::stdout(), EnterAlternateScreen, Hide, EnableMouseCapture);
+            let _ = execute!(io::stdout(), EnterAlternateScreen, Hide);
             size().unwrap_or((80, 24))
         } else {
             (80, 24)
@@ -149,6 +151,7 @@ impl TerminalUI {
             transcript_token_estimate: 0,
             background_tasks_visible: false,
             selected_background_task: None,
+            mouse_capture_enabled: false,
         })
     }
 
@@ -416,11 +419,21 @@ impl TerminalUI {
 
     pub(crate) fn set_activity(&mut self, label: &str, message: &str) {
         self.state.set_activity(label, message);
+        // Also start the status thread so the Claude renderer shows
+        // the spinner with the correct activity label.
+        self.state.start_status(message);
+        self.pending_draw = true;
+    }
+
+    /// Flag that the current activity has completed (idle ≠ clear).
+    pub(crate) fn finish_activity(&mut self) {
+        self.state.complete_status("Done");
         self.pending_draw = true;
     }
 
     pub(crate) fn clear_activity(&mut self) {
         self.state.clear_activity();
+        self.state.clear_status();
         self.pending_draw = true;
     }
 
@@ -644,6 +657,14 @@ impl TerminalUI {
         );
     }
 
+    pub(crate) fn claude_transcript_expanded(&self) -> bool {
+        self.claude.transcript.expanded
+    }
+
+    pub(crate) fn set_claude_transcript_expanded(&mut self, expanded: bool) {
+        self.claude.set_transcript_expanded(expanded);
+    }
+
     pub(crate) fn push_budget_notice(&mut self, message: &str) {
         self.push_notice(
             crate::claude_ui::UiNoticeKind::Budget,
@@ -844,6 +865,14 @@ impl TerminalUI {
                 context_pct: Some(ctx_pct),
                 model_label: Some(self.state.footer.model.clone()),
                 transcript_metric,
+                mode_label: {
+                    let wf = &self.state.header.workflow;
+                    if wf.is_empty() {
+                        None
+                    } else {
+                        Some(wf.clone())
+                    }
+                },
             }));
 
         // Sync status thread state (UIState is authoritative, ClaudeRenderer renders it)
@@ -969,6 +998,20 @@ impl TerminalUI {
             }) = ev
             {
                 if kind != KeyEventKind::Press {
+                    continue;
+                }
+
+                // Global shortcut: toggle mouse capture for text selection
+                if code == KeyCode::Char('s')
+                    && modifiers.contains(KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+                {
+                    self.mouse_capture_enabled = !self.mouse_capture_enabled;
+                    if self.mouse_capture_enabled {
+                        let _ = execute!(io::stdout(), EnableMouseCapture);
+                    } else {
+                        let _ = execute!(io::stdout(), DisableMouseCapture);
+                    }
+                    self.pending_draw = true;
                     continue;
                 }
 
@@ -1244,6 +1287,18 @@ impl TerminalUI {
                             }
                             self.pending_draw = true;
                         }
+                        KeyCode::Tab => {
+                            // Tab autocompletes the selected slash command
+                            if let Some(cmd) = self.claude.selected_slash_command() {
+                                self.input.set_content(cmd);
+                                // Re-open picker with the new query for further refinement
+                                let content = self.input.content();
+                                if content.starts_with('/') {
+                                    self.claude.open_slash_picker(content[1..].to_string());
+                                }
+                            }
+                            self.pending_draw = true;
+                        }
                         _ => {}
                     }
                     continue;
@@ -1400,12 +1455,13 @@ impl TerminalUI {
                                 self.pending_draw = true;
                             }
                             'o' => {
-                                // Ctrl+O: toggle transcript expanded mode
-                                self.claude.toggle_transcript();
+                                // Ctrl+O: toggle task list
+                                self.tasks.toggle();
                                 self.pending_draw = true;
                             }
                             't' => {
-                                self.tasks.toggle();
+                                // Ctrl+T: expand all thinking threads
+                                self.claude.toggle_transcript();
                                 self.pending_draw = true;
                             }
                             'u' => {

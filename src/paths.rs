@@ -26,10 +26,34 @@ pub(crate) fn global_config_path(config_root: &Path) -> PathBuf {
     config_root.join("global.toml")
 }
 
+pub(crate) fn elma_config_path() -> Result<PathBuf> {
+    Ok(repo_root()?.join("elma.toml"))
+}
+
+pub(crate) fn load_elma_config(path: &Path) -> Result<ElmaProjectConfig> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("Failed to read elma config at {}", path.display()))?;
+    let s = String::from_utf8(bytes).context("elma config is not valid UTF-8")?;
+    toml::from_str(&s).with_context(|| format!("Failed to parse {}", path.display()))
+}
+
 pub(crate) fn discover_saved_base_url(
     config_root: &Path,
     model_hint: Option<&str>,
 ) -> Result<Option<String>> {
+    // 1. Check elma.toml first (single config file)
+    if let Ok(elma_path) = elma_config_path() {
+        if elma_path.exists() {
+            if let Ok(cfg) = load_elma_config(&elma_path) {
+                let url = cfg.base_url.trim();
+                if !url.is_empty() {
+                    return Ok(Some(url.to_string()));
+                }
+            }
+        }
+    }
+
+    // 2. Fall back to global.toml
     let global_path = global_config_path(config_root);
     if global_path.exists() {
         let cfg = load_global_config(&global_path)?;

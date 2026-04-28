@@ -658,7 +658,8 @@ pub(crate) async fn request_chat_final_text(
                 let _ = t.pump_ui();
             }
 
-            Ok((content, usage_total))
+            // Return None for usage to avoid overwriting cumulative estimate with per-request tokens
+            Ok((content, None))
         }
     }
 }

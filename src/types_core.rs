@@ -113,6 +113,7 @@ pub(crate) enum Commands {
 pub(crate) struct Profile {
     pub(crate) version: u32,
     pub(crate) name: String,
+    #[serde(default, skip_serializing)]
     pub(crate) base_url: String,
     pub(crate) model: String,
     pub(crate) temperature: f64,
@@ -132,6 +133,14 @@ pub(crate) struct RouterCalibration {
     pub(crate) n_probs: u32,
     pub(crate) supports_logprobs: bool,
     pub(crate) routes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct ElmaProjectConfig {
+    #[serde(default)]
+    pub(crate) base_url: String,
+    #[serde(default)]
+    pub(crate) model: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

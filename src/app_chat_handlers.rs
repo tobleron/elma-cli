@@ -18,15 +18,15 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
         println!("Model:    {}", runtime.model_id);
         println!();
         println!("Usage: /api <endpoint_url> [model_id]");
-        println!("  /api http://192.168.1.186:8080/v1");
-        println!("  /api http://192.168.1.186:8080/v1 llama-3.2-3b-instruct");
+        println!("  /api http://localhost:8080/v1");
+        println!("  /api http://localhost:8080/v1 llama-3.2-3b-instruct");
         println!();
         return Ok(());
     }
 
     // Parse arguments
     let mut parts = args_trimmed.split_whitespace();
-    let new_base_url = parts.next().unwrap_or("http://192.168.1.186:8080/v1");
+    let new_base_url = parts.next().unwrap_or("http://localhost:8080/v1");
     let new_model_id = parts.next();
 
     // Validate URL

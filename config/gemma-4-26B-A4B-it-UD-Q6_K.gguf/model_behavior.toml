@@ -1,6 +1,5 @@
 version = 3
 model = "gemma-4-26B-A4B-it-UD-Q6_K.gguf"
-base_url = "http://192.168.1.186:8080"
 auto_reasoning_separated = true
 auto_final_clean = true
 auto_truncated_before_final = false

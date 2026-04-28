@@ -151,6 +151,7 @@ mod stop_policy;
 mod storage;
 mod strategy; // Multi-strategy planning with fallback chains (Task 010)
 mod streaming_tool_executor; // Task 115: Streaming Token Execution
+mod system_monitor; // Right-side panel system resource monitor
 mod task_steward; // Task 202: Project task steward skill
 mod temp;
 mod text_utils;

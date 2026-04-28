@@ -1,0 +1,6 @@
+# CODEOWNERS
+# Files that require explicit human review before modification.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Core system prompt — must not be modified without user approval
+src/prompt_core.rs    @r2

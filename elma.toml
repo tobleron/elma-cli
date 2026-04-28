@@ -1,0 +1,5 @@
+# Elma CLI Configuration
+# This is the single configuration file for all Elma CLI settings.
+
+base_url = "http://192.168.1.186:8080"
+model = "granite-4.0-h-micro-UD-Q8_KL.gguf"

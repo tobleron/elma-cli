@@ -37,13 +37,13 @@ impl ModelPicker {
         let models = vec![
             ModelInfo {
                 name: "Nanbeige-4.1-3B-Q6_K".to_string(),
-                base_url: "http://192.168.1.186:8080".to_string(),
+                base_url: "http://localhost:8080".to_string(),
                 max_tokens: 16384,
                 temperature: 0.2,
             },
             ModelInfo {
                 name: "gemma-3-12b-it".to_string(),
-                base_url: "http://192.168.1.186:8080".to_string(),
+                base_url: "http://localhost:8080".to_string(),
                 max_tokens: 8192,
                 temperature: 0.2,
             },

@@ -1,6 +1,5 @@
 version = 1
 name = "intention"
-base_url = "http://192.168.1.186:8080"
 model = "granite-4.0-h-micro-UD-Q8_KL.gguf"
 temperature = 0.2
 top_p = 1.0

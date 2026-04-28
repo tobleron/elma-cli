@@ -28,6 +28,20 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     let cfg_root = config_root_path(&args.config_root)?;
     let (base_url, base_url_source) =
         resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref())?;
+
+    // Persist to elma.toml (primary config) and global.toml (legacy)
+    if base_url_source == "cli_or_env" {
+        let elma_path = elma_config_path()?;
+        let elma_cfg = ElmaProjectConfig {
+            base_url: base_url.clone(),
+            model: args.model.clone().unwrap_or_default(),
+        };
+        let s = toml::to_string_pretty(&elma_cfg)
+            .context("Failed to serialize elma.toml")?;
+        std::fs::write(&elma_path, s.as_bytes())
+            .context("Failed to write elma.toml")?;
+    }
+
     save_global_config(
         &global_config_path(&cfg_root),
         &GlobalConfig {

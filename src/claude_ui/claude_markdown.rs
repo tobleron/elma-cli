@@ -49,11 +49,11 @@ impl AssistantContent {
     }
 }
 
-fn get_syntax_set() -> &'static SyntaxSet {
+pub(crate) fn get_syntax_set() -> &'static SyntaxSet {
     SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
 }
 
-fn get_theme_set() -> &'static ThemeSet {
+pub(crate) fn get_theme_set() -> &'static ThemeSet {
     THEME_SET.get_or_init(ThemeSet::load_defaults)
 }
 
@@ -164,6 +164,13 @@ pub(crate) fn render_markdown_ratatui(text: &str) -> Vec<Line<'static>> {
                 }
                 Tag::Paragraph => {}
                 Tag::List(start) => {
+                    flush_pending_text(
+                        &mut pending_text,
+                        &mut current_spans,
+                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
+                    );
+                    push_current_line(&mut output_lines, &mut current_spans);
+                    push_blank_line(&mut output_lines);
                     in_list = true;
                     list_level += 1;
                     if let Some(n) = start {
@@ -209,6 +216,13 @@ pub(crate) fn render_markdown_ratatui(text: &str) -> Vec<Line<'static>> {
                     }
                 }
                 Tag::BlockQuote(_) => {
+                    flush_pending_text(
+                        &mut pending_text,
+                        &mut current_spans,
+                        get_current_style(in_bold, in_italic, in_strikethrough, theme),
+                    );
+                    push_current_line(&mut output_lines, &mut current_spans);
+                    push_blank_line(&mut output_lines);
                     in_blockquote = true;
                     blockquote_lines.clear();
                 }
@@ -262,15 +276,13 @@ pub(crate) fn render_markdown_ratatui(text: &str) -> Vec<Line<'static>> {
                     in_code_block = false;
                     let code_lines =
                         render_code_block(&code_block_content, &code_block_lang, theme, 80, false);
-                    output_lines.push(Line::default());
+                    push_blank_line(&mut output_lines);
                     output_lines.extend(code_lines);
-                    output_lines.push(Line::default());
                     code_block_content.clear();
                     code_block_lang.clear();
                 }
                 TagEnd::Heading(_) => {
                     push_current_line(&mut output_lines, &mut current_spans);
-                    push_blank_line(&mut output_lines);
                 }
                 TagEnd::Paragraph => {
                     flush_pending_text(
@@ -279,15 +291,11 @@ pub(crate) fn render_markdown_ratatui(text: &str) -> Vec<Line<'static>> {
                         get_current_style(in_bold, in_italic, in_strikethrough, theme),
                     );
                     push_current_line(&mut output_lines, &mut current_spans);
-                    push_blank_line(&mut output_lines);
                 }
                 TagEnd::List(_) => {
                     in_list = false;
                     if list_level > 0 {
                         list_level -= 1;
-                    }
-                    if list_level == 0 {
-                        push_blank_line(&mut output_lines);
                     }
                 }
                 TagEnd::BlockQuote(_) => {
@@ -305,14 +313,12 @@ pub(crate) fn render_markdown_ratatui(text: &str) -> Vec<Line<'static>> {
                         ]));
                     }
                     blockquote_lines.clear();
-                    push_blank_line(&mut output_lines);
                 }
                 TagEnd::Table => {
                     in_table = false;
                     let table_lines = render_table_ratatui(&table_rows, theme);
                     push_blank_line(&mut output_lines);
                     output_lines.extend(table_lines);
-                    push_blank_line(&mut output_lines);
                     table_rows.clear();
                 }
                 TagEnd::TableRow => {

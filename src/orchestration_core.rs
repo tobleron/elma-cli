@@ -119,7 +119,7 @@ pub(crate) async fn run_tool_calling_pipeline(
         "tool_calling: direct model planning (no Maestro)",
     );
 
-    tui.start_status("Working...");
+    tui.start_status("Executing...");
 
     let result = run_tool_loop(
         &runtime.args,

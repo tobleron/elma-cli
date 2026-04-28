@@ -1,6 +1,5 @@
 version = 1
 name = "workflow_complexity_planner"
-base_url = "http://192.168.1.186:8080"
 model = "Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf"
 temperature = 0.2
 top_p = 1.0

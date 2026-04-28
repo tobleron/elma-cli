@@ -1,6 +1,5 @@
 version = 1
 name = "action_needs_classifier"
-base_url = "http://192.168.1.186:8080"
 model = "Nanbeige-4.1-3B-Q6_K.gguf"
 temperature = 0.0
 top_p = 1.0
