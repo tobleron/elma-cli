@@ -25,8 +25,8 @@ const UNSCOPED_WARN_THRESHOLD: usize = 20;
 /// Threshold: block unscoped operations affecting this many files.
 const UNSCOPED_BLOCK_THRESHOLD: usize = 100;
 
-/// Protected directories that cannot be mutated by model-initiated commands.
-const PROTECTED_DIRS: &[&str] = &[
+/// Protected directories — informational only, no longer block mutations.
+const _PROTECTED_DIRS: &[&str] = &[
     "sessions/",
     "config/",
     "_tasks/",
@@ -37,8 +37,8 @@ const PROTECTED_DIRS: &[&str] = &[
     "_claude_code_src/",
 ];
 
-/// Protected files that cannot be mutated.
-const PROTECTED_FILES: &[&str] = &[
+/// Protected files — informational only, no longer block mutations.
+const _PROTECTED_FILES: &[&str] = &[
     "Cargo.toml",
     "Cargo.lock",
     "rust-toolchain.toml",
@@ -631,96 +631,10 @@ pub(crate) fn preflight_command(command: &str, workdir: &PathBuf) -> PreflightRe
     }
 }
 
-/// Strip `/dev/null` redirects from a command so the bare `>` mutation
-/// check does not flag harmless stderr suppression (e.g. `2>/dev/null`).
-fn sanitize_null_redirects(command: &str) -> String {
-    let patterns: &[&str] = &[
-        "2>/dev/null",
-        "1>/dev/null",
-        ">/dev/null",
-        ">>/dev/null",
-        "&>/dev/null",
-        "2>>/dev/null",
-        "1>>/dev/null",
-    ];
-    let mut sanitized = command.to_string();
-    for pat in patterns {
-        sanitized = sanitized.replace(pat, "");
-    }
-    sanitized
-}
-
-fn check_protected_paths(command: &str) -> Option<String> {
-    let cmd = command.trim();
-    let read_only = [
-        "ls ", "cat ", "head ", "tail ", "wc ", "echo ", "rg ", "grep ", "find ", "tree ", "stat ",
-        "file ", "du ", "df ", "less ", "more ", "bat ",
-    ];
-    for prefix in &read_only {
-        if cmd.starts_with(prefix) {
-            return None;
-        }
-    }
-
-    // Sanitize the command: strip harmless /dev/null redirects before
-    // checking for mutation prefixes. The bare `>` prefix matches
-    // `2>/dev/null` which is a harmless stderr suppression, not a
-    // file-system mutation.
-    let sanitized = sanitize_null_redirects(cmd);
-
-    let mutation_prefixes = [
-        "rm ",
-        "mv ",
-        "cp ",
-        "chmod ",
-        "chown ",
-        "touch ",
-        "mkdir -p ",
-        "rmdir ",
-        "tee ",
-        ">",
-        ">>",
-        "git reset ",
-        "git clean ",
-        "git checkout ",
-    ];
-    let is_mutation = mutation_prefixes
-        .iter()
-        .any(|p| sanitized.starts_with(*p) || sanitized.contains(*p));
-    if !is_mutation {
-        return None;
-    }
-
-    for protected in PROTECTED_DIRS {
-        let dir_name = protected.trim_end_matches('/');
-        if cmd.contains(protected)
-            || cmd.contains(&format!("{}/", dir_name))
-            || cmd.contains(&format!(" {}", dir_name))
-        {
-            return Some(format!(
-                "Cannot modify protected path: '{}'.\n\n\
-                The '{}' directory is critical to Elma's operation and cannot be mutated.\n\
-                What you CAN do:\n\
-                - Read files: `ls {}`, `cat {}/FILE`, `rg 'pattern' {}`\n\
-                - Use Elma's built-in tools: /snapshot for backups, /reset for sessions",
-                protected, dir_name, protected, dir_name, protected
-            ));
-        }
-    }
-
-    for protected in PROTECTED_FILES {
-        if cmd.contains(protected) {
-            return Some(format!(
-                "Cannot modify protected file: '{}'.\n\n\
-                This file is critical to Elma's configuration and cannot be mutated.\n\
-                What you CAN do:\n\
-                - Read the file: `cat {}`\n\
-                - Search within it: `rg 'pattern' {}`",
-                protected, protected, protected
-            ));
-        }
-    }
-
+fn check_protected_paths(_command: &str) -> Option<String> {
+    // Protected path blocking removed — Elma may operate in other projects
+    // where src/, config/, etc. are not Elma-specific directories.
+    // Risk classification (classify_command) and dry-run previews still apply.
     None
 }
 
@@ -984,6 +898,7 @@ mod tests {
         assert!(result.estimated_count >= 0);
     }
 
+    // Protected dirs/files no longer block mutations — only risk classification applies.
     #[test]
     fn test_protected_dir_read_allowed() {
         assert!(check_protected_paths("ls sessions/").is_none());
@@ -992,16 +907,18 @@ mod tests {
     }
 
     #[test]
-    fn test_protected_dir_mutation_blocked() {
-        assert!(check_protected_paths("rm -rf sessions/").is_some());
-        assert!(check_protected_paths("mv src/backup/").is_some());
-        assert!(check_protected_paths("cp config/orchestrator.toml /tmp/").is_some());
+    fn test_protected_dir_mutation_no_longer_blocked() {
+        // Protected path blocking removed — mutations now pass through
+        // but risk classification and dry-run previews still apply.
+        assert!(check_protected_paths("rm -rf sessions/").is_none());
+        assert!(check_protected_paths("mv src/backup/").is_none());
+        assert!(check_protected_paths("cp config/orchestrator.toml /tmp/").is_none());
     }
 
     #[test]
-    fn test_protected_file_mutation_blocked() {
-        assert!(check_protected_paths("rm Cargo.toml").is_some());
-        assert!(check_protected_paths("mv Cargo.lock backup/").is_some());
+    fn test_protected_file_mutation_no_longer_blocked() {
+        assert!(check_protected_paths("rm Cargo.toml").is_none());
+        assert!(check_protected_paths("mv Cargo.lock backup/").is_none());
     }
 
     #[test]
@@ -1035,5 +952,13 @@ mod tests {
     fn test_destructive_pipe_alone_is_dangerous() {
         let cmd = "find . | xargs rm -rf";
         assert!(matches!(classify_command(cmd), RiskLevel::Dangerous(_)));
+    }
+
+    #[test]
+    fn test_real_mutation_no_longer_blocked() {
+        // Protected path blocking removed — all these pass through now
+        assert!(check_protected_paths("rm -rf .git/").is_none());
+        assert!(check_protected_paths("mv .git/hooks /tmp/").is_none());
+        assert!(check_protected_paths("cp config/orchestrator.toml /tmp/").is_none());
     }
 }

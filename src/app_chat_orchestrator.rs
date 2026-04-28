@@ -37,7 +37,7 @@ pub(crate) async fn build_program(
 pub(crate) async fn build_program_with_temp(
     runtime: &mut AppRuntime,
     line: &str,
-    _route_decision: &RouteDecision,
+    route_decision: &RouteDecision,
     _workflow_plan: Option<&WorkflowPlannerOutput>,
     _complexity: &ComplexityAssessment,
     _scope: &ScopePlan,
@@ -46,7 +46,8 @@ pub(crate) async fn build_program_with_temp(
     tui: &mut crate::ui_terminal::TerminalUI,
 ) -> Program {
     // Tool-calling pipeline: model plans and executes tools directly (no Maestro)
-    match crate::orchestration_core::run_tool_calling_pipeline(runtime, line, tui).await {
+    let context_hint = route_decision.route.as_str();
+    match crate::orchestration_core::run_tool_calling_pipeline(runtime, line, tui, context_hint).await {
         Ok((answer, iterations, tool_calls, stopped_by_max)) => {
             trace(
                 &runtime.args,

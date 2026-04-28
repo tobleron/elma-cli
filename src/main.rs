@@ -72,6 +72,7 @@ mod formulas;
 mod fs_intel; // Task 072: Specialized Filesystem Intel
 mod guardrails; // State-aware guardrails for context drift (Task 011)
 mod guardrails_refinement; // Guardrails refinement phase (Task 011)
+mod goal_seeding; // T305: Goal seeding from multi-step requests
 mod hook_system; // Tasks 123, 124, 125: Extensible hook framework
 mod hybrid_search; // Task 273: Hybrid Search Memory System With FTS And Vector Search
 mod input_parser; // Task 013: Smart Input Prefixes And Command Modes
@@ -117,6 +118,7 @@ mod program_utils;
 mod project_guidance;
 mod project_init;
 mod prompt_constants;
+mod prompt_core; // Task 313: Protected Core System Prompt
 mod pubsub; // Task 019: Generic Pub/Sub Broker
 mod refinement;
 mod reflection;

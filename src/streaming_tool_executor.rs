@@ -176,6 +176,9 @@ pub(crate) async fn execute_tools_batch(
                     tool_name: safe_tools[i].function.name.clone(),
                     content: format!("Task error: {}", e),
                     ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    signal_killed: None,
                 });
             }
         }

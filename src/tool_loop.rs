@@ -544,6 +544,7 @@ pub(crate) async fn run_tool_loop(
     max_tokens: u32,
     tui: &mut crate::ui_terminal::TerminalUI,
     summarizer_cfg: Option<&Profile>,
+    context_hint: &str,
 ) -> Result<ToolLoopResult> {
     let budget = StageBudget::default();
     let total_timeout = Duration::from_secs(30 * 60); // 30 minutes
@@ -725,7 +726,10 @@ pub(crate) async fn run_tool_loop(
             repeat_penalty: None,
             reasoning_format: Some("auto".to_string()),
             grammar: None,
-            tools: Some(crate::tool_calling::build_tool_definitions(&PathBuf::new())),
+            tools: Some(crate::tool_calling::build_tool_definitions_for_context(
+                &PathBuf::new(),
+                context_hint,
+            )),
         };
         let turn = match request_tool_loop_model_turn_streaming(
             tui,
@@ -935,7 +939,7 @@ pub(crate) async fn run_tool_loop(
                                     .unwrap_or_default();
                             crate::evidence_ledger::EvidenceSource::Shell {
                                 command: cmd,
-                                exit_code: if result.ok { 0 } else { 1 },
+                                exit_code: result.exit_code.unwrap_or(if result.ok { 0 } else { 1 }),
                             }
                         }
                         "read" => {
@@ -1009,9 +1013,19 @@ pub(crate) async fn run_tool_loop(
                     &result.content,
                     DEFAULT_MAX_RESULT_SIZE_CHARS,
                 );
+                // Empty result guard: inject placeholder for ok-but-empty results
+                // Prevents small models from misinterpreting empty success as "need to retry"
+                let model_content = if result.ok
+                    && budgeted.content_for_model.trim().is_empty()
+                    && tc.function.name != "respond"
+                {
+                    "(empty result)".to_string()
+                } else {
+                    budgeted.content_for_model
+                };
                 messages.push(ChatMessage {
                     role: "tool".to_string(),
-                    content: budgeted.content_for_model,
+                    content: model_content,
                     name: Some(tc.function.name.clone()),
                     tool_calls: None,
                     tool_call_id: Some(tc.id.clone()),
@@ -1020,6 +1034,62 @@ pub(crate) async fn run_tool_loop(
             }
 
             update_context_estimate(&messages, tui);
+
+            // T303: Inject strategy-shift hint if retry loop detected
+            if stop_policy.is_retry_loop_detected() {
+                if let Some(hint) = stop_policy.strategy_shift_hint() {
+                    trace(args, &format!("tool_loop: {}", hint.replace('\n', " | ")));
+                    messages.push(ChatMessage::simple("user", &hint));
+                }
+            }
+
+            // T304: Force finalization after repeated failures to preserve output budget
+            // If 5+ consecutive shell failures, force final answer before context is exhausted
+            let consecutive_failures = stop_policy.consecutive_shell_failures();
+            if consecutive_failures >= 5 {
+                trace(
+                    args,
+                    &format!(
+                        "tool_loop: forcing finalization after {} consecutive shell failures (T304 budget preservation)",
+                        consecutive_failures
+                    ),
+                );
+                messages.push(ChatMessage::simple(
+                    "user",
+                    "You've had 5+ consecutive shell failures. Stop trying shell commands and provide your final answer based on the evidence you already have. If you cannot answer reliably, explain what you found and what additional information would be needed."
+                ));
+                let mut final_content = request_final_answer_from_evidence(
+                    tui, client, chat_url, model_id,
+                    &original_user_request, &messages, max_tokens,
+                )
+                .await?;
+                if final_answer_needs_retry(&final_content) {
+                    final_content = request_final_answer_without_tools(
+                        tui, client, chat_url, model_id, &messages, max_tokens, true,
+                    )
+                    .await?;
+                }
+                let trimmed = normalize_final_answer_candidate(&final_content);
+                return Ok(ToolLoopResult {
+                    final_answer: if final_answer_needs_retry(&trimmed) {
+                        build_fallback_from_recent_tool_evidence(&messages)
+                    } else {
+                        trimmed
+                    },
+                    iterations: stop_policy.iteration(),
+                    tool_calls_made: stop_policy.total_tool_calls(),
+                    stopped_by_max: true,
+                    stop_outcome: Some(StopOutcome {
+                        reason: StopReason::RepeatedToolFailure,
+                        stage_index: 0,
+                        stage_skill: "general".to_string(),
+                        summary: format!("Forced finalization after {} consecutive shell failures to preserve output budget", consecutive_failures),
+                        next_step_hint: "Verify commands manually before retrying, or use a different approach (read/search tools instead of shell)".to_string(),
+                    }),
+                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                    timeout_reason: None,
+                });
+            }
 
             // Check for repeated tool failures after executing all calls
             if let Some(outcome) = stop_policy.check_should_stop() {

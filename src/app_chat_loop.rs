@@ -9,6 +9,8 @@ use crate::app_chat_fast_paths::*;
 use crate::app_chat_handlers::*;
 use crate::app_chat_helpers::*;
 use crate::app_chat_orchestrator::*;
+use crate::goal_seeding::*;
+use crate::session_write::save_goal_state;
 use crate::app_chat_patterns::*;
 use crate::app_chat_trace::*;
 use crate::ui_state::HeaderInfo;
@@ -731,6 +733,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     );
 
     let mut queued_inputs: VecDeque<String> = VecDeque::new();
+    let mut turn_number: u64 = 0;
 
     let res = loop {
         queued_inputs.extend(tui.take_queued_submissions());
@@ -762,6 +765,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             .messages
             .push(ChatMessage::simple("user", &line.to_string()));
         let _ = save_user_prompt_display(&runtime.session, line);
+
+        // T305: Seed goals from multi-step request on first turn
+        if turn_number == 0 && !runtime.goal_state.has_active_goal() {
+            seed_goals_if_multi_step(line, &mut runtime.goal_state);
+            let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
+        }
 
         // Phase 2 (Task 310): Apply pending turn summary from previous turn
         if let Ok(Some((turn_num, summary))) =
@@ -1075,7 +1084,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
 
         // Phase 1 (Task 310): Spawn background turn summarizer (fire-and-forget)
-        let turn_number = runtime
+        let mut turn_number = runtime
             .messages
             .iter()
             .filter(|m| m.role == "user" && m.name != Some("turn_summary".to_string()))
@@ -1147,6 +1156,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         }
 
         queued_inputs.extend(tui.take_queued_submissions());
+        turn_number += 1;
     };
 
     // Mark TUI as inactive

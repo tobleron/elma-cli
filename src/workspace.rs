@@ -76,6 +76,9 @@ pub(crate) fn gather_workspace_context(repo_root: &Path) -> String {
     if !git_status.is_empty() {
         s.push_str(&format!("git_status: {git_status}\n"));
     }
+    // T301: Explicitly list excluded directories so the model knows not to scan them.
+    // These directories are massive and will cause shell timeouts if traversed.
+    s.push_str("excluded_dirs: .git/, target/, sessions/, .opencode/ — do NOT scan or search these directories.\n");
     s.trim().to_string()
 }
 

@@ -80,6 +80,7 @@ fn is_ignored_dir(name: &str) -> bool {
             | ".qwen"
             | "sessions"
             | "trace"
+            | ".opencode"
     )
 }
 

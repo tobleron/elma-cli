@@ -86,19 +86,10 @@ impl ChatMessage {
 }
 
 // Tool Calling Types
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct ToolDefinition {
-    #[serde(rename = "type")]
-    pub(crate) tool_type: String,
-    pub(crate) function: ToolFunction,
-}
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct ToolFunction {
-    pub(crate) name: String,
-    pub(crate) description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) parameters: Option<serde_json::Value>,
-}
+// ToolDefinition and ToolFunction are now defined in the elma-tools crate.
+// Re-export them here for backward compatibility with existing imports.
+pub(crate) use elma_tools::{ToolDefinition, ToolFunction};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ToolCall {
     pub(crate) id: String,

@@ -250,6 +250,7 @@ fn snapshot_path_excluded(rel: &Path) -> bool {
         return false;
     }
     if components[0].starts_with(".git") || components[0] == "target" || components[0] == "sessions"
+        || components[0] == ".opencode"
     {
         return true;
     }

@@ -80,6 +80,12 @@ pub(crate) struct StopPolicy {
     recent_commands: Vec<String>,
     stage_index: usize,
     stage_skill: String,
+    // T303: Retry loop detection
+    consecutive_shell_failures: usize,
+    last_shell_strategy: Option<String>,
+    last_shell_scope: Option<String>,
+    retry_loop_detected: bool,
+    last_error_class: Option<String>,
 }
 
 impl StopPolicy {
@@ -95,6 +101,11 @@ impl StopPolicy {
             recent_commands: Vec::new(),
             stage_index: 0,
             stage_skill: "general".to_string(),
+            consecutive_shell_failures: 0,
+            last_shell_strategy: None,
+            last_shell_scope: None,
+            retry_loop_detected: false,
+            last_error_class: None,
         }
     }
 
@@ -165,25 +176,97 @@ impl StopPolicy {
     }
 
     /// Record the result of a single tool execution.
+    /// T303: Tracks shell failures for retry-loop detection.
     pub(crate) fn record_tool_result(
         &mut self,
         call: &ToolCall,
         result: &crate::tool_calling::ToolExecutionResult,
     ) {
         if !result.ok {
-            let mut error_class = classify_error(&result.content);
+            let mut error_class = classify_error(result);
             if call.function.name == "shell" {
                 if let Ok(args) =
                     serde_json::from_str::<serde_json::Value>(&call.function.arguments)
                 {
                     if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
                         error_class = format!("{}_{}", error_class, classify_command_strategy(cmd));
+                        self.record_shell_failure(cmd, &error_class);
                     }
                 }
             }
             self.tool_failures
                 .push((call.function.name.clone(), error_class));
+        } else if call.function.name == "shell" {
+            // Reset consecutive failure count on success
+            self.consecutive_shell_failures = 0;
+            self.last_shell_strategy = None;
+            self.last_shell_scope = None;
         }
+    }
+
+    /// T303: Track shell failures for retry-loop detection.
+    /// Detects when the model retries the same strategy with same or widening scope.
+    fn record_shell_failure(&mut self, cmd: &str, error_class: &str) {
+        let strategy = classify_command_strategy(cmd);
+        let scope = estimate_command_scope(cmd);
+        self.last_error_class = Some(error_class.to_string());
+
+        // Check if this is a retry of the same strategy
+        if let Some(ref last_strategy) = self.last_shell_strategy {
+            if *last_strategy == strategy {
+                // Same strategy — check if scope is same or widening
+                if let Some(ref last_scope) = self.last_shell_scope {
+                    // Scope is widening or same if it's equal or larger
+                    // (simplified: treat same strategy as retry regardless of scope)
+                    self.consecutive_shell_failures += 1;
+
+                    // Detect retry loop: 3+ consecutive failures with same strategy
+                    if self.consecutive_shell_failures >= 3 && !self.retry_loop_detected {
+                        self.retry_loop_detected = true;
+                    }
+                } else {
+                    self.consecutive_shell_failures += 1;
+                }
+            } else {
+                // Strategy changed — reset counter
+                self.consecutive_shell_failures = 1;
+            }
+        } else {
+            self.consecutive_shell_failures = 1;
+        }
+
+        self.last_shell_strategy = Some(strategy);
+        self.last_shell_scope = Some(scope);
+    }
+
+    /// T303: Check if a retry loop has been detected.
+    /// Returns true if ≥3 consecutive shell failures with same strategy.
+    pub(crate) fn is_retry_loop_detected(&self) -> bool {
+        self.retry_loop_detected
+    }
+
+    /// T303: Get the count of consecutive shell failures.
+    pub(crate) fn consecutive_shell_failures(&self) -> usize {
+        self.consecutive_shell_failures
+    }
+
+    /// T303: Generate a strategy-shift hint when retry loop detected.
+    pub(crate) fn strategy_shift_hint(&self) -> Option<String> {
+        if !self.retry_loop_detected {
+            return None;
+        }
+        let strategy = self.last_shell_strategy.as_deref().unwrap_or("unknown");
+        let error_class = self.last_error_class.as_deref().unwrap_or("unknown");
+        let scope = self.last_shell_scope.as_deref().unwrap_or("unknown");
+        let alternatives = suggest_alternatives(strategy, error_class, scope);
+        Some(format!(
+            "⚠️ Strategy Retry Detected: The same shell strategy ('{}') has failed {} times consecutively.\n\n{}
+
+Consider: (1) using a different tool (read/search instead of shell), (2) narrowing the scope with -maxdepth or specific paths, (3) breaking the task into smaller steps, or (4) asking the user about directory structure.",
+            strategy,
+            self.consecutive_shell_failures,
+            alternatives
+        ))
     }
 
     /// Call when no new tool signals were seen this iteration (stagnation).
@@ -334,17 +417,71 @@ fn next_step_hint(reason: &StopReason) -> String {
     }
 }
 
+/// Estimate command scope: "narrow", "medium", or "wide".
+/// Used to detect widening scope in retry loops.
+fn estimate_command_scope(cmd: &str) -> String {
+    let lower = cmd.to_ascii_lowercase();
+    // Narrow: has maxdepth, specific path, single file
+    if lower.contains("-maxdepth") || lower.contains("head -") || lower.contains("tail -") {
+        return "narrow".to_string();
+    }
+    // Wide: no exclusions, recursive find without filters
+    if lower.contains("find ") && !lower.contains("! -path") && !lower.contains("-name") {
+        return "wide".to_string();
+    }
+    // Medium: has some filters but not maxdepth
+    "medium".to_string()
+}
+
+/// Suggest alternative strategies based on error class and scope.
+/// Principle-based: describes what went wrong and recovery principles,
+/// rather than listing hardcoded alternative commands.
+fn suggest_alternatives(failed_strategy: &str, error_class: &str, scope: &str) -> String {
+    let error_guidance = match error_class {
+        "timeout" | "killed_signal_9" | "killed_signal_15" =>
+            "This command exceeded time/memory limits. Consider: narrowing the scope with specific paths or -maxdepth, breaking into per-directory steps, or using a lighter-weight tool like read/search for known files.",
+        "permission_denied" =>
+            "This command hit a permission barrier. Consider: targeting specific accessible directories, or using read tool for known files instead of broad shell scans.",
+        "not_found" | "no_such_file" =>
+            "The target doesn't exist at the expected path. Consider: listing the parent directory first, checking the workspace tree, or trying alternative path patterns.",
+        "command_not_found" =>
+            "The command is not available on this system. Consider: using a different tool (read, search), or checking what shell utilities are available.",
+        e if e.starts_with("exit_code_") =>
+            "The command exited with a non-zero status code. The tool or path may not be available in this context. Consider checking the command output for specific error details.",
+        _ =>
+            "The command failed for an unexpected reason. Consider: using a different tool type (read/search instead of shell), or breaking the task into smaller, simpler steps.",
+    };
+
+    let scope_guidance = match scope {
+        "wide" => "This was a wide-scope operation. Try narrowing with -maxdepth, specific base paths, or file-type filters (-name '*.ext').",
+        "medium" => "Try further narrowing the scope, or split into per-subdirectory passes.",
+        "narrow" => "Even with narrow scope this failed. The issue may be tool choice rather than scope — consider read or search tools.",
+        _ => "",
+    };
+
+    format!(
+        "Strategy '{}' failed with error '{}'.\n\n{}\n\n{}",
+        failed_strategy, error_class, error_guidance, scope_guidance
+    )
+}
+
 /// Lightweight error classification for repeated-failure detection.
-fn classify_error(content: &str) -> String {
-    let lower = content.to_ascii_lowercase();
+fn classify_error(result: &crate::tool_calling::ToolExecutionResult) -> String {
+    if result.timed_out {
+        return "timeout".to_string();
+    }
+    if let Some(sig) = result.signal_killed {
+        return format!("killed_signal_{}", sig);
+    }
+    let lower = result.content.to_ascii_lowercase();
     if lower.contains("permission denied") || lower.contains("access denied") {
         "permission_denied".to_string()
     } else if lower.contains("no such file") || lower.contains("not found") {
         "not_found".to_string()
     } else if lower.contains("command not found") || lower.contains("unknown command") {
         "command_not_found".to_string()
-    } else if lower.contains("timeout") || lower.contains("timed out") {
-        "timeout".to_string()
+    } else if let Some(ec) = result.exit_code {
+        format!("exit_code_{}", ec)
     } else {
         "other".to_string()
     }
@@ -529,6 +666,9 @@ mod tests {
             tool_name: "shell".to_string(),
             content: "command not found".to_string(),
             ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
         };
 
         // Strategy 1 fails
@@ -614,5 +754,206 @@ mod tests {
 
         // other
         assert_eq!(classify_command_strategy("ls -la"), "other_shell");
+    }
+
+    #[test]
+    fn test_retry_loop_detection_same_strategy() {
+        let budget = StageBudget {
+            max_repeated_failures: 10, // high so only retry loop fires
+            ..Default::default()
+        };
+        let mut policy = StopPolicy::new(budget);
+
+        let mut fail_result = crate::tool_calling::ToolExecutionResult {
+            tool_call_id: "c1".to_string(),
+            tool_name: "shell".to_string(),
+            content: "timed out after 20s".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: true,
+            signal_killed: None,
+        };
+
+        // Same find strategy fails 3 times
+        for i in 1..=3 {
+            let call = ToolCall {
+                id: format!("c{}", i),
+                call_type: "function".to_string(),
+                function: ToolFunctionCall {
+                    name: "shell".to_string(),
+                    arguments: r#"{"command":"find . -type f"}"#.to_string(),
+                },
+            };
+            fail_result.tool_call_id = format!("c{}", i);
+            policy.record_tool_result(&call, &fail_result);
+        }
+
+        assert!(
+            policy.is_retry_loop_detected(),
+            "Should detect retry loop after 3 consecutive same-strategy failures"
+        );
+        assert_eq!(
+            policy.consecutive_shell_failures(),
+            3,
+            "Should have 3 consecutive failures"
+        );
+        assert!(
+            policy.strategy_shift_hint().is_some(),
+            "Should generate strategy-shift hint"
+        );
+    }
+
+    #[test]
+    fn test_retry_loop_resets_on_strategy_change() {
+        let budget = StageBudget {
+            max_repeated_failures: 10,
+            ..Default::default()
+        };
+        let mut policy = StopPolicy::new(budget);
+
+        let mut fail_result = crate::tool_calling::ToolExecutionResult {
+            tool_call_id: "c1".to_string(),
+            tool_name: "shell".to_string(),
+            content: "timed out".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: true,
+            signal_killed: None,
+        };
+
+        // find_other fails twice
+        for i in 1..=2 {
+            let call = ToolCall {
+                id: format!("c{}", i),
+                call_type: "function".to_string(),
+                function: ToolFunctionCall {
+                    name: "shell".to_string(),
+                    arguments: r#"{"command":"find . -type f"}"#.to_string(),
+                },
+            };
+            fail_result.tool_call_id = format!("c{}", i);
+            policy.record_tool_result(&call, &fail_result);
+        }
+
+        // Switch to du_aggregate — should reset counter
+        let call3 = ToolCall {
+            id: "c3".to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunctionCall {
+                name: "shell".to_string(),
+                arguments: r#"{"command":"du -sh ."}"#.to_string(),
+            },
+        };
+        fail_result.tool_call_id = "c3".to_string();
+        policy.record_tool_result(&call3, &fail_result);
+
+        assert_eq!(
+            policy.consecutive_shell_failures(),
+            1,
+            "Should reset to 1 after strategy change"
+        );
+        assert!(
+            !policy.is_retry_loop_detected(),
+            "Should not detect retry loop after strategy change"
+        );
+    }
+
+    #[test]
+    fn test_retry_loop_resets_on_success() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+
+        let mut fail_result = crate::tool_calling::ToolExecutionResult {
+            tool_call_id: "c1".to_string(),
+            tool_name: "shell".to_string(),
+            content: "timed out".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: true,
+            signal_killed: None,
+        };
+
+        // Fail twice
+        for i in 1..=2 {
+            let call = ToolCall {
+                id: format!("c{}", i),
+                call_type: "function".to_string(),
+                function: ToolFunctionCall {
+                    name: "shell".to_string(),
+                    arguments: r#"{"command":"find . -type f"}"#.to_string(),
+                },
+            };
+            fail_result.tool_call_id = format!("c{}", i);
+            policy.record_tool_result(&call, &fail_result);
+        }
+
+        // Success resets
+        let success_call = ToolCall {
+            id: "c3".to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunctionCall {
+                name: "shell".to_string(),
+                arguments: r#"{"command":"find . -maxdepth 1 -type f"}"#.to_string(),
+            },
+        };
+        let success_result = crate::tool_calling::ToolExecutionResult {
+            tool_call_id: "c3".to_string(),
+            tool_name: "shell".to_string(),
+            content: "file1\nfile2".to_string(),
+            ok: true,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+        policy.record_tool_result(&success_call, &success_result);
+
+        assert_eq!(
+            policy.consecutive_shell_failures(),
+            0,
+            "Should reset to 0 on success"
+        );
+        assert!(
+            !policy.is_retry_loop_detected(),
+            "Should not detect retry loop after success"
+        );
+    }
+
+    #[test]
+    fn test_estimate_command_scope() {
+        // Narrow: has maxdepth
+        assert_eq!(
+            estimate_command_scope("find . -maxdepth 1 -type f"),
+            "narrow"
+        );
+        // Narrow: has head
+        assert_eq!(
+            estimate_command_scope("find . -type f | head -20"),
+            "narrow"
+        );
+        // Wide: no exclusions, no name filter
+        assert_eq!(
+            estimate_command_scope("find . -type f"),
+            "wide"
+        );
+        // Medium: has name filter but no maxdepth
+        assert_eq!(
+            estimate_command_scope("find . -name '*.rs'"),
+            "medium"
+        );
+    }
+
+    #[test]
+    fn test_suggest_alternatives() {
+        // timeout error with wide scope should suggest narrowing
+        let hint = suggest_alternatives("find_other", "timeout", "wide");
+        assert!(hint.contains("narrowing") || hint.contains("maxdepth"));
+
+        // permission denied should suggest accessible dirs
+        let hint2 = suggest_alternatives("stat_loop", "permission_denied", "narrow");
+        assert!(hint2.contains("permission"));
+
+        // unknown error should have generic recovery guidance
+        let hint3 = suggest_alternatives("unknown_strategy", "other", "medium");
+        assert!(hint3.contains("read") || hint3.contains("search"));
     }
 }

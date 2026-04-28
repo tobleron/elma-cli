@@ -17,8 +17,18 @@ use crate::*;
 
 /// Build a system prompt for tool calling without any intermediate planner.
 /// The model has full context (workspace, conversation, tools) and plans directly.
+///
+/// The core prompt is defined in `prompt_core::TOOL_CALLING_SYSTEM_PROMPT`
+/// and is protected from modification by CODEOWNERS, AGENTS.md Rule 8,
+/// and build-time hash verification.
 fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String {
-    // Include conversation excerpt for continuity
+    // Workspace facts (platform, cwd, git state)
+    let workspace_facts = runtime.ws.trim();
+
+    // Workspace brief (file tree)
+    let workspace_brief = runtime.ws_brief.trim();
+
+    // Recent conversation excerpt
     let conversation = if runtime.messages.is_empty() {
         String::new()
     } else {
@@ -36,111 +46,21 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
                 )
             })
             .collect();
-        format!("\nRECENT CONVERSATION:\n{}", last_msgs.join("\n"))
+        format!("\n## Recent conversation\n{}", last_msgs.join("\n"))
     };
 
+    // Skill context (repo overview, document capabilities, etc.)
     let skill_context = build_skill_context(runtime);
 
-    // Build dynamic tool list from the registry (only always-available tools)
-    let tool_list = {
-        let registry = crate::tool_registry::get_registry();
-        let mut lines = String::new();
-        for tool in registry.default_tools() {
-            lines.push_str(&format!(
-                "- {}: {}\n",
-                tool.function.name, tool.function.description
-            ));
-        }
-        lines
-    };
+    // Project guidance (AGENTS.md + TASKS.md excerpts)
+    let project_guidance = runtime.guidance.render_for_system_prompt();
 
-    format!(
-        r#"You are Elma — a local-first AI assistant that helps users with their requests.
-
-IMPORTANT IDENTITY: You are Elma, NOT a "maestro", "orchestrator", or "system". You are an AI assistant. If anyone asks who you are, answer clearly: "I am Elma."
-
-WORKSPACE FACTS:
-{}
-
-WORKSPACE BRIEF:
-{}
-{}
-
-EXECUTION MODE:
-{}
-
-FORMULA STAGES:
-{}
-
-PLAN DIRECTIVE:
-{}
-
-PROJECT GUIDANCE SNAPSHOT:
-{}
-
-SKILL CONTEXT:
-{}
-
-TOOLS AVAILABLE (always loaded):
-{}
-
-RULES OF ENGAGEMENT (Task 290: Example-Driven Prompting):
-Use these concrete examples to guide your behavior:
-1. User asks "what time is it?" → Use `tool_search` then `shell` with `date` command.
-2. User asks "how much disk space is available?" → Use `shell` with `df -h` command.
-3. User asks "what files are in the src folder?" → Use `shell` with `find` or `ls` command, NOT `search`.
-4. User asks "where does this variable get used?" → Use `tool_search` to load the search tool, then search.
-5. User asks "what's in that configuration file?" → Use `tool_search` to load the read tool, then `read` the file.
-6. User asks "should I try this?" OR "is this correct?" → Respond directly after gathering evidence, do NOT guess.
-7. Fact-checking queries MUST use tools before `respond` — never provide grounded facts without tool output.
-
-DYNAMIC TOOL LOADING:
-Additional tools (shell, read, search, update_todo_list) are not loaded by default to reduce token usage. Use `tool_search` with capability hints to load them on demand. Example queries: "execute shell command", "read file contents", "search text in files", "manage todo list".
-
-HOW TO INVESTIGATE (MINIMUM SUFFICIENT EVIDENCE):
-1. Start with the smallest direct source of truth (specific file over broad directory scans).
-2.如果需要读取文件或搜索内容，首先使用 tool_search 加载对应工具。
-3. As soon as evidence answers the question, call `respond`.
-
-DOCUMENT READING RULES:
-- PDF, EPUB, and HTML files should be read with the `read` tool, NOT with shell pipelines like `pdftotext`, `strings`, or `cat`.
-- The `read` tool extracts clean text from documents automatically.
-- Do NOT run destructive shell pipelines on PDFs (e.g., `pdftotext ... | grep | awk | sort`). These produce garbage output.
-
-STORAGE & RETENTION QUERY PLAYBOOK:
-- When calculating directory size: use `du -sh <dir>` instead of per-file `stat` loops.
-- When inspecting large files: use `find <dir> -type f -exec du -h {{}} + | sort -rh | head -n 10` instead of `stat`.
-- When filtering by date/time: use `find <dir> -type f -mtime +<days>` or `-mmin +<mins>`.
-- If date predicates differ by platform (BSD vs GNU), use simple `-mtime` fallbacks before giving up.
-- Avoid reading file contents entirely when you only need size, count, or dates.
-- For counts, use `find <dir> -type f | wc -l`.
-
-CRITICAL RULES:
-- To find files by name or extension: use `shell` with `find` or `ls`, NOT `search`
-- `search` searches INSIDE files for text patterns — it does NOT find files by name
-- If you already ran a command that showed what you need, use THAT OUTPUT — do not re-list the same paths
-- Avoid repetitive commands that only restate known information
-- Always ground your answer in actual tool output, not assumptions
-- If a command fails, try a different approach
-- Always use `respond` when you have the answer
-- For conversational requests, respond directly without using tools
-- Follow the selected skill's scope before falling back to general behavior"#,
-        runtime.ws.trim(),
-        runtime.ws_brief.trim(),
-        conversation,
-        runtime.execution_plan.request_class.as_str(),
-        runtime
-            .execution_plan
-            .formula
-            .stages
-            .iter()
-            .map(|stage| format!("- {}: {}", stage.skill_id.as_str(), stage.action))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        runtime.execution_plan.summary_directive,
-        runtime.guidance.render_for_system_prompt(),
-        skill_context,
-        tool_list.trim() // trim trailing newline
+    crate::prompt_core::assemble_system_prompt(
+        workspace_facts,
+        workspace_brief,
+        &conversation,
+        &skill_context,
+        &project_guidance,
     )
 }
 
@@ -191,6 +111,7 @@ pub(crate) async fn run_tool_calling_pipeline(
     runtime: &mut AppRuntime,
     line: &str,
     tui: &mut crate::ui_terminal::TerminalUI,
+    context_hint: &str,
 ) -> Result<(String, usize, usize, bool)> {
     let system_prompt = build_tool_calling_system_prompt(runtime, line);
     trace(
@@ -213,6 +134,7 @@ pub(crate) async fn run_tool_calling_pipeline(
         2048,
         tui,
         Some(&runtime.profiles.summarizer_cfg),
+        context_hint,
     )
     .await?;
 
