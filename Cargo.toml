@@ -1,3 +1,6 @@
+[workspace]
+members = ["elma-tools"]
+
 [package]
 name = "elma-cli"
 version = "0.1.0"
@@ -19,7 +22,8 @@ console = "0.16"
 trash = "3.1"
 clap_mangen = "0.2"
 serde_path_to_error = "0.1"
-flate2 = "1.0"
+ flate2 = "1.0"
+ tar = "0.4"
 async-trait = "0.1"
 tokio-stream = "0.1"
 infer = "0.16"
@@ -51,6 +55,7 @@ jsonrepair-rs = "0.1.0"
 ignore = "0.4"
 futures = "0.3"
 which = "7.0"
+elma-tools = { path = "elma-tools" }
 crossterm = "0.28"
 ratatui = "0.26"
 unicode-width = "0.2"
@@ -67,6 +72,9 @@ mobi = "0.8"
 regex = "1.10"
 portable-pty = "0.6"
 strip-ansi-escapes = "0.1"
+chrono = "0.4"
+rayon = "1.10"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
 # UI parity test harness
