@@ -16,6 +16,7 @@ pub(crate) enum StopReason {
     RepeatedNoNewEvidence,
     RepeatedSameCommand,
     RepeatedSameConclusion,
+    RespondAbuse,
     WallClockExceeded,
     ModelProgressStalled,
     UserInterrupted,
@@ -30,6 +31,7 @@ impl StopReason {
             StopReason::RepeatedNoNewEvidence => "repeated_no_new_evidence",
             StopReason::RepeatedSameCommand => "repeated_same_command",
             StopReason::RepeatedSameConclusion => "repeated_same_conclusion",
+            StopReason::RespondAbuse => "respond_abuse",
             StopReason::WallClockExceeded => "wall_clock_exceeded",
             StopReason::ModelProgressStalled => "model_progress_stalled",
             StopReason::UserInterrupted => "user_interrupted",
@@ -86,6 +88,10 @@ pub(crate) struct StopPolicy {
     last_shell_scope: Option<String>,
     retry_loop_detected: bool,
     last_error_class: Option<String>,
+    // T333: Respond abuse guard
+    consecutive_respond_calls: usize,
+    consecutive_respond_only_turns: usize,
+    has_real_tool_calls_this_turn: bool,
 }
 
 impl StopPolicy {
@@ -106,6 +112,9 @@ impl StopPolicy {
             last_shell_scope: None,
             retry_loop_detected: false,
             last_error_class: None,
+            consecutive_respond_calls: 0,
+            consecutive_respond_only_turns: 0,
+            has_real_tool_calls_this_turn: false,
         }
     }
 
@@ -119,6 +128,7 @@ impl StopPolicy {
     /// budget has been exceeded before the iteration starts.
     pub(crate) fn start_iteration(&mut self) -> Option<StopOutcome> {
         self.iteration += 1;
+        self.has_real_tool_calls_this_turn = false;
 
         if self.iteration > self.budget.max_iterations {
             return Some(self.build_outcome(
@@ -291,6 +301,58 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
         self.seen_signals.insert(signal)
     }
 
+    // ── T333: Respond abuse guard ──
+
+    /// Increment the consecutive respond counter. Called each time `respond` is executed.
+    pub(crate) fn increment_respond_counter(&mut self) {
+        self.consecutive_respond_calls += 1;
+    }
+
+    /// Get the current consecutive respond count.
+    pub(crate) fn consecutive_respond_calls(&self) -> usize {
+        self.consecutive_respond_calls
+    }
+
+    /// Reset the respond counter. Called when a real (evidence-collecting) tool runs.
+    pub(crate) fn reset_respond_counter(&mut self) {
+        self.consecutive_respond_calls = 0;
+        self.consecutive_respond_only_turns = 0;
+    }
+
+    /// Mark that a real tool call (non-respond, non-meta) was seen this turn.
+    pub(crate) fn mark_real_tool_call(&mut self) {
+        self.has_real_tool_calls_this_turn = true;
+    }
+
+    /// Whether any real tool call has been seen this turn.
+    pub(crate) fn has_real_tool_calls_this_turn(&self) -> bool {
+        self.has_real_tool_calls_this_turn
+    }
+
+    /// Increment respond-only turn counter. Returns a stop outcome if ≥5 respond-only turns.
+    pub(crate) fn record_respond_only_turn(&mut self) -> Option<StopOutcome> {
+        self.consecutive_respond_only_turns += 1;
+        if self.consecutive_respond_only_turns >= 5 {
+            return Some(self.build_outcome(
+                StopReason::RespondAbuse,
+                "The model has called 'respond' 5+ times without using any evidence-collecting tools. Force-stopping to preserve the iteration budget.",
+            ));
+        }
+        None
+    }
+
+    /// Check respond-only stagnation. Separate from main stagnation to avoid
+    /// the empty-string signal loophole.
+    pub(crate) fn check_respond_only_stagnation(&mut self) -> Option<StopOutcome> {
+        if self.consecutive_respond_only_turns >= 5 {
+            return Some(self.build_outcome(
+                StopReason::RespondAbuse,
+                "Respond-only stagnation: the model called respond 5+ times without real evidence collection.",
+            ));
+        }
+        None
+    }
+
     /// General check that can be called at any safe point.
     pub(crate) fn check_should_stop(&self) -> Option<StopOutcome> {
         if self.iteration > self.budget.max_iterations {
@@ -406,6 +468,9 @@ fn next_step_hint(reason: &StopReason) -> String {
         }
         StopReason::RepeatedSameConclusion => {
             "Introduce a new evidence source or rephrase the objective.".to_string()
+        }
+        StopReason::RespondAbuse => {
+            "Use search, read, or shell tools to collect evidence. Do not call respond without gathering facts first.".to_string()
         }
         StopReason::WallClockExceeded => {
             "Run the step again with a tighter scope, or split it into smaller chunks.".to_string()
@@ -955,5 +1020,80 @@ mod tests {
         // unknown error should have generic recovery guidance
         let hint3 = suggest_alternatives("unknown_strategy", "other", "medium");
         assert!(hint3.contains("read") || hint3.contains("search"));
+    }
+
+    // ── T333: Respond abuse guard tests ──
+
+    #[test]
+    fn respond_counter_increments() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        assert_eq!(policy.consecutive_respond_calls(), 0);
+        policy.increment_respond_counter();
+        assert_eq!(policy.consecutive_respond_calls(), 1);
+        policy.increment_respond_counter();
+        policy.increment_respond_counter();
+        assert_eq!(policy.consecutive_respond_calls(), 3);
+    }
+
+    #[test]
+    fn respond_counter_resets_on_real_tool() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        policy.increment_respond_counter();
+        policy.increment_respond_counter();
+        assert_eq!(policy.consecutive_respond_calls(), 2);
+        policy.reset_respond_counter();
+        assert_eq!(policy.consecutive_respond_calls(), 0);
+        assert_eq!(policy.consecutive_respond_only_turns, 0);
+    }
+
+    #[test]
+    fn mark_real_tool_call_sets_flag() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        assert!(!policy.has_real_tool_calls_this_turn());
+        policy.mark_real_tool_call();
+        assert!(policy.has_real_tool_calls_this_turn());
+    }
+
+    #[test]
+    fn start_iteration_resets_real_tool_flag() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        policy.mark_real_tool_call();
+        assert!(policy.has_real_tool_calls_this_turn());
+        policy.start_iteration();
+        assert!(!policy.has_real_tool_calls_this_turn());
+    }
+
+    #[test]
+    fn respond_only_turns_stops_at_5() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        assert!(policy.record_respond_only_turn().is_none());
+        assert!(policy.record_respond_only_turn().is_none());
+        assert!(policy.record_respond_only_turn().is_none());
+        assert!(policy.record_respond_only_turn().is_none());
+        let outcome = policy.record_respond_only_turn();
+        assert!(outcome.is_some());
+        assert_eq!(outcome.unwrap().reason, StopReason::RespondAbuse);
+    }
+
+    #[test]
+    fn respond_only_turns_resets_with_counter() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        policy.record_respond_only_turn();
+        policy.record_respond_only_turn();
+        assert_eq!(policy.consecutive_respond_only_turns, 2);
+        policy.reset_respond_counter();
+        assert_eq!(policy.consecutive_respond_only_turns, 0);
+    }
+
+    #[test]
+    fn respond_abuse_reason_has_hint() {
+        let hint = next_step_hint(&StopReason::RespondAbuse);
+        assert!(hint.contains("search") || hint.contains("read") || hint.contains("shell"));
     }
 }

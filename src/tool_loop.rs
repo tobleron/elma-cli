@@ -399,7 +399,7 @@ async fn request_final_answer_from_evidence(
         temperature: 0.2,
         top_p: 1.0,
         stream: false,
-        max_tokens: max_tokens.min(1024),
+        max_tokens: max_tokens.min(4096),
         n_probs: None,
         repeat_penalty: None,
         reasoning_format: Some("none".to_string()),
@@ -442,7 +442,7 @@ async fn request_final_answer_without_tools(
         temperature: 0.0,
         top_p: 1.0,
         stream: false,
-        max_tokens: max_tokens.min(1024),
+        max_tokens: max_tokens.min(4096),
         n_probs: None,
         repeat_penalty: None,
         reasoning_format: Some("none".to_string()),
@@ -502,9 +502,21 @@ fn tool_signal(tc: &ToolCall) -> String {
                 .to_string();
             format!("query:{}", query)
         }
-        "respond" => "respond".to_string(),
+        "respond" => {
+            let answer = parsed
+                .get("answer")
+                .or_else(|| parsed.get("content"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let snippet: String = answer.chars().take(40).collect();
+            format!("respond:{}", snippet)
+        }
+        "summary" => String::new(), // Don't count summary toward stagnation - it stops the loop
         other => format!("{other}:{}", tc.function.arguments),
     };
+    if fn_name == "respond" {
+        return key;
+    }
     if fn_name == "shell" {
         format!("{fn_name}:{}", normalize_shell_signal(&key))
     } else {
@@ -545,6 +557,8 @@ pub(crate) async fn run_tool_loop(
     tui: &mut crate::ui_terminal::TerminalUI,
     summarizer_cfg: Option<&Profile>,
     context_hint: &str,
+    evidence_required: bool,
+    ctx_max: Option<u64>,
 ) -> Result<ToolLoopResult> {
     let budget = StageBudget::default();
     let total_timeout = Duration::from_secs(30 * 60); // 30 minutes
@@ -658,7 +672,10 @@ pub(crate) async fn run_tool_loop(
 
         // Check if we need to compact before this iteration
         tracker.recalculate(&messages);
-        let (should_compact, ctx, buf) = tracker.should_compact(None, None);
+        let (should_compact, ctx, buf) = tracker.should_compact(
+            ctx_max.map(|v| v as usize),
+            None,
+        );
         if should_compact {
             trace(
                 args,
@@ -874,7 +891,7 @@ pub(crate) async fn run_tool_loop(
                         // If we are already over 70% capacity, compact now to make room for the risky result
                         let mut ctx_limit = tui.get_context_max() as usize;
                         if ctx_limit == 0 {
-                            ctx_limit = DEFAULT_CONTEXT_WINDOW_TOKENS;
+                            ctx_limit = ctx_max.map(|v| v as usize).unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
                         }
                         if tracker.total_tokens > (ctx_limit * 70 / 100) {
                             trace(
@@ -903,7 +920,7 @@ pub(crate) async fn run_tool_loop(
                     }
                 }
 
-                let result = tool_calling::execute_tool_call(
+                let mut result = tool_calling::execute_tool_call(
                     args,
                     tc,
                     workdir,
@@ -925,8 +942,7 @@ pub(crate) async fn run_tool_loop(
                 );
 
                 // Task 287: Add evidence ledger entry for tool result
-                if tc.function.name != "read_evidence"
-                    && tc.function.name != "respond"
+                if tc.function.name != "respond"
                     && tc.function.name != "update_todo_list"
                     && tc.function.name != "tool_search"
                 {
@@ -976,17 +992,77 @@ pub(crate) async fn run_tool_loop(
 
                 stop_policy.record_tool_result(tc, &result);
 
-                // respond tool = final answer, exit the loop immediately (only if non-empty)
+                // T333: Mark real tool calls & reset respond counter
+                if tc.function.name != "respond"
+                    && tc.function.name != "summary"
+                    && tc.function.name != "update_todo_list"
+                {
+                    stop_policy.mark_real_tool_call();
+                    stop_policy.reset_respond_counter();
+                }
+
+                // T333: evidence_required gate — block respond before evidence exists
+                if tc.function.name == "respond"
+                    && evidence_required
+                    && !stop_policy.has_real_tool_calls_this_turn()
+                {
+                    // Replace respond result with correction
+                    let correction = "You must collect evidence before answering.\n\
+                        Use search, read, or shell to gather facts. Do not call 'respond' yet.";
+                    result.content = correction.to_string();
+                    trace(
+                        args,
+                        "tool_loop: evidence_required gate blocked respond before evidence",
+                    );
+                }
+
+                // T333: respond abuse guard — inject correction after 3 consecutive responds
                 if tc.function.name == "respond" {
-                    let trimmed = normalize_final_answer_candidate(&result.content);
-                    if trimmed.is_empty() {
+                    stop_policy.increment_respond_counter();
+                    if stop_policy.consecutive_respond_calls() >= 3
+                        && !stop_policy.has_real_tool_calls_this_turn()
+                    {
+                        messages.push(ChatMessage::simple(
+                            "user",
+                            "⚠️ You have called 'respond' 3 times without collecting any evidence. \
+                             You have not used search, read, shell, or any other tool to gather facts. \
+                             Your respond messages are status updates, not evidence. \
+                             Call a real tool now to answer the user's question, or reply with 'I cannot answer this.'",
+                        ));
+                        stop_policy.reset_respond_counter();
                         trace(
                             args,
-                            "tool_loop: respond returned empty answer; continuing loop",
+                            "tool_loop: injected respond abuse correction after 3 consecutive responds",
+                        );
+                    }
+                }
+
+                // summary tool = run final summary intel unit, then exit loop
+                // respond tool ALWAYS continues the loop (interim status, not final)
+                if tc.function.name == "summary" {
+                    let raw_content = normalize_final_answer_candidate(&result.content);
+                    if raw_content.is_empty() {
+                        trace(
+                            args,
+                            "tool_loop: summary returned empty answer; continuing loop",
                         );
                     } else {
+                        // Run FinalSummaryUnit to generate concise summary using original request
+                        let final_summary = run_final_summary_intel(
+                            args, 
+                            client,
+                            summarizer_cfg, 
+                            &original_user_request, 
+                            &raw_content
+                        ).await;
+                        let final_answer = if let Some(summary) = final_summary {
+                            summary
+                        } else {
+                            raw_content
+                        };
+
                         return Ok(ToolLoopResult {
-                            final_answer: trimmed,
+                            final_answer,
                             iterations: stop_policy.iteration(),
                             tool_calls_made: stop_policy.total_tool_calls(),
                             stopped_by_max: true,
@@ -996,6 +1072,7 @@ pub(crate) async fn run_tool_loop(
                         });
                     }
                 }
+                // respond always continues the loop - it's for interim status, not final answer
 
                 messages.push(ChatMessage {
                     role: "assistant".to_string(),
@@ -1023,9 +1100,16 @@ pub(crate) async fn run_tool_loop(
                 } else {
                     budgeted.content_for_model
                 };
+
+                // Task 332: Append reflection to tool results
+                let reflection = crate::evidence_ledger::get_session_ledger()
+                    .and_then(|ledger| ledger.get_latest_reflection())
+                    .map(|r| format!("\n→ Reflection: {}", r))
+                    .unwrap_or_default();
+
                 messages.push(ChatMessage {
                     role: "tool".to_string(),
-                    content: model_content,
+                    content: format!("{}{}", model_content, reflection),
                     name: Some(tc.function.name.clone()),
                     tool_calls: None,
                     tool_call_id: Some(tc.id.clone()),
@@ -1122,6 +1206,46 @@ pub(crate) async fn run_tool_loop(
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
                 });
+            }
+
+            // T333: Respond-only turn tracking — if no real tools were used this iteration
+            if !stop_policy.has_real_tool_calls_this_turn() {
+                if let Some(outcome) = stop_policy.record_respond_only_turn() {
+                    trace(
+                        args,
+                        &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
+                    );
+                    messages.push(ChatMessage::simple(
+                        "user",
+                        "You've called 'respond' 5+ times without using any real tools (search, read, shell). \
+                         Provide your final answer now based on what you know, even if incomplete.",
+                    ));
+                    let mut final_content = request_final_answer_from_evidence(
+                        tui, client, chat_url, model_id,
+                        &original_user_request, &messages, max_tokens,
+                    )
+                    .await?;
+                    if final_answer_needs_retry(&final_content) {
+                        final_content = request_final_answer_without_tools(
+                            tui, client, chat_url, model_id, &messages, max_tokens, true,
+                        )
+                        .await?;
+                    }
+                    let trimmed = normalize_final_answer_candidate(&final_content);
+                    return Ok(ToolLoopResult {
+                        final_answer: if final_answer_needs_retry(&trimmed) {
+                            build_fallback_from_recent_tool_evidence(&messages)
+                        } else {
+                            trimmed
+                        },
+                        iterations: stop_policy.iteration(),
+                        tool_calls_made: stop_policy.total_tool_calls(),
+                        stopped_by_max: true,
+                        stop_outcome: Some(outcome),
+                        total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                        timeout_reason: None,
+                    });
+                }
             }
 
             continue;
@@ -1270,5 +1394,125 @@ mod tests {
     fn normalize_final_answer_strips_think_and_tool_call_blocks() {
         let raw = "<think>hidden</think>\nAnswer\n<tool_call>{\"name\":\"respond\"}</tool_call>";
         assert_eq!(normalize_final_answer_candidate(raw), "Answer");
+    }
+
+    #[test]
+    fn tool_signal_respond_non_empty() {
+        let tc = ToolCall {
+            id: "c1".to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunctionCall {
+                name: "respond".to_string(),
+                arguments: r#"{"answer":"Searching for undo tasks in the project"}"#.to_string(),
+            },
+        };
+        let sig = tool_signal(&tc);
+        assert!(!sig.is_empty(), "respond signal should be non-empty");
+        assert!(sig.starts_with("respond:"), "respond signal should have prefix");
+        assert!(sig.contains("Searching"), "respond signal should contain answer snippet");
+    }
+
+    #[test]
+    fn tool_signal_respond_truncates() {
+        let long_answer = "a".repeat(100);
+        let tc = ToolCall {
+            id: "c1".to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunctionCall {
+                name: "respond".to_string(),
+                arguments: format!(r#"{{"answer":"{}"}}"#, long_answer),
+            },
+        };
+        let sig = tool_signal(&tc);
+        assert!(
+            sig.len() <= "respond:".len() + 40,
+            "respond signal should be truncated to 40 chars + prefix, got len {}",
+            sig.len()
+        );
+        // With 100-char answer, signal should be exactly respond: + 40 chars
+        assert_eq!(sig.len(), "respond:".len() + 40);
+    }
+
+    #[test]
+    fn tool_signal_respond_different_messages_different_signals() {
+        let tc1 = ToolCall {
+            id: "c1".to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunctionCall {
+                name: "respond".to_string(),
+                arguments: r#"{"answer":"Searching for tasks"}"#.to_string(),
+            },
+        };
+        let tc2 = ToolCall {
+            id: "c2".to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunctionCall {
+                name: "respond".to_string(),
+                arguments: r#"{"answer":"Found the files"}"#.to_string(),
+            },
+        };
+        assert_ne!(tool_signal(&tc1), tool_signal(&tc2));
+    }
+
+    #[test]
+    fn tool_signal_respond_identical_messages_identical_signals() {
+        let tc1 = ToolCall {
+            id: "c1".to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunctionCall {
+                name: "respond".to_string(),
+                arguments: r#"{"answer":"I am searching..."}"#.to_string(),
+            },
+        };
+        let tc2 = ToolCall {
+            id: "c2".to_string(),
+            call_type: "function".to_string(),
+            function: ToolFunctionCall {
+                name: "respond".to_string(),
+                arguments: r#"{"answer":"I am searching..."}"#.to_string(),
+            },
+        };
+        assert_eq!(tool_signal(&tc1), tool_signal(&tc2));
+    }
+}
+
+async fn run_final_summary_intel(args: &Args, client: &reqwest::Client, summarizer_cfg: Option<&Profile>, user_request: &str, model_provided_content: &str) -> Option<String> {
+    use crate::intel_trait::execute_intel_text_from_user_content;
+    
+    let cfg = summarizer_cfg?;
+
+    let evidence_summary = crate::evidence_ledger::get_session_ledger()
+        .map(|ledger| {
+            ledger.entries
+                .iter()
+                .map(|e| e.summary.clone())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+
+    let narrative = format!(
+        r#"Generate a concise final summary (1-2 sentences max).
+
+User request: {}
+
+Evidence:
+{}
+
+Model's draft answer:
+{}
+
+Provide a short, direct answer."#,
+        user_request,
+        if evidence_summary.is_empty() { "(none)".to_string() } else { evidence_summary },
+        model_provided_content
+    );
+
+    match execute_intel_text_from_user_content(client, cfg, narrative).await {
+        Ok(summary) => Some(summary),
+        Err(e) => {
+            trace(args, &format!("final_summary_intel failed: {}", e));
+            None
+        }
     }
 }

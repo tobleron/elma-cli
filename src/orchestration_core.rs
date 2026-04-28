@@ -112,6 +112,7 @@ pub(crate) async fn run_tool_calling_pipeline(
     line: &str,
     tui: &mut crate::ui_terminal::TerminalUI,
     context_hint: &str,
+    evidence_required: bool,
 ) -> Result<(String, usize, usize, bool)> {
     let system_prompt = build_tool_calling_system_prompt(runtime, line);
     trace(
@@ -135,6 +136,8 @@ pub(crate) async fn run_tool_calling_pipeline(
         tui,
         Some(&runtime.profiles.summarizer_cfg),
         context_hint,
+        evidence_required,
+        runtime.ctx_max,
     )
     .await?;
 
