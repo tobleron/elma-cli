@@ -259,22 +259,16 @@ async fn probe_logprobs_support(
     chat_url: &Url,
     model_id: &str,
 ) -> Result<bool> {
-    let req = ChatCompletionRequest {
-        model: model_id.to_string(),
-        messages: vec![
-            ChatMessage::simple("system", &"Return exactly one digit: 1.".to_string()),
-            ChatMessage::simple("user", &"ping".to_string()),
-        ],
-        temperature: 0.0,
-        top_p: 1.0,
-        stream: false,
-        max_tokens: 1,
-        n_probs: Some(8),
-        repeat_penalty: Some(1.0),
-        reasoning_format: Some("none".to_string()),
-        grammar: None,
-        tools: None,
-    };
+    let profile = ad_hoc_profile(model_id, "model_probe_logprobs");
+    let req = chat_request_system_user(
+        &profile,
+        "Return exactly one digit: 1.",
+        "ping",
+        ChatRequestOptions {
+            n_probs: Some(runtime_llm_config().model_probe_logprobs_n_probs),
+            ..ChatRequestOptions::deterministic(1)
+        },
+    );
     let resp = probe_chat_completion_raw(client, chat_url, &req).await?;
     Ok(resp
         .choices
@@ -291,22 +285,16 @@ fn make_probe_request(
     user_content: &str,
     max_tokens: u32,
 ) -> ChatCompletionRequest {
-    ChatCompletionRequest {
-        model: model_id.to_string(),
-        messages: vec![
-            ChatMessage::simple("system", &system_content.to_string()),
-            ChatMessage::simple("user", &user_content.to_string()),
-        ],
-        temperature: 0.0,
-        top_p: 1.0,
-        stream: false,
-        max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(1.0),
-        reasoning_format: Some(reasoning_format.to_string()),
-        grammar: None,
-        tools: None,
-    }
+    let profile = ad_hoc_profile(model_id, "model_behavior_probe");
+    chat_request_system_user(
+        &profile,
+        system_content,
+        user_content,
+        ChatRequestOptions {
+            reasoning_format: Some(Some(reasoning_format.to_string())),
+            ..ChatRequestOptions::deterministic(max_tokens)
+        },
+    )
 }
 
 /// Probe results for behavior detection

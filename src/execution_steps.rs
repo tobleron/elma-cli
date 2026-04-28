@@ -190,22 +190,7 @@ async fn select_items_via_unit(
 }
 
 pub(crate) fn mk_chat_req(cfg: &Profile, system: String, user: String) -> ChatCompletionRequest {
-    ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &system),
-            ChatMessage::simple("user", &user),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    }
+    chat_request_system_user(cfg, &system, &user, ChatRequestOptions::default())
 }
 
 pub(crate) async fn chat_once_get_text(
@@ -889,7 +874,10 @@ pub(crate) async fn handle_program_step(
 
     // Task 287: Add evidence ledger entry for legacy execution path
     if let Some(result) = state.step_results.last() {
-        let is_evidence_step = !matches!(kind.as_str(), "reply" | "respond" | "plan" | "masterplan" | "decide" | "select" | "summarize");
+        let is_evidence_step = !matches!(
+            kind.as_str(),
+            "reply" | "respond" | "plan" | "masterplan" | "decide" | "select" | "summarize"
+        );
         if result.ok && is_evidence_step {
             let source = match kind.as_str() {
                 "shell" => {
@@ -900,15 +888,18 @@ pub(crate) async fn handle_program_step(
                     }
                 }
                 "read" => {
-                    let path = result.summary.split_whitespace().next().unwrap_or("").to_string();
+                    let path = result
+                        .summary
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
                     crate::evidence_ledger::EvidenceSource::Read { path }
                 }
-                "search" => {
-                    crate::evidence_ledger::EvidenceSource::Tool {
-                        name: "search".to_string(),
-                        input: result.summary.chars().take(100).collect(),
-                    }
-                }
+                "search" => crate::evidence_ledger::EvidenceSource::Tool {
+                    name: "search".to_string(),
+                    input: result.summary.chars().take(100).collect(),
+                },
                 "write" | "edit" | "delete" => {
                     if let Some(path) = result.summary.split_whitespace().next() {
                         crate::evidence_ledger::with_session_ledger(|ledger| {

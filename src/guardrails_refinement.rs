@@ -25,22 +25,15 @@ pub async fn run_refinement_phase(
     let prompt =
         build_refinement_prompt(original_objective, step_results, drift_reason, ws, ws_brief);
 
-    let req = ChatCompletionRequest {
-        model: refinement_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &refinement_cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature: refinement_cfg.temperature,
-        top_p: refinement_cfg.top_p,
-        stream: false,
-        max_tokens: refinement_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(refinement_cfg.repeat_penalty),
-        reasoning_format: Some(refinement_cfg.reasoning_format.clone()),
-        grammar: Some(crate::json_program_grammar()),
-        tools: None,
-    };
+    let req = chat_request_system_user(
+        refinement_cfg,
+        &refinement_cfg.system_prompt,
+        &prompt,
+        ChatRequestOptions {
+            grammar: Some(crate::json_program_grammar()),
+            ..ChatRequestOptions::default()
+        },
+    );
 
     let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;
     Ok(program)

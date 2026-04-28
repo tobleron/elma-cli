@@ -64,35 +64,12 @@ If the output contains errors or warnings, mention them plainly."##,
                 .unwrap_or_else(|| "".to_string()),
         );
 
-        let req = ChatCompletionRequest {
-            model: self.profile.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: self.profile.system_prompt.clone(),
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
-                    summarized: false,
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: narrative,
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
-                    summarized: false,
-                },
-            ],
-            temperature: self.profile.temperature,
-            top_p: self.profile.top_p,
-            stream: false,
-            max_tokens: self.profile.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(self.profile.repeat_penalty),
-            reasoning_format: Some(self.profile.reasoning_format.clone()),
-            grammar: None,
-        };
+        let req = chat_request_system_user(
+            &self.profile,
+            &self.profile.system_prompt,
+            &narrative,
+            ChatRequestOptions::default(),
+        );
 
         let resp = crate::ui_chat::chat_once_with_timeout(
             client,

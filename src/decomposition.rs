@@ -115,22 +115,12 @@ Output JSON format:
         ws_brief.trim()
     );
 
-    let req = ChatCompletionRequest {
-        model: planner_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &planner_cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature: planner_cfg.temperature,
-        top_p: planner_cfg.top_p,
-        stream: false,
-        max_tokens: planner_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(planner_cfg.repeat_penalty),
-        reasoning_format: Some(planner_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let req = chat_request_system_user(
+        planner_cfg,
+        &planner_cfg.system_prompt,
+        &prompt,
+        ChatRequestOptions::default(),
+    );
 
     let resp = chat_once(client, chat_url, &req).await?;
     let text = extract_response_text(&resp);
@@ -173,22 +163,16 @@ Output as JSON array of subgoal descriptions."#,
             .join("\n")
     );
 
-    let req = ChatCompletionRequest {
-        model: planner_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &planner_cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature: 0.3,
-        top_p: planner_cfg.top_p,
-        stream: false,
-        max_tokens: 1024,
-        n_probs: None,
-        repeat_penalty: Some(planner_cfg.repeat_penalty),
-        reasoning_format: Some(planner_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let req = chat_request_system_user(
+        planner_cfg,
+        &planner_cfg.system_prompt,
+        &prompt,
+        ChatRequestOptions {
+            temperature: Some(0.3),
+            max_tokens: Some(1024),
+            ..ChatRequestOptions::default()
+        },
+    );
 
     let resp = chat_once(client, chat_url, &req).await?;
     let text = extract_response_text(&resp);

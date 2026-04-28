@@ -9,22 +9,12 @@ pub(crate) use verification_evidence::{
 };
 
 fn mk_intel_req(cfg: &Profile, user_content: String) -> ChatCompletionRequest {
-    ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &user_content),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    }
+    chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &user_content,
+        ChatRequestOptions::default(),
+    )
 }
 
 async fn chat_and_parse(

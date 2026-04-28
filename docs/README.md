@@ -81,6 +81,7 @@ elma-cli/
 │   ├── claude_ui/          # Terminal UI components
 │   └── intel_units/        # Intel unit implementations
 ├── config/                 # TOML configuration
+│   ├── runtime.toml        # Shared llama.cpp request caps, timeouts, probe defaults
 │   ├── defaults/           # Intel unit prompt templates (~70 profiles)
 │   ├── grammars/           # GBNF grammar files for constrained JSON output
 │   └── <model>/            # Per-model profile overrides
@@ -106,6 +107,7 @@ Elma loads configuration from TOML files with a fallback chain:
 
 Key configuration files:
 - `config/profiles.toml` — profile registry mapping names to endpoints and models
+- `config/runtime.toml` — shared llama.cpp/OpenAI-compatible runtime knobs such as HTTP timeout, request timeout, response token caps, tool-loop timeout, and probe `n_probs`
 - `config/defaults/` — ~70 intel unit prompt templates (orchestrator, intent_helper, speech_act, router, planner, summarizer, critic, reviewers, etc.)
 - `config/grammars/` — GBNF grammars for forcing valid JSON from intel unit calls
 

@@ -70,9 +70,9 @@ mod file_scout; // Task 198: Read-only whole-system file scout
 mod format;
 mod formulas;
 mod fs_intel; // Task 072: Specialized Filesystem Intel
+mod goal_seeding; // T305: Goal seeding from multi-step requests
 mod guardrails; // State-aware guardrails for context drift (Task 011)
 mod guardrails_refinement; // Guardrails refinement phase (Task 011)
-mod goal_seeding; // T305: Goal seeding from multi-step requests
 mod hook_system; // Tasks 123, 124, 125: Extensible hook framework
 mod hybrid_search; // Task 273: Hybrid Search Memory System With FTS And Vector Search
 mod input_parser; // Task 013: Smart Input Prefixes And Command Modes
@@ -89,6 +89,7 @@ mod json_grammar; // GBNF grammar loading and injection
 mod json_parser; // Robust JSON parsing for intel unit outputs
 mod json_parser_extract; // Extraction helpers for json_parser
 mod json_tuning; // JSON temperature tuning
+mod llm_config;
 mod llm_provider; // Task 278: Native Rust LLM API Client
 mod logging;
 mod markdown_ansi; // Markdown-to-ANSI terminal rendering
@@ -136,10 +137,10 @@ mod session;
 mod session_cleanup;
 mod session_display;
 mod session_error;
+mod session_flush; // Task 283: Session Transcript Flush
 mod session_gc; // Task 282: Session Garbage Collector
 mod session_hierarchy;
 mod session_index; // Task 282: Session Index
-mod session_flush; // Task 283: Session Transcript Flush
 mod session_paths;
 mod session_seq;
 mod session_store; // Task 277: SQLite Session Storage
@@ -199,6 +200,7 @@ pub(crate) use intel_units::*; // Migrated intel units
 pub(crate) use json_error_handler::*; // JSON error handling
 pub(crate) use json_grammar::*; // GBNF grammar loading and injection
 pub(crate) use json_tuning::*; // JSON temperature tuning
+pub(crate) use llm_config::*;
 pub(crate) use metrics::*;
 pub(crate) use models_api::*;
 pub(crate) use optimization::*;

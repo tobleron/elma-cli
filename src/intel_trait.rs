@@ -432,19 +432,7 @@ pub(crate) fn build_intel_request(
     profile: &Profile,
     messages: Vec<ChatMessage>,
 ) -> ChatCompletionRequest {
-    ChatCompletionRequest {
-        model: profile.model.clone(),
-        messages,
-        temperature: profile.temperature,
-        top_p: profile.top_p,
-        stream: false,
-        max_tokens: profile.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(profile.repeat_penalty),
-        reasoning_format: Some(profile.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    }
+    chat_request_from_profile(profile, messages, ChatRequestOptions::default())
 }
 
 pub(crate) fn build_intel_system_user_request(

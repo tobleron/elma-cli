@@ -366,22 +366,15 @@ async fn build_program_with_retry(
     }
 
     // Make request with adjusted temperature
-    let request = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let request = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &prompt,
+        ChatRequestOptions {
+            temperature: Some(temperature),
+            ..ChatRequestOptions::default()
+        },
+    );
 
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);
@@ -456,22 +449,15 @@ async fn build_program_with_strategy(
     }
 
     // Make request with strategy-adjusted temperature
-    let request = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let request = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &prompt,
+        ChatRequestOptions {
+            temperature: Some(temperature),
+            ..ChatRequestOptions::default()
+        },
+    );
 
     let response = await_with_optional_tui(tui, chat_once(client, chat_url, &request)).await?;
     let response_text = extract_response_text(&response);
@@ -535,22 +521,12 @@ async fn synthesize_meta_review(
     prompt.push_str("4. Has clear, achievable steps\n\n");
     prompt.push_str("Output ONLY valid Program JSON.\n");
 
-    let request = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let request = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &prompt,
+        ChatRequestOptions::default(),
+    );
 
     let response = await_with_optional_tui(tui, chat_once(client, chat_url, &request)).await?;
     let response_text = extract_response_text(&response);

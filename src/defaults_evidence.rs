@@ -369,22 +369,12 @@ pub(crate) async fn expert_advisor_advice(
     cfg: &Profile,
     response_narrative: &str,
 ) -> Result<String> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &response_narrative.to_string()),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let req = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        response_narrative,
+        ChatRequestOptions::default(),
+    );
 
     let resp = chat_once(client, chat_url, &req).await?;
     Ok(extract_response_text(&resp).trim().to_string())

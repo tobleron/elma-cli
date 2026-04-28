@@ -354,22 +354,16 @@ A Program JSON must contain a "steps" array of objects with "id", "type", "cmd" 
     );
 
     // Generate program with strategy-aware temperature
-    let req = ChatCompletionRequest {
-        model: orchestrator_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &orchestrator_cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature: temp,
-        top_p: orchestrator_cfg.top_p,
-        stream: false,
-        max_tokens: orchestrator_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
-        reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
-        grammar: Some(crate::json_program_grammar()),
-        tools: None,
-    };
+    let req = chat_request_system_user(
+        orchestrator_cfg,
+        &orchestrator_cfg.system_prompt,
+        &prompt,
+        ChatRequestOptions {
+            temperature: Some(temp),
+            grammar: Some(crate::json_program_grammar()),
+            ..ChatRequestOptions::default()
+        },
+    );
 
     let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;
     Ok(program)

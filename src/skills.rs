@@ -363,25 +363,12 @@ pub(crate) async fn select_execution_plan_for_request(
         guidance.render_for_system_prompt()
     );
 
-    let req = ChatCompletionRequest {
-        model: selector_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple(
-                "system",
-                "Choose a bounded Elma execution plan. Prefer simple handling unless the request clearly needs persistent task tracking or multiple stages. Output JSON only.",
-            ),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature: 0.0,
-        top_p: 1.0,
-        stream: false,
-        max_tokens: 160,
-        n_probs: None,
-        repeat_penalty: Some(selector_cfg.repeat_penalty),
-        reasoning_format: Some("none".to_string()),
-        grammar: None,
-        tools: None,
-    };
+    let req = chat_request_system_user(
+        selector_cfg,
+        "Choose a bounded Elma execution plan. Prefer simple handling unless the request clearly needs persistent task tracking or multiple stages. Output JSON only.",
+        &prompt,
+        ChatRequestOptions::deterministic(160),
+    );
 
     let verdict: ExecutionPlanVerdict =
         crate::ui_chat::chat_json_with_repair_timeout(client, chat_url, &req, 30).await?;

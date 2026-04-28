@@ -133,22 +133,15 @@ pub(crate) async fn request_program_or_repair(
         None
     };
 
-    let orch_req = ChatCompletionRequest {
-        model: orchestrator_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &orchestrator_cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &prompt.to_string()),
-        ],
-        temperature: orchestrator_cfg.temperature,
-        top_p: orchestrator_cfg.top_p,
-        stream: false,
-        max_tokens: orchestrator_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
-        reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
-        grammar,
-        tools: None,
-    };
+    let orch_req = chat_request_system_user(
+        orchestrator_cfg,
+        &orchestrator_cfg.system_prompt,
+        prompt,
+        ChatRequestOptions {
+            grammar,
+            ..ChatRequestOptions::default()
+        },
+    );
     let (program, json_text) = chat_json_with_repair_text_timeout(
         client,
         chat_url,
@@ -183,10 +176,7 @@ pub(crate) async fn request_recovery_program(
             .join("\n")
     };
 
-    let recovery_req = ChatCompletionRequest {
-        model: orchestrator_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &format!(
+    let recovery_system = format!(
                 "{}\n\nRECOVERY MODE:\n\
                 - A previous workflow attempt failed or was unusable.\n\
                 - Return ONLY one valid Program JSON object.\n\
@@ -198,19 +188,18 @@ pub(crate) async fn request_recovery_program(
                 PREVIOUSLY FAILED COMMANDS (DO NOT REPEAT):\n{}\n",
                 orchestrator_cfg.system_prompt,
                 failed_commands_str
-            )),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature: 0.0,
-        top_p: 1.0,
-        stream: false,
-        max_tokens: orchestrator_cfg.max_tokens.min(1536),
-        n_probs: None,
-        repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
-        reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+            );
+    let recovery_req = chat_request_system_user(
+        orchestrator_cfg,
+        &recovery_system,
+        &prompt,
+        ChatRequestOptions {
+            temperature: Some(0.0),
+            top_p: Some(1.0),
+            max_tokens: Some(orchestrator_cfg.max_tokens.min(1536)),
+            ..ChatRequestOptions::default()
+        },
+    );
     chat_json_with_repair_timeout(
         client,
         chat_url,
@@ -239,22 +228,12 @@ pub(crate) async fn request_critic_verdict(
         2, // max_retries
     );
 
-    let critic_req = ChatCompletionRequest {
-        model: critic_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &critic_cfg.system_prompt),
-            ChatMessage::simple("user", &narrative),
-        ],
-        temperature: critic_cfg.temperature,
-        top_p: critic_cfg.top_p,
-        stream: false,
-        max_tokens: critic_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(critic_cfg.repeat_penalty),
-        reasoning_format: Some(critic_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let critic_req = chat_request_system_user(
+        critic_cfg,
+        &critic_cfg.system_prompt,
+        &narrative,
+        ChatRequestOptions::default(),
+    );
     chat_json_with_repair_for_profile_timeout(
         client,
         chat_url,
@@ -280,22 +259,12 @@ pub(crate) async fn request_reviewer_verdict(
         review_type,
     );
 
-    let reviewer_req = ChatCompletionRequest {
-        model: reviewer_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &reviewer_cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &narrative),
-        ],
-        temperature: reviewer_cfg.temperature,
-        top_p: reviewer_cfg.top_p,
-        stream: false,
-        max_tokens: reviewer_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(reviewer_cfg.repeat_penalty),
-        reasoning_format: Some(reviewer_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let reviewer_req = chat_request_system_user(
+        reviewer_cfg,
+        &reviewer_cfg.system_prompt,
+        &narrative,
+        ChatRequestOptions::default(),
+    );
     chat_json_with_repair_for_profile_timeout(
         client,
         chat_url,
@@ -323,22 +292,12 @@ pub(crate) async fn request_risk_review(
         "risk",
     );
 
-    let risk_req = ChatCompletionRequest {
-        model: risk_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &risk_cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &narrative),
-        ],
-        temperature: risk_cfg.temperature,
-        top_p: risk_cfg.top_p,
-        stream: false,
-        max_tokens: risk_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(risk_cfg.repeat_penalty),
-        reasoning_format: Some(risk_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let risk_req = chat_request_system_user(
+        risk_cfg,
+        &risk_cfg.system_prompt,
+        &narrative,
+        ChatRequestOptions::default(),
+    );
     chat_json_with_repair_for_profile_timeout(
         client,
         chat_url,
@@ -361,33 +320,24 @@ pub(crate) async fn request_chat_final_text_streaming(
     use crate::claude_ui::UiEvent;
     use futures::stream::StreamExt;
 
-    let reply_req = ChatCompletionRequest {
-        model: elma_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &system_content),
-            ChatMessage::simple(
-                "user",
-                &format!(
-                "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally and directly.",
-                line,
-                if reply_instructions.trim().is_empty() {
-                    "Reply naturally and helpfully."
-                } else {
-                    reply_instructions.trim()
-                }
-            ),
-            ),
-        ],
-        temperature: elma_cfg.temperature,
-        top_p: elma_cfg.top_p,
-        stream: true,
-        max_tokens: elma_cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(elma_cfg.repeat_penalty),
-        reasoning_format: Some(elma_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let reply_user = format!(
+        "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally and directly.",
+        line,
+        if reply_instructions.trim().is_empty() {
+            "Reply naturally and helpfully."
+        } else {
+            reply_instructions.trim()
+        }
+    );
+    let reply_req = chat_request_system_user(
+        elma_cfg,
+        system_content,
+        &reply_user,
+        ChatRequestOptions {
+            stream: Some(true),
+            ..ChatRequestOptions::default()
+        },
+    );
 
     if let Some(ref mut tui) = tui {
         tui.handle_ui_event(UiEvent::TurnStarted);
@@ -588,33 +538,21 @@ pub(crate) async fn request_chat_final_text(
                 let _ = t.pump_ui();
             }
             // Fallback to non-streaming
-            let reply_req = ChatCompletionRequest {
-                model: elma_cfg.model.clone(),
-                messages: vec![
-                    ChatMessage::simple("system", &system_content),
-                    ChatMessage::simple(
-                        "user",
-                        &format!(
-                            "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally.",
-                            line,
-                            if reply_instructions.trim().is_empty() {
-                                "Reply naturally."
-                            } else {
-                                reply_instructions.trim()
-                            }
-                        ),
-                    ),
-                ],
-                temperature: elma_cfg.temperature,
-                top_p: elma_cfg.top_p,
-                stream: false,
-                max_tokens: elma_cfg.max_tokens,
-                n_probs: None,
-                repeat_penalty: Some(elma_cfg.repeat_penalty),
-                reasoning_format: Some(elma_cfg.reasoning_format.clone()),
-                grammar: None,
-                tools: None,
-            };
+            let reply_user = format!(
+                "User message:\n{}\n\nInstructions:\n{}\n\nRespond conversationally.",
+                line,
+                if reply_instructions.trim().is_empty() {
+                    "Reply naturally."
+                } else {
+                    reply_instructions.trim()
+                }
+            );
+            let reply_req = chat_request_system_user(
+                elma_cfg,
+                system_content,
+                &reply_user,
+                ChatRequestOptions::default(),
+            );
             let parsed = {
                 let fut = chat_once_with_timeout(client, chat_url, &reply_req, elma_cfg.timeout_s);
                 tokio::pin!(fut);

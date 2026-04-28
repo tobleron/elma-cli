@@ -200,28 +200,16 @@ pub(crate) async fn generate_text_from_reasoning(
     cfg: &Profile,
     reasoning: &str,
 ) -> Result<String> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt),
-            ChatMessage::simple(
-                "user",
-                &format!(
-                    "Convert this reasoning into simple action text:\n\n{}",
-                    reasoning
-                ),
-            ),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let user = format!(
+        "Convert this reasoning into simple action text:\n\n{}",
+        reasoning
+    );
+    let req = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &user,
+        ChatRequestOptions::default(),
+    );
 
     let resp = chat_once_with_timeout(client, chat_url, &req, cfg.timeout_s).await?;
     Ok(extract_response_text(&resp).trim().to_string())
@@ -235,28 +223,16 @@ pub(crate) async fn convert_text_to_json(
     text: &str,
     schema_description: &str,
 ) -> Result<String> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt),
-            ChatMessage::simple(
-                "user",
-                &format!(
-                    "Convert this text to JSON matching the schema:\n\nSchema:\n{}\n\nText:\n{}",
-                    schema_description, text
-                ),
-            ),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let user = format!(
+        "Convert this text to JSON matching the schema:\n\nSchema:\n{}\n\nText:\n{}",
+        schema_description, text
+    );
+    let req = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &user,
+        ChatRequestOptions::default(),
+    );
 
     let resp = chat_once(client, chat_url, &req).await?;
     Ok(extract_response_text(&resp).trim().to_string())
@@ -269,22 +245,13 @@ pub(crate) async fn verify_json(
     cfg: &Profile,
     json: &str,
 ) -> Result<VerifyCheckResult> {
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &format!("Verify this JSON:\n\n{}", json)),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let user = format!("Verify this JSON:\n\n{}", json);
+    let req = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &user,
+        ChatRequestOptions::default(),
+    );
 
     chat_json_with_repair(client, chat_url, &req).await
 }
@@ -307,28 +274,16 @@ pub(crate) async fn repair_json(
             .join("\n")
     };
 
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt),
-            ChatMessage::simple(
-                "user",
-                &format!(
-                    "Original JSON:\n{}\n\nProblems to fix:\n{}",
-                    json, problems_text
-                ),
-            ),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let user = format!(
+        "Original JSON:\n{}\n\nProblems to fix:\n{}",
+        json, problems_text
+    );
+    let req = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &user,
+        ChatRequestOptions::default(),
+    );
 
     let resp = chat_once(client, chat_url, &req).await?;
     Ok(extract_response_text(&resp).trim().to_string())
@@ -401,22 +356,12 @@ pub(crate) async fn annotate_user_intent(
     }
     input.push_str(&format!("\nUser: {}\n", user_message));
 
-    let req = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple("system", &cfg.system_prompt.clone()),
-            ChatMessage::simple("user", &input),
-        ],
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let req = chat_request_system_user(
+        cfg,
+        &cfg.system_prompt,
+        &input,
+        ChatRequestOptions::default(),
+    );
 
     let resp = chat_once(client, chat_url, &req).await?;
     Ok(extract_response_text(&resp).trim().to_string())

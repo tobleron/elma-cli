@@ -64,7 +64,7 @@ pub(crate) async fn prepare_tune_resources(
     let refinement_cfg = load_agent_config(&model_cfg_dir.join("refinement.toml"))?;
     let calibration_judge_cfg = load_agent_config(&model_cfg_dir.join("calibration_judge.toml"))?;
 
-    let n_probs = 64u32;
+    let n_probs = runtime_llm_config().router_calibration_n_probs;
     let supports_logprobs = probe_router_support(client, chat_url, model_id, n_probs).await?;
     let cal = RouterCalibration {
         version: 1,
@@ -170,25 +170,18 @@ async fn probe_router_support(
     model_id: &str,
     n_probs: u32,
 ) -> Result<bool> {
-    let cal_req = ChatCompletionRequest {
-        model: model_id.to_string(),
-        messages: vec![
-            ChatMessage::simple(
-                "system",
-                &"Return exactly one digit: 1.\nNo other text.".to_string(),
-            ),
-            ChatMessage::simple("user", &"ping".to_string()),
-        ],
-        temperature: 0.0,
-        top_p: 1.0,
-        stream: false,
-        max_tokens: 1,
-        n_probs: Some(n_probs),
-        repeat_penalty: None,
-        reasoning_format: None,
-        grammar: None,
-        tools: None,
-    };
+    let profile = ad_hoc_profile(model_id, "router_logprobs_probe");
+    let cal_req = chat_request_system_user(
+        &profile,
+        "Return exactly one digit: 1.\nNo other text.",
+        "ping",
+        ChatRequestOptions {
+            n_probs: Some(n_probs),
+            repeat_penalty: Some(None),
+            reasoning_format: Some(None),
+            ..ChatRequestOptions::deterministic(1)
+        },
+    );
     let cal_resp = chat_once(client, chat_url, &cal_req).await?;
     Ok(cal_resp
         .choices
@@ -227,22 +220,12 @@ async fn write_intention_mapping(
             );
         }
 
-        let req = ChatCompletionRequest {
-            model: intention_tune_cfg.model.clone(),
-            messages: vec![
-                ChatMessage::simple("system", &intention_tune_cfg.system_prompt.clone()),
-                ChatMessage::simple("user", &txt),
-            ],
-            temperature: intention_tune_cfg.temperature,
-            top_p: intention_tune_cfg.top_p,
-            stream: false,
-            max_tokens: intention_tune_cfg.max_tokens,
-            n_probs: None,
-            repeat_penalty: Some(intention_tune_cfg.repeat_penalty),
-            reasoning_format: Some(intention_tune_cfg.reasoning_format.clone()),
-            grammar: None,
-            tools: None,
-        };
+        let req = chat_request_system_user(
+            &intention_tune_cfg,
+            &intention_tune_cfg.system_prompt,
+            &txt,
+            ChatRequestOptions::default(),
+        );
         let resp = chat_once(client, chat_url, &req).await?;
         let raw = resp
             .choices

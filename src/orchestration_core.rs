@@ -253,12 +253,9 @@ Output ONLY valid JSON object with a "steps" array, like:
         next_id = next_id,
     );
 
-    let orch_req = ChatCompletionRequest {
-        model: orchestrator_cfg.model.clone(),
-        messages: vec![
-            ChatMessage::simple(
-                "system",
-                r#"You are Elma's step composer. Transform English instructions into 1-3 structured JSON steps for Elma's execution pipeline.
+    let orch_req = chat_request_system_user(
+        orchestrator_cfg,
+        r#"You are Elma's step composer. Transform English instructions into 1-3 structured JSON steps for Elma's execution pipeline.
 
 Step types available: shell, read, search, edit, explore, write, delete, select, decide, plan, masterplan, summarize, reply, respond.
 
@@ -267,19 +264,12 @@ Output ONLY valid JSON with a steps array:
 
 Each step needs: id, type, purpose, depends_on (array of step IDs), success_condition.
 Shell steps need: cmd. Read steps need: path. Search steps need: query and paths. Edit steps need: path, operation, find, replace. Reply/Respond steps need: instructions."#,
-            ),
-            ChatMessage::simple("user", &prompt),
-        ],
-        temperature: orchestrator_cfg.temperature,
-        top_p: orchestrator_cfg.top_p,
-        stream: false,
-        max_tokens: orchestrator_cfg.max_tokens.min(2048),
-        n_probs: None,
-        repeat_penalty: Some(orchestrator_cfg.repeat_penalty),
-        reasoning_format: Some(orchestrator_cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+        &prompt,
+        ChatRequestOptions {
+            max_tokens: Some(orchestrator_cfg.max_tokens.min(2048)),
+            ..ChatRequestOptions::default()
+        },
+    );
 
     // Call LLM directly with our custom system prompt (not the profile's)
     let program: Program = crate::ui_chat::chat_json_with_repair_timeout(

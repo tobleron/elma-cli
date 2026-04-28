@@ -26,6 +26,8 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     }
 
     let cfg_root = config_root_path(&args.config_root)?;
+    let llm_runtime_cfg = load_or_create_runtime_llm_config(&cfg_root)?;
+    set_runtime_llm_config(llm_runtime_cfg.clone());
     let (base_url, base_url_source) =
         resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref())?;
 
@@ -36,10 +38,8 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
             base_url: base_url.clone(),
             model: args.model.clone().unwrap_or_default(),
         };
-        let s = toml::to_string_pretty(&elma_cfg)
-            .context("Failed to serialize elma.toml")?;
-        std::fs::write(&elma_path, s.as_bytes())
-            .context("Failed to write elma.toml")?;
+        let s = toml::to_string_pretty(&elma_cfg).context("Failed to serialize elma.toml")?;
+        std::fs::write(&elma_path, s.as_bytes()).context("Failed to write elma.toml")?;
     }
 
     save_global_config(
@@ -55,7 +55,7 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         .join("/v1/chat/completions")
         .context("Failed to build /v1/chat/completions URL")?;
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(llm_runtime_cfg.http_timeout_s))
         .build()
         .context("Failed to build HTTP client")?;
 

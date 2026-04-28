@@ -50,19 +50,7 @@ pub async fn reflect_on_program(
         ChatMessage::simple("user", &prompt),
     ];
 
-    let request = ChatCompletionRequest {
-        model: cfg.model.clone(),
-        messages,
-        temperature: cfg.temperature,
-        top_p: cfg.top_p,
-        stream: false,
-        max_tokens: cfg.max_tokens,
-        n_probs: None,
-        repeat_penalty: Some(cfg.repeat_penalty),
-        reasoning_format: Some(cfg.reasoning_format.clone()),
-        grammar: None,
-        tools: None,
-    };
+    let request = chat_request_from_profile(cfg, messages, ChatRequestOptions::default());
 
     let response = chat_once(client, chat_url, &request).await?;
     let response_text = extract_response_text(&response);

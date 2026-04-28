@@ -335,10 +335,7 @@ fn build_fallback_from_recent_tool_evidence(messages: &[ChatMessage]) -> String 
             facts[0]
         )
     } else {
-        format!(
-            "Based on the evidence gathered:\n- {}",
-            facts.join("\n- ")
-        )
+        format!("Based on the evidence gathered:\n- {}", facts.join("\n- "))
     }
 }
 
@@ -393,22 +390,25 @@ async fn request_final_answer_from_evidence(
         ),
     ];
 
-    let req = ChatCompletionRequest {
-        model: model_id.to_string(),
-        messages: clean_messages,
-        temperature: 0.2,
-        top_p: 1.0,
-        stream: false,
-        max_tokens: max_tokens.min(16384),
-        n_probs: None,
-        repeat_penalty: None,
-        reasoning_format: Some("none".to_string()),
-        grammar: None,
-        tools: None,
-    };
+    let profile = ad_hoc_profile(model_id, "tool_loop_evidence_finalizer");
+    let req = chat_request_from_profile(
+        &profile,
+        clean_messages,
+        ChatRequestOptions {
+            temperature: Some(0.2),
+            max_tokens: Some(max_tokens.min(runtime_llm_config().max_response_tokens_cap)),
+            repeat_penalty: Some(None),
+            ..ChatRequestOptions::deterministic(max_tokens)
+        },
+    );
     let resp = await_with_busy_input(
         tui,
-        crate::ui_chat::chat_once_with_timeout(client, chat_url, &req, 60),
+        crate::ui_chat::chat_once_with_timeout(
+            client,
+            chat_url,
+            &req,
+            runtime_llm_config().final_answer_timeout_s,
+        ),
     )
     .await?;
     Ok(normalize_final_answer_candidate(
@@ -436,22 +436,24 @@ async fn request_final_answer_without_tools(
             "Return plain terminal text only. Do not emit XML/JSON tool calls or function-call markup.",
         ));
     }
-    let req = ChatCompletionRequest {
-        model: model_id.to_string(),
-        messages: req_messages,
-        temperature: 0.0,
-        top_p: 1.0,
-        stream: false,
-        max_tokens: max_tokens.min(16384),
-        n_probs: None,
-        repeat_penalty: None,
-        reasoning_format: Some("none".to_string()),
-        grammar: None,
-        tools: None,
-    };
+    let profile = ad_hoc_profile(model_id, "tool_loop_plain_finalizer");
+    let req = chat_request_from_profile(
+        &profile,
+        req_messages,
+        ChatRequestOptions {
+            max_tokens: Some(max_tokens.min(runtime_llm_config().max_response_tokens_cap)),
+            repeat_penalty: Some(None),
+            ..ChatRequestOptions::deterministic(max_tokens)
+        },
+    );
     let resp = await_with_busy_input(
         tui,
-        crate::ui_chat::chat_once_with_timeout(client, chat_url, &req, 60),
+        crate::ui_chat::chat_once_with_timeout(
+            client,
+            chat_url,
+            &req,
+            runtime_llm_config().final_answer_timeout_s,
+        ),
     )
     .await?;
     Ok(normalize_final_answer_candidate(
@@ -672,10 +674,7 @@ pub(crate) async fn run_tool_loop(
 
         // Check if we need to compact before this iteration
         tracker.recalculate(&messages);
-        let (should_compact, ctx, buf) = tracker.should_compact(
-            ctx_max.map(|v| v as usize),
-            None,
-        );
+        let (should_compact, ctx, buf) = tracker.should_compact(ctx_max.map(|v| v as usize), None);
         if should_compact {
             trace(
                 args,
@@ -732,28 +731,30 @@ pub(crate) async fn run_tool_loop(
         if total_calls >= 25 && total_calls % 5 == 0 {
             tui.push_budget_notice(&format!("Tool calls used: {}/30", total_calls));
         }
-        let req = ChatCompletionRequest {
-            model: model_id.to_string(),
-            messages: messages.clone(),
-            temperature,
-            top_p: 1.0,
-            stream: true,
-            max_tokens,
-            n_probs: None,
-            repeat_penalty: None,
-            reasoning_format: Some("auto".to_string()),
-            grammar: None,
-            tools: Some(crate::tool_calling::build_tool_definitions_for_context(
-                &PathBuf::new(),
-                context_hint,
-            )),
-        };
+        let profile = ad_hoc_profile(model_id, "tool_loop");
+        let req = chat_request_from_profile(
+            &profile,
+            messages.clone(),
+            ChatRequestOptions {
+                temperature: Some(temperature),
+                top_p: Some(1.0),
+                stream: Some(true),
+                max_tokens: Some(max_tokens.min(runtime_llm_config().tool_loop_max_tokens_cap)),
+                repeat_penalty: Some(None),
+                reasoning_format: Some(Some("auto".to_string())),
+                tools: Some(crate::tool_calling::build_tool_definitions_for_context(
+                    &PathBuf::new(),
+                    context_hint,
+                )),
+                ..ChatRequestOptions::default()
+            },
+        );
         let turn = match request_tool_loop_model_turn_streaming(
             tui,
             client,
             chat_url,
             req.clone(),
-            120,
+            runtime_llm_config().tool_loop_timeout_s,
             sess,
         )
         .await
@@ -765,7 +766,12 @@ pub(crate) async fn run_tool_loop(
                 fallback_req.stream = false;
                 let resp = await_with_busy_input(
                     tui,
-                    crate::ui_chat::chat_once_with_timeout(client, chat_url, &fallback_req, 120),
+                    crate::ui_chat::chat_once_with_timeout(
+                        client,
+                        chat_url,
+                        &fallback_req,
+                        runtime_llm_config().tool_loop_timeout_s,
+                    ),
                 )
                 .await?;
                 let choice = resp.choices.get(0).context("No choices in response")?;
@@ -784,8 +790,13 @@ pub(crate) async fn run_tool_loop(
                     &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
                 );
                 let mut final_content = request_final_answer_from_evidence(
-                    tui, client, chat_url, model_id,
-                    &original_user_request, &messages, max_tokens,
+                    tui,
+                    client,
+                    chat_url,
+                    model_id,
+                    &original_user_request,
+                    &messages,
+                    max_tokens,
                 )
                 .await?;
                 if final_answer_needs_retry(&final_content) {
@@ -839,8 +850,13 @@ pub(crate) async fn run_tool_loop(
                     "tool_loop: stagnation threshold reached; forcing finalization",
                 );
                 let mut final_content = request_final_answer_from_evidence(
-                    tui, client, chat_url, model_id,
-                    &original_user_request, &messages, max_tokens,
+                    tui,
+                    client,
+                    chat_url,
+                    model_id,
+                    &original_user_request,
+                    &messages,
+                    max_tokens,
                 )
                 .await?;
                 if final_answer_needs_retry(&final_content) {
@@ -891,7 +907,9 @@ pub(crate) async fn run_tool_loop(
                         // If we are already over 70% capacity, compact now to make room for the risky result
                         let mut ctx_limit = tui.get_context_max() as usize;
                         if ctx_limit == 0 {
-                            ctx_limit = ctx_max.map(|v| v as usize).unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
+                            ctx_limit = ctx_max
+                                .map(|v| v as usize)
+                                .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
                         }
                         if tracker.total_tokens > (ctx_limit * 70 / 100) {
                             trace(
@@ -955,7 +973,11 @@ pub(crate) async fn run_tool_loop(
                                     .unwrap_or_default();
                             crate::evidence_ledger::EvidenceSource::Shell {
                                 command: cmd,
-                                exit_code: result.exit_code.unwrap_or(if result.ok { 0 } else { 1 }),
+                                exit_code: result.exit_code.unwrap_or(if result.ok {
+                                    0
+                                } else {
+                                    1
+                                }),
                             }
                         }
                         "read" => {
@@ -1049,12 +1071,13 @@ pub(crate) async fn run_tool_loop(
                     } else {
                         // Run FinalSummaryUnit to generate concise summary using original request
                         let final_summary = run_final_summary_intel(
-                            args, 
+                            args,
                             client,
-                            summarizer_cfg, 
-                            &original_user_request, 
-                            &raw_content
-                        ).await;
+                            summarizer_cfg,
+                            &original_user_request,
+                            &raw_content,
+                        )
+                        .await;
                         let final_answer = if let Some(summary) = final_summary {
                             summary
                         } else {
@@ -1143,8 +1166,13 @@ pub(crate) async fn run_tool_loop(
                     "You've had 5+ consecutive shell failures. Stop trying shell commands and provide your final answer based on the evidence you already have. If you cannot answer reliably, explain what you found and what additional information would be needed."
                 ));
                 let mut final_content = request_final_answer_from_evidence(
-                    tui, client, chat_url, model_id,
-                    &original_user_request, &messages, max_tokens,
+                    tui,
+                    client,
+                    chat_url,
+                    model_id,
+                    &original_user_request,
+                    &messages,
+                    max_tokens,
                 )
                 .await?;
                 if final_answer_needs_retry(&final_content) {
@@ -1182,8 +1210,13 @@ pub(crate) async fn run_tool_loop(
                     &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
                 );
                 let mut final_content = request_final_answer_from_evidence(
-                    tui, client, chat_url, model_id,
-                    &original_user_request, &messages, max_tokens,
+                    tui,
+                    client,
+                    chat_url,
+                    model_id,
+                    &original_user_request,
+                    &messages,
+                    max_tokens,
                 )
                 .await?;
                 if final_answer_needs_retry(&final_content) {
@@ -1221,8 +1254,13 @@ pub(crate) async fn run_tool_loop(
                          Provide your final answer now based on what you know, even if incomplete.",
                     ));
                     let mut final_content = request_final_answer_from_evidence(
-                        tui, client, chat_url, model_id,
-                        &original_user_request, &messages, max_tokens,
+                        tui,
+                        client,
+                        chat_url,
+                        model_id,
+                        &original_user_request,
+                        &messages,
+                        max_tokens,
                     )
                     .await?;
                     if final_answer_needs_retry(&final_content) {
@@ -1408,8 +1446,14 @@ mod tests {
         };
         let sig = tool_signal(&tc);
         assert!(!sig.is_empty(), "respond signal should be non-empty");
-        assert!(sig.starts_with("respond:"), "respond signal should have prefix");
-        assert!(sig.contains("Searching"), "respond signal should contain answer snippet");
+        assert!(
+            sig.starts_with("respond:"),
+            "respond signal should have prefix"
+        );
+        assert!(
+            sig.contains("Searching"),
+            "respond signal should contain answer snippet"
+        );
     }
 
     #[test]
@@ -1476,14 +1520,21 @@ mod tests {
     }
 }
 
-async fn run_final_summary_intel(args: &Args, client: &reqwest::Client, summarizer_cfg: Option<&Profile>, user_request: &str, model_provided_content: &str) -> Option<String> {
+async fn run_final_summary_intel(
+    args: &Args,
+    client: &reqwest::Client,
+    summarizer_cfg: Option<&Profile>,
+    user_request: &str,
+    model_provided_content: &str,
+) -> Option<String> {
     use crate::intel_trait::execute_intel_text_from_user_content;
-    
+
     let cfg = summarizer_cfg?;
 
     let evidence_summary = crate::evidence_ledger::get_session_ledger()
         .map(|ledger| {
-            ledger.entries
+            ledger
+                .entries
                 .iter()
                 .map(|e| e.summary.clone())
                 .collect::<Vec<_>>()
@@ -1504,7 +1555,11 @@ Model's draft answer:
 
 Provide a short, direct answer."#,
         user_request,
-        if evidence_summary.is_empty() { "(none)".to_string() } else { evidence_summary },
+        if evidence_summary.is_empty() {
+            "(none)".to_string()
+        } else {
+            evidence_summary
+        },
         model_provided_content
     );
 
