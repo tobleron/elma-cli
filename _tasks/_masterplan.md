@@ -12,7 +12,54 @@ This is the execution index for all current pending tasks. Use it to choose work
 - Do not modify `src/prompt_core.rs` or `TOOL_CALLING_SYSTEM_PROMPT` unless a task explicitly has user approval for that change.
 - Prefer completing each wave in order. Within a wave, tasks can run in parallel only when their dependencies do not overlap.
 
-## Wave 0: Backlog Truth And Low-Level Hygiene
+## Wave 0: Compact DSL Model-Output Migration
+
+### 376 DSL Migration Checkpoint Inventory And Boundaries
+- [ ] Confirm the checkpoint commit and inventory all model-produced JSON contracts.
+- [ ] Classify JSON boundaries as model output, provider wire, local state, config, third-party, or fixture.
+- [ ] Update active task references that would preserve JSON model output.
+
+### 377 Compact DSL Family Core Parser And Error Model
+- [ ] Build strict shared DSL parser primitives, sanitization, and compact repair rendering.
+- [ ] Reject empty, fenced, JSON/XML/YAML/TOML/prose, duplicate-field, malformed-quote, and trailing-garbage output.
+- [ ] Verify stable DSL parse errors and repair observations.
+
+### 378 Action DSL Protocol And Executor Cutover
+- [ ] Introduce `AgentAction` and parse `R/L/S/Y/E/X/ASK/DONE` into typed Rust actions.
+- [ ] Replace live provider-native model tool calls with one-command DSL loop handling.
+- [ ] Verify parsed, validated actions execute and raw model text never executes.
+
+### 379 DSL Path Command And Edit Safety
+- [ ] Enforce safe workspace-relative paths, symlink escape protection, command policy, and exact edit validation.
+- [ ] Restrict `X` to approved verification/development commands by default.
+- [ ] Verify unsafe paths, unsafe commands, and invalid edits produce compact repair observations.
+
+### 380 Intel Units Compact DSL Migration
+- [ ] Replace model-produced intel-unit JSON with compact typed DSL verdict/list/scope contracts.
+- [ ] Remove `chat_json_with_repair` from migrated model-output paths.
+- [ ] Verify small-model retries use DSL repair feedback instead of JSON repair.
+
+### 381 DSL Retry Repair And Stop Policy Integration
+- [ ] Route invalid DSL, unsafe actions, and invalid edits through bounded retry/repair.
+- [ ] Prevent unsupported `DONE`, repeated invalid output loops, and hallucinated success.
+- [ ] Verify compact repair observations drive strategy shifts.
+
+### 382 DSL GBNF Grammar Family And Profile Migration
+- [ ] Add optional GBNF grammar assets for action and intel DSL contracts.
+- [ ] Update profiles and prompt contracts to request DSL only where user approval exists.
+- [ ] Verify constrained decoding helps but parser/validator remain authoritative.
+
+### 383 TOML Config And Local Data Format Boundary
+- [ ] Make user-facing config TOML-first and document acceptable JSON boundaries.
+- [ ] Reframe config migration away from JSON Schema as the primary contract.
+- [ ] Verify no model-output JSON prompt contract is reintroduced.
+
+### 384 DSL Certification Harness And Dead JSON Output Removal
+- [ ] Certify valid and malformed DSL action/intel contracts end to end.
+- [ ] Remove dead model-output JSON parsers, prompts, repair logic, and fallback paths.
+- [ ] Verify remaining JSON uses are intentional provider/local-state/config boundaries.
+
+## Wave 1: Backlog Truth And Low-Level Hygiene
 
 ### 356 Task Backlog Drift Audit And Reconciliation
 - [x] Audit pending tasks against current source and classify stale, partial, duplicate, and valid tasks.
@@ -34,7 +81,7 @@ This is the execution index for all current pending tasks. Use it to choose work
 - [x] Route renderers through theme tokens without changing visual intent.
 - [x] Run UI/theme tests and update snapshots if the change is intentional.
 
-## Wave 1: Core Behavioral Doctrine
+## Wave 2: Core Behavioral Doctrine
 
 ### 303 Offline-First Architecture
 - [x] Audit all network-capable paths and startup assumptions.
@@ -66,7 +113,7 @@ This is the execution index for all current pending tasks. Use it to choose work
 - [ ] Replace non-safety semantic heuristics with metadata, confidence, or focused intel units.
 - [ ] Keep safety/parser heuristics explicit and covered by tests.
 
-## Wave 2: Runtime Truth, Context, And Evidence Foundations
+## Wave 3: Runtime Truth, Context, And Evidence Foundations
 
 ### 338 Formal Action-Observation Event Log
 - [ ] Define typed action, observation, policy, lifecycle, and failure events.
@@ -74,7 +121,7 @@ This is the execution index for all current pending tasks. Use it to choose work
 - [ ] Verify replay/session reconstruction and visible operational rows.
 
 ### 341 Config Schema Generation And Migration
-- [ ] Generate schema artifacts for user-facing config and session settings.
+- [ ] Make user-facing config TOML-first with validation and migration helpers.
 - [ ] Add versioned migration helpers with backup-safe behavior.
 - [ ] Verify invalid config paths, old fixtures, and migration failure handling.
 
@@ -113,12 +160,12 @@ This is the execution index for all current pending tasks. Use it to choose work
 - [ ] Provide load/save/migration helpers for optional tools and workflows.
 - [ ] Verify corrupt, missing, migrated, and garbage-collected state.
 
-## Wave 3: Tool Policy And Filesystem Safety Base
+## Wave 4: Action Policy And Filesystem Safety Base
 
-### 339 Tool Metadata Policy Unification
-- [ ] Add explicit policy metadata for every declared tool.
-- [ ] Ensure callable exposure matches executor support and scheduling/permission behavior.
-- [ ] Verify registry, tool_search, executor parity, and concurrency policy tests.
+### 339 Action And Tool Metadata Policy Unification
+- [ ] Add explicit policy metadata for every model-callable DSL action and remaining adapter.
+- [ ] Ensure action/tool exposure matches executor support and scheduling/permission behavior.
+- [ ] Verify registry, action dispatcher, executor parity, and concurrency policy tests.
 
 ### 337 File Context Tracker And Stale Read Gate
 - [ ] Track read, mention, edit, and external modification state per file.
@@ -131,33 +178,33 @@ This is the execution index for all current pending tasks. Use it to choose work
 - [ ] Verify protected writes fail and ignored paths are skipped visibly.
 
 ### 340 Native Search Execution And Query Safety
-- [ ] Replace shell-string search execution with structured command or native search APIs.
+- [ ] Replace shell-string search execution for DSL `S`/`Y` with structured command or native search APIs.
 - [ ] Preserve timeouts, scoping, result limits, and evidence formatting.
 - [ ] Verify quote-safe, regex, path, no-match, and truncation cases.
 
-## Wave 4: Tool Calling Harness And Contract Base
+## Wave 5: DSL Protocol Harness And Contract Base
 
-### 364 Tool Calling Coverage Matrix And Baseline Audit
-- [ ] Build the canonical tool and skill/formula inventory.
+### 364 DSL Protocol Coverage Matrix And Baseline Audit
+- [ ] Build the canonical DSL action, compatibility tool, and skill/formula inventory.
 - [ ] Add direct `elma-cli` prompt packs and machine-readable matrix fixtures.
-- [ ] Verify every declared tool, executor, and built-in skill/formula is classified.
+- [ ] Verify every declared action/tool, executor, and built-in skill/formula is classified.
 
-### 365 Elma CLI Tool Self-Test Harness
+### 365 Elma CLI DSL Protocol Self-Test Harness
 - [ ] Create the disposable sandbox workspace and prompt runner/report structure.
 - [ ] Support manual and scripted runs with session/transcript capture.
 - [ ] Verify dry-run behavior, failure classes, and artifact paths.
 
-### 366 Tool Declaration Executor Schema Contract Tests
-- [ ] Add schema/executor parity fixtures for every executable and declaration-only tool.
-- [ ] Test invalid JSON, missing fields, optional defaults, and output shape.
-- [ ] Verify no callable tool can normally return `Unknown tool`.
+### 366 DSL Action Declaration Executor Contract Tests
+- [ ] Add parser/validator/executor parity fixtures for every executable action.
+- [ ] Test invalid DSL, missing fields, optional defaults, and compact observations.
+- [ ] Verify no callable action can normally return `Unknown action`.
 
-## Wave 5: Executable Tool Completion
+## Wave 6: Executable Action Completion
 
-### 326 Edit Tool Robustness
-- [ ] Build shared edit engine and wire both tool-calling and program-step edit paths.
+### 326 Exact Edit Engine Robustness
+- [ ] Build shared edit engine and wire DSL `E` plus internal edit paths.
 - [ ] Enforce stale-read, encoding, atomic write, path, and ambiguity protections.
-- [ ] Run edit engine, tool_calling, execution_steps_edit, and build verification.
+- [ ] Run edit engine, agent_protocol, execution_steps_edit, and build verification.
 
 ### 328 Patch Tool Multi-File Atomic Changes
 - [ ] Harden parser and preserve exact patch hunk text.
@@ -184,7 +231,7 @@ This is the execution index for all current pending tasks. Use it to choose work
 - [ ] Integrate ordered post-processing into the tool loop.
 - [ ] Verify ordering, evidence, transcript, failure, and serial-barrier behavior.
 
-## Wave 6: Execution Surfaces, Workflows, And Extensibility
+## Wave 7: Execution Surfaces, Workflows, And Extensibility
 
 ### 344 Recipe And Subrecipe Workflow System
 - [ ] Define external recipe schema, validation, and versioning.
@@ -236,7 +283,7 @@ This is the execution index for all current pending tasks. Use it to choose work
 - [ ] Plan minimal verification using metadata, memory, and permissions.
 - [ ] Verify command selection, permission handling, and failure reporting.
 
-## Wave 7: UX, Diagnostics, Recovery, And Evaluation
+## Wave 8: UX, Diagnostics, Recovery, And Evaluation
 
 ### 346 Keybinding And Command Mode Customization
 - [ ] Define keybinding config schema and defaults.
@@ -273,57 +320,59 @@ This is the execution index for all current pending tasks. Use it to choose work
 - [ ] Add list/inspect/restore UX with explicit affected files and metadata.
 - [ ] Verify partial restore failure, transcript coherence, and no destructive git usage.
 
-## Wave 8: End-To-End Tool And Skills Certification
+## Wave 9: End-To-End DSL Protocol And Skills Certification
 
-### 367 Core Tools E2E Self-Test Suite
-- [ ] Add prompt scenarios for read, search, shell, respond, summary, todo, and tool_search.
+### 367 Core DSL Actions E2E Self-Test Suite
+- [ ] Add prompt scenarios for `R`, `L`, `S`, `Y`, restricted `X`, `ASK`, and `DONE`.
 - [ ] Run prompts through the harness and classify/fix failures.
 - [ ] Verify transcript, evidence, session flush, and final-answer grounding.
 
-### 368 Filesystem Mutation Tools E2E Self-Test Suite
-- [ ] Add sandbox prompts for write, edit, patch, stale-read, ambiguous edit, and rollback.
+### 368 Filesystem Mutation DSL E2E Self-Test Suite
+- [ ] Add sandbox prompts for exact edit, stale-read, ambiguous edit, invalid edit, and unchanged-failure behavior.
 - [ ] Run before/after diffs and add regressions for unsafe or failed behavior.
-- [ ] Verify all mutation tools have safe success and safe failure coverage.
+- [ ] Verify DSL `E` and internal mutation adapters have safe success and safe failure coverage.
 
 ### 369 Network And Browser Tools E2E Security Suite
 - [ ] Add local HTTP/browser fixtures and default-disabled prompt tests.
 - [ ] Test enabled fetch/browser behavior only against controlled local fixtures.
 - [ ] Verify private-network, binary, redirect, and disabled-state protections.
 
-### 370 Permission And Safe Mode Tool Policy Suite
-- [ ] Add prompts for safe shell, destructive shell, protected edits, and disabled network tools.
+### 370 Permission And Safe Mode DSL Policy Suite
+- [ ] Add prompts for safe `X`, destructive command denial, protected edits, and disabled network adapters.
 - [ ] Test permission policy across metadata, safe mode, and executor paths.
 - [ ] Verify denials are visible, recoverable, and not bypassed through other tools.
 
-### 371 Tool Loop Evidence Transcript And Session Coherence Suite
+### 371 DSL Loop Evidence Transcript And Session Coherence Suite
 - [ ] Add prompts that exercise evidence-required answers, respond loops, and strategy changes.
 - [ ] Verify ledger, transcript, session artifacts, and final answer agree.
 - [ ] Add regressions for missing evidence, dropped tool output, or unsupported final claims.
 
-### 372 Parallel Tool Ordering And Batch Execution Suite
+### 372 Parallel DSL Action Ordering And Batch Execution Suite
 - [ ] Add prompts and fake delayed tools for parallel read/search behavior.
 - [ ] Verify execution can be parallel while transcript/evidence order stays deterministic.
 - [ ] Add regressions for serial barriers and failed sibling handling.
 
-### 373 Skills And Formulas Tool Integration Suite
+### 373 Skills And Formulas DSL Integration Suite
 - [ ] Add prompt scenarios for each built-in skill/formula path.
-- [ ] Verify tool choice matches formula expectations and user intent.
+- [ ] Verify DSL action choice matches formula expectations and user intent.
 - [ ] Add regressions for unnecessary tools, wrong formula, or semantic drift.
 
-### 374 Tool Error Recovery And Small Model Self-Correction Suite
+### 374 DSL Error Recovery And Small Model Self-Correction Suite
 - [ ] Add prompts for wrong paths, failed search, failed edit, disabled tools, and shell failures.
 - [ ] Verify bounded recovery through decomposition or strategy shift.
 - [ ] Add regressions for loops, hallucinated evidence, and repeated failed commands.
 
-### 375 Tool Calling Certification Gate And Release Checklist
-- [ ] Build the final certification script and report.
-- [ ] Require automated tests, prompt evidence, policy classification, and executor parity.
-- [ ] Verify the gate fails on uncertified tools and passes only with a complete report.
+### 375 DSL Protocol Certification Gate And Release Checklist
+- [ ] Build the final DSL certification script and report.
+- [ ] Require automated tests, prompt evidence, policy classification, and parser/validator/executor parity.
+- [ ] Verify the gate fails on uncertified actions/tools and passes only with a complete report.
 
 ## Final Sequencing Notes
 
-- Start with Wave 0 and Wave 1 before implementing risky tools.
-- Complete Task 339 before Task 362 and before certifying any tool as production-ready.
-- Complete Tasks 364, 365, and 366 before finishing new tool implementations so regressions land in the harness.
-- Complete Tasks 326, 328, and 329 before their E2E certification tasks 368 and 369.
-- Treat Wave 8, especially Task 375, as the final release gate for the full tool-calling suite.
+- Start with Wave 0. The DSL migration wave is now the priority path before risky new capabilities.
+- Complete Tasks 376 and 377 before changing live model-output handling.
+- Complete Tasks 378, 379, 380, 381, 382, and 383 before removing old model-output JSON paths.
+- Complete Task 339 before Task 362 and before certifying any action/tool as production-ready.
+- Complete Tasks 364, 365, and 366 before finishing new action/tool implementations so regressions land in the harness.
+- Complete Tasks 326 and 340 before their E2E certification tasks 367 and 368.
+- Treat Wave 9, especially Task 375, as the final release gate for the full DSL protocol suite.
