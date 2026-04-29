@@ -1157,7 +1157,7 @@ pub(crate) async fn run_tool_loop(
 
             update_context_estimate(&messages, tui);
 
-            // Goal consistency check: fires every 30 tool calls
+            // Goal consistency check: fires every 18 tool calls
             if stop_policy.goal_consistency_check_needed() && goal_state.has_active_goal() {
                 let recent_tool_summary = build_recent_tool_summary(&messages, 15);
                 let profile = ad_hoc_profile(model_id, "goal_consistency");

@@ -92,7 +92,7 @@ pub(crate) struct StopPolicy {
     consecutive_respond_calls: usize,
     consecutive_respond_only_turns: usize,
     has_real_tool_calls_this_turn: bool,
-    // Goal consistency: track when we last checked at 30-tool-call milestones
+    // Goal consistency: track when we last checked at 18-tool-call milestones
     last_milestone_checked: usize,
 }
 
@@ -436,14 +436,14 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
         self.stagnation_runs
     }
 
-    /// Returns true every 30 tool calls (30, 60, 90, …) — only once per milestone.
+    /// Returns true every 18 tool calls (18, 36, 54, …) — only once per milestone.
     /// The caller must call this after each batch of tool calls is recorded.
     /// Resets the internal milestone tracker so the same milestone won't fire twice.
     pub(crate) fn goal_consistency_check_needed(&mut self) -> bool {
         if self.total_tool_calls == 0 {
             return false;
         }
-        let current_milestone = self.total_tool_calls / 30;
+        let current_milestone = self.total_tool_calls / 18;
         if current_milestone > self.last_milestone_checked {
             self.last_milestone_checked = current_milestone;
             true

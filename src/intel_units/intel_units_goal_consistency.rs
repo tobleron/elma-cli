@@ -2,7 +2,7 @@
 //!
 //! Goal Consistency Intel Unit
 //!
-//! One job: fire every 30 tool calls to check if the current tool-call
+//! One job: fire every 18 tool calls to check if the current tool-call
 //! trajectory still serves the original objective. Output:
 //! CONSISTENT, DRIFTING, or OFF_TRACK with a steering message.
 

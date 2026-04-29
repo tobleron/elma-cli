@@ -166,8 +166,9 @@ pub(crate) fn compute_program_risk(_tool_calls_made: usize, _iterations: usize) 
 // Legacy compatibility — keep for non-tool-calling paths
 // ============================================================================
 
-/// Transform a single Maestro instruction into 1-3 structured JSON steps.
+/// Transform a single Maestro instruction into 1-9 structured JSON steps.
 /// Accumulates steps with proper depends_on wiring.
+/// Retries up to 2 additional times with deterministic (t=0.0) settings on JSON parse failure.
 pub(crate) async fn orchestrate_instruction_once(
     client: &reqwest::Client,
     chat_url: &Url,
@@ -214,14 +215,24 @@ pub(crate) async fn orchestrate_instruction_once(
 
     let next_id = *step_counter + 1;
 
-    let prompt = format!(
+    let system_prompt = r#"You are Elma's step composer. Transform English instructions into 1-9 structured JSON steps for Elma's execution pipeline.
+
+Step types available: shell, read, search, edit, explore, write, delete, select, decide, plan, masterplan, summarize, reply, respond.
+
+Output ONLY valid JSON with a steps array:
+{"steps":[{"id":"s1","type":"shell","cmd":"ls -1","purpose":"list files","depends_on":[],"success_condition":"files listed"}]}
+
+Each step needs: id, type, purpose, depends_on (array of step IDs), success_condition.
+Shell steps need: cmd. Read steps need: path. Search steps need: query and paths. Edit steps need: path, operation, find, replace. Reply/Respond steps need: instructions."#;
+
+    let base_prompt = format!(
         r#"USER REQUEST: {user_message}
 
 INTENT: {intent}
 
 EXPERT ADVICE: {expert_advice}
 
-CURRENT INSTRUCTION (transform this into 1-3 structured steps):
+CURRENT INSTRUCTION (transform this into 1-9 structured steps):
 {instruction}
 
 WORKSPACE FACTS:
@@ -234,7 +245,7 @@ WORKSPACE BRIEF:
 
 {previous_steps_text}
 
-TASK: Transform the current instruction into 1-3 structured JSON steps.
+TASK: Transform the current instruction into 1-9 structured JSON steps.
 - Use step IDs starting from s{next_id}
 - Wire depends_on to reference previous step IDs if this instruction depends on prior work
 - Each step must have a clear purpose and success condition
@@ -254,41 +265,63 @@ Output ONLY valid JSON object with a "steps" array, like:
         next_id = next_id,
     );
 
-    let orch_req = chat_request_system_user(
-        orchestrator_cfg,
-        r#"You are Elma's step composer. Transform English instructions into 1-3 structured JSON steps for Elma's execution pipeline.
+    const MAX_RETRIES: u32 = 2;
+    let mut last_error: Option<anyhow::Error> = None;
 
-Step types available: shell, read, search, edit, explore, write, delete, select, decide, plan, masterplan, summarize, reply, respond.
+    for attempt in 0..=MAX_RETRIES {
+        let (options, user_prompt) = if attempt == 0 {
+            (
+                ChatRequestOptions {
+                    max_tokens: Some(orchestrator_cfg.max_tokens.min(2048)),
+                    ..ChatRequestOptions::default()
+                },
+                base_prompt.clone(),
+            )
+        } else {
+            let retry_prefix = format!(
+                "VALID JSON REQUIRED — your previous output had structural errors and could not be parsed. Output ONLY the JSON object, no prose.\n\n{}",
+                base_prompt
+            );
+            let max_toks = if attempt == 1 { 2048 } else { 1536 };
+            (ChatRequestOptions::deterministic(max_toks), retry_prefix)
+        };
 
-Output ONLY valid JSON with a steps array:
-{"steps":[{"id":"s1","type":"shell","cmd":"ls -1","purpose":"list files","depends_on":[],"success_condition":"files listed"}]}
+        let orch_req = chat_request_system_user(
+            orchestrator_cfg,
+            system_prompt,
+            &user_prompt,
+            options,
+        );
 
-Each step needs: id, type, purpose, depends_on (array of step IDs), success_condition.
-Shell steps need: cmd. Read steps need: path. Search steps need: query and paths. Edit steps need: path, operation, find, replace. Reply/Respond steps need: instructions."#,
-        &prompt,
-        ChatRequestOptions {
-            max_tokens: Some(orchestrator_cfg.max_tokens.min(2048)),
-            ..ChatRequestOptions::default()
-        },
-    );
+        match crate::ui_chat::chat_json_with_repair_timeout::<Program>(
+            client,
+            chat_url,
+            &orch_req,
+            orchestrator_cfg.timeout_s.min(45),
+        )
+        .await
+        {
+            Ok(program) => {
+                *step_counter += program.steps.len() as u32;
+                return Ok(program.steps);
+            }
+            Err(e) => {
+                last_error = Some(e);
+            }
+        }
+    }
 
-    // Call LLM directly with our custom system prompt (not the profile's)
-    let program: Program = crate::ui_chat::chat_json_with_repair_timeout(
-        client,
-        chat_url,
-        &orch_req,
-        orchestrator_cfg.timeout_s.min(45),
-    )
-    .await?;
-
-    // Update step counter
-    *step_counter += program.steps.len() as u32;
-
-    Ok(program.steps)
+    Err(last_error.unwrap_or_else(|| {
+        anyhow::anyhow!(
+            "Orchestrator failed after {} attempts",
+            MAX_RETRIES + 1
+        )
+    }))
 }
 
 /// Build a program from Maestro instructions.
 /// Calls Maestro, then loops through each instruction transforming it into steps.
+/// Caps at 9 total steps. Gracefully degrades to a fallback program on failure.
 pub(crate) async fn build_program_from_maestro(
     runtime: &AppRuntime,
     line: &str,
@@ -304,21 +337,33 @@ pub(crate) async fn build_program_from_maestro(
         runtime.client.clone(),
     );
 
-    let output = match unit.execute_with_fallback(&context).await {
-        Ok(o) => o,
+    let maestro_output: MaestroOutput = match unit.execute_with_fallback(&context).await {
+        Ok(o) => match serde_json::from_value(o.data) {
+            Ok(mo) => mo,
+            Err(e) => {
+                return Ok(build_fallback_program(
+                    line,
+                    &format!("Maestro produced unparseable output: {}", e),
+                ));
+            }
+        },
         Err(e) => {
-            // Maestro failed — return error so caller can use fallback
-            return Err(anyhow::anyhow!("Maestro execution failed: {}", e));
+            return Ok(build_fallback_program(
+                line,
+                &format!("Maestro execution failed: {}", e),
+            ));
         }
     };
-    let maestro_output: MaestroOutput = serde_json::from_value(output.data)
-        .map_err(|e| anyhow::anyhow!("Failed to parse Maestro output: {}", e))?;
 
     if maestro_output.steps.is_empty() {
-        return Err(anyhow::anyhow!("Maestro produced empty steps"));
+        return Ok(build_fallback_program(
+            line,
+            "Maestro produced an empty plan",
+        ));
     }
 
-    // Step 2: Loop through instructions, transform each into steps
+    // Step 2: Loop through instructions, transform each into steps (cap at 9)
+    const MAX_TOTAL_STEPS: usize = 9;
     let mut all_steps: Vec<Step> = Vec::new();
     let mut step_counter: u32 = 0;
 
@@ -326,7 +371,11 @@ pub(crate) async fn build_program_from_maestro(
     let expert_advice = "";
 
     for maestro_instruction in &maestro_output.steps {
-        let steps = orchestrate_instruction_once(
+        if all_steps.len() >= MAX_TOTAL_STEPS {
+            break;
+        }
+
+        match orchestrate_instruction_once(
             &runtime.client,
             &runtime.chat_url,
             &runtime.profiles.orchestrator_cfg,
@@ -339,9 +388,28 @@ pub(crate) async fn build_program_from_maestro(
             &all_steps,
             &mut step_counter,
         )
-        .await?;
+        .await
+        {
+            Ok(steps) => {
+                let remaining = MAX_TOTAL_STEPS - all_steps.len();
+                if steps.len() > remaining {
+                    all_steps.extend(steps.into_iter().take(remaining));
+                    break;
+                }
+                all_steps.extend(steps);
+            }
+            Err(_e) => {
+                // Skip this instruction, continue with remaining
+                continue;
+            }
+        }
+    }
 
-        all_steps.extend(steps);
+    if all_steps.is_empty() {
+        return Ok(build_fallback_program(
+            line,
+            "All orchestrator instructions failed to produce steps",
+        ));
     }
 
     // Step 3: Auto-append Summarize→Respond if last step is not a reply
@@ -408,6 +476,33 @@ pub(crate) async fn build_program_from_maestro(
         objective: line.to_string(),
         steps: all_steps,
     })
+}
+
+/// Build a minimal fallback program when orchestration fails entirely.
+/// Returns a single reply step that honestly communicates the failure.
+fn build_fallback_program(line: &str, reason: &str) -> Program {
+    Program {
+        objective: line.to_string(),
+        steps: vec![Step::Respond {
+            id: "s1".to_string(),
+            instructions: format!(
+                "I wasn't able to build a plan for this request. {}\n\nCould you rephrase or break this into smaller steps?",
+                reason
+            ),
+            common: StepCommon {
+                purpose: "honestly communicate orchestration failure to user".to_string(),
+                depends_on: vec![],
+                success_condition: "user receives honest failure message".to_string(),
+                parent_id: None,
+                depth: None,
+                unit_type: None,
+                is_read_only: true,
+                is_destructive: false,
+                is_concurrency_safe: true,
+                interrupt_behavior: InterruptBehavior::Graceful,
+            },
+        }],
+    }
 }
 
 pub(crate) async fn orchestrate_program_once(
