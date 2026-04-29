@@ -16,12 +16,12 @@ Return the most probable route based on the user message and workspace context.
 Output format (must be valid JSON):
 {"choice": "ROUTE", "label": "ROUTE", "reason": "one sentence", "entropy": 0.XX}
 
-Examples:
-{"choice": "CHAT", "label": "CHAT", "reason": "User asks conceptual question", "entropy": 0.12}
-{"choice": "INVESTIGATE", "label": "INVESTIGATE", "reason": "Need to explore workspace first", "entropy": 0.34}
-{"choice": "SHELL", "label": "SHELL", "reason": "User requests command execution", "entropy": 0.18}
-{"choice": "PLAN", "label": "PLAN", "reason": "User asks for structured plan", "entropy": 0.25}
-{"choice": "MASTERPLAN", "label": "MASTERPLAN", "reason": "Open-ended multi-session task", "entropy": 0.45}
+Routing principles:
+- CHAT: General conversation, conceptual questions, greetings without specific actions
+- INVESTIGATE: Need to explore codebase, search for information, or gather evidence first
+- SHELL: Direct command execution, file operations, or system interactions
+- PLAN: Structured multi-step tasks requiring planning and sequencing
+- MASTERPLAN: Open-ended, complex tasks spanning multiple sessions or major changes
 
 Return ONLY the JSON object. No explanations.
 """

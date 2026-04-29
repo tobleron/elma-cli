@@ -1,8 +1,15 @@
 //! @efficiency-role: util-pure
+//!
 
 use crate::*;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
-/// Strip `<think>...</think>` and `<tool_call>...</tool_call>` blocks that
+// Pre-compiled regex patterns for performance
+static PATH_TOKEN_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[^\s"'`;:(){}\[\]\/\\]+/[^\s"'`;:(){}\[\]\/\\]*|[^\s"'`;:(){}\[\]\/\\]+\\[^\s"'`;:(){}\[\]\/\\]*"#).unwrap());
+static FILE_EXTENSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)\.(toml|md|rs|txt|json|lock)$"#).unwrap());
+
+/// Strip `...</thinking>` blocks that
 /// leak from models even when reasoning_format=none.
 pub(crate) fn strip_thinking_blocks(text: &str) -> String {
     let mut result = text.to_string();
@@ -40,27 +47,28 @@ pub(crate) fn strip_thinking_blocks(text: &str) -> String {
 }
 
 pub(crate) fn looks_like_path_token(s: &str) -> bool {
+    // Trim common punctuation
     let t = s.trim_matches(|c: char| {
         matches!(
             c,
             '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}'
         )
     });
+    
     if t.is_empty() {
         return false;
     }
+    
+    // Check if it contains path separators
     if t.contains('/') || t.contains('\\') {
         return true;
     }
+    
+    // Check if it ends with known file extensions
     let lower = t.to_ascii_lowercase();
-    lower.ends_with(".toml")
-        || lower.ends_with(".md")
-        || lower.ends_with(".rs")
-        || lower.ends_with(".txt")
-        || lower.ends_with(".json")
-        || lower.ends_with(".lock")
-        || lower == "makefile"
-        || lower == "dockerfile"
+    FILE_EXTENSION_REGEX.is_match(&lower) || 
+        lower == "makefile" || 
+        lower == "dockerfile"
 }
 
 fn existing_workspace_token(s: &str) -> Option<String> {
@@ -84,6 +92,7 @@ fn existing_workspace_token(s: &str) -> Option<String> {
 }
 
 pub(crate) fn extract_first_path_from_user_text(line: &str) -> Option<String> {
+    // Trim common punctuation from tokens and look for path patterns
     let trimmed_tokens = line
         .split_whitespace()
         .map(|tok| {
@@ -97,12 +106,14 @@ pub(crate) fn extract_first_path_from_user_text(line: &str) -> Option<String> {
         .filter(|tok| !tok.is_empty())
         .collect::<Vec<_>>();
 
+    // First try to find tokens that look like paths using regex
     trimmed_tokens
         .iter()
         .copied()
-        .find(|tok| tok.contains('/') || tok.contains('\\'))
+        .find(|tok| PATH_TOKEN_REGEX.is_match(tok))
         .map(str::to_string)
         .or_else(|| {
+            // Then try to find tokens that look like path tokens (files, etc.)
             trimmed_tokens
                 .iter()
                 .copied()
@@ -110,6 +121,7 @@ pub(crate) fn extract_first_path_from_user_text(line: &str) -> Option<String> {
                 .map(str::to_string)
         })
         .or_else(|| {
+            // Finally check for existing workspace tokens
             trimmed_tokens
                 .iter()
                 .find_map(|tok| existing_workspace_token(tok))

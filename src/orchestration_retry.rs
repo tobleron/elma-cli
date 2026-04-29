@@ -32,6 +32,13 @@ where
     }
 }
 
+/// T306: Hook for dynamic decomposition on failure.
+/// Placeholder for future implementation to decompose when model struggles.
+fn decompose_on_failure(_attempt: u32, _error_summary: &str) -> bool {
+    // TODO: Implement decomposition logic based on struggle detection
+    false
+}
+
 /// Retry orchestration with strategy chains and temperature escalation.
 /// Returns the best program from all attempts, or a meta-review synthesized program.
 ///

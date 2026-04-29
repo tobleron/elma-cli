@@ -31,6 +31,49 @@ cargo run -- session-gc --older-than-days 7 --dry-run
 cargo run -- session-gc --older-than-days 30 --confirm
 ```
 
+## Offline Setup
+
+Elma works offline by default. When no `--base-url` is specified, it defaults to `http://localhost:8080`, expecting a local model server.
+
+### Local Model Servers
+
+#### llama.cpp (Recommended)
+```bash
+# Clone and build llama.cpp
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+make server
+
+# Download a model (example: Llama 3.2 3B)
+# Visit https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct
+wget https://huggingface.co/.../llama-3.2-3b.gguf
+
+# Start the server
+./server -m llama-3.2-3b.gguf --port 8080 --ctx-size 4096
+```
+
+#### Ollama
+```bash
+# Install Ollama (see https://ollama.ai)
+ollama pull llama3.2:3b
+ollama serve  # Runs on port 11434
+# Use: cargo run -- --base-url http://localhost:11434
+```
+
+#### vLLM
+```bash
+pip install vllm
+python -m vllm.entrypoints.openai.api_server \
+  --model microsoft/DialoGPT-medium \
+  --port 8080
+```
+
+### Connectivity Behavior
+
+- **Local endpoints**: Startup fails with clear setup instructions if unreachable
+- **Remote endpoints**: Warning displayed but startup continues (attempts may succeed)
+- **No configuration**: Defaults to `http://localhost:8080` for offline-first operation
+
 ## How Elma Works
 
 A user request flows through these stages:

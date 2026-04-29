@@ -593,17 +593,18 @@ impl TerminalUI {
         use ratatui::prelude::*;
         use ratatui::widgets::*;
 
-        let mut lines = Vec::new();
+         let mut lines = Vec::new();
+         let theme = current_theme();
 
-        if tasks.is_empty() {
-            lines.push(Line::from(" No background tasks ".fg(Color::Gray)));
-            return lines;
-        }
+         if tasks.is_empty() {
+             lines.push(Line::from(" No background tasks ".fg(theme.fg_dim.to_ratatui_color())));
+             return lines;
+         }
 
-        let header = Line::from(vec![
-            " Background Tasks ".bold(),
-            format!(" ({}) ", tasks.len()).fg(Color::Gray),
-        ]);
+         let header = Line::from(vec![
+             " Background Tasks ".bold(),
+             format!(" ({}) ", tasks.len()).fg(theme.fg_dim.to_ratatui_color()),
+         ]);
         lines.push(header);
 
         for task in tasks {
@@ -615,14 +616,14 @@ impl TerminalUI {
 
             let prefix = if is_selected { "▸ " } else { "  " };
 
-            let status_color = match task.status {
-                crate::background_task::BackgroundTaskStatus::Pending => Color::Yellow,
-                crate::background_task::BackgroundTaskStatus::Running => Color::Cyan,
-                crate::background_task::BackgroundTaskStatus::Completed => Color::Green,
-                crate::background_task::BackgroundTaskStatus::Failed => Color::Red,
-                crate::background_task::BackgroundTaskStatus::Cancelled => Color::DarkGray,
-                crate::background_task::BackgroundTaskStatus::OOMKilled => Color::Magenta,
-            };
+             let status_color = match task.status {
+                 crate::background_task::BackgroundTaskStatus::Pending => theme.warning.to_ratatui_color(),
+                 crate::background_task::BackgroundTaskStatus::Running => theme.accent_secondary.to_ratatui_color(),
+                 crate::background_task::BackgroundTaskStatus::Completed => theme.success.to_ratatui_color(),
+                 crate::background_task::BackgroundTaskStatus::Failed => theme.error.to_ratatui_color(),
+                 crate::background_task::BackgroundTaskStatus::Cancelled => theme.fg_dim.to_ratatui_color(),
+                 crate::background_task::BackgroundTaskStatus::OOMKilled => theme.error.to_ratatui_color(), // Using error for OOMKilled as it's a failure state
+             };
 
             let runtime = task
                 .runtime_seconds()
@@ -638,11 +639,11 @@ impl TerminalUI {
                 runtime
             );
 
-            let line = if is_selected {
-                Line::from(row.fg(Color::White).bg(Color::DarkGray))
-            } else {
-                Line::from(row.fg(Color::Gray))
-            };
+             let line = if is_selected {
+                 Line::from(row.fg(theme.fg.to_ratatui_color()).bg(theme.bg.to_ratatui_color()))
+             } else {
+                 Line::from(row.fg(theme.fg_dim.to_ratatui_color()))
+             };
             lines.push(line);
         }
 

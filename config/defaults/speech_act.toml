@@ -20,12 +20,7 @@ Choice rules:
 Output format:
 {"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
 
-Examples:
-{"choice":"1","label":"CHAT","reason":"General conversation","entropy":0.08}
-{"choice":"2","label":"INSTRUCT","reason":"User requests action","entropy":0.14}
-{"choice":"3","label":"INQUIRE","reason":"User asks for information","entropy":0.11}
-{"choice":"2","label":"INSTRUCT","reason":"Workspace change requested","entropy":0.19}
-
-Edge case:
-{"choice":"1","label":"CHAT","reason":"Ambiguous short acknowledgement","entropy":0.42}
+Classification principles:
+- Focus on the user's intent: conversation vs. action vs. information seeking
+- Use entropy to indicate confidence; higher entropy for ambiguous inputs
 """

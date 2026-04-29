@@ -120,13 +120,13 @@ impl ModelPicker {
             .iter()
             .enumerate()
             .map(|(i, model)| {
-                let style = if i == self.selected_index {
-                    Style::default()
-                        .bg(theme.accent_primary.to_ratatui_color())
-                        .fg(Color::Black)
-                } else {
-                    Style::default()
-                };
+                 let style = if i == self.selected_index {
+                     Style::default()
+                         .bg(theme.accent_primary.to_ratatui_color())
+                         .fg(theme.fg.to_ratatui_color())
+                 } else {
+                     Style::default()
+                 };
                 ListItem::new(Line::from(vec![
                     Span::styled(&model.name, style.fg(theme.fg.to_ratatui_color())),
                     Span::raw(" ("),

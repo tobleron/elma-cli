@@ -59,6 +59,46 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         .build()
         .context("Failed to build HTTP client")?;
 
+    // Task 303: Offline-first connectivity check
+    // Verify endpoint reachability before proceeding
+    match check_endpoint_connectivity(&client, &chat_url).await {
+        Ok(_) => {
+            trace(&args, &format!("connectivity_check=passed url={}", chat_url));
+        }
+        Err(e) => {
+            // Task 303: For localhost endpoints, fail with actionable error
+            // For remote endpoints, warn but continue (offline-first)
+            let is_local = base_url.starts_with("http://localhost") || base_url.starts_with("http://127.0.0.1");
+
+            if is_local {
+                let hint = "Start your local model server (llama.cpp, Ollama, etc.) or configure a remote endpoint with --base-url";
+                anyhow::bail!(
+                    "Cannot reach LLM endpoint at {}\n\n{}\n\nDetails: {}",
+                    chat_url,
+                    hint,
+                    e
+                );
+            } else {
+                // Remote endpoint unreachable - warn but continue
+                let warning_msg = format!(
+                    "Warning: Cannot reach remote LLM endpoint at {}\n\
+                     Elma will attempt requests but they may fail.\n\
+                     Check your internet connection and API keys.\n\
+                     Details: {}",
+                    chat_url, e
+                );
+
+                if args.no_color {
+                    eprintln!("{}", warning_msg);
+                } else {
+                    eprintln!("{}", warn_yellow(&warning_msg));
+                }
+
+                trace(&args, &format!("connectivity_check=failed_remote url={} error={}", chat_url, e));
+            }
+        }
+    }
+
     let model_id = if let Some(model) = args.model.as_ref().filter(|s| !s.trim().is_empty()) {
         model.trim().to_string()
     } else {
@@ -284,6 +324,43 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         retry_attempt: 0,
         tool_registry: tool_discovery::ToolRegistry::new(),
     }))
+}
+
+/// Check endpoint connectivity with a lightweight request
+async fn check_endpoint_connectivity(client: &reqwest::Client, chat_url: &Url) -> Result<()> {
+    // Build a minimal test request
+    let test_req = ChatCompletionRequest {
+        model: "test-model".to_string(),
+        messages: vec![ChatMessage::simple("user", "test")],
+        temperature: 0.0,
+        top_p: 1.0,
+        max_tokens: 1,
+        stream: false,
+        n_probs: None,
+        repeat_penalty: None,
+        reasoning_format: None,
+        grammar: None,
+        tools: None,
+    };
+
+    let url = format!("{}/v1/chat/completions", chat_url);
+    let url = Url::parse(&url).context("Invalid URL for connectivity check")?;
+
+    let resp = client
+        .post(url)
+        .json(&test_req)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .context("Connectivity check failed: request could not be sent")?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("HTTP {}: {}", status, body);
+    }
+
+    Ok(())
 }
 
 fn prepare_session(args: &Args) -> Result<SessionPaths> {

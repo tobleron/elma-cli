@@ -578,9 +578,50 @@ impl UnifiedLlmClient {
     pub(crate) fn provider_type(&self) -> LlmProvider {
         self.provider.provider_type()
     }
-}
 
-/// Convert ChatCompletionRequest to UnifiedChatRequest.
+    /// Check connectivity to the LLM endpoint.
+    /// Returns Ok(()) if reachable, Err if unreachable.
+    pub(crate) async fn check_connectivity(&self, base_url: &str) -> Result<()> {
+        let endpoint = format!("{}{}", base_url, self.provider.chat_endpoint());
+        let url = Url::parse(&endpoint).context("Invalid connectivity check URL")?;
+
+        // Build a minimal request to test connectivity without spending much
+        let test_req = UnifiedChatRequest {
+            model: "test-model".to_string(),
+            messages: vec![UnifiedMessage::user("test")],
+            temperature: 0.0,
+            top_p: 1.0,
+            max_tokens: 1,
+            stream: false,
+            stop: None,
+            tools: None,
+            tool_choice: None,
+            extra_params: HashMap::new(),
+        };
+
+        let body = self.provider.build_request_body(&test_req)?;
+        let headers = self.provider.build_headers(&self.api_key)?;
+
+        let resp = self
+            .http_client
+            .post(url)
+            .headers(headers)
+            .json(&body)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .context("Connectivity check failed: request could not be sent")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            anyhow::bail!("Connectivity check failed: HTTP {} - {}", status, resp.text().await.unwrap_or_default());
+        }
+
+         Ok(())
+     }
+ }
+
+ /// Convert ChatCompletionRequest to UnifiedChatRequest.
 pub(crate) fn to_unified_request(req: &ChatCompletionRequest) -> UnifiedChatRequest {
     let messages: Vec<UnifiedMessage> = req
         .messages

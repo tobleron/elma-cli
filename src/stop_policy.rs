@@ -258,6 +258,14 @@ impl StopPolicy {
         self.retry_loop_detected
     }
 
+    /// T306: Check if the model is struggling and decomposition may help.
+    /// Returns true if repeated failures, stagnation, or other struggle indicators.
+    pub(crate) fn is_struggling(&self) -> bool {
+        self.tool_failures.len() >= self.budget.max_repeated_failures
+            || self.stagnation_runs >= self.budget.max_stagnation_cycles
+            || self.retry_loop_detected
+    }
+
     /// T303: Get the count of consecutive shell failures.
     pub(crate) fn consecutive_shell_failures(&self) -> usize {
         self.consecutive_shell_failures
@@ -1102,6 +1110,32 @@ mod tests {
         assert_eq!(policy.consecutive_respond_only_turns, 2);
         policy.reset_respond_counter();
         assert_eq!(policy.consecutive_respond_only_turns, 0);
+    }
+
+    #[test]
+    fn test_is_struggling_detection() {
+        let mut budget = StageBudget::default();
+        budget.max_repeated_failures = 2;
+        budget.max_stagnation_cycles = 2;
+        let mut policy = StopPolicy::new(budget.clone());
+
+        // Initially not struggling
+        assert!(!policy.is_struggling());
+
+        // Add repeated failures
+        policy.tool_failures.push(("cmd".to_string(), "error".to_string()));
+        policy.tool_failures.push(("cmd".to_string(), "error".to_string()));
+        assert!(policy.is_struggling());
+
+        // Reset and test stagnation
+        let mut policy2 = StopPolicy::new(budget.clone());
+        policy2.stagnation_runs = 2;
+        assert!(policy2.is_struggling());
+
+        // Test retry loop
+        let mut policy3 = StopPolicy::new(budget);
+        policy3.retry_loop_detected = true;
+        assert!(policy3.is_struggling());
     }
 
     #[test]

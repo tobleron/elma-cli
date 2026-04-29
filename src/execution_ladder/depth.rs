@@ -97,6 +97,16 @@ pub fn assessment_needs_decomposition(assessment: &ExecutionLadderAssessment) ->
     )
 }
 
+/// Escalate execution level when model is struggling (Task 306)
+pub fn escalate_on_weakness(current_level: ExecutionLevel) -> ExecutionLevel {
+    match current_level {
+        ExecutionLevel::Action => ExecutionLevel::Task,
+        ExecutionLevel::Task => ExecutionLevel::Plan,
+        ExecutionLevel::Plan => ExecutionLevel::MasterPlan,
+        ExecutionLevel::MasterPlan => ExecutionLevel::MasterPlan, // Max level
+    }
+}
+
 // ============================================================================
 // Request Predicate Functions
 // ============================================================================

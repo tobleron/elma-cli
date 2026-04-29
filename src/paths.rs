@@ -121,7 +121,8 @@ pub(crate) fn resolve_base_url(
     if let Some(url) = discover_saved_base_url(config_root, model_hint)? {
         return Ok((url, "saved_config"));
     }
-    Err(crate::diagnostics::ElmaDiagnostic::MissingBaseUrl.into())
+    // Task 303: Default to localhost for offline-first operation
+    Ok(("http://localhost:8080".to_string(), "default_localhost"))
 }
 
 pub(crate) fn sanitize_model_folder_name(s: &str) -> String {

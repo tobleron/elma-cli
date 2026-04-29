@@ -1015,9 +1015,14 @@ pub(crate) async fn run_tool_loop(
                             input: tc.function.arguments.chars().take(100).collect(),
                         },
                     };
-                    crate::evidence_ledger::with_session_ledger(|ledger| {
-                        ledger.add_entry(source, &result.content);
-                    });
+                     crate::evidence_ledger::with_session_ledger(|ledger| {
+                         // Strip ANSI escape sequences from result content
+                         let clean_content = match strip_ansi_escapes::strip(result.content.as_bytes()) {
+                             Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+                             Err(_) => result.content.clone(), // Fallback: return raw if stripping fails
+                         };
+                         ledger.add_entry(source, &clean_content);
+                     });
                 }
 
                 stop_policy.record_tool_result(tc, &result);
@@ -1241,12 +1246,18 @@ pub(crate) async fn run_tool_loop(
                 });
             }
 
+            // T306: Surface struggle detection as transcript row
+            if stop_policy.is_struggling() {
+                tui.push_meta_event("STRUGGLE", "Model detected as struggling (repeated failures/stagnation). Decomposition recommended.");
+            }
+
             // Check for repeated tool failures after executing all calls
             if let Some(outcome) = stop_policy.check_should_stop() {
                 trace(
                     args,
                     &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
                 );
+                tui.push_meta_event("STOP", &format!("Stopping: {} - {}", outcome.reason.as_str(), outcome.summary));
                 let mut final_content = request_final_answer_from_evidence(
                     tui,
                     client,

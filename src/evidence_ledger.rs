@@ -170,79 +170,85 @@ impl EvidenceLedger {
         }
     }
 
-    pub(crate) fn add_entry(&mut self, source: EvidenceSource, raw_output: &str) -> &EvidenceEntry {
-        let id = format!("e_{:03}", self.next_id);
-        self.next_id += 1;
+     pub(crate) fn add_entry(&mut self, source: EvidenceSource, raw_output: &str) -> &EvidenceEntry {
+         // Strip ANSI escape sequences from raw output
+         let clean_output = match strip_ansi_escapes::strip(raw_output.as_bytes()) {
+             Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+             Err(_) => raw_output.to_string(), // Fallback: return raw if stripping fails
+         };
+         
+         let id = format!("e_{:03}", self.next_id);
+         self.next_id += 1;
 
-        let extra = match &source {
-            EvidenceSource::Shell { command, exit_code } => SummarizeExtra {
-                command: Some(command.clone()),
-                path: None,
-                pattern: None,
-                exit_code: Some(*exit_code),
-            },
-            EvidenceSource::Read { path } => SummarizeExtra {
-                command: None,
-                path: Some(path.clone()),
-                pattern: None,
-                exit_code: None,
-            },
-            EvidenceSource::Search { path, pattern } => SummarizeExtra {
-                command: None,
-                path: Some(path.clone()),
-                pattern: Some(pattern.clone()),
-                exit_code: None,
-            },
-            EvidenceSource::Tool { name, input } => SummarizeExtra {
-                command: None,
-                path: None,
-                pattern: None,
-                exit_code: None,
-            },
-        };
+         let extra = match &source {
+             EvidenceSource::Shell { command, exit_code } => SummarizeExtra {
+                 command: Some(command.clone()),
+                 path: None,
+                 pattern: None,
+                 exit_code: Some(*exit_code),
+             },
+             EvidenceSource::Read { path } => SummarizeExtra {
+                 command: None,
+                 path: Some(path.clone()),
+                 pattern: None,
+                 exit_code: None,
+             },
+             EvidenceSource::Search { path, pattern } => SummarizeExtra {
+                 command: None,
+                 path: Some(path.clone()),
+                 pattern: Some(pattern.clone()),
+                 exit_code: None,
+             },
+             EvidenceSource::Tool { name, input } => SummarizeExtra {
+                 command: None,
+                 path: None,
+                 pattern: None,
+                 exit_code: None,
+             },
+         };
 
-        let summary = summarize_tool_result(
-            match &source {
-                EvidenceSource::Shell { .. } => "shell",
-                EvidenceSource::Read { .. } => "read",
-                EvidenceSource::Search { .. } => "search",
-                EvidenceSource::Tool { name, .. } => name.as_str(),
-            },
-            raw_output,
-            &extra,
-        );
+         let summary = summarize_tool_result(
+             match &source {
+                 EvidenceSource::Shell { .. } => "shell",
+                 EvidenceSource::Read { .. } => "read",
+                 EvidenceSource::Search { .. } => "search",
+                 EvidenceSource::Tool { name, .. } => name.as_str(),
+             },
+             &clean_output, // Use cleaned output for summarization
+             &extra,
+         );
 
-        let quality = Self::assess_quality(&source, raw_output);
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+         let quality = Self::assess_quality(&source, &clean_output); // Use cleaned output for quality assessment
+         let timestamp = SystemTime::now()
+             .duration_since(UNIX_EPOCH)
+             .unwrap_or_default()
+             .as_secs();
 
-        let mut raw_path = None;
-        if should_store_raw(raw_output) {
-            let evidence_dir = PathBuf::from(&self.base_dir)
-                .join("evidence")
-                .join(&self.session_id);
-            std::fs::create_dir_all(&evidence_dir).ok();
-            let file_path = evidence_dir.join(format!("{}_raw.txt", id));
-            if std::fs::write(&file_path, raw_output).is_ok() {
-                raw_path = Some(file_path.to_string_lossy().to_string());
-            }
-        }
+         let mut raw_path = None;
+         if should_store_raw(&clean_output) {
+             let evidence_dir = PathBuf::from(&self.base_dir)
+                 .join("evidence")
+                 .join(&self.session_id);
+             std::fs::create_dir_all(&evidence_dir).ok();
+             let file_path = evidence_dir.join(format!("{}_raw.txt", id));
+             if std::fs::write(&file_path, &clean_output).is_ok() { // Store cleaned output
+                 raw_path = Some(file_path.to_string_lossy().to_string());
+             }
+         }
 
-        let entry = EvidenceEntry {
-            id,
-            source,
-            timestamp,
-            summary,
-            raw_path,
-            staleness: Staleness::Fresh,
-            quality,
-        };
+         let entry = EvidenceEntry {
+             id,
+             source,
+             timestamp,
+             summary,
+             raw_path,
+             staleness: Staleness::Fresh,
+             quality,
+         };
 
-        self.entries.push(entry);
-        self.entries.last().unwrap()
-    }
+         self.entries.push(entry);
+         self.entries.last().unwrap()
+     }
 
     pub(crate) fn mark_stale(&mut self, path: &str) {
         for entry in &mut self.entries {
