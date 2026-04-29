@@ -13,7 +13,8 @@ pub(crate) fn build_edit_path_probe_program(line: &str, path: &str) -> Program {
         steps: vec![
             Step::Read {
                 id: "r1".to_string(),
-                path: path.to_string(),
+                path: Some(path.to_string()),
+                paths: None,
                 common: StepCommon {
                     purpose: "read the target file before making the requested append edit"
                         .to_string(),
@@ -54,7 +55,8 @@ pub(crate) fn build_edit_path_probe_program(line: &str, path: &str) -> Program {
             },
             Step::Read {
                 id: "r2".to_string(),
-                path: path.to_string(),
+                path: Some(path.to_string()),
+                paths: None,
                 common: StepCommon {
                     purpose: "verify the file now includes the appended audit section"
                         .to_string(),
@@ -162,7 +164,8 @@ pub(crate) fn build_readme_summary_and_entry_point_program(line: &str, path: &st
             },
             Step::Read {
                 id: "r1".to_string(),
-                path: format!("{root}/README.md"),
+                path: Some(format!("{root}/README.md")),
+                paths: None,
                 common: StepCommon {
                     purpose: "read the scoped README so the repo purpose can be summarized from grounded evidence".to_string(),
                     depends_on: Vec::new(),
@@ -294,7 +297,8 @@ pub(crate) fn build_decide_path_probe_program(line: &str, path: &str) -> Program
                 },
                 Step::Read {
                     id: "r_sqlc".to_string(),
-                    path: format!("{root}/sqlc.yaml"),
+                    path: Some(format!("{root}/sqlc.yaml")),
+                    paths: None,
                     common: StepCommon {
                         purpose: "read the sqlc configuration to see whether a database schema directory is configured"
                             .to_string(),
@@ -311,7 +315,8 @@ pub(crate) fn build_decide_path_probe_program(line: &str, path: &str) -> Program
                 },
                 Step::Read {
                     id: "r_connect".to_string(),
-                    path: format!("{root}/internal/db/connect.go"),
+                    path: Some(format!("{root}/internal/db/connect.go")),
+                    paths: None,
                     common: StepCommon {
                         purpose: "read the database connection code to verify whether the project opens a real database and where it stores it"
                             .to_string(),
@@ -328,7 +333,8 @@ pub(crate) fn build_decide_path_probe_program(line: &str, path: &str) -> Program
                 },
                 Step::Read {
                     id: "r_migration".to_string(),
-                    path: format!("{root}/internal/db/migrations/20250424200609_initial.sql"),
+                    path: Some(format!("{root}/internal/db/migrations/20250424200609_initial.sql")),
+                    paths: None,
                     common: StepCommon {
                         purpose: "read one concrete migration file to verify that the schema is defined in SQL migrations"
                             .to_string(),

@@ -47,7 +47,15 @@ pub(crate) async fn build_program_with_temp(
 ) -> Program {
     // Tool-calling pipeline: model plans and executes tools directly (no Maestro)
     let context_hint = route_decision.route.as_str();
-    match crate::orchestration_core::run_tool_calling_pipeline(runtime, line, tui, context_hint, route_decision.evidence_required).await {
+    match crate::orchestration_core::run_tool_calling_pipeline(
+        runtime,
+        line,
+        tui,
+        context_hint,
+        route_decision.evidence_required,
+    )
+    .await
+    {
         Ok((answer, iterations, tool_calls, stopped_by_max)) => {
             trace(
                 &runtime.args,

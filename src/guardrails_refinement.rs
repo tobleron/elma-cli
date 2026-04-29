@@ -147,17 +147,20 @@ mod tests {
             steps: vec![
                 Step::Read {
                     id: "r1".to_string(),
-                    path: "README.md".to_string(),
+                    path: Some("README.md".to_string()),
+                    paths: None,
                     common: StepCommon::default(),
                 },
                 Step::Read {
                     id: "r2".to_string(),
-                    path: "Cargo.toml".to_string(),
+                    path: Some("Cargo.toml".to_string()),
+                    paths: None,
                     common: StepCommon::default(),
                 },
                 Step::Read {
                     id: "r3".to_string(),
-                    path: "src/main.rs".to_string(),
+                    path: Some("src/main.rs".to_string()),
+                    paths: None,
                     common: StepCommon::default(),
                 },
             ],
@@ -248,7 +251,8 @@ mod tests {
             objective: objective.to_string(),
             steps: vec![Step::Read {
                 id: "r1".to_string(),
-                path: "file.txt".to_string(),
+                path: Some("file.txt".to_string()),
+                paths: None,
                 common: StepCommon::default(),
             }],
         };

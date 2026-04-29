@@ -167,14 +167,25 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                     in_code_block = true;
                     code_block_lang = match &kind {
                         CodeBlockKind::Fenced(lang) => {
-                            if lang.is_empty() { None } else { Some(lang.to_string()) }
+                            if lang.is_empty() {
+                                None
+                            } else {
+                                Some(lang.to_string())
+                            }
                         }
                         CodeBlockKind::Indented => None,
                     };
                     code_block_lines.clear();
                 }
                 Tag::Heading { level, .. } => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     do_push(&mut current_spans, &mut current_lines);
                     current_spans.push(Span::styled(
                         String::new(),
@@ -185,7 +196,14 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                 }
                 Tag::Paragraph => {}
                 Tag::List(start) => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     do_push(&mut current_spans, &mut current_lines);
                     if !current_lines.is_empty() {
                         blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
@@ -200,7 +218,14 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                     current_item_lines.clear();
                 }
                 Tag::BlockQuote(_) => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     do_push(&mut current_spans, &mut current_lines);
                     if !current_lines.is_empty() {
                         blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
@@ -222,19 +247,47 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                     pending_cell.clear();
                 }
                 Tag::Emphasis => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     in_italic = true;
                 }
                 Tag::Strong => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     in_bold = true;
                 }
                 Tag::Strikethrough => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     in_strikethrough = true;
                 }
                 Tag::Link { dest_url, .. } => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     in_link = true;
                     link_url = dest_url.to_string();
                     link_text.clear();
@@ -260,7 +313,14 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                     });
                 }
                 TagEnd::Heading(level) => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     do_push(&mut current_spans, &mut current_lines);
                     let heading_lines = std::mem::take(&mut current_lines);
                     blocks.push(RenderBlock::Heading {
@@ -276,7 +336,14 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                     });
                 }
                 TagEnd::Paragraph => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     do_push(&mut current_spans, &mut current_lines);
                     if in_blockquote {
                         blockquote_lines.append(&mut current_lines);
@@ -301,7 +368,14 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                 TagEnd::Item => {
                     do_push(&mut current_spans, &mut current_item_lines);
                     if !current_item_lines.is_empty() || !pending_text.is_empty() {
-                        do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                        do_flush(
+                            &mut pending_text,
+                            &mut current_spans,
+                            in_bold,
+                            in_italic,
+                            in_strikethrough,
+                            theme,
+                        );
                         do_push(&mut current_spans, &mut current_item_lines);
                     }
                     if !current_item_lines.is_empty() {
@@ -312,7 +386,9 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                 TagEnd::BlockQuote(_) => {
                     in_blockquote = false;
                     if !blockquote_lines.is_empty() {
-                        blocks.push(RenderBlock::BlockQuote(std::mem::take(&mut blockquote_lines)));
+                        blocks.push(RenderBlock::BlockQuote(std::mem::take(
+                            &mut blockquote_lines,
+                        )));
                     }
                 }
                 TagEnd::Table => {
@@ -341,15 +417,36 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                     }
                 }
                 TagEnd::Emphasis => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     in_italic = false;
                 }
                 TagEnd::Strong => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     in_bold = false;
                 }
                 TagEnd::Strikethrough => {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     in_strikethrough = false;
                 }
                 TagEnd::Link => {
@@ -386,7 +483,14 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                 if in_code_block {
                     code_block_lines.push(text.to_string());
                 } else {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     current_spans.push(Span::styled(
                         format!("`{}`", text),
                         Style::default()
@@ -411,16 +515,30 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
                         last.push('\n');
                     }
                 } else {
-                    do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+                    do_flush(
+                        &mut pending_text,
+                        &mut current_spans,
+                        in_bold,
+                        in_italic,
+                        in_strikethrough,
+                        theme,
+                    );
                     do_push(&mut current_spans, &mut current_lines);
                 }
             }
             Event::Rule => {
-                do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
-                    do_push(&mut current_spans, &mut current_lines);
-                    if !current_lines.is_empty() {
-                        blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
-                    }
+                do_flush(
+                    &mut pending_text,
+                    &mut current_spans,
+                    in_bold,
+                    in_italic,
+                    in_strikethrough,
+                    theme,
+                );
+                do_push(&mut current_spans, &mut current_lines);
+                if !current_lines.is_empty() {
+                    blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
+                }
                 blocks.push(RenderBlock::Rule);
             }
             Event::FootnoteReference(_) | Event::TaskListMarker(_) => {}
@@ -430,13 +548,29 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
 
     // Flush any remaining content
     if in_blockquote {
-        do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+        do_flush(
+            &mut pending_text,
+            &mut current_spans,
+            in_bold,
+            in_italic,
+            in_strikethrough,
+            theme,
+        );
         do_push(&mut current_spans, &mut blockquote_lines);
         if !blockquote_lines.is_empty() {
-            blocks.push(RenderBlock::BlockQuote(std::mem::take(&mut blockquote_lines)));
+            blocks.push(RenderBlock::BlockQuote(std::mem::take(
+                &mut blockquote_lines,
+            )));
         }
     } else {
-        do_flush(&mut pending_text, &mut current_spans, in_bold, in_italic, in_strikethrough, theme);
+        do_flush(
+            &mut pending_text,
+            &mut current_spans,
+            in_bold,
+            in_italic,
+            in_strikethrough,
+            theme,
+        );
         do_push(&mut current_spans, &mut current_lines);
         if !current_lines.is_empty() {
             blocks.push(RenderBlock::Paragraph(std::mem::take(&mut current_lines)));
@@ -445,10 +579,12 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
 
     // If no blocks produced, create a single paragraph from the raw text
     if blocks.is_empty() {
-        blocks.push(RenderBlock::Paragraph(vec![Line::from(vec![Span::styled(
-            text.to_string(),
-            Style::default().fg(theme.fg.to_ratatui_color()),
-        )])]));
+        blocks.push(RenderBlock::Paragraph(vec![Line::from(vec![
+            Span::styled(
+                text.to_string(),
+                Style::default().fg(theme.fg.to_ratatui_color()),
+            ),
+        ])]));
     }
 
     blocks
@@ -690,8 +826,12 @@ fn collapse_blank_runs(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
 }
 
 pub(crate) fn render_markdown_ratatui(text: &str) -> Vec<Line<'static>> {
+    render_markdown_ratatui_with_width(text, 80)
+}
+
+pub(crate) fn render_markdown_ratatui_with_width(text: &str, width: usize) -> Vec<Line<'static>> {
     let blocks = parse_markdown(text);
-    render_blocks_to_lines(&blocks, current_theme(), 80)
+    render_blocks_to_lines(&blocks, current_theme(), width)
 }
 
 fn get_current_style(bold: bool, italic: bool, strikethrough: bool, theme: &Theme) -> Style {
@@ -799,7 +939,7 @@ pub(crate) fn render_assistant_content(
             AssistantBlock::Paragraph(text)
             | AssistantBlock::List(text)
             | AssistantBlock::Table(text)
-            | AssistantBlock::Callout(text) => render_markdown_ratatui(text),
+            | AssistantBlock::Callout(text) => render_markdown_ratatui_with_width(text, width),
             AssistantBlock::Rule => vec![Line::from(Span::styled(
                 "─".repeat(width.saturating_sub(2).max(6)),
                 Style::default().fg(theme.fg_dim.to_ratatui_color()),
@@ -1232,15 +1372,22 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_render_table_boxed_borders() {
         let md = "| A | B |\n|---|---|\n| 1 | 2 |";
         let lines = render_markdown_ratatui(md);
         let text = extract_text(&lines);
         // Should contain box-drawing characters
-        assert!(text.contains('│'), "Should have vertical box borders, got: {}", text);
-        assert!(text.contains('─'), "Should have horizontal box borders, got: {}", text);
+        assert!(
+            text.contains('│'),
+            "Should have vertical box borders, got: {}",
+            text
+        );
+        assert!(
+            text.contains('─'),
+            "Should have horizontal box borders, got: {}",
+            text
+        );
         assert!(text.contains('A'), "Should contain header cell A");
         assert!(text.contains('1'), "Should contain data cell 1");
     }
@@ -1313,5 +1460,51 @@ mod tests {
         let lines = render_blocks_to_lines(&blocks, current_theme(), 80);
         assert!(!lines.is_empty());
         assert!(!lines[0].spans.is_empty());
+    }
+
+    #[test]
+    fn test_no_ansi_in_ratatui_pipeline() {
+        let lines = render_markdown_ratatui("**bold** `code`");
+        let joined: String = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect();
+
+        assert!(!joined.contains("\x1b["));
+    }
+
+    #[test]
+    fn test_assistant_content_uses_actual_width_for_rules() {
+        let content = AssistantContent::from_markdown("---");
+        let lines = render_assistant_content(&content, 24);
+        let rendered: String = lines[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+
+        assert_eq!(rendered.chars().count(), 22);
+    }
+
+    #[test]
+    fn test_width_aware_wrapper_controls_table_width() {
+        let md = "| Header | Value |\n|---|---|\n| AlphaBetaGamma | DeltaEpsilon |";
+        let narrow = render_markdown_ratatui_with_width(md, 24);
+        let wide = render_markdown_ratatui_with_width(md, 80);
+
+        let narrow_top: String = narrow[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        let wide_top: String = wide[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+
+        assert!(narrow_top.chars().count() < wide_top.chars().count());
+        assert!(narrow_top.chars().count() <= 24);
     }
 }

@@ -144,7 +144,9 @@ pub(crate) async fn run_autonomous_loop(
     let strict = !route_decision.route.eq_ignore_ascii_case("CHAT");
 
     // Task 287: Initialize evidence ledger for this session
-    let session_id = session.root.file_name()
+    let session_id = session
+        .root
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
     crate::evidence_ledger::init_session_ledger(&session_id, &session.root);
@@ -476,9 +478,9 @@ pub(crate) async fn run_autonomous_loop(
 
         // Task 287: Evidence grounding enforcement gate
         if let Some(ref reply) = final_reply {
-            if let Some(verdict) = crate::evidence_ledger::get_session_ledger().map(|ledger| {
-                crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger)
-            }) {
+            if let Some(verdict) = crate::evidence_ledger::get_session_ledger()
+                .map(|ledger| crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger))
+            {
                 let ungrounded = verdict.ungrounded_claims();
                 if !ungrounded.is_empty() {
                     trace(
@@ -504,9 +506,9 @@ pub(crate) async fn run_autonomous_loop(
 
     // Task 287: Evidence grounding enforcement gate (loop exit path)
     if let Some(ref reply) = final_reply {
-        if let Some(verdict) = crate::evidence_ledger::get_session_ledger().map(|ledger| {
-            crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger)
-        }) {
+        if let Some(verdict) = crate::evidence_ledger::get_session_ledger()
+            .map(|ledger| crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger))
+        {
             let ungrounded = verdict.ungrounded_claims();
             if !ungrounded.is_empty() {
                 trace(

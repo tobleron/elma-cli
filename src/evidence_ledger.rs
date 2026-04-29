@@ -513,14 +513,20 @@ fn heuristic_grounding_check(draft: &str, ledger: &EvidenceLedger) -> EvidenceVe
 
         let mut supporting = Vec::new();
         for entry in &ledger.entries {
-            let summary_words: Vec<_> = entry.summary.split_whitespace()
+            let summary_words: Vec<_> = entry
+                .summary
+                .split_whitespace()
                 .filter(|w| w.len() > 3)
                 .collect();
-            let draft_words: Vec<_> = trimmed.split_whitespace()
-                .filter(|w| w.len() > 3)
-                .collect();
-            let overlap: usize = draft_words.iter()
-                .filter(|dw| summary_words.iter().any(|sw| sw.to_lowercase().contains(&dw.to_lowercase()) || dw.to_lowercase().contains(&sw.to_lowercase())))
+            let draft_words: Vec<_> = trimmed.split_whitespace().filter(|w| w.len() > 3).collect();
+            let overlap: usize = draft_words
+                .iter()
+                .filter(|dw| {
+                    summary_words.iter().any(|sw| {
+                        sw.to_lowercase().contains(&dw.to_lowercase())
+                            || dw.to_lowercase().contains(&sw.to_lowercase())
+                    })
+                })
                 .count();
             if overlap >= 2 {
                 supporting.push(entry.id.clone());
@@ -694,7 +700,10 @@ mod tests {
         // 1. Shell result (small — summary = raw)
         let shell_output = "total 48\nAGENTS.md\nCargo.toml\n.gitignore";
         let entry1 = ledger.add_entry(
-            EvidenceSource::Shell { command: "ls -la".to_string(), exit_code: 0 },
+            EvidenceSource::Shell {
+                command: "ls -la".to_string(),
+                exit_code: 0,
+            },
             shell_output,
         );
         assert_eq!(entry1.id, "e_001");
@@ -703,22 +712,32 @@ mod tests {
         // 2. Read result (small)
         let cargo = "[package]\nname = \"elma-cli\"\nversion = \"0.1.0\"\n\n[dependencies]\nreqwest = \"0.12\"\ntokio = \"1.36\"";
         let entry2 = ledger.add_entry(
-            EvidenceSource::Read { path: "Cargo.toml".to_string() },
+            EvidenceSource::Read {
+                path: "Cargo.toml".to_string(),
+            },
             cargo,
         );
         assert_eq!(entry2.id, "e_002");
 
         // 3. Large search result — should trigger raw file storage
-        let large_search = (0..200).map(|i| format!("src/file_{i}.rs:10: fn helper_{i}() {{}}")).collect::<Vec<_>>().join("\n");
+        let large_search = (0..200)
+            .map(|i| format!("src/file_{i}.rs:10: fn helper_{i}() {{}}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let entry3 = ledger.add_entry(
-            EvidenceSource::Search { path: "src/".to_string(), pattern: "fn helper".to_string() },
+            EvidenceSource::Search {
+                path: "src/".to_string(),
+                pattern: "fn helper".to_string(),
+            },
             &large_search,
         );
         assert_eq!(entry3.id, "e_003");
         assert!(entry3.raw_path.is_some());
         let raw_path = entry3.raw_path.as_ref().unwrap();
         assert!(std::path::Path::new(raw_path).exists());
-        assert!(std::fs::read_to_string(raw_path).unwrap().contains("fn helper_100"));
+        assert!(std::fs::read_to_string(raw_path)
+            .unwrap()
+            .contains("fn helper_100"));
 
         // 4. Compact summary includes all entries
         let summary = ledger.compact_summary();
@@ -730,8 +749,14 @@ mod tests {
 
         // 5. Staleness: modifying Cargo.toml marks e_002 stale
         ledger.mark_path_modified("Cargo.toml");
-        assert!(matches!(ledger.get_entry("e_002").unwrap().staleness, Staleness::Stale));
-        assert!(matches!(ledger.get_entry("e_001").unwrap().staleness, Staleness::Fresh));
+        assert!(matches!(
+            ledger.get_entry("e_002").unwrap().staleness,
+            Staleness::Stale
+        ));
+        assert!(matches!(
+            ledger.get_entry("e_001").unwrap().staleness,
+            Staleness::Fresh
+        ));
 
         // 6. Raw retrieval
         assert!(ledger.get_raw("e_001").unwrap().contains("AGENTS.md"));
@@ -740,13 +765,21 @@ mod tests {
         // 7. Enforcement: grounded draft
         let grounded = "I found AGENTS.md and Cargo.toml in the project root.";
         let v1 = enforce_evidence_grounding(grounded, &ledger);
-        let ungrounded1: Vec<_> = v1.claims.iter().filter(|c| c.status == "UNGROUNDED").collect();
+        let ungrounded1: Vec<_> = v1
+            .claims
+            .iter()
+            .filter(|c| c.status == "UNGROUNDED")
+            .collect();
         assert!(ungrounded1.len() < v1.claims.len());
 
         // 8. Enforcement: ungrounded draft
         let ungrounded_draft = "The project is written in Python and uses Django with PostgreSQL.";
         let v2 = enforce_evidence_grounding(ungrounded_draft, &ledger);
-        let ungrounded2: Vec<_> = v2.claims.iter().filter(|c| c.status == "UNGROUNDED").collect();
+        let ungrounded2: Vec<_> = v2
+            .claims
+            .iter()
+            .filter(|c| c.status == "UNGROUNDED")
+            .collect();
         assert!(!ungrounded2.is_empty());
 
         // 9. Persist and reload
@@ -767,7 +800,10 @@ mod tests {
 
         let mut ledger = EvidenceLedger::new("s_narrative", &test_dir);
         ledger.add_entry(
-            EvidenceSource::Shell { command: "ls -la".to_string(), exit_code: 0 },
+            EvidenceSource::Shell {
+                command: "ls -la".to_string(),
+                exit_code: 0,
+            },
             "total 48\nAGENTS.md\nCargo.toml",
         );
 
@@ -798,11 +834,21 @@ mod tests {
             ..StepResult::default()
         }];
 
-        let narrative_with = crate::intel_narrative::build_steps_narrative(&program, &step_results, Some(&ledger));
-        assert!(narrative_with.contains("e_001"), "Narrative with ledger should include evidence ID. Got:\n{}", narrative_with);
+        let narrative_with =
+            crate::intel_narrative::build_steps_narrative(&program, &step_results, Some(&ledger));
+        assert!(
+            narrative_with.contains("e_001"),
+            "Narrative with ledger should include evidence ID. Got:\n{}",
+            narrative_with
+        );
 
-        let narrative_without = crate::intel_narrative::build_steps_narrative(&program, &step_results, None);
-        assert!(!narrative_without.contains("[e_001]"), "Narrative without ledger should not have evidence tag. Got:\n{}", narrative_without);
+        let narrative_without =
+            crate::intel_narrative::build_steps_narrative(&program, &step_results, None);
+        assert!(
+            !narrative_without.contains("[e_001]"),
+            "Narrative without ledger should not have evidence tag. Got:\n{}",
+            narrative_without
+        );
 
         let _ = std::fs::remove_dir_all(&test_dir);
     }

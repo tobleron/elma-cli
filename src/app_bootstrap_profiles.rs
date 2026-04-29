@@ -392,9 +392,7 @@ fn sync_managed_profile(
     profile.model = model_id.to_string();
     apply_canonical_system_prompt(profile);
 
-    if profile.model != original_model
-        || profile.system_prompt != original_prompt
-    {
+    if profile.model != original_model || profile.system_prompt != original_prompt {
         trace(args, &format!("synced_profile={}", profile.name));
         save_agent_config(path, profile)?;
     }

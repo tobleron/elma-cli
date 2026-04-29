@@ -207,5 +207,7 @@ fn term_size() -> Option<(usize, usize)> {
     if !std::io::stderr().is_terminal() {
         return None;
     }
-    crossterm::terminal::size().ok().map(|(w, h)| (w as usize, h as usize))
+    crossterm::terminal::size()
+        .ok()
+        .map(|(w, h)| (w as usize, h as usize))
 }

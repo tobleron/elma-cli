@@ -21,12 +21,7 @@ pub fn mark_discovered(tool_names: &[String]) {
     let registry = get_registry();
     let deferred_names: std::collections::HashSet<String> = tool_names
         .iter()
-        .filter(|name| {
-            registry
-                .get(name)
-                .map(|t| t.deferred)
-                .unwrap_or(false)
-        })
+        .filter(|name| registry.get(name).map(|t| t.deferred).unwrap_or(false))
         .cloned()
         .collect();
     elma_tools::mark_discovered_filtered(tool_names, &deferred_names);

@@ -10,7 +10,9 @@
 //! - Tool result: "✓" (success) or "✗" (failure)
 //! - Compact boundary: "✻ Conversation compacted"
 
-use crate::claude_ui::{render_assistant_content, render_markdown_ratatui, AssistantContent};
+use crate::claude_ui::{
+    render_assistant_content, render_markdown_ratatui_with_width, AssistantContent,
+};
 use crate::markdown_ansi::render_markdown_to_ansi;
 use crate::ui_theme::*;
 use ratatui::prelude::*;
@@ -557,7 +559,8 @@ impl ClaudeMessage {
                             Style::default().fg(theme.fg_dim.to_ratatui_color()),
                         ),
                     ]));
-                    for md_line in render_markdown_ratatui(ctx) {
+                    for md_line in render_markdown_ratatui_with_width(ctx, width.saturating_sub(6))
+                    {
                         let mut prefixed = vec![Span::raw("      ")];
                         prefixed.extend(md_line.spans);
                         lines.push(Line::from(prefixed));

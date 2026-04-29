@@ -170,8 +170,7 @@ pub(crate) fn request_requires_workspace_evidence(
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
 ) -> bool {
-    complexity.needs_evidence
-        || formula.primary.starts_with("inspect_")
+    complexity.needs_evidence || formula.primary.starts_with("inspect_")
 }
 
 pub(crate) fn program_has_workspace_evidence_steps(program: &Program) -> bool {
@@ -227,7 +226,15 @@ pub(crate) fn program_signature(program: &Program) -> String {
         .iter()
         .map(|step| match step {
             Step::Shell { cmd, .. } => format!("shell:{}", normalize_shell_cmd(cmd)),
-            Step::Read { path, .. } => format!("read:{}", path.trim()),
+            Step::Read { path, paths, .. } => {
+                if let Some(p) = path {
+                    format!("read:{}", p.trim())
+                } else if let Some(ps) = paths {
+                    format!("read:{} files", ps.len())
+                } else {
+                    "read".to_string()
+                }
+            }
             Step::Search { query, .. } => format!("search:{}", query.trim()),
             Step::Select { instructions, .. } => {
                 format!("select:{}", instructions.trim())

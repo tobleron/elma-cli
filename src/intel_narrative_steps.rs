@@ -100,7 +100,15 @@ pub(crate) fn step_kind(step: &Step) -> &'static str {
 pub(crate) fn step_detail(step: &Step) -> String {
     match step {
         Step::Shell { cmd, .. } => format!("Run \"{}\"", cmd.trim()),
-        Step::Read { path, .. } => format!("Read \"{}\"", path.trim()),
+        Step::Read { path, paths, .. } => {
+            if let Some(p) = path.as_deref() {
+                format!("Read \"{}\"", p)
+            } else if let Some(ps) = paths {
+                format!("Read {} files", ps.len())
+            } else {
+                "Read".to_string()
+            }
+        }
         Step::Search { query, paths, .. } => {
             format!("Search for \"{}\" in {:?}", query.trim(), paths)
         }

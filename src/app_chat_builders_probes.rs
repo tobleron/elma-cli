@@ -153,7 +153,8 @@ pub(crate) fn summarize_step(
 pub(crate) fn read_step(id: &str, path: &str, purpose: &str, success_condition: &str) -> Step {
     Step::Read {
         id: id.to_string(),
-        path: path.to_string(),
+        path: Some(path.to_string()),
+        paths: None,
         common: StepCommon {
             purpose: purpose.to_string(),
             depends_on: Vec::new(),

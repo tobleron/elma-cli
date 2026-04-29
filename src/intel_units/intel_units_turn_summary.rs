@@ -189,6 +189,12 @@ mod tests {
         );
         assert_eq!(output.get_str("status_category"), Some("completed"));
         assert_eq!(output.get_bool("noteworthy"), Some(false));
-        assert_eq!(output.get("tools_used").and_then(|v| v.as_array()).map(|a| a.len()), Some(2));
+        assert_eq!(
+            output
+                .get("tools_used")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len()),
+            Some(2)
+        );
     }
 }

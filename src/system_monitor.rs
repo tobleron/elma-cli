@@ -174,7 +174,11 @@ fn get_cpu_pct(num_cpus: u32) -> f64 {
     if let Ok(output) = Command::new("sysctl").args(["-n", "vm.loadavg"]).output() {
         if let Ok(s) = String::from_utf8(output.stdout) {
             // Output format: "{ 1.23 0.45 0.67 }"
-            let cleaned = s.trim().trim_start_matches('{').trim_end_matches('}').trim();
+            let cleaned = s
+                .trim()
+                .trim_start_matches('{')
+                .trim_end_matches('}')
+                .trim();
             if let Some(first) = cleaned.split_whitespace().next() {
                 if let Ok(load) = first.parse::<f64>() {
                     return (load / num_cpus as f64 * 100.0).min(100.0);

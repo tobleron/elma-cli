@@ -107,8 +107,13 @@ pub(crate) fn program_step_json(step: &Step) -> serde_json::Value {
                 serde_json::json!(command_placeholder_refs(cmd)),
             );
         }
-        Step::Read { path, .. } => {
-            obj.insert("path".to_string(), serde_json::json!(path.trim()));
+        Step::Read { path, paths, .. } => {
+            if let Some(p) = path {
+                obj.insert("path".to_string(), serde_json::json!(p.trim()));
+            }
+            if let Some(ps) = paths {
+                obj.insert("paths".to_string(), serde_json::json!(ps));
+            }
         }
         Step::Search { query, paths, .. } => {
             obj.insert("query".to_string(), serde_json::json!(query.trim()));

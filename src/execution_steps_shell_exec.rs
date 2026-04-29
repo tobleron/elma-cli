@@ -272,7 +272,7 @@ pub(crate) async fn execute_and_process_shell(
         return Ok(());
     }
 
-    let path = write_shell_action(&session.shell_dir, &cmd)?;
+    let path = write_shell_action(&session.artifacts_dir, &cmd)?;
     trace(args, &format!("shell_saved={}", path.display()));
     shell_command_trace(args, &cmd);
     let compatibility = probe_command_compatibility(&cmd, workdir);
@@ -345,7 +345,7 @@ pub(crate) async fn execute_and_process_shell(
     } else {
         output.clone()
     };
-    let out_path = write_shell_output(&session.shell_dir, &output_path_base, &shell_preview)?;
+    let out_path = write_shell_output(&session.artifacts_dir, &output_path_base, &shell_preview)?;
     trace(args, &format!("shell_output_saved={}", out_path.display()));
     trace(args, &format!("exec_exit_code={code}"));
     // Only print to stdout when TUI is not active (TUI handles this via transcript)
@@ -483,7 +483,7 @@ fn handle_command_unavailable(
     } else {
         output.to_string()
     };
-    let out_path = write_shell_output(&session.shell_dir, output_path_base, &shell_preview)?;
+    let out_path = write_shell_output(&session.artifacts_dir, output_path_base, &shell_preview)?;
     trace(args, &format!("shell_output_saved={}", out_path.display()));
     trace(
         args,
@@ -589,7 +589,8 @@ async fn try_command_repair(
                         .to_string(),
                 );
                 state.halt = true;
-                let out_path = write_shell_output(&session.shell_dir, output_path_base, output)?;
+                let out_path =
+                    write_shell_output(&session.artifacts_dir, output_path_base, output)?;
                 trace(args, &format!("shell_output_saved={}", out_path.display()));
                 trace(args, &format!("exec_exit_code={}", shell_result.exit_code));
                 // Only print to stdout when TUI is not active (TUI handles this via transcript)
@@ -644,7 +645,7 @@ async fn try_command_repair(
         ),
     );
     operator_trace(args, "repairing a failed shell command");
-    let repair_path = write_shell_action(&session.shell_dir, &repaired)?;
+    let repair_path = write_shell_action(&session.artifacts_dir, &repaired)?;
     trace(args, &format!("shell_saved={}", repair_path.display()));
     shell_command_trace(args, &repaired);
 
@@ -699,5 +700,50 @@ fn handle_artifact_recording(
             );
         }
     }
+    Ok(())
+}
+
+/// Reserve an artifact path under the artifacts directory.
+fn reserve_artifact_path(
+    artifacts_dir: &PathBuf,
+    kind: &str,
+    ext: &str,
+) -> Result<(String, PathBuf)> {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let id = format!("{}_{}", kind, ts);
+    let path = artifacts_dir.join(format!("{}.{}", id, ext));
+    Ok((id, path))
+}
+
+/// Append a record to the artifact manifest (session.json).
+fn append_artifact_manifest_record(session_root: &PathBuf, record: &ArtifactRecord) -> Result<()> {
+    let path = session_root.join("session.json");
+    let mut session_data: serde_json::Value = if path.exists() {
+        let raw = std::fs::read_to_string(&path)?;
+        serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    if session_data.get("artifacts").is_none() {
+        session_data["artifacts"] = serde_json::json!([]);
+    }
+    let artifacts = session_data.get_mut("artifacts").unwrap();
+    if let Some(arr) = artifacts.as_array_mut() {
+        arr.push(serde_json::json!({
+            "artifact_id": record.artifact_id,
+            "source_step_id": record.source_step_id,
+            "kind": record.kind,
+            "path": record.path,
+            "bytes_written": record.bytes_written,
+            "truncated": record.truncated,
+            "timed_out": record.timed_out,
+            "created_unix_s": record.created_unix_s,
+        }));
+    }
+    let json = serde_json::to_string_pretty(&session_data)?;
+    std::fs::write(&path, json)?;
     Ok(())
 }

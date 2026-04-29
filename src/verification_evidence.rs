@@ -132,7 +132,8 @@ mod tests {
                 },
                 Step::Read {
                     id: "r1".to_string(),
-                    path: "README.md".to_string(),
+                    path: Some("README.md".to_string()),
+                    paths: None,
                     common: StepCommon {
                         depends_on: vec!["e1".to_string()],
                         interrupt_behavior: InterruptBehavior::Graceful,
@@ -186,7 +187,8 @@ mod tests {
                 },
                 Step::Read {
                     id: "r1".to_string(),
-                    path: "README.md".to_string(),
+                    path: Some("README.md".to_string()),
+                    paths: None,
                     common: StepCommon {
                         depends_on: vec!["e1".to_string()],
                         interrupt_behavior: InterruptBehavior::Graceful,

@@ -667,7 +667,7 @@ impl Default for DocumentReadBudget {
     fn default() -> Self {
         Self {
             max_chars: 8000, // Default reasonable limit
-            mode: DocumentReadMode::Balanced,
+            mode: DocumentReadMode::Full,
             focus_sections: None,
         }
     }

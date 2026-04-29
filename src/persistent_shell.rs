@@ -173,20 +173,13 @@ impl PersistentShell {
                         return;
                     }
                     Ok(_) => {
-                        if line.contains(&marker)
-                            && !line.contains(';')
-                            && !line.contains("echo")
-                        {
+                        if line.contains(&marker) && !line.contains(';') && !line.contains("echo") {
                             let exit_code = line
                                 .split(&marker)
                                 .nth(1)
                                 .and_then(|s| s.trim().parse::<i32>().ok())
                                 .unwrap_or(0);
-                            let _ = tx.send(Ok((
-                                exit_code,
-                                output.trim().to_string(),
-                                buf_reader,
-                            )));
+                            let _ = tx.send(Ok((exit_code, output.trim().to_string(), buf_reader)));
                             return;
                         }
                         output.push_str(&line);
@@ -310,7 +303,11 @@ mod tests {
         // Test basic command
         let (code1, out1) = shell.execute("echo hello_world", 5)?;
         assert_eq!(code1, 0);
-        assert!(out1.contains("hello_world"), "Expected 'hello_world' in output, got: [{}]", out1);
+        assert!(
+            out1.contains("hello_world"),
+            "Expected 'hello_world' in output, got: [{}]",
+            out1
+        );
 
         // Test state persistence (cd)
         let (code2, _out2) = shell.execute("mkdir -p elma_test_dir && cd elma_test_dir", 5)?;
@@ -356,7 +353,8 @@ mod tests {
         let mut shell = PersistentShell::new(&workdir)?;
 
         // Reproduce the exact command from session s_1777312219
-        let (code, out) = shell.execute(r#"find . -name "AGENTS.md" 2>/dev/null | head -n 5"#, 10)?;
+        let (code, out) =
+            shell.execute(r#"find . -name "AGENTS.md" 2>/dev/null | head -n 5"#, 10)?;
         assert_eq!(code, 0);
         println!("DEBUG find AGENTS.md OUTPUT:\n[{}]", out);
 

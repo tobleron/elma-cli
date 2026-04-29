@@ -21,7 +21,10 @@ pub(crate) fn build_tool_definitions(_workdir: &PathBuf) -> Vec<ToolDefinition> 
 }
 
 /// Build tool definitions filtered by task context (route/classification).
-pub(crate) fn build_tool_definitions_for_context(_workdir: &PathBuf, context_hint: &str) -> Vec<ToolDefinition> {
+pub(crate) fn build_tool_definitions_for_context(
+    _workdir: &PathBuf,
+    context_hint: &str,
+) -> Vec<ToolDefinition> {
     if context_hint.is_empty() {
         crate::tool_registry::build_current_tools()
     } else {
@@ -301,11 +304,11 @@ async fn exec_shell(
             let output = &er.inline_text;
             let lc = output.lines().count();
             let _ = std::fs::write(
-                session.shell_dir.join(format!("tool_{}.sh", call_id)),
+                session.artifacts_dir.join(format!("tool_{}.sh", call_id)),
                 &command,
             );
             let _ = std::fs::write(
-                session.shell_dir.join(format!("tool_{}.out", call_id)),
+                session.artifacts_dir.join(format!("tool_{}.out", call_id)),
                 output,
             );
             trace(
@@ -444,7 +447,10 @@ async fn exec_search(
             pattern, p
         )
     } else {
-        format!("rg -i --line-number --no-heading --color=never '{}'", pattern)
+        format!(
+            "rg -i --line-number --no-heading --color=never '{}'",
+            pattern
+        )
     };
 
     emit_tool_start(&mut tui, "search", &cmd);

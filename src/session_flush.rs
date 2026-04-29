@@ -13,7 +13,9 @@ use std::io::Write;
 /// Uses atomic write (temp + rename) on the append to avoid partial writes on crash.
 pub(crate) fn append_to_transcript(session_root: &Path, line: &str) {
     let transcript_path = session_root.join("display").join("terminal_transcript.txt");
-    let timestamp = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
+    let timestamp = chrono::Local::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3f")
+        .to_string();
     let entry = format!("[{}] {}\n", timestamp, line);
 
     if let Some(parent) = transcript_path.parent() {
@@ -101,11 +103,7 @@ pub(crate) fn write_tool_artifact(
 }
 
 /// Flush a PTY transcript to artifacts/pty_<timestamp>.txt
-pub(crate) fn flush_pty_transcript(
-    session_root: &Path,
-    transcript_bytes: &[u8],
-    duration_ms: u64,
-) {
+pub(crate) fn flush_pty_transcript(session_root: &Path, transcript_bytes: &[u8], duration_ms: u64) {
     let artifacts_dir = session_root.join("artifacts");
     let _ = std::fs::create_dir_all(&artifacts_dir);
 
@@ -127,11 +125,10 @@ pub(crate) fn flush_pty_transcript(
         tracing::warn!("flush: failed to write pty header: {}", e);
         return;
     }
-    if let Err(e) =
-        std::fs::OpenOptions::new()
-            .append(true)
-            .open(&tmp_path)
-            .and_then(|mut f| f.write_all(transcript_bytes))
+    if let Err(e) = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&tmp_path)
+        .and_then(|mut f| f.write_all(transcript_bytes))
     {
         tracing::warn!("flush: failed to write pty transcript: {}", e);
         let _ = std::fs::remove_file(&tmp_path);
@@ -165,11 +162,7 @@ pub(crate) struct StreamingArtifactWriter {
 }
 
 impl StreamingArtifactWriter {
-    pub fn new(
-        session_root: &Path,
-        tool_name: &str,
-        tool_call_id: &str,
-    ) -> Self {
+    pub fn new(session_root: &Path, tool_name: &str, tool_call_id: &str) -> Self {
         let safe_name = sanitize_filename(tool_name);
         let safe_id = sanitize_filename(tool_call_id);
         let artifacts_dir = session_root.join("artifacts");
@@ -283,9 +276,15 @@ mod tests {
 
     #[test]
     fn test_sanitize_filename() {
-        assert_eq!(sanitize_filename("hello_world-123.txt"), "hello_world-123.txt");
+        assert_eq!(
+            sanitize_filename("hello_world-123.txt"),
+            "hello_world-123.txt"
+        );
         assert_eq!(sanitize_filename("path/to/file"), "path_to_file");
-        assert_eq!(sanitize_filename("call_abc123def456ghi789"), "call_abc123def456ghi789");
+        assert_eq!(
+            sanitize_filename("call_abc123def456ghi789"),
+            "call_abc123def456ghi789"
+        );
     }
 
     #[test]
@@ -332,7 +331,9 @@ mod tests {
         writer.write_line("line 2");
         writer.finish(true);
 
-        let stream_file = root.join("artifacts").join("tool_shell_call_str_stream.txt");
+        let stream_file = root
+            .join("artifacts")
+            .join("tool_shell_call_str_stream.txt");
         assert!(stream_file.exists());
         let content = std::fs::read_to_string(&stream_file).unwrap();
         assert!(content.contains("line 1"));

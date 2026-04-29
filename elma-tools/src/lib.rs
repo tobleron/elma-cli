@@ -4,8 +4,8 @@
 //! and prerequisite checking (via `check_fn`). Extracted from the main
 //! `elma-cli` binary for independent testing, extensibility, and sharing.
 
-pub(crate) mod tools;
 pub mod registry;
+pub(crate) mod tools;
 pub mod types;
 
 // Re-export commonly used types

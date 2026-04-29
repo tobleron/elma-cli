@@ -142,7 +142,6 @@ mod session_gc; // Task 282: Session Garbage Collector
 mod session_hierarchy;
 mod session_index; // Task 282: Session Index
 mod session_paths;
-mod session_seq;
 mod session_store; // Task 277: SQLite Session Storage
 mod session_write;
 mod shell_preflight; // Task 116: Destructive Command Detection & Preflight

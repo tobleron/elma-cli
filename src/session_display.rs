@@ -6,8 +6,8 @@
 //! Markdown answers are saved as .md files for later summarization.
 //! Terminal display uses markdown-to-ansi for smooth ANSI rendering.
 
-use crate::*;
 use crate::markdown_ansi::render_markdown_to_ansi;
+use crate::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static DISPLAY_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -32,7 +32,7 @@ pub(crate) enum DisplayEntry {
 }
 
 pub(crate) fn save_display_entry(session: &SessionPaths, entry: DisplayEntry) -> Result<PathBuf> {
-    let display_dir = &session.display_dir;
+    let display_dir = &session.artifacts_dir;
     let counter = DISPLAY_COUNTER.fetch_add(1, Ordering::SeqCst);
     let (filename, content) = match &entry {
         DisplayEntry::Tool {

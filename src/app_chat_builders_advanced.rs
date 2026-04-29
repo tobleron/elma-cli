@@ -531,7 +531,8 @@ pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program 
     if lower.contains("readme.md") {
         steps.push(Step::Read {
             id: "r1".to_string(),
-            path: format!("{}/README.md", path.trim_end_matches('/')),
+            path: Some(format!("{}/README.md", path.trim_end_matches('/'))),
+            paths: None,
             common: StepCommon {
                 is_concurrency_safe: true,
                 interrupt_behavior: InterruptBehavior::Graceful,

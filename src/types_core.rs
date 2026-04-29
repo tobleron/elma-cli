@@ -630,7 +630,10 @@ pub(crate) enum Step {
     #[serde(rename = "read")]
     Read {
         id: String,
-        path: String,
+        #[serde(default)]
+        path: Option<String>,
+        #[serde(default)]
+        paths: Option<Vec<String>>,
         #[serde(flatten)]
         common: StepCommon,
     },

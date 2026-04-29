@@ -89,7 +89,8 @@ mod tests {
         let program = make_program(vec![
             Step::Read {
                 id: "r1".to_string(),
-                path: "file.txt".to_string(),
+                path: Some("file.txt".to_string()),
+                paths: None,
                 common: StepCommon::default(),
             },
             Step::Plan {

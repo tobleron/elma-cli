@@ -138,6 +138,7 @@ pub(crate) async fn run_tool_calling_pipeline(
         context_hint,
         evidence_required,
         runtime.ctx_max,
+        &runtime.goal_state,
     )
     .await?;
 

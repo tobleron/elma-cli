@@ -9,8 +9,8 @@
 //! This is the core of the deferred pre-turn summary system (Task 310).
 //! It replaces raw turn messages with compact summaries to save context window.
 
-use crate::types_api::ChatMessage;
 use crate::intel_units::TurnSummaryOutput;
+use crate::types_api::ChatMessage;
 
 /// Compute the effective message history for the next LLM call.
 /// Messages marked `summarized = true` are excluded from the result.
@@ -49,6 +49,7 @@ pub(crate) fn inject_turn_summary(messages: &mut Vec<ChatMessage>, summary: &Tur
         name: Some("turn_summary".to_string()),
         tool_calls: None,
         tool_call_id: None,
+        reasoning_content: None,
         summarized: false,
     };
 
@@ -74,6 +75,7 @@ mod tests {
             name: None,
             tool_calls: None,
             tool_call_id: None,
+            reasoning_content: None,
             summarized,
         }
     }

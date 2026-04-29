@@ -28,9 +28,18 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
 /// Parsed patch operation
 #[derive(Debug, Clone)]
 pub enum PatchOperation {
-    AddFile { path: String, content: String },
-    DeleteFile { path: String },
-    UpdateFile { path: String, old_string: String, new_string: String },
+    AddFile {
+        path: String,
+        content: String,
+    },
+    DeleteFile {
+        path: String,
+    },
+    UpdateFile {
+        path: String,
+        old_string: String,
+        new_string: String,
+    },
 }
 
 /// Full parsed patch
@@ -137,15 +146,24 @@ pub fn parse_patch(input: &str) -> Result<ParsedPatch, PatchParseError> {
             String::new()
         };
 
-        let header_prefix = header_raw.strip_prefix("*** ").and_then(|s| s.strip_suffix(" ***"));
+        let header_prefix = header_raw
+            .strip_prefix("*** ")
+            .and_then(|s| s.strip_suffix(" ***"));
         let header = match header_prefix {
             Some(h) => h,
-            None => return Err(PatchParseError::InvalidSectionHeader(header_raw.to_string())),
+            None => {
+                return Err(PatchParseError::InvalidSectionHeader(
+                    header_raw.to_string(),
+                ))
+            }
         };
 
         if let Some(path) = header.strip_prefix("Add File: ") {
             let path = path.trim().to_string();
-            operations.push(PatchOperation::AddFile { path, content: body });
+            operations.push(PatchOperation::AddFile {
+                path,
+                content: body,
+            });
         } else if let Some(path) = header.strip_prefix("Delete File: ") {
             let path = path.trim().to_string();
             operations.push(PatchOperation::DeleteFile { path });
@@ -156,23 +174,38 @@ pub fn parse_patch(input: &str) -> Result<ParsedPatch, PatchParseError> {
             let sep_marker = "=======";
             let updated_marker = ">>>>>>> UPDATED";
 
-            let pos_orig = body.find(original_marker)
+            let pos_orig = body
+                .find(original_marker)
                 .ok_or_else(|| PatchParseError::MissingOriginalDelimiter(path.clone()))?;
             let after_orig = &body[pos_orig + original_marker.len()..];
-            let pos_sep = after_orig.find(&format!("\n{}\n", sep_marker))
+            let pos_sep = after_orig
+                .find(&format!("\n{}\n", sep_marker))
                 .map(|p| p + pos_orig + original_marker.len() + 1)
-                .or_else(|| after_orig.find(sep_marker).map(|p| p + pos_orig + original_marker.len()))
+                .or_else(|| {
+                    after_orig
+                        .find(sep_marker)
+                        .map(|p| p + pos_orig + original_marker.len())
+                })
                 .ok_or_else(|| PatchParseError::MissingSeparatorDelimiter(path.clone()))?;
 
-            let old_string = after_orig[..pos_sep - pos_orig - original_marker.len()].trim().to_string();
+            let old_string = after_orig[..pos_sep - pos_orig - original_marker.len()]
+                .trim()
+                .to_string();
             let after_sep = &body[pos_sep + sep_marker.len()..];
-            let pos_upd = after_sep.find(updated_marker)
+            let pos_upd = after_sep
+                .find(updated_marker)
                 .map(|p| p + pos_sep + sep_marker.len())
                 .ok_or_else(|| PatchParseError::MissingUpdatedDelimiter(path.clone()))?;
 
-            let new_string = after_sep[..pos_upd - pos_sep - sep_marker.len()].trim().to_string();
+            let new_string = after_sep[..pos_upd - pos_sep - sep_marker.len()]
+                .trim()
+                .to_string();
 
-            operations.push(PatchOperation::UpdateFile { path, old_string, new_string });
+            operations.push(PatchOperation::UpdateFile {
+                path,
+                old_string,
+                new_string,
+            });
         } else {
             return Err(PatchParseError::InvalidSectionHeader(header.to_string()));
         }
@@ -204,7 +237,8 @@ mod tests {
 
     #[test]
     fn test_parse_add_file() {
-        let input = "*** Begin Patch ***\n*** Add File: src/foo.rs ***\npub fn foo() {}\n*** End Patch ***";
+        let input =
+            "*** Begin Patch ***\n*** Add File: src/foo.rs ***\npub fn foo() {}\n*** End Patch ***";
         let patch = parse_patch(input).unwrap();
         assert_eq!(patch.operations.len(), 1);
         match &patch.operations[0] {
@@ -235,7 +269,11 @@ mod tests {
         let patch = parse_patch(input).unwrap();
         assert_eq!(patch.operations.len(), 1);
         match &patch.operations[0] {
-            PatchOperation::UpdateFile { path, old_string, new_string } => {
+            PatchOperation::UpdateFile {
+                path,
+                old_string,
+                new_string,
+            } => {
                 assert_eq!(path, "src/main.rs");
                 assert_eq!(old_string, "old");
                 assert_eq!(new_string, "new");
@@ -265,13 +303,19 @@ mod tests {
     #[test]
     fn test_parse_missing_begin() {
         let input = "*** End Patch ***";
-        assert!(matches!(parse_patch(input), Err(PatchParseError::MissingBeginMarker)));
+        assert!(matches!(
+            parse_patch(input),
+            Err(PatchParseError::MissingBeginMarker)
+        ));
     }
 
     #[test]
     fn test_parse_missing_end() {
         let input = "*** Begin Patch ***\n*** Add File: src/foo.rs ***\nbar";
-        assert!(matches!(parse_patch(input), Err(PatchParseError::MissingEndMarker)));
+        assert!(matches!(
+            parse_patch(input),
+            Err(PatchParseError::MissingEndMarker)
+        ));
     }
 
     #[test]
@@ -282,12 +326,19 @@ mod tests {
             "*** Delete File: src/foo.rs ***\n\n",
             "*** End Patch ***"
         );
-        assert!(matches!(parse_patch(input), Err(PatchParseError::DuplicatePath(_))));
+        assert!(matches!(
+            parse_patch(input),
+            Err(PatchParseError::DuplicatePath(_))
+        ));
     }
 
     #[test]
     fn test_parse_update_missing_delimiters() {
-        let input = "*** Begin Patch ***\n*** Update File: src/main.rs ***\njust text\n*** End Patch ***";
-        assert!(matches!(parse_patch(input), Err(PatchParseError::MissingOriginalDelimiter(_))));
+        let input =
+            "*** Begin Patch ***\n*** Update File: src/main.rs ***\njust text\n*** End Patch ***";
+        assert!(matches!(
+            parse_patch(input),
+            Err(PatchParseError::MissingOriginalDelimiter(_))
+        ));
     }
 }

@@ -110,7 +110,8 @@ func AppendAuditEvent(eventType string, message string) error {
             },
             Step::Read {
                 id: "r1".to_string(),
-                path: helper_path,
+                path: Some(helper_path),
+                paths: None,
                 common: StepCommon {
                     purpose: "verify the created phase-1 helper file contents directly".to_string(),
                     depends_on: vec!["e1".to_string()],
@@ -434,7 +435,8 @@ pub(crate) fn build_workflow_endurance_audit_plan_program(line: &str, path: &str
             },
             Step::Read {
                 id: "r1".to_string(),
-                path: readme_path,
+                path: Some(readme_path),
+                paths: None,
                 common: StepCommon {
                     purpose: "read the README so the audit can compare documentation claims against the implementation"
                         .to_string(),
@@ -507,7 +509,8 @@ pub(crate) fn build_workflow_endurance_audit_plan_program(line: &str, path: &str
             },
             Step::Read {
                 id: "r2".to_string(),
-                path: report_path,
+                path: Some(report_path),
+                paths: None,
                 common: StepCommon {
                     purpose: "verify the saved audit report directly from disk".to_string(),
                     depends_on: vec!["s3".to_string()],

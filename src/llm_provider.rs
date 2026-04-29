@@ -114,6 +114,7 @@ pub(crate) struct UnifiedMessage {
     pub role: String,
     pub content: String,
     pub name: Option<String>,
+    pub reasoning_content: Option<String>,
     pub tool_calls: Option<Vec<ToolCall>>,
     pub tool_call_id: Option<String>,
 }
@@ -124,6 +125,7 @@ impl UnifiedMessage {
             role: "system".to_string(),
             content: content.to_string(),
             name: None,
+            reasoning_content: None,
             tool_calls: None,
             tool_call_id: None,
         }
@@ -134,6 +136,7 @@ impl UnifiedMessage {
             role: "user".to_string(),
             content: content.to_string(),
             name: None,
+            reasoning_content: None,
             tool_calls: None,
             tool_call_id: None,
         }
@@ -144,6 +147,7 @@ impl UnifiedMessage {
             role: "assistant".to_string(),
             content: content.to_string(),
             name: None,
+            reasoning_content: None,
             tool_calls: None,
             tool_call_id: None,
         }
@@ -154,6 +158,7 @@ impl UnifiedMessage {
             role: "tool".to_string(),
             content: content.to_string(),
             name: None,
+            reasoning_content: None,
             tool_calls: None,
             tool_call_id: Some(tool_call_id.to_string()),
         }
@@ -240,6 +245,9 @@ impl LlmProviderClient for OpenAICompatibleClient {
                 }
                 if let Some(tool_call_id) = &m.tool_call_id {
                     msg["tool_call_id"] = serde_json::Value::String(tool_call_id.clone());
+                }
+                if let Some(reasoning_content) = &m.reasoning_content {
+                    msg["reasoning_content"] = serde_json::Value::String(reasoning_content.clone());
                 }
                 msg
             })
@@ -581,6 +589,7 @@ pub(crate) fn to_unified_request(req: &ChatCompletionRequest) -> UnifiedChatRequ
             role: m.role.clone(),
             content: m.content.clone(),
             name: m.name.clone(),
+            reasoning_content: m.reasoning_content.clone(),
             tool_calls: m.tool_calls.clone(),
             tool_call_id: m.tool_call_id.clone(),
         })

@@ -51,8 +51,8 @@ pub(crate) struct StageBudget {
 impl Default for StageBudget {
     fn default() -> Self {
         Self {
-            max_tool_calls: 30,
-            max_iterations: 15,
+            max_tool_calls: 0, // 0 = unlimited (context window + memory are the only hard limits)
+            max_iterations: 0, // 0 = unlimited (context compaction + stagnation detection are the guards)
             max_repeated_failures: 3,
             max_stagnation_cycles: 3,
             max_wall_clock_s: 300,
@@ -92,6 +92,8 @@ pub(crate) struct StopPolicy {
     consecutive_respond_calls: usize,
     consecutive_respond_only_turns: usize,
     has_real_tool_calls_this_turn: bool,
+    // Goal consistency: track when we last checked at 30-tool-call milestones
+    last_milestone_checked: usize,
 }
 
 impl StopPolicy {
@@ -115,6 +117,7 @@ impl StopPolicy {
             consecutive_respond_calls: 0,
             consecutive_respond_only_turns: 0,
             has_real_tool_calls_this_turn: false,
+            last_milestone_checked: 0,
         }
     }
 
@@ -130,7 +133,7 @@ impl StopPolicy {
         self.iteration += 1;
         self.has_real_tool_calls_this_turn = false;
 
-        if self.iteration > self.budget.max_iterations {
+        if self.budget.max_iterations > 0 && self.iteration > self.budget.max_iterations {
             return Some(self.build_outcome(
                 StopReason::StageBudgetExceeded,
                 "Iteration budget exhausted. The model has used the maximum number of tool loops for this stage.",
@@ -152,7 +155,7 @@ impl StopPolicy {
     pub(crate) fn record_tool_calls(&mut self, calls: &[ToolCall]) -> Option<StopOutcome> {
         self.total_tool_calls += calls.len();
 
-        if self.total_tool_calls > self.budget.max_tool_calls {
+        if self.budget.max_tool_calls > 0 && self.total_tool_calls > self.budget.max_tool_calls {
             return Some(self.build_outcome(
                 StopReason::StageBudgetExceeded,
                 "Tool-call budget exhausted. The model has issued more tool calls than allowed for this stage.",
@@ -355,14 +358,14 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
 
     /// General check that can be called at any safe point.
     pub(crate) fn check_should_stop(&self) -> Option<StopOutcome> {
-        if self.iteration > self.budget.max_iterations {
+        if self.budget.max_iterations > 0 && self.iteration > self.budget.max_iterations {
             return Some(self.build_outcome(
                 StopReason::StageBudgetExceeded,
                 "Iteration budget exhausted.",
             ));
         }
 
-        if self.total_tool_calls > self.budget.max_tool_calls {
+        if self.budget.max_tool_calls > 0 && self.total_tool_calls > self.budget.max_tool_calls {
             return Some(self.build_outcome(
                 StopReason::StageBudgetExceeded,
                 "Tool-call budget exhausted.",
@@ -431,6 +434,22 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
 
     pub(crate) fn stagnation_runs(&self) -> usize {
         self.stagnation_runs
+    }
+
+    /// Returns true every 30 tool calls (30, 60, 90, …) — only once per milestone.
+    /// The caller must call this after each batch of tool calls is recorded.
+    /// Resets the internal milestone tracker so the same milestone won't fire twice.
+    pub(crate) fn goal_consistency_check_needed(&mut self) -> bool {
+        if self.total_tool_calls == 0 {
+            return false;
+        }
+        let current_milestone = self.total_tool_calls / 30;
+        if current_milestone > self.last_milestone_checked {
+            self.last_milestone_checked = current_milestone;
+            true
+        } else {
+            false
+        }
     }
 
     pub(crate) fn max_iterations(&self) -> usize {
@@ -603,7 +622,7 @@ mod tests {
     #[test]
     fn default_budget_matches_legacy_constants() {
         let b = StageBudget::default();
-        assert_eq!(b.max_iterations, 15);
+        assert_eq!(b.max_iterations, 0); // 0 = unlimited
         assert_eq!(b.max_stagnation_cycles, 3);
     }
 
@@ -996,15 +1015,9 @@ mod tests {
             "narrow"
         );
         // Wide: no exclusions, no name filter
-        assert_eq!(
-            estimate_command_scope("find . -type f"),
-            "wide"
-        );
+        assert_eq!(estimate_command_scope("find . -type f"), "wide");
         // Medium: has name filter but no maxdepth
-        assert_eq!(
-            estimate_command_scope("find . -name '*.rs'"),
-            "medium"
-        );
+        assert_eq!(estimate_command_scope("find . -name '*.rs'"), "medium");
     }
 
     #[test]

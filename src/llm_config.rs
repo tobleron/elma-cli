@@ -108,7 +108,7 @@ pub(crate) fn chat_request_from_profile(
         temperature: options.temperature.unwrap_or(profile.temperature),
         top_p: options.top_p.unwrap_or(profile.top_p),
         stream: options.stream.unwrap_or(false),
-        max_tokens: options.max_tokens.unwrap_or(profile.max_tokens),
+        max_tokens: options.max_tokens.unwrap_or(profile.max_tokens).max(1),
         n_probs: options.n_probs,
         repeat_penalty: options
             .repeat_penalty
@@ -148,7 +148,7 @@ pub(crate) fn ad_hoc_profile(model: &str, name: &str) -> Profile {
         top_p: 1.0,
         repeat_penalty: cfg.default_repeat_penalty,
         reasoning_format: "none".to_string(),
-        max_tokens: 512,
+        max_tokens: 8192,
         timeout_s: cfg.request_timeout_s,
         system_prompt: String::new(),
     }

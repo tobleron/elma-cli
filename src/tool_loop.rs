@@ -122,6 +122,7 @@ async fn request_tool_loop_model_turn_streaming(
     let mut in_think_block = false;
     let mut pending_think_tag = String::new();
     let mut thinking_accumulated = String::new();
+    let mut reasoning_content_full = String::new();
 
     loop {
         let chunk_result_opt = tokio::select! {
@@ -177,6 +178,7 @@ async fn request_tool_loop_model_turn_streaming(
                     .map(crate::claude_ui::strip_thinking_tags_preserve_spacing)
                     .unwrap_or_default();
                 if !reasoning.is_empty() {
+                    reasoning_content_full.push_str(&reasoning);
                     if !thinking_started {
                         thinking_started = true;
                         tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
@@ -249,6 +251,11 @@ async fn request_tool_loop_model_turn_streaming(
     Ok(ToolLoopModelTurn {
         content: content.trim().to_string(),
         tool_calls: finish_streaming_tool_calls(tool_call_parts),
+        reasoning_content: if reasoning_content_full.is_empty() {
+            None
+        } else {
+            Some(reasoning_content_full)
+        },
     })
 }
 
@@ -265,6 +272,7 @@ pub(crate) struct ToolLoopResult {
 struct ToolLoopModelTurn {
     content: String,
     tool_calls: Vec<ToolCall>,
+    reasoning_content: Option<String>,
 }
 
 #[derive(Default)]
@@ -372,11 +380,8 @@ async fn request_final_answer_from_evidence(
     } else if evidence_lines.len() <= 3 {
         evidence_lines.join("\n")
     } else {
-        // Truncate to avoid blowing context; first N entries are usually most
-        // relevant since they're the initial findings.
-        let display_count = evidence_lines.len().min(20);
-        let truncated: Vec<_> = evidence_lines.iter().take(display_count).cloned().collect();
-        truncated.join("\n")
+        // Include all gathered evidence without artificial truncation.
+        evidence_lines.join("\n")
     };
 
     let clean_messages = vec![
@@ -561,9 +566,10 @@ pub(crate) async fn run_tool_loop(
     context_hint: &str,
     evidence_required: bool,
     ctx_max: Option<u64>,
+    goal_state: &GoalState,
 ) -> Result<ToolLoopResult> {
     let budget = StageBudget::default();
-    let total_timeout = Duration::from_secs(30 * 60); // 30 minutes
+    let total_timeout = Duration::from_secs(45 * 60); // 45 minutes
     let loop_start = Instant::now();
     let original_user_request = user_message.to_string();
     trace(
@@ -601,19 +607,19 @@ pub(crate) async fn run_tool_loop(
     update_context_estimate(&messages, tui);
 
     loop {
-        // Check 30-minute timeout
+        // Check 45-minute timeout
         let elapsed = loop_start.elapsed();
         if elapsed > total_timeout {
             let elapsed_mins = elapsed.as_secs() as f64 / 60.0;
             let timeout_reason = format!(
-                "30-minute timeout exceeded after {:.1} minutes",
+                "45-minute timeout exceeded after {:.1} minutes",
                 elapsed_mins
             );
             trace(args, &format!("tool_loop: TIMEOUT {}", timeout_reason));
             return Ok(ToolLoopResult {
                 final_answer: format!(
                     "⏱️ **Timeout After {:.1} Minutes**\n\n\
-                     The task was cancelled due to exceeding the 30-minute time limit.\n\n\
+                     The task was cancelled due to exceeding the 45-minute time limit.\n\n\
                      **Time spent:** {:.1} minutes\n\
                      **Iterations completed:** {}\n\
                      **Tool calls made:** {}\n\n\
@@ -710,27 +716,26 @@ pub(crate) async fn run_tool_loop(
                 trace(args, "auto_compact: failed (no messages to compact)");
             }
         }
-        trace(
-            args,
-            &format!(
-                "tool_loop: iteration {}/{}",
-                stop_policy.iteration(),
-                stop_policy.max_iterations()
-            ),
-        );
-        // Telemetry: warn when approaching budget limits
-        let iter = stop_policy.iteration();
         let max_iter = stop_policy.max_iterations();
-        if iter == max_iter - 2 {
+        if max_iter > 0 {
+            trace(
+                args,
+                &format!(
+                    "tool_loop: iteration {}/{}",
+                    stop_policy.iteration(),
+                    max_iter
+                ),
+            );
+        }
+        // Telemetry: warn when approaching budget limits (only when a limit is set)
+        let iter = stop_policy.iteration();
+        if max_iter > 0 && iter == max_iter - 2 {
             tui.push_budget_notice(&format!(
                 "Approaching iteration limit ({}/{})",
                 iter, max_iter
             ));
         }
         let total_calls = stop_policy.total_tool_calls();
-        if total_calls >= 25 && total_calls % 5 == 0 {
-            tui.push_budget_notice(&format!("Tool calls used: {}/30", total_calls));
-        }
         let profile = ad_hoc_profile(model_id, "tool_loop");
         let req = chat_request_from_profile(
             &profile,
@@ -778,6 +783,7 @@ pub(crate) async fn run_tool_loop(
                 ToolLoopModelTurn {
                     content: choice.message.content.clone().unwrap_or_default(),
                     tool_calls: choice.message.tool_calls.clone().unwrap_or_default(),
+                    reasoning_content: choice.message.reasoning_content.clone(),
                 }
             }
         };
@@ -893,6 +899,8 @@ pub(crate) async fn run_tool_loop(
                 args,
                 &format!("tool_loop: {} tool call(s)", turn.tool_calls.len()),
             );
+            let mut first_tool_call = true;
+            let reasoning_for_messages = turn.reasoning_content.clone();
             for tc in &turn.tool_calls {
                 // Task T209: Shell budget forecasting
                 if tc.function.name == "shell" {
@@ -1103,8 +1111,14 @@ pub(crate) async fn run_tool_loop(
                     name: None,
                     tool_calls: Some(vec![tc.clone()]),
                     tool_call_id: None,
+                    reasoning_content: if first_tool_call {
+                        reasoning_for_messages.clone()
+                    } else {
+                        None
+                    },
                     summarized: false,
                 });
+                first_tool_call = false;
                 // Apply result budget — persist large outputs to disk, keep inline for small ones
                 let budgeted = apply_tool_result_budget(
                     sess,
@@ -1136,11 +1150,35 @@ pub(crate) async fn run_tool_loop(
                     name: Some(tc.function.name.clone()),
                     tool_calls: None,
                     tool_call_id: Some(tc.id.clone()),
+                    reasoning_content: None,
                     summarized: false,
                 });
             }
 
             update_context_estimate(&messages, tui);
+
+            // Goal consistency check: fires every 30 tool calls
+            if stop_policy.goal_consistency_check_needed() && goal_state.has_active_goal() {
+                let recent_tool_summary = build_recent_tool_summary(&messages, 15);
+                let profile = ad_hoc_profile(model_id, "goal_consistency");
+                let steering = crate::intel_units::run_goal_consistency_check(
+                    client,
+                    &profile,
+                    goal_state,
+                    &recent_tool_summary,
+                )
+                .await;
+                if let Some(steering_msg) = steering {
+                    trace(
+                        args,
+                        &format!(
+                            "tool_loop: goal consistency steering injected ({} chars)",
+                            steering_msg.len()
+                        ),
+                    );
+                    messages.push(ChatMessage::simple("user", &steering_msg));
+                }
+            }
 
             // T303: Inject strategy-shift hint if retry loop detected
             if stop_policy.is_retry_loop_detected() {
@@ -1355,6 +1393,58 @@ fn has_recent_tool_evidence(messages: &[ChatMessage]) -> bool {
     false
 }
 
+/// Build a compact summary of the most recent N tool calls from messages.
+/// Returns one line per tool call: "tool_name: arg_preview"
+fn build_recent_tool_summary(messages: &[ChatMessage], count: usize) -> String {
+    let mut lines = Vec::new();
+    for msg in messages.iter().rev() {
+        if lines.len() >= count {
+            break;
+        }
+        if let Some(tcs) = &msg.tool_calls {
+            for tc in tcs.iter().rev() {
+                if lines.len() >= count {
+                    break;
+                }
+                let preview = match tc.function.name.as_str() {
+                    "shell" => {
+                        let cmd = serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+                            .ok()
+                            .and_then(|v| v["command"].as_str().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        let short = if cmd.len() > 80 {
+                            format!("{}...", &cmd[..77])
+                        } else {
+                            cmd
+                        };
+                        format!("shell: {}", short)
+                    }
+                    "read" => {
+                        let path = serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+                            .ok()
+                            .and_then(|v| v["path"].as_str().map(|s| s.to_string()))
+                            .unwrap_or_else(|| tc.function.arguments.chars().take(60).collect());
+                        format!("read: {}", path)
+                    }
+                    "search" => {
+                        let pattern = serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+                            .ok()
+                            .and_then(|v| v["pattern"].as_str().map(|s| s.to_string()))
+                            .unwrap_or_else(|| tc.function.arguments.chars().take(60).collect());
+                        format!("search: {}", pattern)
+                    }
+                    other => {
+                        format!("{}: {}", other, tc.function.arguments.chars().take(60).collect::<String>())
+                    }
+                };
+                lines.push(preview);
+            }
+        }
+    }
+    lines.reverse();
+    lines.join("\n")
+}
+
 /// Extract a short preview of a tool argument.
 pub(crate) fn extract_tool_arg_preview(args_json: &str, field: &str, max_len: usize) -> String {
     match serde_json::from_str::<serde_json::Value>(args_json) {
@@ -1421,6 +1511,7 @@ mod tests {
                 name: Some("shell".to_string()),
                 tool_calls: None,
                 tool_call_id: Some("t1".to_string()),
+                reasoning_content: None,
                 summarized: false,
             },
         ];

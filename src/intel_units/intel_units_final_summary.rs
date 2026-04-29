@@ -43,10 +43,11 @@ impl IntelUnit for FinalSummaryUnit {
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
         let user_request = &context.user_message;
-        
+
         let evidence_summary = crate::evidence_ledger::get_session_ledger()
             .map(|ledger| {
-                ledger.entries
+                ledger
+                    .entries
                     .iter()
                     .map(|e| e.summary.clone())
                     .collect::<Vec<_>>()
@@ -64,15 +65,15 @@ Evidence gathered:
 
 Provide a short, concise summary (1-2 sentences max) that directly answers the user's request based on the evidence above. If the task is not complete, state what is still needed."#,
             user_request,
-            if evidence_summary.is_empty() { "(no evidence collected)".to_string() } else { evidence_summary }
+            if evidence_summary.is_empty() {
+                "(no evidence collected)".to_string()
+            } else {
+                evidence_summary
+            }
         );
 
-        let result = execute_intel_text_from_user_content(
-            &context.client,
-            &self.profile,
-            narrative,
-        )
-        .await?;
+        let result =
+            execute_intel_text_from_user_content(&context.client, &self.profile, narrative).await?;
 
         Ok(IntelOutput::success(
             self.name(),

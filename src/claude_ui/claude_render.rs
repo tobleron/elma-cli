@@ -26,7 +26,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
-
+use unicode_width::UnicodeWidthChar;
 
 // ============================================================================
 // Screen Buffer (Legacy/Compatibility)
@@ -89,7 +89,6 @@ pub(crate) struct ClaudeRenderer {
     pub(crate) last_content_area: Option<ratatui::layout::Rect>,
     pub(crate) last_start_line: usize,
     pub(crate) last_line_mapping: Vec<usize>,
-
 }
 
 impl ClaudeRenderer {
@@ -130,9 +129,9 @@ impl ClaudeRenderer {
         if let Ok(guard) = trace_log_state().lock() {
             if let Some(ref trace_path) = *guard {
                 if let Some(session_root) = trace_path.parent() {
-                    let display_dir = session_root.join("display");
-                    let _ = std::fs::create_dir_all(&display_dir);
-                    let tpath = display_dir.join("terminal_transcript.txt");
+                    let artifacts_dir = session_root.join("artifacts");
+                    let _ = std::fs::create_dir_all(&artifacts_dir);
+                    let tpath = artifacts_dir.join("terminal_transcript.txt");
                     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&tpath) {
                         let ts = Local::now().to_rfc3339();
                         let mut line = String::new();
@@ -707,10 +706,7 @@ impl ClaudeRenderer {
         };
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(panel_width),
-            ])
+            .constraints([Constraint::Min(0), Constraint::Length(panel_width)])
             .split(content_area);
         let main_area = h_chunks[0];
         let panel_area = h_chunks[1];
@@ -846,6 +842,8 @@ impl ClaudeRenderer {
             all_lines.push(status_span);
             all_mapping.push(all_mapping.last().copied().unwrap_or(0));
         }
+        let (all_lines, all_mapping) =
+            wrap_lines_with_mapping(all_lines, all_mapping, text_area.width as usize);
         let total_lines = all_lines.len();
 
         // Manual line slicing: compute visible window based on scroll_offset
@@ -864,7 +862,7 @@ impl ClaudeRenderer {
         // Store hit-testing state for click-to-expand tool traces
         self.last_content_area = Some(content_area);
         self.last_start_line = start_line;
-        self.last_line_mapping = line_mapping;
+        self.last_line_mapping = all_mapping.clone();
 
         // Slice visible lines from the transcript
         let visible_lines: Vec<Line<'static>> = all_lines
@@ -878,11 +876,9 @@ impl ClaudeRenderer {
             .position(start_line)
             .viewport_content_length(height);
 
-        // Render transcript with word wrapping at terminal width.
-        // Per-row line mapping is still tracked for hit-testing
-        // (click-to-expand tool traces), but the visible line row will
-        // shift when wrapping produces more output rows than mapped.
-        let paragraph = Paragraph::new(visible_lines).wrap(Wrap { trim: false });
+        // Lines are pre-wrapped before viewport slicing. Keeping the Paragraph
+        // unwrapped makes scroll-to-bottom operate on actual terminal rows.
+        let paragraph = Paragraph::new(visible_lines);
 
         f.render_widget(paragraph, text_area);
 
@@ -1065,16 +1061,12 @@ impl ClaudeRenderer {
                 ),
             ]);
             f.render_widget(
-                Paragraph::new(line)
-                    .style(Style::default().bg(theme.bg_footer.to_ratatui_color())),
+                Paragraph::new(line).style(Style::default().bg(theme.bg_footer.to_ratatui_color())),
                 footer_area,
             );
         } else if let Some(model) = &self.footer_model {
             let line = render_footer_line(model, self.footer_streaming_state(), footer_area.width);
-            f.render_widget(
-                Paragraph::new(line),
-                footer_area,
-            );
+            f.render_widget(Paragraph::new(line), footer_area);
         } else {
             let hints: Vec<Span> = FOOTER_HINTS
                 .iter()
@@ -1111,8 +1103,12 @@ impl ClaudeRenderer {
         self.model_picker.render(area, f);
 
         // Compute cursor position in the wrapped display
-        let (cursor_display_row, cursor_display_col) =
-            cursor_in_wrapped(&self.input_lines, self.input_cursor_row, self.input_cursor_col, text_width.max(10));
+        let (cursor_display_row, cursor_display_col) = cursor_in_wrapped(
+            &self.input_lines,
+            self.input_cursor_row,
+            self.input_cursor_col,
+            text_width.max(10),
+        );
         // Set cursor
         f.set_cursor(
             input_area.x + cursor_display_col as u16,
@@ -1191,6 +1187,48 @@ impl ClaudeRenderer {
 
 fn content_area_width_guess(transcript_width: usize) -> usize {
     transcript_width.saturating_sub(1).max(12)
+}
+
+fn wrap_lines_with_mapping(
+    lines: Vec<Line<'static>>,
+    mapping: Vec<usize>,
+    width: usize,
+) -> (Vec<Line<'static>>, Vec<usize>) {
+    let width = width.max(1);
+    let mut wrapped_lines = Vec::new();
+    let mut wrapped_mapping = Vec::new();
+
+    for (index, line) in lines.into_iter().enumerate() {
+        let mapped_index = mapping
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| mapping.last().copied().unwrap_or(0));
+        let mut current_spans: Vec<Span<'static>> = Vec::new();
+        let mut current_width = 0usize;
+
+        for span in line.spans {
+            let style = span.style;
+            for ch in span.content.chars() {
+                let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+                if current_width > 0 && current_width + ch_width > width {
+                    wrapped_lines.push(Line::from(std::mem::take(&mut current_spans)));
+                    wrapped_mapping.push(mapped_index);
+                    current_width = 0;
+                }
+                current_spans.push(Span::styled(ch.to_string(), style));
+                current_width += ch_width;
+            }
+        }
+
+        if current_spans.is_empty() {
+            wrapped_lines.push(Line::default());
+        } else {
+            wrapped_lines.push(Line::from(current_spans));
+        }
+        wrapped_mapping.push(mapped_index);
+    }
+
+    (wrapped_lines, wrapped_mapping)
 }
 
 fn shorten_model_label(label: &str, max_chars: usize) -> String {
@@ -1351,7 +1389,7 @@ fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterMod
     lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
         "Local first terminal agent v0.1.0",
-        dim,
+        Style::default().fg(theme.accent_secondary.to_ratatui_color()),
     )]));
     lines.push(Line::from(""));
 
@@ -1368,7 +1406,10 @@ fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterMod
         )]));
 
         lines.push(Line::from(vec![Span::styled(
-            format!("{}    {:.1}/{:.1} GB", pad, snap.mem_used_gb, snap.mem_total_gb),
+            format!(
+                "{}    {:.1}/{:.1} GB",
+                pad, snap.mem_used_gb, snap.mem_total_gb
+            ),
             dim,
         )]));
 
@@ -1399,7 +1440,7 @@ fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterMod
             lines.push(Line::from(""));
             lines.push(Line::from(vec![Span::styled(
                 truncate_to_width(&format!("{}{}", pad, model), text_width),
-                accent,
+                dim,
             )]));
         }
     }
@@ -1470,40 +1511,17 @@ fn render_footer_line(
         .fg(theme.accent_primary.to_ratatui_color())
         .add_modifier(Modifier::BOLD)
         .bg(theme.bg_footer.to_ratatui_color());
+    let primary_fill_style = Style::default()
+        .fg(theme.accent_primary.to_ratatui_color())
+        .bg(theme.bg_footer.to_ratatui_color());
 
     let width = width as usize;
 
     // Left section: mode label (pink+bold) or empty
-    let left: String = model
-        .mode_label
-        .as_deref()
-        .unwrap_or("")
-        .to_string();
+    let left: String = model.mode_label.as_deref().unwrap_or("").to_string();
     let left_width = left.chars().count();
 
-    // Center section: context bar + streaming state
-    let mut center_parts: Vec<String> = Vec::new();
-    if let Some(ctx) = model.context_pct {
-        let bar_width = 6usize;
-        let filled = (ctx.min(100) * bar_width) / 100;
-        center_parts.push(format!(
-            "ctx {}% {}{}",
-            ctx.min(100),
-            "█".repeat(filled),
-            "░".repeat(bar_width.saturating_sub(filled))
-        ));
-    }
-    if let Some(tx) = &model.transcript_metric {
-        center_parts.push(tx.clone());
-    }
-    if let Some(state) = streaming_state {
-        center_parts.push(state);
-    }
-    let center = center_parts.join("  ");
-    let center_width = center.chars().count();
-
     let left_pad = if left.is_empty() { 0 } else { left_width + 2 };
-    let available_center = width.saturating_sub(left_pad);
 
     let mut spans: Vec<Span> = Vec::new();
 
@@ -1513,32 +1531,87 @@ fn render_footer_line(
         spans.push(Span::styled("  ", dim_style));
     }
 
-    // Center: context info (truncate if needed)
-    let center_text = if center_width > available_center && center_parts.len() >= 2 {
-        let shortened: Vec<String> = center_parts.iter().enumerate().filter_map(|(i, p)| {
-            if i == 1 { None } else { Some(p.clone()) }
-        }).collect();
-        shortened.join("  ")
-    } else if center_width > available_center {
-        let mut t = center.clone();
-        while t.chars().count() > available_center {
-            t.pop();
+    // Center: styled context bar + metrics (with width-aware truncation)
+    let available_center = width.saturating_sub(left_pad);
+
+    // Build plain-text parts for width calculation
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(ctx) = model.context_pct {
+        let bar_width = 6usize;
+        let filled = (ctx.min(100) * bar_width) / 100;
+        let empty = bar_width.saturating_sub(filled);
+        parts.push(format!(
+            "ctx {}% {}{}",
+            ctx.min(100),
+            "█".repeat(filled),
+            "░".repeat(empty)
+        ));
+    }
+    if let Some(tx) = &model.transcript_metric {
+        parts.push(tx.clone());
+    }
+    if let Some(state) = streaming_state.as_ref() {
+        parts.push(state.clone());
+    }
+
+    let joined = parts.join("  ");
+    let joined_width = joined.chars().count();
+
+    // Truncate if needed: drop transcript metric first, then char-truncate
+    let center_text = if joined_width > available_center && parts.len() >= 2 {
+        // Drop index 1 (transcript metric)
+        let mut shortened = parts.clone();
+        shortened.remove(1);
+        let s = shortened.join("  ");
+        if s.chars().count() > available_center {
+            s.chars().take(available_center).collect()
+        } else {
+            s
         }
-        t
+    } else if joined_width > available_center {
+        joined.chars().take(available_center).collect::<String>()
     } else {
-        center.clone()
+        joined
     };
-    spans.push(Span::styled(center_text, dim_style));
+
+    // Render center_text with styled spans
+    // Split on "ctx N% " prefix to apply styled blocks vs dim rest
+    if !center_text.is_empty() {
+        if let Some(ctx) = model.context_pct {
+            let prefix = format!("ctx {}% ", ctx.min(100));
+            if center_text.starts_with(&prefix) {
+                let rest = center_text[prefix.len()..].to_string();
+                let bar_width = 6usize;
+                let filled = (ctx.min(100) * bar_width) / 100;
+                let empty = bar_width.saturating_sub(filled);
+                spans.push(Span::styled(prefix, dim_style));
+                let filled_part = "█".repeat(filled);
+                let empty_part = "░".repeat(empty);
+                if rest.starts_with(&filled_part) {
+                    spans.push(Span::styled(filled_part.clone(), primary_fill_style));
+                    let after_filled = rest[filled_part.len()..].to_string();
+                    if after_filled.starts_with(&empty_part) {
+                        spans.push(Span::styled(empty_part.clone(), dim_style));
+                        let after_empty = after_filled[empty_part.len()..].to_string();
+                        if !after_empty.is_empty() {
+                            spans.push(Span::styled(after_empty, dim_style));
+                        }
+                    } else {
+                        spans.push(Span::styled(after_filled, dim_style));
+                    }
+                } else {
+                    spans.push(Span::styled(rest, dim_style));
+                }
+            } else {
+                // Context bar got truncated so much that prefix is gone
+                spans.push(Span::styled(center_text, dim_style));
+            }
+        } else {
+            spans.push(Span::styled(center_text, dim_style));
+        }
+    }
 
     Line::from(spans).style(footer_bg)
-}
-
-fn footer_len(segments: &[(String, Style)]) -> usize {
-    segments
-        .iter()
-        .map(|(text, _)| text.chars().count())
-        .sum::<usize>()
-        + segments.len().saturating_sub(1) * 2
 }
 
 // ============================================================================
@@ -1901,6 +1974,92 @@ mod tests {
             .collect();
         assert!(!text.contains("granite"));
         assert!(text.contains("ctx 40%"));
+    }
+
+    #[test]
+    fn test_transcript_lines_wrap_before_viewport_math() {
+        let line = Line::from(vec![Span::raw("abcdefghi")]);
+        let (wrapped, mapping) = wrap_lines_with_mapping(vec![line], vec![7], 4);
+
+        let rendered: Vec<String> = wrapped
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect();
+
+        assert_eq!(rendered, vec!["abcd", "efgh", "i"]);
+        assert_eq!(mapping, vec![7, 7, 7]);
+    }
+
+    #[test]
+    fn test_bottom_view_uses_wrapped_physical_rows() {
+        let long = Line::from(vec![Span::raw("abcdefghij")]);
+        let end = Line::from(vec![Span::raw("END")]);
+        let (wrapped, _) = wrap_lines_with_mapping(vec![long, end], vec![0, 1], 4);
+
+        let height = 2usize;
+        let total_lines = wrapped.len();
+        let start_line = total_lines.saturating_sub(height);
+        let visible: Vec<String> = wrapped
+            .into_iter()
+            .skip(start_line)
+            .take(height)
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect();
+
+        assert_eq!(visible, vec!["ij", "END"]);
+    }
+
+    #[test]
+    fn test_footer_context_bar_block_colors() {
+        let theme = current_theme();
+        let model = FooterModel {
+            context_pct: Some(60),
+            model_label: None,
+            transcript_metric: None,
+            mode_label: None,
+        };
+        let line = render_footer_line(&model, None, 80);
+        let mut seen_fill_primary = false;
+        let mut seen_empty_dim = false;
+        for span in &line.spans {
+            let fg = span.style.fg;
+            if span.content.contains('█') {
+                seen_fill_primary =
+                    seen_fill_primary || fg == Some(theme.accent_primary.to_ratatui_color());
+            }
+            if span.content.contains('░') {
+                seen_empty_dim = seen_empty_dim || fg == Some(theme.fg_dim.to_ratatui_color());
+            }
+        }
+        assert!(seen_fill_primary, "filled blocks should use accent_primary");
+        assert!(seen_empty_dim, "empty blocks should use dim");
+    }
+
+    #[test]
+    fn test_footer_context_label_dim() {
+        let theme = current_theme();
+        let model = FooterModel {
+            context_pct: Some(42),
+            model_label: None,
+            transcript_metric: None,
+            mode_label: None,
+        };
+        let line = render_footer_line(&model, None, 80);
+        let label = line.spans.iter().find(|s| s.content.starts_with("ctx"));
+        assert!(
+            label.is_some_and(|s| s.style.fg == Some(theme.fg_dim.to_ratatui_color())),
+            "ctx label should use dim style"
+        );
     }
 
     fn fragments_contain(line: &ratatui::text::Line, needle: &str) -> bool {

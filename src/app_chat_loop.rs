@@ -9,10 +9,10 @@ use crate::app_chat_fast_paths::*;
 use crate::app_chat_handlers::*;
 use crate::app_chat_helpers::*;
 use crate::app_chat_orchestrator::*;
-use crate::goal_seeding::*;
-use crate::session_write::save_goal_state;
 use crate::app_chat_patterns::*;
 use crate::app_chat_trace::*;
+use crate::goal_seeding::*;
+use crate::session_write::save_goal_state;
 use crate::ui_state::HeaderInfo;
 use crate::ui_terminal::{MessageRole, TerminalUI};
 use crate::*;
@@ -1127,8 +1127,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             let formula_clone = formula.clone();
             let user_message_clone = line.to_string();
             tokio::spawn(async move {
-                let unit =
-                    crate::intel_units::TurnSummaryUnit::new(summarizer_cfg);
+                let unit = crate::intel_units::TurnSummaryUnit::new(summarizer_cfg);
                 let context = crate::intel_trait::IntelContext::new(
                     user_message_clone,
                     route_clone,
@@ -1142,24 +1141,22 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 .and_then(|c| c.with_extra("tools_used", &tools_used.join(",")))
                 .and_then(|c| c.with_extra("formula", &formula_clone));
                 match context {
-                    Ok(ctx) => {
-                        match unit.execute_with_fallback(&ctx).await {
-                            Ok(output) => {
-                                if let Ok(summary) =
-                                    serde_json::from_value::<TurnSummaryOutput>(output.data)
-                                {
-                                    let _ = crate::session_write::save_turn_summary(
-                                        &session_root,
-                                        turn_number,
-                                        &summary,
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                tracing::debug!("Turn summary failed: {}", e);
+                    Ok(ctx) => match unit.execute_with_fallback(&ctx).await {
+                        Ok(output) => {
+                            if let Ok(summary) =
+                                serde_json::from_value::<TurnSummaryOutput>(output.data)
+                            {
+                                let _ = crate::session_write::save_turn_summary(
+                                    &session_root,
+                                    turn_number,
+                                    &summary,
+                                );
                             }
                         }
-                    }
+                        Err(e) => {
+                            tracing::debug!("Turn summary failed: {}", e);
+                        }
+                    },
                     Err(e) => {
                         tracing::debug!("Turn summary context build failed: {}", e);
                     }

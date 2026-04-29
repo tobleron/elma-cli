@@ -16,8 +16,8 @@ pub(crate) fn create_workspace_snapshot(
     reason: &str,
     automatic: bool,
 ) -> Result<SnapshotCreateResult> {
-    let snapshot_id = new_snapshot_id(&session.snapshots_dir)?;
-    let snapshot_dir = session.snapshots_dir.join(&snapshot_id);
+    let snapshot_id = new_snapshot_id(&session.artifacts_dir)?;
+    let snapshot_dir = session.artifacts_dir.join(&snapshot_id);
     let files_dir = snapshot_dir.join("files");
     std::fs::create_dir_all(&files_dir)
         .with_context(|| format!("mkdir {}", files_dir.display()))?;
@@ -70,7 +70,7 @@ pub(crate) fn rollback_workspace_snapshot(
         anyhow::bail!("snapshot id is required");
     }
 
-    let snapshot_dir = session.snapshots_dir.join(snapshot_id);
+    let snapshot_dir = session.artifacts_dir.join(snapshot_id);
     let manifest_path = snapshot_dir.join("manifest.toml");
     if !manifest_path.exists() {
         anyhow::bail!("snapshot {} was not found in this session", snapshot_id);
@@ -249,7 +249,9 @@ fn snapshot_path_excluded(rel: &Path) -> bool {
     if components.is_empty() {
         return false;
     }
-    if components[0].starts_with(".git") || components[0] == "target" || components[0] == "sessions"
+    if components[0].starts_with(".git")
+        || components[0] == "target"
+        || components[0] == "sessions"
         || components[0] == ".opencode"
     {
         return true;

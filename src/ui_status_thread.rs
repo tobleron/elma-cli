@@ -30,8 +30,6 @@ pub(crate) enum StatusState {
 #[derive(Debug, Clone)]
 pub(crate) struct StatusThread {
     state: StatusState,
-    spinner_frame: u8,
-    last_frame_advance: Instant,
     min_visible_until: Option<Instant>,
 }
 
@@ -45,8 +43,6 @@ impl StatusThread {
     pub fn new() -> Self {
         Self {
             state: StatusState::Idle,
-            spinner_frame: 0,
-            last_frame_advance: Instant::now(),
             min_visible_until: None,
         }
     }
@@ -84,19 +80,19 @@ impl StatusThread {
     }
 
     /// Get the current rendered line. Returns None if idle or past visibility window.
-    /// Advances the spinner frame if working.
-    pub fn render(&mut self) -> Option<String> {
-        let state_clone = self.state.clone();
-        match state_clone {
+    /// Derives spinner frame from elapsed time so cloned render state animates correctly.
+    pub fn render(&self) -> Option<String> {
+        match &self.state {
             StatusState::Idle => None,
-            StatusState::Working { .. } => {
-                self.advance_spinner();
-                let spinner = self.current_spinner_char();
-                if let StatusState::Working { description, .. } = &self.state {
-                    Some(format!("{} {}", spinner, description))
-                } else {
-                    None
-                }
+            StatusState::Working {
+                description,
+                started_at,
+            } => {
+                let elapsed_ms = started_at.elapsed().as_millis() as u64;
+                let frame =
+                    ((elapsed_ms / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.len() as u64) as usize;
+                let spinner = SPINNER_FRAMES[frame];
+                Some(format!("{} {}", spinner, description))
             }
             StatusState::Completed {
                 description,
@@ -106,8 +102,6 @@ impl StatusThread {
                 if elapsed < Duration::from_secs(MIN_VISIBLE_SECS + 1) {
                     Some(format!("✓ {}", description))
                 } else {
-                    self.state = StatusState::Idle;
-                    self.min_visible_until = None;
                     None
                 }
             }
@@ -126,18 +120,6 @@ impl StatusThread {
             StatusState::Working { description, .. }
             | StatusState::Completed { description, .. } => Some(description.clone()),
         }
-    }
-
-    fn advance_spinner(&mut self) {
-        let now = Instant::now();
-        if now.duration_since(self.last_frame_advance) >= Duration::from_millis(SPINNER_INTERVAL_MS) {
-            self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len() as u8;
-            self.last_frame_advance = now;
-        }
-    }
-
-    fn current_spinner_char(&self) -> &'static str {
-        SPINNER_FRAMES[self.spinner_frame as usize]
     }
 }
 

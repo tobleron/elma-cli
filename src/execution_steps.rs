@@ -358,15 +358,16 @@ async fn handle_plan_step(
     state: &mut ExecutionState,
     args: &Args,
 ) -> Result<()> {
-    let master = std::fs::read_to_string(session.plans_dir.join("_master.md")).unwrap_or_default();
+    let master =
+        std::fs::read_to_string(session.artifacts_dir.join("_master.md")).unwrap_or_default();
     let req = mk_chat_req(
         planner_cfg,
         planner_cfg.system_prompt.clone(),
         format!("Goal:\n{goal}\n\nMaster plan (_master.md):\n{master}"),
     );
     let text = chat_once_get_text(client, chat_url, &req).await?;
-    let plan_path = write_plan_file(&session.plans_dir, &(text.trim().to_string() + "\n"))?;
-    append_master_link(&session.plans_dir, &plan_path, &goal)?;
+    let plan_path = write_plan_file(&session.artifacts_dir, &(text.trim().to_string() + "\n"))?;
+    append_master_link(&session.artifacts_dir, &plan_path, &goal)?;
     trace(args, &format!("plan_saved={}", plan_path.display()));
     let trimmed = text.trim().to_string();
     state.artifacts.insert(sid.into(), trimmed.clone());
@@ -406,7 +407,7 @@ async fn handle_master_plan_step(
         format!("Goal:\n{goal}\n\nUpdate the master plan."),
     );
     let text = chat_once_get_text(client, chat_url, &req).await?;
-    let path = session.plans_dir.join("_master.md");
+    let path = session.artifacts_dir.join("_master.md");
     std::fs::write(
         &path,
         squash_blank_lines(text.trim()).trim().to_string() + "\n",
@@ -449,7 +450,7 @@ async fn handle_decide_step(
         .next()
         .unwrap_or("")
         .to_string();
-    let path = write_decision(&session.decisions_dir, &word)?;
+    let path = write_decision(&session.artifacts_dir, &word)?;
     trace(args, &format!("decision_saved={}", path.display()));
     state.artifacts.insert(sid.into(), word.clone());
     state.step_results.push(mk_step_result(
@@ -651,7 +652,7 @@ pub(crate) async fn handle_program_step(
     }
 
     match step {
-        Step::Read { path, .. } => {
+        Step::Read { path, paths, .. } => {
             handle_read_step(
                 args,
                 session,
@@ -661,7 +662,8 @@ pub(crate) async fn handle_program_step(
                 purpose,
                 depends_on,
                 success_condition,
-                &path,
+                path.as_deref(),
+                paths.as_deref(),
                 state,
             )
             .await?

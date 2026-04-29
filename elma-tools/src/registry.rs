@@ -95,9 +95,7 @@ impl RegistryBuilder {
     }
 
     pub fn build(self) -> DynamicToolRegistry {
-        DynamicToolRegistry {
-            tools: self.tools,
-        }
+        DynamicToolRegistry { tools: self.tools }
     }
 }
 
@@ -273,10 +271,7 @@ pub fn build_tools_for_context(
     let context = context_hint.to_lowercase();
 
     let allowed_names: Vec<String> = match context.as_str() {
-        "chat" => vec![
-            "respond".to_string(),
-            "summary".to_string(),
-        ],
+        "chat" => vec!["respond".to_string(), "summary".to_string()],
         "shell" => vec![
             "read".to_string(),
             "respond".to_string(),
@@ -469,6 +464,9 @@ mod tests {
         let names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
         let mut sorted_names = names.clone();
         sorted_names.sort();
-        assert_eq!(names, sorted_names, "Tools must be returned in stable alphabetic order");
+        assert_eq!(
+            names, sorted_names,
+            "Tools must be returned in stable alphabetic order"
+        );
     }
 }

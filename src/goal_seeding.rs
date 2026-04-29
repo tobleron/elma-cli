@@ -106,34 +106,70 @@ const ACTION_VERB_GROUPS: &[&[&str]] = &[
     &["purge", "purges", "purging", "purged"],
     &["archive", "archives", "archiving", "archived"],
     &["compress", "compresses", "compressing", "compressed"],
-    &["decompress", "decompresses", "decompressing", "decompressed"],
+    &[
+        "decompress",
+        "decompresses",
+        "decompressing",
+        "decompressed",
+    ],
     &["optimize", "optimizes", "optimizing", "optimized"],
 ];
 
 /// Conjunctions that separate independent clauses.
 const CLAUSE_SPLITTERS: &[&str] = &[
-    ", and then ", ", and also ", ", and finally ", ", but also ",
-    ", then ", ", finally ", ", also ", ", additionally ",
-    ", and ", ", but ", ", or ",
-    " and then ", " and also ", " and finally ",
-    ". Then ", ". Finally ", ". Also ", ". Additionally ",
-    ";\nthen ", ";\nfinally ", "; then ", "; finally ",
+    ", and then ",
+    ", and also ",
+    ", and finally ",
+    ", but also ",
+    ", then ",
+    ", finally ",
+    ", also ",
+    ", additionally ",
+    ", and ",
+    ", but ",
+    ", or ",
+    " and then ",
+    " and also ",
+    " and finally ",
+    ". Then ",
+    ". Finally ",
+    ". Also ",
+    ". Additionally ",
+    ";\nthen ",
+    ";\nfinally ",
+    "; then ",
+    "; finally ",
 ];
 
 /// Prefix patterns that introduce action clauses (imperative mood).
 /// After these words, the next verb is likely an action to perform.
 const ACTION_INTRODUCERS: &[&str] = &[
-    "please ", "also ", "then ", "additionally ", "furthermore ",
-    "next, ", "first, ", "second, ", "third, ", "lastly, ",
+    "please ",
+    "also ",
+    "then ",
+    "additionally ",
+    "furthermore ",
+    "next, ",
+    "first, ",
+    "second, ",
+    "third, ",
+    "lastly, ",
 ];
 
 /// Verbs that are action words but NOT imperative requests (descriptive).
 /// If the sentence is "can you list..." or "I want to find...", the verb
 /// is still a real action — we just need to handle the framing.
 const REQUEST_FRAMES: &[&str] = &[
-    "can you ", "could you ", "would you ", "please ",
-    "i want to ", "i need to ", "i'd like to ", "i would like to ",
-    "i want you to ", "i need you to ",
+    "can you ",
+    "could you ",
+    "would you ",
+    "please ",
+    "i want to ",
+    "i need to ",
+    "i'd like to ",
+    "i would like to ",
+    "i want you to ",
+    "i need you to ",
 ];
 
 /// If the user message contains multiple independent actions (separated by
@@ -258,8 +294,16 @@ fn word_exists_with_boundaries(words: &[&str], target: &str) -> bool {
     for word in words {
         // Strip trailing punctuation from the word for comparison
         let clean_word = word.trim_end_matches(|c: char| {
-            c == '.' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?'
-                || c == '"' || c == '\'' || c == ')' || c == ']'
+            c == '.'
+                || c == ','
+                || c == ';'
+                || c == ':'
+                || c == '!'
+                || c == '?'
+                || c == '"'
+                || c == '\''
+                || c == ')'
+                || c == ']'
         });
 
         if clean_word.eq_ignore_ascii_case(target) {
@@ -341,7 +385,8 @@ mod tests {
 
     #[test]
     fn test_seeds_multi_step_with_periods() {
-        let line = "Write a script to scan files. Then generate a report. Finally clean up temp files.";
+        let line =
+            "Write a script to scan files. Then generate a report. Finally clean up temp files.";
         let mut gs = empty_goal();
         seed_goals_if_multi_step(line, &mut gs);
 
@@ -362,14 +407,18 @@ mod tests {
     #[test]
     fn test_no_false_positive_rewrite() {
         // "rewrite" should NOT match as action verb (it's not in our list)
-        assert!(!contains_action_verb_with_boundaries("i need to rewrite this file"));
+        assert!(!contains_action_verb_with_boundaries(
+            "i need to rewrite this file"
+        ));
     }
 
     #[test]
     fn test_word_boundary_matching() {
         assert!(contains_action_verb_with_boundaries("scan all files"));
         assert!(contains_action_verb_with_boundaries("scanning files"));
-        assert!(contains_action_verb_with_boundaries("scanned the directory"));
+        assert!(contains_action_verb_with_boundaries(
+            "scanned the directory"
+        ));
         assert!(contains_action_verb_with_boundaries("write a script"));
         assert!(contains_action_verb_with_boundaries("writing a script"));
         assert!(contains_action_verb_with_boundaries("wrote the script"));
@@ -448,8 +497,14 @@ mod tests {
 
     #[test]
     fn test_strip_request_frame() {
-        assert_eq!(strip_request_frame("Can you list all files"), "list all files");
+        assert_eq!(
+            strip_request_frame("Can you list all files"),
+            "list all files"
+        );
         assert_eq!(strip_request_frame("I want to find bugs"), "find bugs");
-        assert_eq!(strip_request_frame("Please check the logs"), "check the logs");
+        assert_eq!(
+            strip_request_frame("Please check the logs"),
+            "check the logs"
+        );
     }
 }
