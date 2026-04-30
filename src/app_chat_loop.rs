@@ -12,6 +12,7 @@ use crate::app_chat_orchestrator::*;
 use crate::app_chat_patterns::*;
 use crate::app_chat_trace::*;
 use crate::goal_seeding::*;
+use crate::intel_trait::IntelUnit;
 use crate::session_write::save_goal_state;
 use crate::ui_state::HeaderInfo;
 use crate::ui_terminal::{MessageRole, TerminalUI};
@@ -428,6 +429,179 @@ async fn annotate_and_classify(
     Ok((rephrased, decision))
 }
 
+async fn refine_route_with_evidence_needs(
+    runtime: &AppRuntime,
+    user_message: &str,
+    mut route_decision: RouteDecision,
+) -> RouteDecision {
+    let mut conversation_excerpt = runtime
+        .messages
+        .iter()
+        .rev()
+        .take(12)
+        .cloned()
+        .collect::<Vec<_>>();
+    conversation_excerpt.reverse();
+
+    let context = IntelContext::new(
+        user_message.to_string(),
+        route_decision.clone(),
+        runtime.ws.clone(),
+        runtime.ws_brief.clone(),
+        conversation_excerpt,
+        runtime.client.clone(),
+    );
+    let unit =
+        crate::intel_units::EvidenceNeedsUnit::new(runtime.profiles.evidence_need_cfg.clone());
+    let output = unit
+        .execute_with_fallback(&context)
+        .await
+        .unwrap_or_else(|error| {
+            IntelOutput::fallback(
+                "evidence_needs_assessment",
+                serde_json::json!({
+                    "needs_evidence": false,
+                    "needs_tools": false,
+                }),
+                &format!("execution: {}", error),
+            )
+        });
+
+    let needs_evidence = output.get_bool("needs_evidence").unwrap_or(false);
+    let needs_tools = output.get_bool("needs_tools").unwrap_or(false);
+    trace(
+        &runtime.args,
+        &format!(
+            "evidence_needs needs_evidence={} needs_tools={} fallback={}",
+            needs_evidence, needs_tools, output.fallback_used
+        ),
+    );
+
+    if route_classifier_parse_collapsed(&route_decision) && !(needs_evidence || needs_tools) {
+        if output.fallback_used && !intent_annotation_suggests_pure_chat(user_message) {
+            trace(
+                &runtime.args,
+                "route_parse_collapse: retaining conservative non-chat route because evidence assessment failed and intent is not pure chat",
+            );
+            route_decision.evidence_required = true;
+            return route_decision;
+        }
+        trace(
+            &runtime.args,
+            "route_parse_collapse: falling back to CHAT because no evidence/tool need was established",
+        );
+        force_chat_route(&mut route_decision, "route_parse_collapse_chat_fallback");
+        return route_decision;
+    }
+
+    if output.fallback_used || !(needs_evidence || needs_tools) {
+        return route_decision;
+    }
+
+    if route_decision.route.eq_ignore_ascii_case("CHAT") {
+        // Preserve a high-confidence CHAT route even when the evidence
+        // assessor thinks tools are needed. The primary classifiers
+        // (speech_act, workflow, mode) are more authoritative for
+        // route determination than the evidence assessor, which
+        // sometimes flags greetings as needs_tools=true due to the
+        // workspace brief making it seem like work is needed.
+        let is_confident_chat = route_decision.entropy < 0.3
+            || route_decision.workflow.choice.eq_ignore_ascii_case("CHAT");
+        if is_confident_chat {
+            return route_decision;
+        }
+        route_decision.route = "SHELL".to_string();
+        route_decision.source = format!(
+            "evidence_needs_override previous_source:{}",
+            route_decision.source
+        );
+        route_decision.distribution = vec![
+            ("SHELL".to_string(), 1.0),
+            ("CHAT".to_string(), 0.0),
+            ("PLAN".to_string(), 0.0),
+            ("MASTERPLAN".to_string(), 0.0),
+            ("DECIDE".to_string(), 0.0),
+        ];
+        route_decision.margin = 1.0;
+        route_decision.entropy = 0.0;
+        route_decision.workflow = ProbabilityDecision {
+            choice: "WORKFLOW".to_string(),
+            source: "evidence_needs_override".to_string(),
+            distribution: vec![("WORKFLOW".to_string(), 1.0), ("CHAT".to_string(), 0.0)],
+            margin: 1.0,
+            entropy: 0.0,
+        };
+        route_decision.mode = ProbabilityDecision {
+            choice: if needs_tools { "EXECUTE" } else { "INSPECT" }.to_string(),
+            source: "evidence_needs_override".to_string(),
+            distribution: vec![(
+                if needs_tools { "EXECUTE" } else { "INSPECT" }.to_string(),
+                1.0,
+            )],
+            margin: 1.0,
+            entropy: 0.0,
+        };
+    }
+
+    route_decision.evidence_required = true;
+    route_decision
+}
+
+fn route_classifier_parse_collapsed(route_decision: &RouteDecision) -> bool {
+    route_decision
+        .speech_act
+        .source
+        .eq_ignore_ascii_case("dsl_parse_failed")
+        && route_decision
+            .workflow
+            .source
+            .eq_ignore_ascii_case("dsl_parse_failed")
+        && route_decision
+            .mode
+            .source
+            .eq_ignore_ascii_case("dsl_parse_failed")
+}
+
+fn intent_annotation_suggests_pure_chat(user_message: &str) -> bool {
+    let Some((_, annotation)) = user_message.rsplit_once("[intent:") else {
+        return false;
+    };
+    let annotation = annotation.trim_end_matches(']').to_ascii_lowercase();
+    annotation.contains("greeting")
+        || annotation.contains("conversation")
+        || annotation.contains("small talk")
+        || annotation.contains("chit-chat")
+}
+
+fn force_chat_route(route_decision: &mut RouteDecision, source: &str) {
+    route_decision.route = "CHAT".to_string();
+    route_decision.source = source.to_string();
+    route_decision.distribution = vec![
+        ("CHAT".to_string(), 1.0),
+        ("SHELL".to_string(), 0.0),
+        ("PLAN".to_string(), 0.0),
+        ("MASTERPLAN".to_string(), 0.0),
+        ("DECIDE".to_string(), 0.0),
+    ];
+    route_decision.margin = 1.0;
+    route_decision.entropy = 0.0;
+    route_decision.evidence_required = false;
+    route_decision.workflow = ProbabilityDecision {
+        choice: "CHAT".to_string(),
+        source: source.to_string(),
+        distribution: vec![("CHAT".to_string(), 1.0), ("WORKFLOW".to_string(), 0.0)],
+        margin: 1.0,
+        entropy: 0.0,
+    };
+    route_decision.mode = ProbabilityDecision {
+        choice: "DECIDE".to_string(),
+        source: source.to_string(),
+        distribution: vec![("DECIDE".to_string(), 1.0)],
+        margin: 1.0,
+        entropy: 0.0,
+    };
+}
+
 fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) {
     let Some(path) = extract_first_path_from_user_text(line) else {
         return;
@@ -542,7 +716,11 @@ fn apply_shape_fallbacks(
         && !program.steps.iter().any(|s| {
             matches!(
                 s,
-                Step::Edit { .. } | Step::Read { .. } | Step::Search { .. } | Step::Shell { .. }
+                Step::Edit { .. }
+                    | Step::Read { .. }
+                    | Step::Observe { .. }
+                    | Step::Search { .. }
+                    | Step::Shell { .. }
             )
         })
     {
@@ -839,87 +1017,117 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             }
         }
 
-        // No keyword-based routing — the Maestro pipeline handles everything.
-        // Default to CHAT+reply_only for very short inputs (likely conversational),
-        // WORKFLOW+inspect_reply for everything else. This is a conservative heuristic,
-        // not keyword matching.
-        let likely_conversational =
-            line.len() < 30 && !extract_first_path_from_user_text(line).is_some();
+        // DSL-era classification: use the router profiles (single-line DSL outputs),
+        // not heuristic shortcuts. This is what ensures short operational inputs
+        // like "list current directory" still require real evidence/tool use.
+        let intent_only = rephrased_objective
+            .lines()
+            .last()
+            .unwrap_or(line)
+            .trim()
+            .to_string();
+        let rephrased = format!("{}\n[intent: {}]", line, intent_only);
+        trace(
+            &runtime.args,
+            &format!("intent_annotation={}", rephrased.replace('\n', " ")),
+        );
 
-        let route = if likely_conversational {
-            "CHAT"
-        } else {
-            "WORKFLOW"
-        };
-        let formula_primary = if likely_conversational {
-            "reply_only"
-        } else {
-            "inspect_reply"
-        };
-        let needs_evidence = !likely_conversational;
-
-        let route_decision = RouteDecision {
-            route: route.to_string(),
-            source: "maestro_pipeline".to_string(),
-            margin: 0.0,
-            entropy: 0.0,
-            distribution: vec![(route.to_string(), 1.0)],
-            speech_act: ProbabilityDecision::default(),
-            workflow: ProbabilityDecision::default(),
-            mode: ProbabilityDecision::default(),
-            evidence_required: needs_evidence,
-        };
-        let complexity = ComplexityAssessment {
-            complexity: if likely_conversational {
-                "DIRECT"
-            } else {
-                "INVESTIGATE"
+        let mut route_decision = match infer_route_prior(
+            &runtime.client,
+            &runtime.chat_url,
+            &runtime.profiles.speech_act_cfg,
+            &runtime.profiles.router_cfg,
+            &runtime.profiles.mode_router_cfg,
+            &runtime.profiles.router_cal,
+            &rephrased,
+            &runtime.ws,
+            &runtime.ws_brief,
+            &runtime.messages,
+        )
+        .await
+        {
+            Ok(decision) => decision,
+            Err(e) => {
+                trace(&runtime.args, &format!("route_infer_failed error={}", e));
+                RouteDecision {
+                    route: "SHELL".to_string(),
+                    source: "fallback:route_infer_failed".to_string(),
+                    margin: 0.0,
+                    entropy: 1.0,
+                    distribution: vec![("SHELL".to_string(), 1.0)],
+                    speech_act: ProbabilityDecision::default(),
+                    workflow: ProbabilityDecision::default(),
+                    mode: ProbabilityDecision::default(),
+                    evidence_required: true,
+                }
             }
-            .to_string(),
-            needs_evidence,
-            needs_tools: !likely_conversational,
-            needs_decision: false,
-            needs_plan: false,
+        };
+        trace_route_decision(&runtime.args, &route_decision);
+        route_decision =
+            refine_route_with_evidence_needs(runtime, &rephrased, route_decision).await;
+        // Ensure the tool loop gates "respond" until evidence for non-chat turns.
+        route_decision.evidence_required = !route_decision.route.eq_ignore_ascii_case("CHAT");
+
+        let (complexity, formula_primary, ladder_level) =
+            if route_decision.route.eq_ignore_ascii_case("CHAT") {
+                (
+                    "DIRECT".to_string(),
+                    "reply_only".to_string(),
+                    ExecutionLevel::Action,
+                )
+            } else if route_decision.route.eq_ignore_ascii_case("PLAN") {
+                (
+                    "MULTISTEP".to_string(),
+                    "plan_reply".to_string(),
+                    ExecutionLevel::Plan,
+                )
+            } else if route_decision.route.eq_ignore_ascii_case("MASTERPLAN") {
+                (
+                    "OPEN_ENDED".to_string(),
+                    "masterplan_reply".to_string(),
+                    ExecutionLevel::MasterPlan,
+                )
+            } else {
+                (
+                    "INVESTIGATE".to_string(),
+                    "inspect_reply".to_string(),
+                    ExecutionLevel::Task,
+                )
+            };
+
+        let complexity = ComplexityAssessment {
+            complexity,
+            needs_evidence: route_decision.evidence_required,
+            needs_tools: !route_decision.route.eq_ignore_ascii_case("CHAT"),
+            needs_decision: route_decision.route.eq_ignore_ascii_case("DECIDE"),
+            needs_plan: matches!(route_decision.route.as_str(), "PLAN" | "MASTERPLAN"),
             risk: "LOW".to_string(),
-            suggested_pattern: formula_primary.to_string(),
+            suggested_pattern: formula_primary.clone(),
         };
         let scope = ScopePlan::default();
         let formula = FormulaSelection {
             primary: formula_primary.to_string(),
             alternatives: Vec::new(),
-            reason: "Maestro-driven".to_string(),
+            reason: "router-driven".to_string(),
             memory_id: String::new(),
         };
         let ladder = ExecutionLadderAssessment::new(
-            if likely_conversational {
-                ExecutionLevel::Action
-            } else {
-                ExecutionLevel::Task
-            },
-            "Maestro pipeline".to_string(),
+            ladder_level,
+            "router".to_string(),
             false,
             false,
             false,
             false,
             "LOW".to_string(),
-            if likely_conversational {
-                "DIRECT"
-            } else {
-                "INVESTIGATE"
-            }
-            .to_string(),
+            complexity.complexity.clone(),
         );
         let workflow_plan: Option<WorkflowPlannerOutput> = None;
 
         trace(
             &runtime.args,
-            &format!("planning_source=maestro ladder_level={:?}", ladder.level),
-        );
-        trace(
-            &runtime.args,
             &format!(
-                "intent_annotation={}",
-                rephrased_objective.replace('\n', " ")
+                "planning_source=router route={} evidence_required={} ladder_level={:?}",
+                route_decision.route, route_decision.evidence_required, ladder.level
             ),
         );
 
@@ -1043,6 +1251,25 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 .messages
                 .push(ChatMessage::simple("assistant", &final_text));
             let _ = save_final_answer_display(&runtime.session, &final_text);
+        }
+
+        // Inject this turn's tool evidence into runtime.messages so
+        // the model sees what tools ran in previous turns. The evidence
+        // ledger tracks all tool executions with source + summary.
+        if let Some(ledger) = crate::evidence_ledger::get_session_ledger() {
+            let fresh = ledger.fresh_entries();
+            if !fresh.is_empty() {
+                let tool_summary: Vec<String> = fresh
+                    .iter()
+                    .map(|e| format!("tool: {} — {}", e.source, e.summary))
+                    .collect();
+                runtime
+                    .messages
+                    .push(ChatMessage::simple(
+                        "tool",
+                        &tool_summary.join("\n"),
+                    ));
+            }
         }
 
         // Clear activity indicator now that processing is complete
@@ -1172,4 +1399,19 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     crate::ui_state::set_tui_active(false);
     tui.cleanup()?;
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::intent_annotation_suggests_pure_chat;
+
+    #[test]
+    fn intent_annotation_pure_chat_uses_model_annotation_not_raw_prompt() {
+        assert!(intent_annotation_suggests_pure_chat(
+            "hi\n[intent: The user is greeting and initiating conversation.]"
+        ));
+        assert!(!intent_annotation_suggests_pure_chat(
+            "list current directory\n[intent: The user is listing the current directory.]"
+        ));
+    }
 }

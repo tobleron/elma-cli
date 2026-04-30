@@ -593,18 +593,20 @@ impl TerminalUI {
         use ratatui::prelude::*;
         use ratatui::widgets::*;
 
-         let mut lines = Vec::new();
-         let theme = current_theme();
+        let mut lines = Vec::new();
+        let theme = current_theme();
 
-         if tasks.is_empty() {
-             lines.push(Line::from(" No background tasks ".fg(theme.fg_dim.to_ratatui_color())));
-             return lines;
-         }
+        if tasks.is_empty() {
+            lines.push(Line::from(
+                " No background tasks ".fg(theme.fg_dim.to_ratatui_color()),
+            ));
+            return lines;
+        }
 
-         let header = Line::from(vec![
-             " Background Tasks ".bold(),
-             format!(" ({}) ", tasks.len()).fg(theme.fg_dim.to_ratatui_color()),
-         ]);
+        let header = Line::from(vec![
+            " Background Tasks ".bold(),
+            format!(" ({}) ", tasks.len()).fg(theme.fg_dim.to_ratatui_color()),
+        ]);
         lines.push(header);
 
         for task in tasks {
@@ -616,14 +618,26 @@ impl TerminalUI {
 
             let prefix = if is_selected { "▸ " } else { "  " };
 
-             let status_color = match task.status {
-                 crate::background_task::BackgroundTaskStatus::Pending => theme.warning.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::Running => theme.accent_secondary.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::Completed => theme.success.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::Failed => theme.error.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::Cancelled => theme.fg_dim.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::OOMKilled => theme.error.to_ratatui_color(), // Using error for OOMKilled as it's a failure state
-             };
+            let status_color = match task.status {
+                crate::background_task::BackgroundTaskStatus::Pending => {
+                    theme.warning.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::Running => {
+                    theme.accent_secondary.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::Completed => {
+                    theme.success.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::Failed => {
+                    theme.error.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::Cancelled => {
+                    theme.fg_dim.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::OOMKilled => {
+                    theme.error.to_ratatui_color()
+                } // Using error for OOMKilled as it's a failure state
+            };
 
             let runtime = task
                 .runtime_seconds()
@@ -639,11 +653,14 @@ impl TerminalUI {
                 runtime
             );
 
-             let line = if is_selected {
-                 Line::from(row.fg(theme.fg.to_ratatui_color()).bg(theme.bg.to_ratatui_color()))
-             } else {
-                 Line::from(row.fg(theme.fg_dim.to_ratatui_color()))
-             };
+            let line = if is_selected {
+                Line::from(
+                    row.fg(theme.fg.to_ratatui_color())
+                        .bg(theme.bg.to_ratatui_color()),
+                )
+            } else {
+                Line::from(row.fg(theme.fg_dim.to_ratatui_color()))
+            };
             lines.push(line);
         }
 
@@ -2188,7 +2205,8 @@ impl TerminalUI {
                             status,
                             ..
                         } => {
-                            out.push_str(&format!("▸ Tool trace ({}): {}\n", name, command));
+                            let display_name = if name == "shell" { "$" } else { name };
+                            out.push_str(&format!("{} {}\n", display_name, command));
                             match status {
                                 crate::claude_ui::claude_state::ToolTraceStatus::Running => {
                                     out.push_str("status: running\n\n");

@@ -426,6 +426,7 @@ impl ClaudeMessage {
                 let is_expanded = expanded || !*collapsed;
                 let chevron = if is_expanded { "▾" } else { "▸" };
 
+                let display_name = if name == "shell" { "$" } else { name };
                 let mut lines = vec![Line::from(vec![
                     Span::styled(
                         chevron,
@@ -434,7 +435,10 @@ impl ClaudeMessage {
                     Span::raw(" "),
                     Span::styled(symbol, symbol_style),
                     Span::raw(" "),
-                    Span::styled(name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        display_name.to_string(),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(" "),
                     Span::styled(
                         command.clone(),
@@ -743,11 +747,12 @@ impl ClaudeMessage {
                 };
                 let is_expanded = expanded || !*collapsed;
                 let chevron = if is_expanded { "▾" } else { "▸" };
+                let display_name = if name == "shell" { "$" } else { name };
                 let mut lines = vec![format!(
                     "{} {} {} {}",
                     dim(chevron),
                     info_cyan(symbol),
-                    bold(name),
+                    bold(display_name),
                     dim(command)
                 )];
                 if let ToolTraceStatus::Completed {
@@ -766,7 +771,7 @@ impl ClaudeMessage {
                             "{} {} {} {} ({})",
                             dim(chevron),
                             info_cyan(symbol),
-                            bold(name),
+                            bold(display_name),
                             dim(command),
                             meta_comment(&duration)
                         );
@@ -875,13 +880,17 @@ impl ClaudeTranscript {
 
     pub(crate) fn push(&mut self, msg: ClaudeMessage) {
         // Auto-collapse previous completed tool traces when a new tool starts.
+        // Keep shell traces visible — like thinking threads, they stay expanded.
         if matches!(msg, ClaudeMessage::ToolTrace { .. }) {
             for existing in self.messages.iter_mut().rev() {
                 if let ClaudeMessage::ToolTrace {
-                    status, collapsed, ..
+                    name,
+                    status,
+                    collapsed,
+                    ..
                 } = existing
                 {
-                    if matches!(status, ToolTraceStatus::Completed { .. }) {
+                    if name != "shell" && matches!(status, ToolTraceStatus::Completed { .. }) {
                         *collapsed = true;
                     }
                 }
@@ -1029,7 +1038,10 @@ impl ClaudeTranscript {
             {
                 if n == name && matches!(s, ToolTraceStatus::Running) {
                     *s = status;
-                    *collapsed = true;
+                    // Keep shell traces expanded so users can see commands as they run.
+                    if n != "shell" {
+                        *collapsed = true;
+                    }
                     return;
                 }
             }

@@ -95,12 +95,86 @@ FINAL RESPONSE: {final_text}
 TASK:
 Summarize what happened in this turn. Write a compact narrative that captures what the user asked, what actions Elma took, and what the outcome was. This summary will replace the raw turn messages in the next turn's context.
 
-Output contract:
-{{"summary_narrative": "...", "status_category": "completed|blocked|failed|waiting|partial", "noteworthy": true/false, "tools_used": ["read","bash"], "tool_call_count": 4, "errors": [], "artifacts_created": ["path/to/file"]}}"#
+Output DSL format (single line):
+TURN summary_narrative="compact narrative" status_category=completed noteworthy=false tools_used="read,bash" tool_call_count=4 errors="" artifacts_created="path/to/file"
+
+CRITICAL: Output ONLY the raw TURN line. Do NOT wrap it in backticks, markdown code blocks, or any other formatting. No prose before or after. Just one TURN line exactly as shown.
+
+Valid status_category values: completed | blocked | failed | waiting | partial
+Use comma-separated strings for array fields (tools_used, errors, artifacts_created)."#
         );
 
-        let result: TurnSummaryOutput =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let dsl_result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
+        // Convert DSL result to TurnSummaryOutput (comma-separated strings to arrays)
+        let result = TurnSummaryOutput {
+            summary_narrative: dsl_result
+                .get("summary_narrative")
+                .and_then(|v| v.as_str())
+                .unwrap_or("turn summary")
+                .to_string(),
+            status_category: dsl_result
+                .get("status_category")
+                .and_then(|v| v.as_str())
+                .unwrap_or("completed")
+                .to_string(),
+            noteworthy: dsl_result
+                .get("noteworthy")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            tools_used: dsl_result
+                .get("tools_used")
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    s.split(',')
+                        .filter_map(|t| {
+                            let trimmed = t.trim();
+                            if trimmed.is_empty() {
+                                None
+                            } else {
+                                Some(trimmed.to_string())
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            tool_call_count: dsl_result
+                .get("tool_call_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize,
+            errors: dsl_result
+                .get("errors")
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    s.split(',')
+                        .filter_map(|t| {
+                            let trimmed = t.trim();
+                            if trimmed.is_empty() {
+                                None
+                            } else {
+                                Some(trimmed.to_string())
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            artifacts_created: dsl_result
+                .get("artifacts_created")
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    s.split(',')
+                        .filter_map(|t| {
+                            let trimmed = t.trim();
+                            if trimmed.is_empty() {
+                                None
+                            } else {
+                                Some(trimmed.to_string())
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
 
         Ok(IntelOutput::success(
             self.name(),

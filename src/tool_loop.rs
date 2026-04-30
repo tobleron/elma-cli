@@ -89,6 +89,10 @@ fn finish_streaming_tool_calls(parts: BTreeMap<usize, StreamingToolCallPart>) ->
         .collect()
 }
 
+fn ensure_tool_loop_reasoning_format(req: &mut ChatCompletionRequest) {
+    req.reasoning_format.get_or_insert_with(|| "none".to_string());
+}
+
 async fn request_tool_loop_model_turn_streaming(
     tui: &mut crate::ui_terminal::TerminalUI,
     client: &reqwest::Client,
@@ -96,9 +100,10 @@ async fn request_tool_loop_model_turn_streaming(
     mut req: ChatCompletionRequest,
     timeout_s: u64,
     session: &SessionPaths,
+    display_assistant_content: bool,
 ) -> Result<ToolLoopModelTurn> {
     req.stream = true;
-    req.reasoning_format = Some("auto".to_string());
+    ensure_tool_loop_reasoning_format(&mut req);
 
     let response = client
         .post(chat_url.clone())
@@ -550,817 +555,6 @@ fn normalize_shell_signal(cmd: &str) -> String {
     out.replace("s_#_#", "s_SESSION")
 }
 
-pub(crate) async fn run_tool_loop(
-    args: &Args,
-    client: &reqwest::Client,
-    chat_url: &Url,
-    model_id: &str,
-    system_prompt: &str,
-    user_message: &str,
-    workdir: &PathBuf,
-    sess: &SessionPaths,
-    temperature: f64,
-    max_tokens: u32,
-    tui: &mut crate::ui_terminal::TerminalUI,
-    summarizer_cfg: Option<&Profile>,
-    context_hint: &str,
-    evidence_required: bool,
-    ctx_max: Option<u64>,
-    goal_state: &GoalState,
-) -> Result<ToolLoopResult> {
-    let budget = StageBudget::default();
-    let total_timeout = Duration::from_secs(45 * 60); // 45 minutes
-    let loop_start = Instant::now();
-    let original_user_request = user_message.to_string();
-    trace(
-        args,
-        &format!(
-            "tool_loop: starting max_iterations={} stagnation_threshold={} timeout={}m",
-            budget.max_iterations, budget.max_stagnation_cycles, 30
-        ),
-    );
-
-    // Task 287: Initialize evidence ledger for this session
-    let session_id = sess
-        .root
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-    crate::evidence_ledger::init_session_ledger(&session_id, &sess.root);
-
-    let mut messages: Vec<ChatMessage> = vec![
-        ChatMessage::simple("system", system_prompt),
-        ChatMessage::simple("user", user_message),
-    ];
-    let mut tracker = CompactTracker::new();
-    let mut stop_policy = StopPolicy::new(budget);
-
-    let mut update_context_estimate =
-        |msgs: &[ChatMessage], tui: &mut crate::ui_terminal::TerminalUI| {
-            let mut total = 0u64;
-            for m in msgs {
-                total += crate::ui_terminal::TerminalUI::estimate_tokens(&m.content);
-            }
-            tui.update_context_tokens(total);
-        };
-
-    update_context_estimate(&messages, tui);
-
-    loop {
-        // Check 45-minute timeout
-        let elapsed = loop_start.elapsed();
-        if elapsed > total_timeout {
-            let elapsed_mins = elapsed.as_secs() as f64 / 60.0;
-            let timeout_reason = format!(
-                "45-minute timeout exceeded after {:.1} minutes",
-                elapsed_mins
-            );
-            trace(args, &format!("tool_loop: TIMEOUT {}", timeout_reason));
-            return Ok(ToolLoopResult {
-                final_answer: format!(
-                    "⏱️ **Timeout After {:.1} Minutes**\n\n\
-                     The task was cancelled due to exceeding the 45-minute time limit.\n\n\
-                     **Time spent:** {:.1} minutes\n\
-                     **Iterations completed:** {}\n\
-                     **Tool calls made:** {}\n\n\
-                     **Cause:** Slow model response time (local model)\n\n\
-                     Try simplifying the request or breaking it into smaller steps.",
-                    elapsed_mins,
-                    elapsed_mins,
-                    stop_policy.iteration(),
-                    stop_policy.total_tool_calls()
-                ),
-                iterations: stop_policy.iteration(),
-                tool_calls_made: stop_policy.total_tool_calls(),
-                stopped_by_max: false,
-                stop_outcome: None,
-                total_elapsed_s: elapsed.as_secs() as f64,
-                timeout_reason: Some(timeout_reason),
-            });
-        }
-
-        // Check stop policy before starting this iteration
-        if let Some(outcome) = stop_policy.start_iteration() {
-            trace(
-                args,
-                &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
-            );
-            messages.push(ChatMessage::simple(
-                "user",
-                "You've reached the maximum number of tool calls. Please provide your final answer.",
-            ));
-            let mut final_content = request_final_answer_without_tools(
-                tui, client, chat_url, model_id, &messages, max_tokens, false,
-            )
-            .await?;
-            if final_answer_needs_retry(&final_content) {
-                final_content = request_final_answer_without_tools(
-                    tui, client, chat_url, model_id, &messages, max_tokens, true,
-                )
-                .await?;
-            }
-            let final_trimmed = normalize_final_answer_candidate(&final_content);
-            return Ok(ToolLoopResult {
-                final_answer: if final_answer_needs_retry(&final_trimmed) {
-                    build_fallback_from_recent_tool_evidence(&messages)
-                } else {
-                    final_trimmed
-                },
-                iterations: stop_policy.iteration(),
-                tool_calls_made: stop_policy.total_tool_calls(),
-                stopped_by_max: true,
-                stop_outcome: Some(outcome),
-                total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                timeout_reason: None,
-            });
-        }
-
-        // Task 121: Reset per-turn shell call counter
-        crate::command_budget::get_budget().start_turn();
-
-        // Check if we need to compact before this iteration
-        tracker.recalculate(&messages);
-        let (should_compact, ctx, buf) = tracker.should_compact(ctx_max.map(|v| v as usize), None);
-        if should_compact {
-            trace(
-                args,
-                &format!(
-                    "auto_compact: firing (tokens={}, turns={}, ctx={}, buf={})",
-                    tracker.total_tokens, tracker.turn_count, ctx, buf
-                ),
-            );
-            let (new_messages, result) = if let Some(cfg) = summarizer_cfg {
-                apply_compact_with_summarizer(&messages, 3, client, chat_url, cfg).await
-            } else {
-                apply_compact(&messages, 3)
-            };
-            if result.ok {
-                let before_count = messages.len();
-                messages = new_messages;
-                tracker.record_success();
-                update_context_estimate(&messages, tui);
-                tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactBoundary);
-                tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactSummary {
-                    message_count: before_count,
-                    context_preview: Some("auto compact".to_string()),
-                });
-                trace(
-                    args,
-                    &format!(
-                        "auto_compact: succeeded (freed {} tokens)",
-                        result.tokens_freed
-                    ),
-                );
-            } else {
-                tracker.record_failure();
-                trace(args, "auto_compact: failed (no messages to compact)");
-            }
-        }
-        let max_iter = stop_policy.max_iterations();
-        if max_iter > 0 {
-            trace(
-                args,
-                &format!(
-                    "tool_loop: iteration {}/{}",
-                    stop_policy.iteration(),
-                    max_iter
-                ),
-            );
-        }
-        // Telemetry: warn when approaching budget limits (only when a limit is set)
-        let iter = stop_policy.iteration();
-        if max_iter > 0 && iter == max_iter - 2 {
-            tui.push_budget_notice(&format!(
-                "Approaching iteration limit ({}/{})",
-                iter, max_iter
-            ));
-        }
-        let total_calls = stop_policy.total_tool_calls();
-        let profile = ad_hoc_profile(model_id, "tool_loop");
-        let req = chat_request_from_profile(
-            &profile,
-            messages.clone(),
-            ChatRequestOptions {
-                temperature: Some(temperature),
-                top_p: Some(1.0),
-                stream: Some(true),
-                max_tokens: Some(max_tokens.min(runtime_llm_config().tool_loop_max_tokens_cap)),
-                repeat_penalty: Some(None),
-                reasoning_format: Some(Some("auto".to_string())),
-                tools: Some(crate::tool_calling::build_tool_definitions_for_context(
-                    &PathBuf::new(),
-                    context_hint,
-                )),
-                ..ChatRequestOptions::default()
-            },
-        );
-        let turn = match request_tool_loop_model_turn_streaming(
-            tui,
-            client,
-            chat_url,
-            req.clone(),
-            runtime_llm_config().tool_loop_timeout_s,
-            sess,
-        )
-        .await
-        {
-            Ok(turn) => turn,
-            Err(error) => {
-                append_trace_log_line(&format!("[TOOL_LOOP_STREAM_FALLBACK] {}", error));
-                let mut fallback_req = req;
-                fallback_req.stream = false;
-                let resp = await_with_busy_input(
-                    tui,
-                    crate::ui_chat::chat_once_with_timeout(
-                        client,
-                        chat_url,
-                        &fallback_req,
-                        runtime_llm_config().tool_loop_timeout_s,
-                    ),
-                )
-                .await?;
-                let choice = resp.choices.get(0).context("No choices in response")?;
-                ToolLoopModelTurn {
-                    content: choice.message.content.clone().unwrap_or_default(),
-                    tool_calls: choice.message.tool_calls.clone().unwrap_or_default(),
-                    reasoning_content: choice.message.reasoning_content.clone(),
-                }
-            }
-        };
-        let content = turn.content;
-        if !turn.tool_calls.is_empty() {
-            // Track tool calls through stop policy
-            if let Some(outcome) = stop_policy.record_tool_calls(&turn.tool_calls) {
-                trace(
-                    args,
-                    &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
-                );
-                let mut final_content = request_final_answer_from_evidence(
-                    tui,
-                    client,
-                    chat_url,
-                    model_id,
-                    &original_user_request,
-                    &messages,
-                    max_tokens,
-                )
-                .await?;
-                if final_answer_needs_retry(&final_content) {
-                    final_content = request_final_answer_without_tools(
-                        tui, client, chat_url, model_id, &messages, max_tokens, true,
-                    )
-                    .await?;
-                }
-                let trimmed = normalize_final_answer_candidate(&final_content);
-                return Ok(ToolLoopResult {
-                    final_answer: if final_answer_needs_retry(&trimmed) {
-                        build_fallback_from_recent_tool_evidence(&messages)
-                    } else {
-                        trimmed
-                    },
-                    iterations: stop_policy.iteration(),
-                    tool_calls_made: stop_policy.total_tool_calls(),
-                    stopped_by_max: true,
-                    stop_outcome: Some(outcome),
-                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                    timeout_reason: None,
-                });
-            }
-
-            let mut new_signal_seen = false;
-            for tc in &turn.tool_calls {
-                // Use normalized signal for stagnation detection so slight
-                // parameter variations (page counts, head/tail sizes) do not
-                // reset the stagnation counter.
-                let sig = if tc.function.name == "shell" {
-                    let parsed: serde_json::Value = serde_json::from_str(&tc.function.arguments)
-                        .unwrap_or(serde_json::Value::Null);
-                    let cmd = parsed
-                        .get("command")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    crate::stop_policy::normalize_shell_signal(&cmd)
-                } else {
-                    tool_signal(tc)
-                };
-                if stop_policy.register_signal(sig) {
-                    new_signal_seen = true;
-                }
-            }
-            if new_signal_seen {
-                stop_policy.record_new_signals();
-            } else if let Some(outcome) = stop_policy.record_stagnation() {
-                trace(
-                    args,
-                    "tool_loop: stagnation threshold reached; forcing finalization",
-                );
-                let mut final_content = request_final_answer_from_evidence(
-                    tui,
-                    client,
-                    chat_url,
-                    model_id,
-                    &original_user_request,
-                    &messages,
-                    max_tokens,
-                )
-                .await?;
-                if final_answer_needs_retry(&final_content) {
-                    final_content = request_final_answer_without_tools(
-                        tui, client, chat_url, model_id, &messages, max_tokens, true,
-                    )
-                    .await?;
-                }
-                let trimmed = normalize_final_answer_candidate(&final_content);
-                return Ok(ToolLoopResult {
-                    final_answer: if final_answer_needs_retry(&trimmed) {
-                        build_fallback_from_recent_tool_evidence(&messages)
-                    } else {
-                        trimmed
-                    },
-                    iterations: stop_policy.iteration(),
-                    tool_calls_made: stop_policy.total_tool_calls(),
-                    stopped_by_max: false,
-                    stop_outcome: Some(outcome),
-                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                    timeout_reason: None,
-                });
-            } else {
-                trace(
-                    args,
-                    &format!(
-                        "tool_loop: stagnation run {} (no new tool signal)",
-                        stop_policy.stagnation_runs()
-                    ),
-                );
-            }
-
-            trace(
-                args,
-                &format!("tool_loop: {} tool call(s)", turn.tool_calls.len()),
-            );
-            let mut first_tool_call = true;
-            let reasoning_for_messages = turn.reasoning_content.clone();
-            for tc in &turn.tool_calls {
-                // Task T209: Shell budget forecasting
-                if tc.function.name == "shell" {
-                    let (is_risky, reason) =
-                        CompactTracker::forecast_shell_output_risk(&tc.function.arguments);
-                    if is_risky {
-                        tui.push_budget_notice(&format!(
-                            "High-risk command detected: {}. Forecast: high volume.",
-                            reason
-                        ));
-
-                        // If we are already over 70% capacity, compact now to make room for the risky result
-                        let mut ctx_limit = tui.get_context_max() as usize;
-                        if ctx_limit == 0 {
-                            ctx_limit = ctx_max
-                                .map(|v| v as usize)
-                                .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
-                        }
-                        if tracker.total_tokens > (ctx_limit * 70 / 100) {
-                            trace(
-                                args,
-                                "auto_compact: proactive compaction for high-risk command",
-                            );
-                            let (new_messages, result) = if let Some(cfg) = summarizer_cfg {
-                                apply_compact_with_summarizer(&messages, 3, client, chat_url, cfg)
-                                    .await
-                            } else {
-                                apply_compact(&messages, 3)
-                            };
-                            if result.ok {
-                                messages = new_messages;
-                                tracker.record_success();
-                                tracker.recalculate(&messages);
-                                update_context_estimate(&messages, tui);
-                                tui.add_claude_message(
-                                    crate::claude_ui::ClaudeMessage::CompactBoundary,
-                                );
-                                tui.push_compaction_notice(
-                                    "Proactive compaction triggered to accommodate high-volume shell output.",
-                                );
-                            }
-                        }
-                    }
-                }
-
-                let mut result = tool_calling::execute_tool_call(
-                    args,
-                    tc,
-                    workdir,
-                    sess,
-                    client,
-                    chat_url,
-                    user_message,
-                    Some(&mut *tui),
-                )
-                .await;
-
-                // Task 283: Flush tool result to session transcript and artifacts
-                crate::session_flush::flush_tool_result(
-                    &sess.root,
-                    &tc.id,
-                    &tc.function.name,
-                    &result.content,
-                    result.ok,
-                );
-
-                // Task 287: Add evidence ledger entry for tool result
-                if tc.function.name != "respond"
-                    && tc.function.name != "update_todo_list"
-                    && tc.function.name != "tool_search"
-                {
-                    let source = match tc.function.name.as_str() {
-                        "shell" => {
-                            let cmd =
-                                serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
-                                    .ok()
-                                    .and_then(|v| v["command"].as_str().map(String::from))
-                                    .unwrap_or_default();
-                            crate::evidence_ledger::EvidenceSource::Shell {
-                                command: cmd,
-                                exit_code: result.exit_code.unwrap_or(if result.ok {
-                                    0
-                                } else {
-                                    1
-                                }),
-                            }
-                        }
-                        "read" => {
-                            let path =
-                                serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
-                                    .ok()
-                                    .and_then(|v| v["path"].as_str().map(String::from))
-                                    .unwrap_or_default();
-                            crate::evidence_ledger::EvidenceSource::Read { path }
-                        }
-                        "search" => {
-                            let args_val =
-                                serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
-                                    .ok();
-                            let pattern = args_val
-                                .as_ref()
-                                .and_then(|v| v["pattern"].as_str().map(String::from))
-                                .unwrap_or_default();
-                            let path = args_val
-                                .as_ref()
-                                .and_then(|v| v["path"].as_str().map(String::from))
-                                .unwrap_or_default();
-                            crate::evidence_ledger::EvidenceSource::Search { path, pattern }
-                        }
-                        _ => crate::evidence_ledger::EvidenceSource::Tool {
-                            name: tc.function.name.clone(),
-                            input: tc.function.arguments.chars().take(100).collect(),
-                        },
-                    };
-                     crate::evidence_ledger::with_session_ledger(|ledger| {
-                         // Strip ANSI escape sequences from result content
-                         let clean_content = match strip_ansi_escapes::strip(result.content.as_bytes()) {
-                             Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
-                             Err(_) => result.content.clone(), // Fallback: return raw if stripping fails
-                         };
-                         ledger.add_entry(source, &clean_content);
-                     });
-                }
-
-                stop_policy.record_tool_result(tc, &result);
-
-                // T333: Mark real tool calls & reset respond counter
-                if tc.function.name != "respond"
-                    && tc.function.name != "summary"
-                    && tc.function.name != "update_todo_list"
-                {
-                    stop_policy.mark_real_tool_call();
-                    stop_policy.reset_respond_counter();
-                }
-
-                // T333: evidence_required gate — block respond before evidence exists
-                if tc.function.name == "respond"
-                    && evidence_required
-                    && !stop_policy.has_real_tool_calls_this_turn()
-                {
-                    // Replace respond result with correction
-                    let correction = "You must collect evidence before answering.\n\
-                        Use search, read, or shell to gather facts. Do not call 'respond' yet.";
-                    result.content = correction.to_string();
-                    trace(
-                        args,
-                        "tool_loop: evidence_required gate blocked respond before evidence",
-                    );
-                }
-
-                // T333: respond abuse guard — inject correction after 3 consecutive responds
-                if tc.function.name == "respond" {
-                    stop_policy.increment_respond_counter();
-                    if stop_policy.consecutive_respond_calls() >= 3
-                        && !stop_policy.has_real_tool_calls_this_turn()
-                    {
-                        messages.push(ChatMessage::simple(
-                            "user",
-                            "⚠️ You have called 'respond' 3 times without collecting any evidence. \
-                             You have not used search, read, shell, or any other tool to gather facts. \
-                             Your respond messages are status updates, not evidence. \
-                             Call a real tool now to answer the user's question, or reply with 'I cannot answer this.'",
-                        ));
-                        stop_policy.reset_respond_counter();
-                        trace(
-                            args,
-                            "tool_loop: injected respond abuse correction after 3 consecutive responds",
-                        );
-                    }
-                }
-
-                // summary tool = run final summary intel unit, then exit loop
-                // respond tool ALWAYS continues the loop (interim status, not final)
-                if tc.function.name == "summary" {
-                    let raw_content = normalize_final_answer_candidate(&result.content);
-                    if raw_content.is_empty() {
-                        trace(
-                            args,
-                            "tool_loop: summary returned empty answer; continuing loop",
-                        );
-                    } else {
-                        // Run FinalSummaryUnit to generate concise summary using original request
-                        let final_summary = run_final_summary_intel(
-                            args,
-                            client,
-                            summarizer_cfg,
-                            &original_user_request,
-                            &raw_content,
-                        )
-                        .await;
-                        let final_answer = if let Some(summary) = final_summary {
-                            summary
-                        } else {
-                            raw_content
-                        };
-
-                        return Ok(ToolLoopResult {
-                            final_answer,
-                            iterations: stop_policy.iteration(),
-                            tool_calls_made: stop_policy.total_tool_calls(),
-                            stopped_by_max: true,
-                            stop_outcome: None,
-                            total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                            timeout_reason: None,
-                        });
-                    }
-                }
-                // respond always continues the loop - it's for interim status, not final answer
-
-                messages.push(ChatMessage {
-                    role: "assistant".to_string(),
-                    content: "".to_string(),
-                    name: None,
-                    tool_calls: Some(vec![tc.clone()]),
-                    tool_call_id: None,
-                    reasoning_content: if first_tool_call {
-                        reasoning_for_messages.clone()
-                    } else {
-                        None
-                    },
-                    summarized: false,
-                });
-                first_tool_call = false;
-                // Apply result budget — persist large outputs to disk, keep inline for small ones
-                let budgeted = apply_tool_result_budget(
-                    sess,
-                    &tc.id,
-                    &tc.function.name,
-                    &result.content,
-                    DEFAULT_MAX_RESULT_SIZE_CHARS,
-                );
-                // Empty result guard: inject placeholder for ok-but-empty results
-                // Prevents small models from misinterpreting empty success as "need to retry"
-                let model_content = if result.ok
-                    && budgeted.content_for_model.trim().is_empty()
-                    && tc.function.name != "respond"
-                {
-                    "(empty result)".to_string()
-                } else {
-                    budgeted.content_for_model
-                };
-
-                // Task 332: Append reflection to tool results
-                let reflection = crate::evidence_ledger::get_session_ledger()
-                    .and_then(|ledger| ledger.get_latest_reflection())
-                    .map(|r| format!("\n→ Reflection: {}", r))
-                    .unwrap_or_default();
-
-                messages.push(ChatMessage {
-                    role: "tool".to_string(),
-                    content: format!("{}{}", model_content, reflection),
-                    name: Some(tc.function.name.clone()),
-                    tool_calls: None,
-                    tool_call_id: Some(tc.id.clone()),
-                    reasoning_content: None,
-                    summarized: false,
-                });
-            }
-
-            update_context_estimate(&messages, tui);
-
-            // Goal consistency check: fires every 18 tool calls
-            if stop_policy.goal_consistency_check_needed() && goal_state.has_active_goal() {
-                let recent_tool_summary = build_recent_tool_summary(&messages, 15);
-                let profile = ad_hoc_profile(model_id, "goal_consistency");
-                let steering = crate::intel_units::run_goal_consistency_check(
-                    client,
-                    &profile,
-                    goal_state,
-                    &recent_tool_summary,
-                )
-                .await;
-                if let Some(steering_msg) = steering {
-                    trace(
-                        args,
-                        &format!(
-                            "tool_loop: goal consistency steering injected ({} chars)",
-                            steering_msg.len()
-                        ),
-                    );
-                    messages.push(ChatMessage::simple("user", &steering_msg));
-                }
-            }
-
-            // T303: Inject strategy-shift hint if retry loop detected
-            if stop_policy.is_retry_loop_detected() {
-                if let Some(hint) = stop_policy.strategy_shift_hint() {
-                    trace(args, &format!("tool_loop: {}", hint.replace('\n', " | ")));
-                    messages.push(ChatMessage::simple("user", &hint));
-                }
-            }
-
-            // T304: Force finalization after repeated failures to preserve output budget
-            // If 5+ consecutive shell failures, force final answer before context is exhausted
-            let consecutive_failures = stop_policy.consecutive_shell_failures();
-            if consecutive_failures >= 5 {
-                trace(
-                    args,
-                    &format!(
-                        "tool_loop: forcing finalization after {} consecutive shell failures (T304 budget preservation)",
-                        consecutive_failures
-                    ),
-                );
-                messages.push(ChatMessage::simple(
-                    "user",
-                    "You've had 5+ consecutive shell failures. Stop trying shell commands and provide your final answer based on the evidence you already have. If you cannot answer reliably, explain what you found and what additional information would be needed."
-                ));
-                let mut final_content = request_final_answer_from_evidence(
-                    tui,
-                    client,
-                    chat_url,
-                    model_id,
-                    &original_user_request,
-                    &messages,
-                    max_tokens,
-                )
-                .await?;
-                if final_answer_needs_retry(&final_content) {
-                    final_content = request_final_answer_without_tools(
-                        tui, client, chat_url, model_id, &messages, max_tokens, true,
-                    )
-                    .await?;
-                }
-                let trimmed = normalize_final_answer_candidate(&final_content);
-                return Ok(ToolLoopResult {
-                    final_answer: if final_answer_needs_retry(&trimmed) {
-                        build_fallback_from_recent_tool_evidence(&messages)
-                    } else {
-                        trimmed
-                    },
-                    iterations: stop_policy.iteration(),
-                    tool_calls_made: stop_policy.total_tool_calls(),
-                    stopped_by_max: true,
-                    stop_outcome: Some(StopOutcome {
-                        reason: StopReason::RepeatedToolFailure,
-                        stage_index: 0,
-                        stage_skill: "general".to_string(),
-                        summary: format!("Forced finalization after {} consecutive shell failures to preserve output budget", consecutive_failures),
-                        next_step_hint: "Verify commands manually before retrying, or use a different approach (read/search tools instead of shell)".to_string(),
-                    }),
-                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                    timeout_reason: None,
-                });
-            }
-
-            // T306: Surface struggle detection as transcript row
-            if stop_policy.is_struggling() {
-                tui.push_meta_event("STRUGGLE", "Model detected as struggling (repeated failures/stagnation). Decomposition recommended.");
-            }
-
-            // Check for repeated tool failures after executing all calls
-            if let Some(outcome) = stop_policy.check_should_stop() {
-                trace(
-                    args,
-                    &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
-                );
-                tui.push_meta_event("STOP", &format!("Stopping: {} - {}", outcome.reason.as_str(), outcome.summary));
-                let mut final_content = request_final_answer_from_evidence(
-                    tui,
-                    client,
-                    chat_url,
-                    model_id,
-                    &original_user_request,
-                    &messages,
-                    max_tokens,
-                )
-                .await?;
-                if final_answer_needs_retry(&final_content) {
-                    final_content = request_final_answer_without_tools(
-                        tui, client, chat_url, model_id, &messages, max_tokens, true,
-                    )
-                    .await?;
-                }
-                let trimmed = normalize_final_answer_candidate(&final_content);
-                return Ok(ToolLoopResult {
-                    final_answer: if final_answer_needs_retry(&trimmed) {
-                        build_fallback_from_recent_tool_evidence(&messages)
-                    } else {
-                        trimmed
-                    },
-                    iterations: stop_policy.iteration(),
-                    tool_calls_made: stop_policy.total_tool_calls(),
-                    stopped_by_max: true,
-                    stop_outcome: Some(outcome),
-                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                    timeout_reason: None,
-                });
-            }
-
-            // T333: Respond-only turn tracking — if no real tools were used this iteration
-            if !stop_policy.has_real_tool_calls_this_turn() {
-                if let Some(outcome) = stop_policy.record_respond_only_turn() {
-                    trace(
-                        args,
-                        &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
-                    );
-                    messages.push(ChatMessage::simple(
-                        "user",
-                        "You've called 'respond' 5+ times without using any real tools (search, read, shell). \
-                         Provide your final answer now based on what you know, even if incomplete.",
-                    ));
-                    let mut final_content = request_final_answer_from_evidence(
-                        tui,
-                        client,
-                        chat_url,
-                        model_id,
-                        &original_user_request,
-                        &messages,
-                        max_tokens,
-                    )
-                    .await?;
-                    if final_answer_needs_retry(&final_content) {
-                        final_content = request_final_answer_without_tools(
-                            tui, client, chat_url, model_id, &messages, max_tokens, true,
-                        )
-                        .await?;
-                    }
-                    let trimmed = normalize_final_answer_candidate(&final_content);
-                    return Ok(ToolLoopResult {
-                        final_answer: if final_answer_needs_retry(&trimmed) {
-                            build_fallback_from_recent_tool_evidence(&messages)
-                        } else {
-                            trimmed
-                        },
-                        iterations: stop_policy.iteration(),
-                        tool_calls_made: stop_policy.total_tool_calls(),
-                        stopped_by_max: true,
-                        stop_outcome: Some(outcome),
-                        total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                        timeout_reason: None,
-                    });
-                }
-            }
-
-            continue;
-        }
-        if !content.trim().is_empty() {
-            // Check if this looks like an intent-only response without actual evidence
-            let trimmed = content.trim();
-            if is_intent_only_response(&trimmed) && !has_recent_tool_evidence(&messages) {
-                // Force continuation to gather actual evidence instead of accepting intent-only answer
-                trace(args, "tool_loop: detected intent-only response without evidence, continuing to gather proof");
-                // Push a user nudge to force action
-                messages.push(ChatMessage::simple("user", "You haven't executed any tools yet. Please execute the necessary tools to answer my request accurately."));
-                continue;
-            } else {
-                return Ok(ToolLoopResult {
-                    final_answer: normalize_final_answer_candidate(&content),
-                    iterations: stop_policy.iteration(),
-                    tool_calls_made: stop_policy.total_tool_calls(),
-                    stopped_by_max: false,
-                    stop_outcome: None,
-                    total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                    timeout_reason: None,
-                });
-            }
-        }
-    }
-}
-
 /// Check if the response looks like an intent-only statement without actual evidence gathering
 fn is_intent_only_response(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
@@ -1474,202 +668,297 @@ pub(crate) fn extract_tool_arg_preview(args_json: &str, field: &str, max_len: us
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) async fn run_tool_loop(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    model_id: &str,
+    system_prompt: &str,
+    user_message: &str,
+    workdir: &PathBuf,
+    sess: &SessionPaths,
+    temperature: f64,
+    max_tokens: u32,
+    tui: &mut crate::ui_terminal::TerminalUI,
+    summarizer_cfg: Option<&Profile>,
+    context_hint: &str,
+    evidence_required: bool,
+    ctx_max: Option<u64>,
+    goal_state: &GoalState,
+) -> Result<ToolLoopResult> {
+    let budget = StageBudget::default();
+    let total_timeout = Duration::from_secs(45 * 60);
+    let loop_start = Instant::now();
+    let original_user_request = user_message.to_string();
+    trace(args, &format!("tool_loop: starting max_iterations={} stagnation_threshold={} timeout=30m", budget.max_iterations, budget.max_stagnation_cycles));
+    let session_id = sess.root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "unknown".to_string());
+    crate::evidence_ledger::init_session_ledger(&session_id, &sess.root);
+    let mut messages: Vec<ChatMessage> = vec![ChatMessage::simple("system", system_prompt), ChatMessage::simple("user", user_message)];
+    let mut tracker = CompactTracker::new();
+    let mut stop_policy = StopPolicy::new(budget);
+    let mut update_context_estimate = |msgs: &[ChatMessage], tui: &mut crate::ui_terminal::TerminalUI| { let mut total = 0u64; for m in msgs { total += crate::ui_terminal::TerminalUI::estimate_tokens(&m.content); } tui.update_context_tokens(total); };
+    update_context_estimate(&messages, tui);
 
-    #[test]
-    fn detects_tool_call_markup() {
-        assert!(is_tool_call_markup(
-            "<tool_call>{\"name\":\"shell\"}</tool_call>"
-        ));
-        assert!(is_tool_call_markup(
-            "{\"name\":\"shell\",\"arguments\":{\"command\":\"ls\"}}"
-        ));
-        assert!(!is_tool_call_markup(
-            "The latest prompts are in sessions/history.txt."
-        ));
-    }
-
-    #[test]
-    fn tool_signal_uses_semantic_fields() {
-        let tc = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "read".to_string(),
-                arguments: r#"{"path":"sessions/history.txt"}"#.to_string(),
-            },
+    loop {
+        let elapsed = loop_start.elapsed();
+        if elapsed > total_timeout {
+            let elapsed_mins = elapsed.as_secs() as f64 / 60.0;
+            return Ok(ToolLoopResult { final_answer: format!("Timeout after {:.1} minutes", elapsed_mins), iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: false, stop_outcome: None, total_elapsed_s: elapsed.as_secs() as f64, timeout_reason: Some(format!("{}s", elapsed.as_secs())) });
+        }
+        if let Some(outcome) = stop_policy.start_iteration() {
+            let mut final_content = request_final_answer_without_tools(tui, client, chat_url, model_id, &messages, max_tokens, false).await?;
+            if final_answer_needs_retry(&final_content) { final_content = request_final_answer_without_tools(tui, client, chat_url, model_id, &messages, max_tokens, true).await?; }
+            let ft = normalize_final_answer_candidate(&final_content);
+            return Ok(ToolLoopResult { final_answer: if final_answer_needs_retry(&ft) { build_fallback_from_recent_tool_evidence(&messages) } else { ft }, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: true, stop_outcome: Some(outcome), total_elapsed_s: elapsed.as_secs() as f64, timeout_reason: None });
+        }
+        crate::command_budget::get_budget().start_turn();
+        tracker.recalculate(&messages);
+        let (should_compact, ctx, buf) = tracker.should_compact(ctx_max.map(|v| v as usize), None);
+        if should_compact {
+            let (new_messages, result) = if let Some(cfg) = summarizer_cfg { let ledger = crate::evidence_ledger::get_session_ledger(); apply_compact_with_summarizer(&messages, 3, client, chat_url, cfg, ledger.as_ref()).await } else { let ledger = crate::evidence_ledger::get_session_ledger(); apply_compact(&messages, 3, ledger.as_ref()) };
+            if result.ok { messages = new_messages; tracker.record_success(); update_context_estimate(&messages, tui); }
+        }
+        let profile = ad_hoc_profile(model_id, "tool_loop");
+        let req = chat_request_from_profile(&profile, messages.clone(), ChatRequestOptions { temperature: Some(temperature), top_p: Some(1.0), stream: Some(true), max_tokens: Some(max_tokens.min(runtime_llm_config().tool_loop_max_tokens_cap)), repeat_penalty: Some(None), reasoning_format: Some(Some("none".to_string())), tools: None, ..ChatRequestOptions::default() });
+        let turn = match request_tool_loop_model_turn_streaming(tui, client, chat_url, req.clone(), runtime_llm_config().tool_loop_timeout_s, sess, false).await {
+            Ok(t) => t,
+            Err(e) => { append_trace_log_line(&format!("[TOOL_LOOP_STREAM_FALLBACK] {}", e)); let mut fb = req; fb.stream = false; let r = await_with_busy_input(tui, crate::ui_chat::chat_once_with_timeout(client, chat_url, &fb, runtime_llm_config().tool_loop_timeout_s)).await?; let c = r.choices.get(0).context("No choices")?; ToolLoopModelTurn { content: c.message.content.clone().unwrap_or_default(), tool_calls: c.message.tool_calls.clone().unwrap_or_default(), reasoning_content: c.message.reasoning_content.clone() } }
         };
-        assert_eq!(tool_signal(&tc), "read:sessions/history.txt");
-    }
-
-    #[test]
-    fn normalizes_shell_signal_session_ids() {
-        let a = normalize_shell_signal("ls sessions/s_1776868918_801751000/shell/");
-        let b = normalize_shell_signal("ls sessions/s_1775151941_439997000/shell/");
-        assert_eq!(a, b);
-        assert!(a.contains("s_SESSION"));
-    }
-
-    #[test]
-    fn fallback_uses_recent_tool_content() {
-        let msgs = vec![
-            ChatMessage::simple("user", "hello"),
-            ChatMessage {
-                role: "tool".to_string(),
-                content: "line one\nline two".to_string(),
-                name: Some("shell".to_string()),
-                tool_calls: None,
-                tool_call_id: Some("t1".to_string()),
-                reasoning_content: None,
-                summarized: false,
-            },
-        ];
-        let out = build_fallback_from_recent_tool_evidence(&msgs);
-        assert!(out.contains("line one"));
-    }
-
-    #[test]
-    fn normalize_final_answer_strips_think_and_tool_call_blocks() {
-        let raw = "<think>hidden</think>\nAnswer\n<tool_call>{\"name\":\"respond\"}</tool_call>";
-        assert_eq!(normalize_final_answer_candidate(raw), "Answer");
-    }
-
-    #[test]
-    fn tool_signal_respond_non_empty() {
-        let tc = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"Searching for undo tasks in the project"}"#.to_string(),
-            },
-        };
-        let sig = tool_signal(&tc);
-        assert!(!sig.is_empty(), "respond signal should be non-empty");
-        assert!(
-            sig.starts_with("respond:"),
-            "respond signal should have prefix"
-        );
-        assert!(
-            sig.contains("Searching"),
-            "respond signal should contain answer snippet"
-        );
-    }
-
-    #[test]
-    fn tool_signal_respond_truncates() {
-        let long_answer = "a".repeat(100);
-        let tc = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: format!(r#"{{"answer":"{}"}}"#, long_answer),
-            },
-        };
-        let sig = tool_signal(&tc);
-        assert!(
-            sig.len() <= "respond:".len() + 40,
-            "respond signal should be truncated to 40 chars + prefix, got len {}",
-            sig.len()
-        );
-        // With 100-char answer, signal should be exactly respond: + 40 chars
-        assert_eq!(sig.len(), "respond:".len() + 40);
-    }
-
-    #[test]
-    fn tool_signal_respond_different_messages_different_signals() {
-        let tc1 = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"Searching for tasks"}"#.to_string(),
-            },
-        };
-        let tc2 = ToolCall {
-            id: "c2".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"Found the files"}"#.to_string(),
-            },
-        };
-        assert_ne!(tool_signal(&tc1), tool_signal(&tc2));
-    }
-
-    #[test]
-    fn tool_signal_respond_identical_messages_identical_signals() {
-        let tc1 = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"I am searching..."}"#.to_string(),
-            },
-        };
-        let tc2 = ToolCall {
-            id: "c2".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"I am searching..."}"#.to_string(),
-            },
-        };
-        assert_eq!(tool_signal(&tc1), tool_signal(&tc2));
+        let content = turn.content;
+        if turn.tool_calls.is_empty() {
+            let cleaned = normalize_action_dsl_candidate(&content);
+            let trimmed = cleaned.trim();
+            if trimmed.is_empty() {
+                if has_recent_tool_evidence(&messages) {
+                    trace(args, "tool_loop: empty action DSL after evidence; finalizing from grounded tool output");
+                    let raw = build_fallback_from_recent_tool_evidence(&messages);
+                    let final_answer = run_final_summary_intel(args, client, summarizer_cfg, &original_user_request, &raw).await.unwrap_or(raw);
+                    return Ok(ToolLoopResult { final_answer, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: false, stop_outcome: None, total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None });
+                }
+                let ctx = crate::dsl::ParseContext { dsl_variant: "action", line: None };
+                let repair = render_action_repair(&crate::dsl::DslError::empty(ctx));
+                trace(args, &format!("tool_loop: model output was empty (raw content len={})", content.len()));
+                stop_policy.record_dsl_failure("action");
+                tui.push_meta_event("DSL_REPAIR", &repair);
+                messages.push(ChatMessage::simple("user", &repair));
+                if let Some(outcome) = stop_policy.check_should_stop() { return Ok(ToolLoopResult { final_answer: if has_recent_tool_evidence(&messages) { build_fallback_from_recent_tool_evidence(&messages) } else { "I could not continue because the model repeatedly produced invalid action DSL. No workspace changes were made.".to_string() }, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: true, stop_outcome: Some(outcome), total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None }); }
+                continue;
+            }
+            let ctx = crate::dsl::ParseContext { dsl_variant: "action", line: None };
+            let actions = match parse_actions_batch(trimmed, &ctx, 3) {
+                Ok(actions) => actions,
+                Err(error) => {
+                    if has_recent_tool_evidence(&messages) { trace(args, "tool_loop: invalid action DSL after evidence; finalizing"); let raw = build_fallback_from_recent_tool_evidence(&messages); let final_answer = run_final_summary_intel(args, client, summarizer_cfg, &original_user_request, &raw).await.unwrap_or(raw); return Ok(ToolLoopResult { final_answer, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: false, stop_outcome: None, total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None }); }
+                    let repair = render_action_repair(&error);
+                    trace(args, &format!("tool_loop: invalid DSL parse error={} code={} raw='{}'", error.code, error.code, content.chars().take(300).collect::<String>().escape_default()));
+                    stop_policy.record_dsl_failure("action");
+                    tui.push_meta_event("DSL_REPAIR", &repair);
+                    messages.push(ChatMessage::simple("user", &repair));
+                    if let Some(outcome) = stop_policy.check_should_stop() { return Ok(ToolLoopResult { final_answer: if has_recent_tool_evidence(&messages) { build_fallback_from_recent_tool_evidence(&messages) } else { "I could not continue because the model repeatedly produced invalid action DSL. No workspace changes were made.".to_string() }, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: true, stop_outcome: Some(outcome), total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None }); }
+                    continue;
+                }
+            };
+            for action in actions {
+                if let AgentAction::Ask { question } = action {
+                    if evidence_required && !has_recent_tool_evidence(&messages) { let repair = "INVALID_DSL detail=\"ASK used without evidence\" hint=\"gather facts with R, L, S, Y, or X first, then use DONE or ASK\""; stop_policy.record_dsl_failure("action_ask"); tui.push_meta_event("DSL_REPAIR", repair); messages.push(ChatMessage::simple("user", repair)); continue; }
+                    let final_answer = if question.trim().starts_with('"') && question.trim().ends_with('"') { format!("I have a question: {}", &question.trim()[1..question.trim().len()-1]) } else { format!("I have a question: {}", question) };
+                    return Ok(ToolLoopResult { final_answer, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: false, stop_outcome: None, total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None });
+                } else if let AgentAction::Done { summary } = action {
+                    if evidence_required && !has_recent_tool_evidence(&messages) { let repair = "INVALID_DSL detail=\"DONE used before collecting evidence\" hint=\"use R, L, S, Y, or X before DONE\""; stop_policy.record_dsl_failure("action_done"); tui.push_meta_event("DSL_REPAIR", repair); messages.push(ChatMessage::simple("user", repair)); continue; }
+                    let raw = normalize_final_answer_candidate(&summary);
+                    let final_answer = if !raw.is_empty() { run_final_summary_intel(args, client, summarizer_cfg, &original_user_request, &raw).await.unwrap_or(raw) } else { raw };
+                    return Ok(ToolLoopResult { final_answer, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: false, stop_outcome: None, total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None });
+                } else {
+                    let action = normalize_action_for_execution(workdir, action);
+                    let (trace_name, trace_command) = action_trace_preview(&action);
+                    if should_emit_tool_trace_row(&trace_name) { tui.handle_ui_event(crate::claude_ui::UiEvent::ToolStarted { name: trace_name.clone(), command: trace_command }); let _ = tui.pump_ui(); }
+                    let execution = execute_agent_action(args, workdir, sess, client, chat_url, action, tui).await;
+                    let (tool_call, result) = match execution {
+                        Ok(AgentActionExecution::Continue { tool_call, result }) => { if should_emit_tool_trace_row(&trace_name) { tui.handle_ui_event(crate::claude_ui::UiEvent::ToolFinished { name: trace_name.clone(), success: result.ok, output: truncate_tool_trace_output(&result.content) }); let _ = tui.pump_ui(); } (tool_call, result) }
+                        Ok(AgentActionExecution::Ask { question }) => { let fa = if question.trim().starts_with('"') && question.trim().ends_with('"') { format!("I have a question: {}", &question.trim()[1..question.trim().len()-1]) } else { format!("I have a question: {}", question) }; return Ok(ToolLoopResult { final_answer: fa, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: false, stop_outcome: None, total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None }); }
+                        Ok(AgentActionExecution::Done { summary }) => { let raw = normalize_final_answer_candidate(&summary); let fa = if !raw.is_empty() { run_final_summary_intel(args, client, summarizer_cfg, &original_user_request, &raw).await.unwrap_or(raw) } else { raw }; return Ok(ToolLoopResult { final_answer: fa, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: false, stop_outcome: None, total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None }); }
+                        Err(error) => { let repair = dsl_execution_repair(&error); if should_emit_tool_trace_row(&trace_name) { tui.handle_ui_event(crate::claude_ui::UiEvent::ToolFinished { name: trace_name.clone(), success: false, output: truncate_tool_trace_output(&repair) }); let _ = tui.pump_ui(); } stop_policy.record_dsl_failure("action_execution"); tui.push_meta_event("DSL_REPAIR", &repair); messages.push(ChatMessage::simple("user", &repair)); if let Some(outcome) = stop_policy.check_should_stop() { return Ok(ToolLoopResult { final_answer: if has_recent_tool_evidence(&messages) { build_fallback_from_recent_tool_evidence(&messages) } else { "I could not continue because action execution failed repeatedly. No workspace changes were made.".to_string() }, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: true, stop_outcome: Some(outcome), total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None }); } continue; }
+                    };
+                    if let Some(outcome) = stop_policy.record_tool_calls(std::slice::from_ref(&tool_call)) { return Ok(ToolLoopResult { final_answer: if has_recent_tool_evidence(&messages) { build_fallback_from_recent_tool_evidence(&messages) } else { "Maximum tool calls reached before enough evidence was available for a reliable answer.".to_string() }, iterations: stop_policy.iteration(), tool_calls_made: stop_policy.total_tool_calls(), stopped_by_max: true, stop_outcome: Some(outcome), total_elapsed_s: loop_start.elapsed().as_secs() as f64, timeout_reason: None }); }
+                    stop_policy.mark_real_tool_call(); stop_policy.reset_respond_counter();
+                    crate::session_flush::flush_tool_result(&sess.root, &tool_call.id, &tool_call.function.name, &result.content, result.ok);
+                    record_evidence_for_tool_result(&tool_call, &result);
+                    stop_policy.record_tool_result(&tool_call, &result);
+                    if result.ok { stop_policy.reset_dsl_failure_streak(); }
+                    append_tool_result_messages(sess, &mut messages, &tool_call, &result, turn.reasoning_content.clone());
+                    update_context_estimate(&messages, tui);
+                    stop_policy.record_new_signals();
+                }
+            }
+            continue;
+        }
+        // Legacy provider-native path removed - DSL handles all actions
+        update_context_estimate(&messages, tui);
     }
 }
 
-async fn run_final_summary_intel(
-    args: &Args,
-    client: &reqwest::Client,
-    summarizer_cfg: Option<&Profile>,
-    user_request: &str,
-    model_provided_content: &str,
-) -> Option<String> {
-    use crate::intel_trait::execute_intel_text_from_user_content;
+fn normalize_action_dsl_candidate(text: &str) -> String {
+    let ctx = crate::dsl::ParseContext { dsl_variant: "action", line: None };
+    let candidates = crate::text_utils::structured_output_candidates(text);
+    for c in &candidates { if parse_action_dsl(c, &ctx).is_ok() { return c.trim().to_string(); } }
+    candidates.first().cloned().unwrap_or_else(|| crate::text_utils::strip_thinking_blocks(text).trim().to_string())
+}
 
-    let cfg = summarizer_cfg?;
+fn should_emit_tool_trace_row(tool_name: &str) -> bool { matches!(tool_name, "shell" | "read" | "search" | "list" | "ls" | "edit") }
 
-    let evidence_summary = crate::evidence_ledger::get_session_ledger()
-        .map(|ledger| {
-            ledger
-                .entries
-                .iter()
-                .map(|e| e.summary.clone())
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .unwrap_or_default();
+fn tool_trace_command_preview(tc: &ToolCall) -> String {
+    let args: serde_json::Value = serde_json::from_str(&tc.function.arguments).unwrap_or(serde_json::Value::Null);
+    match tc.function.name.as_str() {
+        "shell" => args.get("command").and_then(|v| v.as_str()).unwrap_or(&tc.function.arguments).to_string(),
+        _ => tc.function.arguments.clone(),
+    }
+}
 
-    let narrative = format!(
-        r#"Generate a concise final summary (1-2 sentences max).
+fn action_trace_preview(action: &AgentAction) -> (String, String) {
+    match action {
+        AgentAction::ReadFile { path } => ("read".to_string(), format!("$ cat {path}")),
+        AgentAction::ListFiles { path, depth } => ("list".to_string(), format!("$ ls {path} (depth={depth})")),
+        AgentAction::SearchText { q, path } => ("search".to_string(), format!("$ rg -i -l -F {q} {path}")),
+        AgentAction::SearchSymbol { q, path } => ("search".to_string(), format!("$ rg -w -l {q} {path}")),
+        AgentAction::EditFile { path, .. } => ("edit".to_string(), format!("> edit {path}")),
+        AgentAction::RunCommand { command } => ("shell".to_string(), command.clone()),
+        AgentAction::Ask { .. } => ("ask".to_string(), String::new()),
+        AgentAction::Done { .. } => ("done".to_string(), String::new()),
+    }
+}
 
-User request: {}
+fn truncate_tool_trace_output(output: &str) -> String {
+    let max = 2000; if output.len() <= max { return output.to_string(); }
+    let mut out: String = output.chars().take(max).collect(); out.push_str("\n...(truncated)"); out
+}
 
-Evidence:
-{}
+fn dsl_execution_repair(error: &anyhow::Error) -> String { format!("DSL_EXECUTION_ERROR: {}", error) }
 
-Model's draft answer:
-{}
+fn normalize_action_for_execution(workdir: &Path, action: AgentAction) -> AgentAction {
+    match action {
+        AgentAction::ReadFile { path } => { if crate::resolve_workspace_path(workdir, &path).map(|f| f.is_dir()).unwrap_or(false) { AgentAction::ListFiles { path, depth: 1 } } else { AgentAction::ReadFile { path } } }
+        other => other,
+    }
+}
 
-Provide a short, direct answer."#,
-        user_request,
-        if evidence_summary.is_empty() {
-            "(none)".to_string()
-        } else {
-            evidence_summary
-        },
-        model_provided_content
-    );
+#[derive(Debug)]
+pub(crate) enum AgentActionExecution { Continue { tool_call: ToolCall, result: crate::tool_calling::ToolExecutionResult }, Ask { question: String }, Done { summary: String } }
 
-    match execute_intel_text_from_user_content(client, cfg, narrative).await {
-        Ok(summary) => Some(summary),
-        Err(e) => {
-            trace(args, &format!("final_summary_intel failed: {}", e));
-            None
+pub(crate) async fn execute_agent_action(args: &Args, workdir: &PathBuf, session: &SessionPaths, _client: &reqwest::Client, _chat_url: &Url, action: AgentAction, _tui: &mut crate::ui_terminal::TerminalUI) -> Result<AgentActionExecution> {
+    match action {
+        AgentAction::Ask { question } => Ok(AgentActionExecution::Ask { question }),
+        AgentAction::Done { summary } => Ok(AgentActionExecution::Done { summary }),
+        AgentAction::ReadFile { path } => {
+            let full = crate::resolve_workspace_path(workdir, &path).map_err(anyhow::Error::msg)?;
+            let (content, _) = crate::document_adapter::read_file_smart(&full).map_err(|e| anyhow::anyhow!("Error reading {}: {}", full.display(), e))?;
+            crate::record_session_read(&session_key(session), &path);
+            let tc = ToolCall { id: "dsl-read".into(), call_type: "function".into(), function: ToolFunctionCall { name: "read".into(), arguments: serde_json::json!({"path": path}).to_string() } };
+            Ok(AgentActionExecution::Continue { tool_call: tc, result: crate::tool_calling::ToolExecutionResult { tool_call_id: "dsl-read".into(), tool_name: "read".into(), content, ok: true, exit_code: None, timed_out: false, signal_killed: None } })
+        }
+        AgentAction::ListFiles { path, depth } => {
+            let target = crate::resolve_workspace_path(workdir, &path).map_err(anyhow::Error::msg)?;
+            let content = list_workspace_entries(workdir, &target, depth).map_err(|e| anyhow::anyhow!("Error listing {}: {}", target.display(), e))?;
+            let tc = ToolCall { id: "dsl-list".into(), call_type: "function".into(), function: ToolFunctionCall { name: "list".into(), arguments: serde_json::json!({"path": path, "depth": depth}).to_string() } };
+            Ok(AgentActionExecution::Continue { tool_call: tc, result: crate::tool_calling::ToolExecutionResult { tool_call_id: "dsl-list".into(), tool_name: "list".into(), content, ok: true, exit_code: None, timed_out: false, signal_killed: None } })
+        }
+        AgentAction::SearchText { q, path } => {
+            let target = crate::resolve_workspace_path(workdir, &path).map_err(anyhow::Error::msg)?;
+            let (ok, code, content) = run_rg_search(workdir, &target, &q, false).await?;
+            let tc = ToolCall { id: "dsl-search".into(), call_type: "function".into(), function: ToolFunctionCall { name: "search".into(), arguments: serde_json::json!({"pattern": q, "path": path}).to_string() } };
+            Ok(AgentActionExecution::Continue { tool_call: tc, result: crate::tool_calling::ToolExecutionResult { tool_call_id: "dsl-search".into(), tool_name: "search".into(), content, ok, exit_code: code, timed_out: false, signal_killed: None } })
+        }
+        AgentAction::SearchSymbol { q, path } => {
+            let target = crate::resolve_workspace_path(workdir, &path).map_err(anyhow::Error::msg)?;
+            let (ok, code, content) = run_rg_search(workdir, &target, &q, true).await?;
+            let tc = ToolCall { id: "dsl-search-sym".into(), call_type: "function".into(), function: ToolFunctionCall { name: "search".into(), arguments: serde_json::json!({"pattern": q, "path": path}).to_string() } };
+            Ok(AgentActionExecution::Continue { tool_call: tc, result: crate::tool_calling::ToolExecutionResult { tool_call_id: "dsl-search-sym".into(), tool_name: "search".into(), content, ok, exit_code: code, timed_out: false, signal_killed: None } })
+        }
+        AgentAction::EditFile { path, old, new } => {
+            let key = session_key(session);
+            crate::require_session_read_before_edit(&key, &path).map_err(anyhow::Error::msg)?;
+            let _ = crate::ensure_session_edit_snapshot(&key, session, workdir, "dsl-edit").map_err(anyhow::Error::msg)?;
+            match crate::apply_exact_edit(workdir, &path, &old, &new) {
+                Ok(outcome) => {
+                    let content = format!("{}\n{}", outcome.summary, outcome.diff);
+                    let tc = ToolCall { id: "dsl-edit".into(), call_type: "function".into(), function: ToolFunctionCall { name: "edit".into(), arguments: serde_json::json!({"path": path}).to_string() } };
+                    Ok(AgentActionExecution::Continue { tool_call: tc, result: crate::tool_calling::ToolExecutionResult { tool_call_id: "dsl-edit".into(), tool_name: "edit".into(), content, ok: true, exit_code: None, timed_out: false, signal_killed: None } })
+                }
+                Err(e) => Err(anyhow::anyhow!("Edit failed: {}", e)),
+            }
+        }
+        AgentAction::RunCommand { command } => {
+            trace(args, &format!("dsl_action: executing command {}", command));
+            let outcome = crate::execute_command_policy(workdir, &command, crate::CommandPolicy::Strict).map_err(anyhow::Error::msg)?;
+            let ok = outcome.exit_code == Some(0);
+            let content = if ok { if outcome.stdout.trim().is_empty() && !outcome.stderr.trim().is_empty() { outcome.stderr.clone() } else { outcome.stdout.clone() } } else { format!("Command failed (exit {}):\n{}", outcome.exit_code.unwrap_or(-1), if outcome.stderr.trim().is_empty() { outcome.stdout.clone() } else { outcome.stderr.clone() }) };
+            let tc = ToolCall { id: "dsl-shell".into(), call_type: "function".into(), function: ToolFunctionCall { name: "shell".into(), arguments: serde_json::json!({"command": command}).to_string() } };
+            Ok(AgentActionExecution::Continue { tool_call: tc, result: crate::tool_calling::ToolExecutionResult { tool_call_id: "dsl-shell".into(), tool_name: "shell".into(), content, ok, exit_code: outcome.exit_code, timed_out: false, signal_killed: None } })
         }
     }
+}
+
+fn session_key(session: &SessionPaths) -> String { session.root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| session.root.display().to_string()) }
+
+const MAX_DSL_LIST_ENTRIES_FOR_MODEL: usize = 500;
+
+fn list_workspace_entries(workdir: &Path, target: &Path, depth: u8) -> Result<String> {
+    if !target.is_dir() { anyhow::bail!("target is not a directory"); }
+    let root = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
+    let mut pending = vec![(target.to_path_buf(), 1u8)]; let mut entries = Vec::new();
+    while let Some((dir, level)) = pending.pop() {
+        let mut local = Vec::new();
+        for entry in std::fs::read_dir(&dir)? { local.push(entry?.path()); }
+        local.sort();
+        for path in local {
+            let display = path.strip_prefix(&root).unwrap_or(&path).display().to_string();
+            if path.is_dir() { entries.push(format!("{display}/")); if level < depth { pending.push((path, level + 1)); } } else { entries.push(display); }
+        }
+    }
+    entries.sort();
+    if entries.len() > MAX_DSL_LIST_ENTRIES_FOR_MODEL { let omitted = entries.len() - MAX_DSL_LIST_ENTRIES_FOR_MODEL; entries.truncate(MAX_DSL_LIST_ENTRIES_FOR_MODEL); entries.push(format!("... truncated {omitted} more entries")); }
+    Ok(if entries.is_empty() { "(empty directory)".to_string() } else { entries.join("\n") })
+}
+
+async fn run_rg_search(workdir: &Path, target: &Path, query: &str, whole_word: bool) -> Result<(bool, Option<i32>, String)> {
+    let mut cmd = tokio::process::Command::new("rg"); cmd.kill_on_drop(true); cmd.current_dir(workdir).arg("-i").arg("--line-number").arg("--no-heading").arg("--color=never");
+    if whole_word { cmd.arg("-w"); }
+    cmd.arg("-F").arg(query).arg(target);
+    let output = match tokio::time::timeout(Duration::from_secs(20), cmd.output()).await {
+        Ok(output) => output.map_err(|e| anyhow::anyhow!("Search error: {}", e))?,
+        Err(_) => return Ok((false, None, "Search timed out after 20 seconds".to_string())),
+    };
+    let exit_code = output.status.code();
+    let stdout = truncate_search_output(String::from_utf8_lossy(&output.stdout).to_string());
+    let stderr = truncate_search_output(String::from_utf8_lossy(&output.stderr).to_string());
+    if output.status.success() { Ok((true, exit_code, stdout)) }
+    else if exit_code == Some(1) { Ok((true, exit_code, format!("No matches found for: {query}"))) }
+    else { Ok((false, exit_code, format!("Search failed (exit {}):\n{}", exit_code.unwrap_or(-1), stderr))) }
+}
+
+fn truncate_search_output(content: String) -> String { const MAX: usize = 50_000; if content.len() <= MAX { content } else { let mut o: String = content.chars().take(MAX).collect(); o.push_str("\n...(truncated)"); o } }
+
+async fn run_final_summary_intel(args: &Args, client: &reqwest::Client, summarizer_cfg: Option<&Profile>, user_request: &str, model_provided_content: &str) -> Option<String> {
+    use crate::intel_trait::execute_intel_text_from_user_content;
+    let cfg = summarizer_cfg?;
+    let evidence_summary = crate::evidence_ledger::get_session_ledger().map(|l| l.entries.iter().map(|e| e.summary.clone()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    let narrative = format!("Generate a concise final summary (1-2 sentences max).\n\nUser request: {}\n\nEvidence:\n{}\n\nModel's draft answer:\n{}\n\nProvide a short, direct answer.", user_request, if evidence_summary.is_empty() { "(none)".to_string() } else { evidence_summary }, model_provided_content);
+    match execute_intel_text_from_user_content(client, cfg, narrative).await { Ok(s) => Some(s), Err(e) => { trace(args, &format!("final_summary_intel failed: {}", e)); None } }
+}
+
+fn record_evidence_for_tool_result(tc: &ToolCall, result: &crate::tool_calling::ToolExecutionResult) {
+    if tc.function.name == "respond" || tc.function.name == "update_todo_list" || tc.function.name == "tool_search" { return; }
+    let source = match tc.function.name.as_str() {
+        "shell" => { let cmd = serde_json::from_str::<serde_json::Value>(&tc.function.arguments).ok().and_then(|v| v["command"].as_str().map(String::from)).unwrap_or_default(); crate::evidence_ledger::EvidenceSource::Shell { command: cmd, exit_code: result.exit_code.unwrap_or(if result.ok { 0 } else { 1 }) } }
+        "read" => { let path = serde_json::from_str::<serde_json::Value>(&tc.function.arguments).ok().and_then(|v| v["path"].as_str().map(String::from)).unwrap_or_default(); crate::evidence_ledger::EvidenceSource::Read { path } }
+        "search" => { let args = serde_json::from_str::<serde_json::Value>(&tc.function.arguments).ok(); let pattern = args.as_ref().and_then(|v| v["pattern"].as_str().map(String::from)).unwrap_or_default(); let path = args.as_ref().and_then(|v| v["path"].as_str().map(String::from)).unwrap_or_default(); crate::evidence_ledger::EvidenceSource::Search { path, pattern } }
+        _ => crate::evidence_ledger::EvidenceSource::Tool { name: tc.function.name.clone(), input: tc.function.arguments.chars().take(100).collect() },
+    };
+    crate::evidence_ledger::with_session_ledger(|ledger| { let clean = match strip_ansi_escapes::strip(result.content.as_bytes()) { Ok(b) => String::from_utf8_lossy(&b).to_string(), Err(_) => result.content.clone() }; ledger.add_entry(source, &clean); });
+}
+
+fn append_tool_result_messages(sess: &SessionPaths, messages: &mut Vec<ChatMessage>, tc: &ToolCall, result: &crate::tool_calling::ToolExecutionResult, reasoning: Option<String>) {
+    let budgeted = apply_tool_result_budget(sess, &tc.id, &tc.function.name, &result.content, DEFAULT_MAX_RESULT_SIZE_CHARS);
+    let model_content = if result.ok && budgeted.content_for_model.trim().is_empty() && tc.function.name != "respond" { "(empty result)".to_string() } else { budgeted.content_for_model };
+    messages.push(ChatMessage { role: "assistant".to_string(), content: "".to_string(), name: None, tool_calls: Some(vec![tc.clone()]), tool_call_id: None, reasoning_content: reasoning, summarized: false });
+    messages.push(ChatMessage { role: "tool".to_string(), content: model_content, name: Some(tc.function.name.clone()), tool_calls: None, tool_call_id: Some(tc.id.clone()), reasoning_content: None, summarized: false });
 }

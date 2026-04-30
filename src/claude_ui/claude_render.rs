@@ -169,9 +169,10 @@ impl ClaudeRenderer {
                                 ..
                             } => match status {
                                 crate::claude_ui::claude_state::ToolTraceStatus::Running => {
+                                    let display_name = if name == "shell" { "$" } else { &name };
                                     line = format!(
-                                        "{} TOOL TRACE RUNNING: {} {}\n",
-                                        ts, name, command
+                                        "{} {} {}\n",
+                                        ts, display_name, command
                                     );
                                 }
                                 crate::claude_ui::claude_state::ToolTraceStatus::Completed {
@@ -179,7 +180,8 @@ impl ClaudeRenderer {
                                     output,
                                     duration_ms,
                                 } => {
-                                    line = format!("{} TOOL TRACE COMPLETED: {} success={} duration={:?}\n{}\n", ts, name, success, duration_ms, output);
+                                    let display_name = if name == "shell" { "$" } else { &name };
+                                    line = format!("{} {} success={} duration={:?}\n{}\n", ts, display_name, success, duration_ms, output);
                                 }
                             },
                             ClaudeMessage::PermissionRequest { command, reason } => {
@@ -1728,7 +1730,7 @@ mod tests {
         };
         let lines = msg.to_lines(false);
         assert!(lines[0].contains("✓"));
-        assert!(lines[0].contains("shell"));
+        assert!(lines[0].contains("$"));
         assert!(lines[0].contains("cat file.txt"));
     }
 
@@ -1746,7 +1748,7 @@ mod tests {
         };
         let lines = msg.to_lines(false);
         assert!(lines[0].contains("✗"));
-        assert!(lines[0].contains("shell"));
+        assert!(lines[0].contains("$"));
         assert!(lines[0].contains("cat missing.txt"));
     }
 
