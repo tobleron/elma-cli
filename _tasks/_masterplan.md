@@ -112,9 +112,11 @@ These tasks make complex requests manageable for small models by decomposing and
 - File: `_tasks/completed/384_Clean_Context_Finalization_Enforcement_DONE.md`
 
 ### 392 Plaintext Default And Markdown Output Tool
-- Make ratatui output plain text by default.
-- Provide markdown only as an explicit artifact/report path.
-- File: `_tasks/pending/392_Plaintext_Default_And_Markdown_Output_Tool.md`
+- [x] `strip_markdown()` — removes bold, italic, code, fenced blocks, headers, links, images.
+- [x] `process_final_answer_display()` — sanitize + strip markdown for terminal output.
+- [x] Wired into app_chat_loop: `display_text` used for `tui.add_message()`, markdown preserved for messages/artifacts.
+- [x] 9 tests for bold, inline code, fenced blocks, headers, links, images, mixed, empty, plain pass-through.
+- File: `_tasks/completed/392_Plaintext_Default_And_Markdown_Output_Tool_DONE.md`
 
 ### 385 Persist Finalized Summaries As Markdown
 - Persist summaries as optional markdown artifacts in session folders.

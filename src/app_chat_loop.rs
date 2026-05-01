@@ -1065,16 +1065,13 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         // Task 384: Clean-Context Finalization — strip internal framing
         let final_text = crate::final_answer::process_final_answer(&final_text);
-        if crate::final_answer::contains_blocked_pattern(&final_text) {
-            trace(
-                &runtime.args,
-                "final_answer_blocked_pattern detected after sanitization",
-            );
-        }
+
+        // Task 392: Strip markdown for terminal display (keep original for messages/artifacts)
+        let display_text = crate::final_answer::process_final_answer_display(&final_text);
 
         // Show assistant response (thinking is already stripped from final_text)
         if !final_text.is_empty() {
-            tui.add_message(MessageRole::Assistant, final_text.clone());
+            tui.add_message(MessageRole::Assistant, display_text);
             runtime
                 .messages
                 .push(ChatMessage::simple("assistant", &final_text));

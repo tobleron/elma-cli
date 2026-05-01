@@ -130,10 +130,133 @@ pub(crate) fn sanitize_final_answer(raw: &str) -> (String, bool) {
     (cleaned, modified)
 }
 
+/// Strip markdown formatting to produce plain text for terminal display.
+/// Preserves content (code, text, links) while removing markup.
+pub(crate) fn strip_markdown(text: &str) -> String {
+    let mut result = text.to_string();
+
+    // Remove fenced code blocks (```...```), keeping content
+    result = result
+        .split("```")
+        .enumerate()
+        .map(|(i, part)| {
+            if i % 2 == 0 {
+                part.to_string() // outside code blocks
+            } else {
+                // Inside code block: skip the language tag line, keep rest
+                let lines: Vec<&str> = part.lines().collect();
+                if lines.len() <= 1 {
+                    String::new()
+                } else {
+                    // Skip first line (language tag or empty)
+                    lines[1..].join("\n")
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    // Remove inline code backticks
+    let mut in_code = false;
+    let mut code_cleaned = String::new();
+    for ch in result.chars() {
+        if ch == '`' {
+            in_code = !in_code;
+        } else {
+            code_cleaned.push(ch);
+        }
+    }
+    result = code_cleaned;
+
+    // Strip bold/italic markers (** and *)
+    result = result.replace("**", "");
+    result = result.replace("__", "");
+
+    // Strip italic markers (single *, but not inside words)
+    let mut italic_cleaned = String::new();
+    let mut chars = result.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '*' {
+            // Only strip if followed by non-alphanumeric or end
+            if let Some(&next) = chars.peek() {
+                if !next.is_alphanumeric() {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        } else if ch == '_' {
+            if let Some(&next) = chars.peek() {
+                if !next.is_alphanumeric() {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+        }
+        italic_cleaned.push(ch);
+    }
+    result = italic_cleaned;
+
+    // Strip markdown links: [text](url) -> text
+    let link_re = regex::Regex::new(r"\[([^\]]+)\]\([^)]+\)").unwrap();
+    result = link_re.replace_all(&result, "$1").to_string();
+
+    // Strip image links: ![alt](url)
+    let img_re = regex::Regex::new(r"!\[([^\]]*)\]\([^)]+\)").unwrap();
+    result = img_re.replace_all(&result, "$1").to_string();
+
+    // Convert headers: remove leading # but keep text
+    result = result
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('#') {
+                let after_hash = trimmed.trim_start_matches('#').trim();
+                format!("{}\n", after_hash)
+            } else {
+                format!("{}\n", line)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    // Clean up excessive whitespace
+    result = result
+        .lines()
+        .map(|l| l.trim_end().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Collapse 3+ consecutive newlines to 2
+    let mut collapsed = String::new();
+    let mut consecutive_newlines = 0;
+    for ch in result.chars() {
+        if ch == '\n' {
+            consecutive_newlines += 1;
+            if consecutive_newlines <= 2 {
+                collapsed.push(ch);
+            }
+        } else {
+            consecutive_newlines = 0;
+            collapsed.push(ch);
+        }
+    }
+    result = collapsed;
+
+    result.trim().to_string()
+}
+
 /// Run the full answer pipeline: sanitize → check blocked patterns → return.
 pub(crate) fn process_final_answer(raw: &str) -> String {
     let (cleaned, _modified) = sanitize_final_answer(raw);
     cleaned
+}
+
+/// Prepare a final answer for terminal display: sanitize + strip markdown.
+pub(crate) fn process_final_answer_display(raw: &str) -> String {
+    let sanitized = process_final_answer(raw);
+    strip_markdown(&sanitized)
 }
 
 #[cfg(test)]
@@ -217,6 +340,76 @@ mod tests {
         assert!(contains_blocked_pattern("failed to open file"));
         assert!(contains_blocked_pattern("error occurred: timeout"));
         assert!(contains_blocked_pattern("stagnation detected"));
+    }
+
+    #[test]
+    fn test_strip_markdown_bold() {
+        let result = strip_markdown("This is **bold** text");
+        assert_eq!(result, "This is bold text");
+    }
+
+    #[test]
+    fn test_strip_markdown_inline_code() {
+        let result = strip_markdown("Use the `read` tool");
+        assert_eq!(result, "Use the read tool");
+    }
+
+    #[test]
+    fn test_strip_markdown_fenced_code_block() {
+        let md = "```rust\nfn hello() {\n    println!(\"hi\");\n}\n```";
+        let result = strip_markdown(md);
+        assert!(result.contains("fn hello()"));
+        assert!(result.contains("println!"));
+        assert!(!result.contains("```"));
+    }
+
+    #[test]
+    fn test_strip_markdown_headers() {
+        let result = strip_markdown("# Title\n\n## Subtitle\n\nBody text");
+        assert!(!result.contains('#'));
+        assert!(result.contains("Title"));
+        assert!(result.contains("Subtitle"));
+        assert!(result.contains("Body text"));
+    }
+
+    #[test]
+    fn test_strip_markdown_links() {
+        let result = strip_markdown("Click [here](https://example.com) for info");
+        assert!(result.contains("here"));
+        assert!(!result.contains("https://"));
+        assert!(!result.contains("["));
+    }
+
+    #[test]
+    fn test_strip_markdown_images() {
+        let result = strip_markdown("![alt text](image.png)");
+        assert!(result.contains("alt text"));
+        assert!(!result.contains("image.png"));
+    }
+
+    #[test]
+    fn test_strip_markdown_plain_text_unchanged() {
+        let text = "Hello, this is plain text.";
+        let result = strip_markdown(text);
+        assert_eq!(result, text);
+    }
+
+    #[test]
+    fn test_strip_markdown_mixed() {
+        let md = "# Results\n\nThe **score** is `42`.\n\n- Item 1\n- Item 2\n\nSee [docs](https://example.com)";
+        let result = strip_markdown(md);
+        assert!(!result.contains('#'));
+        assert!(!result.contains("**"));
+        assert!(!result.contains('`'));
+        assert!(result.contains("score"));
+        assert!(result.contains("42"));
+        assert!(result.contains("Item 1"));
+        assert!(result.contains("docs"));
+    }
+
+    #[test]
+    fn test_strip_markdown_empty() {
+        assert_eq!(strip_markdown(""), "");
     }
 
     #[test]
