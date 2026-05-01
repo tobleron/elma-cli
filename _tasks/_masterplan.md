@@ -81,9 +81,13 @@ These tasks make complex requests manageable for small models by decomposing and
 - File: `_tasks/completed/390_Approach_Branch_Retry_And_Prune_Engine_DONE.md`
 
 ### 391 Instruction-Level Repair And Result Recombiner
-- Repair individual instructions instead of restarting whole tasks.
-- Recombine only successful, evidence-backed instruction outputs.
-- File: `_tasks/pending/391_Instruction_Level_Repair_And_Result_Recombiner.md`
+- [x] `InstructionOutcome`, `InstructionStatus`, `RepairAction` (3-field, Task 378 compliant).
+- [x] `select_repair_action()` — non-keyword mapping: tool→native, parse→tighten, missing→evidence, timeout→split.
+- [x] `try_repair()` / `create_repair_outcome()` — produce Running or Abandoned outcomes.
+- [x] `recombine()` — merge successful sibling outcomes, fail-closed on missing evidence.
+- [x] Wired into `orchestrate_with_retries()` — repair events logged per failed step.
+- [x] 18 tests covering all repair actions, abandon logic, recombination, evidence gating.
+- File: `_tasks/completed/391_Instruction_Level_Repair_And_Result_Recombiner_DONE.md`
 
 ### 380 Semantic Continuity Tracking
 - Preserve original intent through routing, graph decomposition, execution, and finalization.

@@ -518,6 +518,40 @@ pub(crate) async fn orchestrate_with_retries(
             .collect::<Vec<_>>()
             .join("; ");
 
+        // Task 391: Attempt instruction-level repair on failed steps (before moving outcome)
+        let has_failed_steps = outcome.step_results.iter().any(|r| !r.ok);
+        let repair_events: Vec<String> = if has_failed_steps && attempt > 0 {
+            outcome
+                .step_results
+                .iter()
+                .filter(|r| !r.ok)
+                .map(|step| {
+                    let repair = crate::instruction_repair::select_repair_action(
+                        &step.id,
+                        step.outcome_reason.as_deref().unwrap_or("failed"),
+                        attempt.min(3) as u32,
+                    );
+                    let event = format!(
+                        "instruction_repair id={} action={} retryable={}",
+                        step.id, repair.repair_action, repair.retryable
+                    );
+                    trace(args, &format!("{} reason={}", event, repair.reason));
+                    event
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if !repair_events.is_empty() {
+            show_intel_summary(
+                args.show_process,
+                &format!(
+                    "Repair suggested for {} failed instruction(s)",
+                    repair_events.len()
+                ),
+            );
+        }
+
         attempt_history.push((attempt, retry_program.clone(), error_summary.clone()));
         best_outcome = Some(outcome);
 

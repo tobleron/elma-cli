@@ -77,6 +77,7 @@ mod guardrails_refinement; // Guardrails refinement phase (Task 011)
 mod hook_system; // Tasks 123, 124, 125: Extensible hook framework
 mod hybrid_search; // Task 273: Hybrid Search Memory System With FTS And Vector Search
 mod input_parser; // Task 013: Smart Input Prefixes And Command Modes
+mod instruction_repair; // Task 391: Instruction-Level Repair And Result Recombiner
 mod intel_narrative; // Narrative transformation for intel units
 mod intel_narrative_advanced; // Advanced assessment narrative functions
 mod intel_narrative_intent; // Intent analysis narrative functions
