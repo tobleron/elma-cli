@@ -44,6 +44,7 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
     runtime.profiles.selector_cfg.base_url = new_base_url.to_string();
     runtime.profiles.complexity_cfg.base_url = new_base_url.to_string();
     runtime.profiles.evidence_need_cfg.base_url = new_base_url.to_string();
+    runtime.profiles.tools_need_cfg.base_url = new_base_url.to_string();
     runtime.profiles.action_need_cfg.base_url = new_base_url.to_string();
     runtime.profiles.action_selector_cfg.base_url = new_base_url.to_string();
     runtime.profiles.workflow_planner_cfg.base_url = new_base_url.to_string();
@@ -66,6 +67,7 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
         runtime.profiles.selector_cfg.model = model_id.to_string();
         runtime.profiles.complexity_cfg.model = model_id.to_string();
         runtime.profiles.evidence_need_cfg.model = model_id.to_string();
+        runtime.profiles.tools_need_cfg.model = model_id.to_string();
         runtime.profiles.action_need_cfg.model = model_id.to_string();
         runtime.profiles.action_selector_cfg.model = model_id.to_string();
         runtime.profiles.workflow_planner_cfg.model = model_id.to_string();

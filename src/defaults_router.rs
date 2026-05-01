@@ -251,8 +251,9 @@ pub(crate) fn default_evidence_need_assessor_config(base_url: &str, model: &str)
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Return exactly one DSL line and nothing else:\nASSESS needs_evidence=false needs_tools=false\n"
-            .to_string(),
+        system_prompt:
+            "Return exactly one DSL line and nothing else:\nASSESS needs_evidence=false\n"
+                .to_string(),
     }
 }
 

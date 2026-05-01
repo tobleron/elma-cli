@@ -1,0 +1,4 @@
+root ::= ws "TOOLS" ws tools_field ws
+tools_field ::= "needs_tools=" bool
+bool ::= "true" | "false"
+ws ::= [ \t]*

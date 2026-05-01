@@ -71,6 +71,9 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         evidence_need_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("evidence_need_assessor.toml"),
         )?,
+        tools_need_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("tools_need_assessor.toml"),
+        )?,
         action_need_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("action_need_assessor.toml"),
         )?,
@@ -262,6 +265,13 @@ pub(crate) fn sync_and_upgrade_profiles(
         args,
         &model_cfg_dir.join("evidence_need_assessor.toml"),
         &mut profiles.evidence_need_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("tools_need_assessor.toml"),
+        &mut profiles.tools_need_cfg,
         base_url,
         model_id,
     )?;

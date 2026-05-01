@@ -89,10 +89,20 @@ Principles:
 Return a single DSL ASSESS line.
 
 Output format:
-ASSESS needs_evidence=true needs_tools=false
+ASSESS needs_evidence=true
 
 Principles:
-- needs_evidence is true when Elma should inspect workspace state before answering responsibly.
+- needs_evidence is true when Elma should inspect workspace state before answering responsibly."#,
+        ),
+        "tools_need_assessor" => Some(
+            r#"You are Elma's tools-needs assessor.
+
+Return a single DSL TOOLS line.
+
+Output format:
+TOOLS needs_tools=true
+
+Principles:
 - needs_tools is true when Elma should use shell or other operational steps instead of pure prose."#,
         ),
         "action_need_assessor" => Some(

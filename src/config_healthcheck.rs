@@ -75,6 +75,7 @@ pub(crate) fn run_config_healthcheck(
         &mut issues,
     );
     validate_profile(&profiles.evidence_need_cfg, "evidence_need", &mut issues);
+    validate_profile(&profiles.tools_need_cfg, "tools_need", &mut issues);
     validate_profile(&profiles.action_need_cfg, "action_need", &mut issues);
     validate_profile(
         &profiles.action_selector_cfg,

@@ -461,9 +461,13 @@ async fn refine_route_with_evidence_needs(
         conversation_excerpt,
         runtime.client.clone(),
     );
-    let unit =
+    // Task 414: Split evidence needs assessment into two single-field units.
+    // Each unit produces one boolean — EvidenceNeedsUnit (needs_evidence) and
+    // ToolsNeedsUnit (needs_tools). Run both independently.
+
+    let evidence_unit =
         crate::intel_units::EvidenceNeedsUnit::new(runtime.profiles.evidence_need_cfg.clone());
-    let output = unit
+    let evidence_output = evidence_unit
         .execute_with_fallback(&context)
         .await
         .unwrap_or_else(|error| {
@@ -471,24 +475,40 @@ async fn refine_route_with_evidence_needs(
                 "evidence_needs_assessment",
                 serde_json::json!({
                     "needs_evidence": false,
+                }),
+                &format!("execution: {}", error),
+            )
+        });
+    let needs_evidence = evidence_output.get_bool("needs_evidence").unwrap_or(false);
+
+    let tools_unit =
+        crate::intel_units::ToolsNeedsUnit::new(runtime.profiles.tools_need_cfg.clone());
+    let tools_output = tools_unit
+        .execute_with_fallback(&context)
+        .await
+        .unwrap_or_else(|error| {
+            IntelOutput::fallback(
+                "tools_needs_assessment",
+                serde_json::json!({
                     "needs_tools": false,
                 }),
                 &format!("execution: {}", error),
             )
         });
+    let needs_tools = tools_output.get_bool("needs_tools").unwrap_or(false);
 
-    let needs_evidence = output.get_bool("needs_evidence").unwrap_or(false);
-    let needs_tools = output.get_bool("needs_tools").unwrap_or(false);
+    let fallback_used = evidence_output.fallback_used || tools_output.fallback_used;
     trace(
         &runtime.args,
         &format!(
             "evidence_needs needs_evidence={} needs_tools={} fallback={}",
-            needs_evidence, needs_tools, output.fallback_used
+            needs_evidence, needs_tools, fallback_used
         ),
     );
 
+    // Keep original Fallback logic from pre-split — now using combined fallback flag.
     if route_classifier_parse_collapsed(&route_decision) && !(needs_evidence || needs_tools) {
-        if output.fallback_used && !intent_annotation_suggests_pure_chat(user_message) {
+        if fallback_used && !intent_annotation_suggests_pure_chat(user_message) {
             trace(
                 &runtime.args,
                 "route_parse_collapse: retaining conservative non-chat route because evidence assessment failed and intent is not pure chat",
@@ -504,7 +524,7 @@ async fn refine_route_with_evidence_needs(
         return route_decision;
     }
 
-    if output.fallback_used || !(needs_evidence || needs_tools) {
+    if fallback_used || !(needs_evidence || needs_tools) {
         return route_decision;
     }
 

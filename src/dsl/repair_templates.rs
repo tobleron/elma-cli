@@ -34,6 +34,7 @@ pub fn detect_expected_format(raw_output: &str) -> String {
             // common shape.
             "ASSESS key=value key2=\"val\"   (one line, fields vary by unit)".to_string()
         }
+        "TOOLS" => "TOOLS needs_tools=true|false".to_string(),
 
         // ── Formula / Workflow / Scope ──
         "FORMULA" => "FORMULA primary=formula_name alt1=... alt2=... reason=\"justification\""

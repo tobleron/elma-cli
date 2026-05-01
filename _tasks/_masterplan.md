@@ -29,15 +29,8 @@ These tasks give the biggest immediate improvement for 3B DSL reliability with t
 | ~~1~~ | ~~418~~ | ~~Concrete repair hints for DSL parse failures~~ | ~~small-med~~ | ~~critical~~ | DONE |
 | ~~2~~ | ~~417~~ | ~~Simplify turn summarizer to two-field DSL~~ | ~~small-med~~ | ~~high~~ | DONE |
 | ~~3~~ | ~~412~~ | ~~Deterministic fallback on repeated classifier DSL parse failure~~ | ~~small~~ | ~~medium-high~~ | DONE |
-
-### Tier 2: Action DSL Decomposition (Medium ROI)
-
-Splits the "decide action AND format DSL" combined cognitive load into separate narrow units. Higher effort but addresses the root cause of action DSL failures.
-
-| Order | Task | Title | Effort | Gain | Depends On |
-|-------|------|-------|--------|------|------------|
-| 4 | [416](pending/416_Action_Type_Selector_Intel_Unit.md) | Action type selector intel unit | medium | high — single-field action decision | none |
-| 5 | [414](pending/414_Split_Evidence_Needs_Assessor_Into_Single_Field_Units.md) | Split evidence needs assessor into single-field units | medium | medium-high — one decision per unit | none |
+| ~~4~~ | ~~416~~ | ~~Action type selector intel unit~~ | ~~medium~~ | ~~high~~ | DONE |
+| ~~5~~ | ~~414~~ | ~~Split evidence needs assessor into single-field units~~ | ~~medium~~ | ~~medium-high~~ | DONE |
 | 6 | [415](pending/415_Action_DSL_Format_Specialist_Intel_Unit.md) | Action DSL format specialist intel unit | medium | high — GBNF-constrained formatting | 414, 416 |
 
 ### Tier 3: Profile & Boundary Hardening

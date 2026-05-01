@@ -154,8 +154,13 @@ digit ::= [0-9]
 ws ::= [ \t]*"#,
         ),
         "evidence_need_assessor" | "evidence_needs_classifier" => Some(
-            r#"root ::= ws "ASSESS" ws evidence_field ws tools_field ws
+            r#"root ::= ws "ASSESS" ws evidence_field ws
 evidence_field ::= "needs_evidence=" bool
+bool ::= "true" | "false"
+ws ::= [ \t]*"#,
+        ),
+        "tools_need_assessor" => Some(
+            r#"root ::= ws "TOOLS" ws tools_field ws
 tools_field ::= "needs_tools=" bool
 bool ::= "true" | "false"
 ws ::= [ \t]*"#,

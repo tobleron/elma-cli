@@ -215,6 +215,7 @@ pub async fn assess_execution_level(
     chat_url: &Url,
     complexity_profile: &Profile,
     evidence_need_profile: &Profile,
+    tools_need_profile: &Profile,
     action_need_profile: &Profile,
     workflow_planner_profile: &Profile,
     user_message: &str,
@@ -245,7 +246,7 @@ pub async fn assess_execution_level(
     let complexity: ComplexityAssessment = serde_json::from_value(complexity_output.data.clone())
         .unwrap_or_else(|_| ComplexityAssessment::default());
 
-    // 2. Get evidence needs
+    // 2. Get evidence needs (single-field: needs_evidence)
     let mut bounded_evidence_profile = evidence_need_profile.clone();
     bounded_evidence_profile.timeout_s = bounded_evidence_profile.timeout_s.min(45);
     let evidence_unit = EvidenceNeedsUnit::new(bounded_evidence_profile);
@@ -253,7 +254,13 @@ pub async fn assess_execution_level(
     let needs_evidence = evidence_output
         .get_bool("needs_evidence")
         .unwrap_or(complexity.needs_evidence);
-    let needs_tools = evidence_output
+
+    // 3. Get tools needs (single-field: needs_tools — split from evidence needs, Task 414)
+    let mut bounded_tools_profile = tools_need_profile.clone();
+    bounded_tools_profile.timeout_s = bounded_tools_profile.timeout_s.min(45);
+    let tools_unit = ToolsNeedsUnit::new(bounded_tools_profile);
+    let tools_output = tools_unit.execute_with_fallback(&context).await?;
+    let needs_tools = tools_output
         .get_bool("needs_tools")
         .unwrap_or(complexity.needs_tools);
 

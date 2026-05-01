@@ -197,6 +197,8 @@ impl IntelUnit for ComplexityAssessmentUnit {
 }
 
 // --- EvidenceNeeds ---
+// Task 414: Split into single-field units. EvidenceNeedsUnit now produces
+// only needs_evidence. ToolsNeedsUnit (below) produces needs_tools.
 
 pub(crate) struct EvidenceNeedsUnit {
     profile: Profile,
@@ -237,30 +239,16 @@ impl IntelUnit for EvidenceNeedsUnit {
         )
         .await?;
 
-        // Parse DSL result into needs_evidence and needs_tools values
         let needs_evidence = dsl_result
             .get("needs_evidence")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let needs_tools = dsl_result
-            .get("needs_tools")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let mut result = serde_json::Map::new();
-        result.insert(
-            "needs_evidence".to_string(),
-            serde_json::Value::Bool(needs_evidence),
-        );
-        result.insert(
-            "needs_tools".to_string(),
-            serde_json::Value::Bool(needs_tools),
-        );
-
         Ok(IntelOutput::success(
             self.name(),
-            serde_json::Value::Object(result),
+            serde_json::json!({
+                "needs_evidence": needs_evidence,
+            }),
             0.9,
         ))
     }
@@ -269,6 +257,78 @@ impl IntelUnit for EvidenceNeedsUnit {
         if output.get("needs_evidence").is_none() {
             return Err(IntelError::MissingField("needs_evidence".to_string()).into());
         }
+        Ok(())
+    }
+
+    fn fallback(&self, _context: &IntelContext, error: &str) -> Result<IntelOutput> {
+        trace_fallback(self.name(), error);
+        Ok(IntelOutput::fallback(
+            self.name(),
+            serde_json::json!({
+                "needs_evidence": false,
+            }),
+            &format!("evidence needs assessment failed: {}", error),
+        ))
+    }
+}
+
+// --- ToolsNeeds ---
+// Task 414: Single-field unit for needs_tools, split from EvidenceNeedsUnit.
+
+pub(crate) struct ToolsNeedsUnit {
+    profile: Profile,
+}
+impl ToolsNeedsUnit {
+    pub fn new(profile: Profile) -> Self {
+        Self { profile }
+    }
+}
+
+impl IntelUnit for ToolsNeedsUnit {
+    fn name(&self) -> &'static str {
+        "tools_needs_assessment"
+    }
+
+    fn profile(&self) -> &Profile {
+        &self.profile
+    }
+
+    fn pre_flight(&self, context: &IntelContext) -> Result<()> {
+        if context.user_message.trim().is_empty() {
+            return Err(IntelError::EmptyUserMessage.into());
+        }
+        Ok(())
+    }
+
+    async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
+        let dsl_result = execute_intel_dsl_from_user_content(
+            &context.client,
+            &self.profile,
+            crate::intel_narrative::build_evidence_needs_narrative(
+                &context.user_message,
+                &context.route_decision,
+                &context.workspace_facts,
+                &context.workspace_brief,
+                &context.conversation_excerpt,
+            ),
+        )
+        .await?;
+
+        let needs_tools = dsl_result
+            .get("needs_tools")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::json!({
+                "needs_tools": needs_tools,
+            }),
+            0.9,
+        ))
+    }
+
+    fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("needs_tools").is_none() {
             return Err(IntelError::MissingField("needs_tools".to_string()).into());
         }
@@ -280,10 +340,9 @@ impl IntelUnit for EvidenceNeedsUnit {
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
-                "needs_evidence": false,
                 "needs_tools": false,
             }),
-            &format!("evidence needs assessment failed: {}", error),
+            &format!("tools needs assessment failed: {}", error),
         ))
     }
 }

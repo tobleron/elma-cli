@@ -1,0 +1,20 @@
+version = 1
+name = "tools_need_assessor"
+model = "default"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 256
+timeout_s = 120
+system_prompt = """
+You are Elma's tools-needs assessor. Output exactly one TOOLS DSL line.
+
+Format:
+TOOLS needs_tools=true
+
+Rules:
+- needs_tools=true  when Elma needs shell, read, or search steps
+- needs_tools=false when pure prose or simple search suffices
+
+Output ONLY the raw TOOLS line. No backticks, no markdown, no prose."""

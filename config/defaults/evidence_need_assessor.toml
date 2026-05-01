@@ -11,12 +11,10 @@ system_prompt = """
 You are Elma's evidence-needs assessor. Output exactly one ASSESS DSL line.
 
 Format:
-ASSESS needs_evidence=true needs_tools=false
+ASSESS needs_evidence=true
 
 Rules:
 - needs_evidence=true  when Elma should inspect workspace state before answering
 - needs_evidence=false when Elma can answer from context alone
-- needs_tools=true     when Elma needs shell, read, or search steps
-- needs_tools=false    when pure prose or simple search suffices
 
 Output ONLY the raw ASSESS line. No backticks, no markdown, no prose."""
