@@ -5,6 +5,7 @@
 //! This is the public interface that the chat loop talks to.
 //! It wraps the UIState model and handles all terminal I/O.
 
+use crate::final_answer::strip_markdown;
 use crate::ui_input::TextInput;
 use crate::ui_state::*;
 use crate::ui_theme::*;
@@ -205,7 +206,13 @@ impl TerminalUI {
             }
             MessageRole::Assistant => {
                 // Avoid double-pushing if streaming already added it
-                if self.claude.last_assistant_message() != Some(&content) {
+                // (streaming stores raw markdown, but display_text has markdown stripped)
+                let already_pushed = self
+                    .claude
+                    .last_assistant_message()
+                    .map(|raw| strip_markdown(raw) == content)
+                    .unwrap_or(false);
+                if !already_pushed {
                     self.claude.push_message(ClaudeMessage::Assistant {
                         content: crate::claude_ui::AssistantContent::from_markdown(&content),
                     });
