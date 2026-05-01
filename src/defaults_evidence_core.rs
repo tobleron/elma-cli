@@ -16,7 +16,7 @@ pub(crate) fn default_evidence_mode_config(base_url: &str, model: &str) -> Profi
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "You decide how Elma should present shell evidence.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"mode\": \"RAW\" | \"COMPACT\" | \"RAW_PLUS_COMPACT\",\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- RAW: use when the user explicitly asks to run/execute/show a command (e.g., \"run tree\", \"run cargo test\", \"show files\"). Also use when the command output is short (<50 lines) and the user wants to see exact output.\n- COMPACT: use when the user wants explanation, summary, analysis, comparison, or when raw output would be very noisy (>100 lines). Also use for pure chat/conversational turns with no actual command execution.\n- RAW_PLUS_COMPACT: use when exact output matters but a short explanation also helps. Use when step has artifact_path. Use when user asks for both output AND summary.\n\nCRITICAL RULE FOR COMMAND EXECUTION:\n- If user message contain \"run <command>\", \"execute\", \"show output\", or names a specific command (tree, cargo, ls, git, etc.), prefer RAW or RAW_PLUS_COMPACT.\n- If step_results show a command was actually executed (command field is not null), prefer RAW or RAW_PLUS_COMPACT unless output is extremely long.\n- If step_results show only a reply step with no command execution, use COMPACT.\n\nDecision priority:\n1. User explicitly asks for raw output → RAW\n2. User asks for command execution → RAW or RAW_PLUS_COMPACT\n3. Command was executed with short output → RAW\n4. Command was executed with long output → RAW_PLUS_COMPACT\n5. User wants summary/analysis → COMPACT\n6. No command executed (reply only) → COMPACT\n\nBe strict and concise.\n"
+        system_prompt: "You are Elma's evidence mode classifier.\nReturn the most probable answer as a single DSL line.\n\nChoice rules:\n1 = RAW: the user needs exact raw output\n2 = COMPACT: the user needs concise summarized evidence\n3 = RAW_PLUS_COMPACT: the user benefits from both exact output and concise explanation\n\nOutput format:\nMODE choice=1 label=RAW reason=\"ultra concise justification\" entropy=0.1\n\nRules:\n- Output exactly one MODE line.\n- Choose RAW only when exact output matters.\n- Choose COMPACT when summary is sufficient or raw output would be noisy.\n- Choose RAW_PLUS_COMPACT when exact evidence matters but interpretation also helps.\n- No JSON, Markdown fences, or prose outside the DSL.\n"
             .to_string(),
     }
 }
@@ -33,7 +33,7 @@ pub(crate) fn default_evidence_compactor_config(base_url: &str, model: &str) -> 
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "You compact raw workspace evidence for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"summary\": \"plain text summary\",\n  \"key_facts\": [\"...\"],\n  \"noise\": [\"...\"]\n}\n\nRules:\n- Preserve only facts that help solve the user's task.\n- Prefer exact paths, signatures, versions, and short facts.\n- Omit repetitive listings and irrelevant build artifacts.\n- Output plain text fragments only.\n"
+        system_prompt: "You compact raw workspace evidence for Elma.\n\nReturn a single DSL RESULT line.\n\nOutput format:\nRESULT summary=\"plain text summary\" key_facts=\"fact1,fact2\" noise=\"noise1\"\n\nRules:\n- Preserve only facts that help solve the user's task.\n- Prefer exact paths, signatures, versions, and short facts.\n- Omit repetitive listings and irrelevant build artifacts.\n- For key_facts and noise, use comma-separated strings.\n"
             .to_string(),
     }
 }
@@ -50,7 +50,7 @@ pub(crate) fn default_artifact_classifier_config(base_url: &str, model: &str) ->
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "You classify workspace artifacts for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"safe\": [\"...\"],\n  \"maybe\": [\"...\"],\n  \"keep\": [\"...\"],\n  \"ignore\": [\"...\"],\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- 'safe' means safe to delete or clean up now.\n- 'maybe' means regenerable or context-dependent; mention caution.\n- 'keep' means should normally stay.\n- 'ignore' means irrelevant to the current question.\n- Be conservative.\n"
+        system_prompt: "You classify workspace artifacts for Elma.\n\nReturn exactly one DSL line and nothing else:\nARTIFACT safe=\"a,b\" maybe=\"c\" keep=\"d\" ignore=\"e\" reason=\"one short sentence\"\n\nRules:\n- Use comma-separated short phrases for the list fields.\n- Be conservative.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -67,7 +67,7 @@ pub(crate) fn default_claim_checker_config(base_url: &str, model: &str) -> Profi
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "Verify the answer is supported by evidence. Return JSON: {\"status\":\"ok\"|\"revise\",\"reason\":\"...\",\"unsupported_claims\":[]}"
+        system_prompt: "Verify the answer is supported by evidence.\n\nReturn exactly one DSL line and nothing else:\nVERDICT status=ok reason=\"one short sentence\" unsupported_claims=\"claim1,claim2\"\n\nAllowed status:\n- ok\n- revise\n\nRules:\n- unsupported_claims is a comma-separated list (may be empty).\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -84,7 +84,7 @@ pub(crate) fn default_claim_revision_advisor_config(base_url: &str, model: &str)
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "Provide revision guidance for unsupported claims. Return JSON: {\"missing_points\":[],\"rewrite_instructions\":\"...\"}"
+        system_prompt: "Provide revision guidance for unsupported claims.\n\nReturn exactly one DSL line and nothing else:\nADVICE missing_points=\"point1,point2\" rewrite_instructions=\"one short paragraph\"\n\nRules:\n- missing_points is a comma-separated list.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -101,32 +101,7 @@ pub(crate) fn default_verify_checker_config(base_url: &str, model: &str) -> Prof
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: r#"You are Elma's JSON verify checker.
-
-Your job is to check if JSON output is well-formed and identify any problems.
-
-Return ONLY one valid JSON object. No prose.
-
-Schema:
-{
-  "status": "ok" | "problems",
-  "problems": ["list of specific problems found, or empty array if ok"]
-}
-
-Rules:
-- Check for missing required fields.
-- Check for invalid field types.
-- Check for empty required strings.
-- Check for invalid enum values.
-- Check for structural issues (wrong nesting, missing brackets, etc.).
-- List each problem specifically and clearly.
-- If no problems, return status "ok" with empty problems array.
-
-Example output with problems:
-{"status":"problems","problems":["Missing required field 'status'","Field 'reason' is empty"]}
-
-Example output without problems:
-{"status":"ok","problems":[]}"#
+        system_prompt: "You are Elma's legacy verify checker.\n\nThis profile is deprecated by the compact DSL migration.\n\nReturn exactly one DSL line and nothing else:\nDEPRECATED reason=\"verify_checker disabled\"\n"
             .to_string(),
     }
 }
@@ -190,113 +165,6 @@ pub(crate) fn managed_profile_file_names() -> Vec<String> {
 }
 
 // ============================================================================
-// JSON Pipeline Intel Units (Task 008 Phase 3)
-// ============================================================================
-
-/// Generate simple text from reasoning
-pub(crate) async fn generate_text_from_reasoning(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    cfg: &Profile,
-    reasoning: &str,
-) -> Result<String> {
-    let user = format!(
-        "Convert this reasoning into simple action text:\n\n{}",
-        reasoning
-    );
-    let req = chat_request_system_user(
-        cfg,
-        &cfg.system_prompt,
-        &user,
-        ChatRequestOptions::default(),
-    );
-
-    let resp = chat_once_with_timeout(client, chat_url, &req, cfg.timeout_s).await?;
-    Ok(extract_response_text(&resp).trim().to_string())
-}
-
-/// Convert text to JSON using schema
-pub(crate) async fn convert_text_to_json(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    cfg: &Profile,
-    text: &str,
-    schema_description: &str,
-) -> Result<String> {
-    let user = format!(
-        "Convert this text to JSON matching the schema:\n\nSchema:\n{}\n\nText:\n{}",
-        schema_description, text
-    );
-    let req = chat_request_system_user(
-        cfg,
-        &cfg.system_prompt,
-        &user,
-        ChatRequestOptions::default(),
-    );
-
-    let resp = chat_once(client, chat_url, &req).await?;
-    Ok(extract_response_text(&resp).trim().to_string())
-}
-
-/// Verify JSON and list problems
-pub(crate) async fn verify_json(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    cfg: &Profile,
-    json: &str,
-) -> Result<VerifyCheckResult> {
-    let user = format!("Verify this JSON:\n\n{}", json);
-    let req = chat_request_system_user(
-        cfg,
-        &cfg.system_prompt,
-        &user,
-        ChatRequestOptions::default(),
-    );
-
-    chat_json_with_repair(client, chat_url, &req).await
-}
-
-/// Repair JSON based on problems
-pub(crate) async fn repair_json(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    cfg: &Profile,
-    json: &str,
-    problems: &[String],
-) -> Result<String> {
-    let problems_text = if problems.is_empty() {
-        "No problems found".to_string()
-    } else {
-        problems
-            .iter()
-            .map(|p| format!("- {}", p))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
-    let user = format!(
-        "Original JSON:\n{}\n\nProblems to fix:\n{}",
-        json, problems_text
-    );
-    let req = chat_request_system_user(
-        cfg,
-        &cfg.system_prompt,
-        &user,
-        ChatRequestOptions::default(),
-    );
-
-    let resp = chat_once(client, chat_url, &req).await?;
-    Ok(extract_response_text(&resp).trim().to_string())
-}
-
-/// Result of JSON verification check
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct VerifyCheckResult {
-    pub status: String, // "ok" or "problems"
-    pub problems: Vec<String>,
-}
-
-// ============================================================================
 // Intent Helper - Annotate User Intent (Task 048)
 // ============================================================================
 
@@ -337,15 +205,23 @@ pub(crate) async fn annotate_user_intent(
     user_message: &str,
     conversation_history: &[ChatMessage],
 ) -> Result<String> {
-    // Build narrative input with conversation history (exclude system messages)
+    // Build narrative input with conversation history (exclude system messages).
+    // Deduplicate: exclude the last user message if it matches the current
+    // message to prevent phantom duplicated entries.
     let mut input = String::new();
     input.push_str("CONVERSATION HISTORY:\n");
+    let mut last_user_msg: Option<&str> = None;
     for msg in conversation_history {
         // Skip system messages
         if msg.role == "system" {
             continue;
         }
-        let role = if msg.role == "user" { "User" } else { "Elma" };
+        let role = if msg.role == "user" {
+            last_user_msg = Some(&msg.content);
+            "User"
+        } else {
+            "Elma"
+        };
         // Truncate long messages to avoid token explosion
         let content = if msg.content.chars().count() > 200 {
             format!("{}...", msg.content.chars().take(200).collect::<String>())
@@ -354,7 +230,18 @@ pub(crate) async fn annotate_user_intent(
         };
         input.push_str(&format!("{}: {}\n", role, content));
     }
-    input.push_str(&format!("\nUser: {}\n", user_message));
+    // Skip appending current message if it appears identical to last history entry.
+    let user_trimmed = user_message.trim();
+    if !user_trimmed.is_empty() {
+        let is_duplicate = last_user_msg
+            .map(|last| last.trim() == user_trimmed)
+            .unwrap_or(false);
+        if !is_duplicate {
+            input.push_str(&format!("\nUser: {}\n", user_message));
+        } else {
+            input.push_str("\n");
+        }
+    }
 
     let req = chat_request_system_user(
         cfg,

@@ -9,9 +9,7 @@ max_tokens = 1024
 timeout_s = 120
 system_prompt = """
 You are Elma's result presenter.
-
 Return plain terminal text only.
-
 Principles:
 - Preserve technical accuracy above all else.
 - Prefer concise, direct, grounded answers.

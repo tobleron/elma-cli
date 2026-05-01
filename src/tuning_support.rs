@@ -427,7 +427,7 @@ pub(crate) fn build_orchestrator_user_content(
         "USER MESSAGE: {line}\n\n\
          {autonomy_rule}\
          {classification_signal}\n\
-         BUILTIN TOOLS:\n- shell: Execute shell commands\n- read: Read file contents\n- search: Search with ripgrep\n- edit: Edit files\n- select: Select items from list\n- reply: Respond to user\n\n\
+         BUILTIN TOOLS:\n- shell: Execute shell commands\n- read: Read file contents\n- observe: Inspect metadata without consuming file contents\n- search: Search with ripgrep\n- edit: Edit files\n- select: Select items from list\n- reply: Respond to user\n\n\
          {formula_signal}\
          {priors_signal}\n\
          WORKSPACE FACTS (TRUNCATED):\n{}\n\n\
@@ -492,7 +492,7 @@ pub(crate) fn build_recovery_user_content(
         }),
         "observed_step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
         "recovery_rules": [
-            "Return the smallest valid Program JSON that can still satisfy the request.",
+            "Return the smallest valid action DSL workflow that can still satisfy the request.",
             "For non-CHAT routes, do not fall back to reply-only unless a concise clarifying question is the only safe next step.",
             "If the user asks to choose, rank, prioritize, or select workspace items, inspect evidence first, then decide or summarize, then reply.",
             "If the user asks to show file contents, inspect the chosen files before replying.",

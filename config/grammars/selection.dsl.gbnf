@@ -1,0 +1,7 @@
+root ::= item_block ws reason_block? ws
+item_block ::= item_line (ws item_line)*
+item_line ::= "ITEM" ws "value=" string
+reason_block ::= "REASON" ws "text=" string
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+ws ::= [ \t\n\r]*

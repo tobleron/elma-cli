@@ -631,7 +631,7 @@ pub async fn try_hierarchical_decomposition(
         return Ok(None);
     }
 
-    let masterplan = generate_masterplan(
+    let masterplan = match generate_masterplan(
         client,
         chat_url,
         &profiles.orchestrator_cfg,
@@ -639,7 +639,18 @@ pub async fn try_hierarchical_decomposition(
         ws,
         ws_brief,
     )
-    .await?;
+    .await
+    {
+        Ok(plan) => plan,
+        Err(e) => {
+            // Decomposition is a best-effort enhancement; do not hard-fail the user turn.
+            crate::ui_trace::append_trace_log_line(&format!(
+                "[DECOMPOSITION_SKIPPED] masterplan_generation_failed={}",
+                e
+            ));
+            return Ok(None);
+        }
+    };
 
     persist_masterplan(&masterplan, session_root);
     Ok(Some(masterplan))
@@ -875,7 +886,7 @@ pub async fn try_hierarchical_decomposition_with_ladder(
     if ladder_assessment.level != ExecutionLevel::MasterPlan && !ladder_assessment.requires_phases {
         return Ok(None);
     }
-    let masterplan = generate_masterplan(
+    let masterplan = match generate_masterplan(
         client,
         chat_url,
         &profiles.orchestrator_cfg,
@@ -883,7 +894,17 @@ pub async fn try_hierarchical_decomposition_with_ladder(
         ws,
         ws_brief,
     )
-    .await?;
+    .await
+    {
+        Ok(plan) => plan,
+        Err(e) => {
+            crate::ui_trace::append_trace_log_line(&format!(
+                "[DECOMPOSITION_SKIPPED] masterplan_generation_failed={}",
+                e
+            ));
+            return Ok(None);
+        }
+    };
     persist_masterplan(&masterplan, session_root);
     Ok(Some(masterplan))
 }

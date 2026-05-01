@@ -192,9 +192,13 @@ pub(crate) async fn request_judge_verdict(
     step_results: &[StepResult],
     final_text: &str,
 ) -> Result<CalibrationJudgeVerdict> {
+    let system = format!(
+        "{}\n\nReturn exactly one DSL line and nothing else.\nFormat:\nJUDGE status=ok reason=\"one short sentence\" answered_request=true faithful_to_evidence=true plain_text=true",
+        judge_cfg.system_prompt.trim()
+    );
     let req = chat_request_system_user(
         judge_cfg,
-        &judge_cfg.system_prompt,
+        &system,
         &serde_json::json!({
             "scenario_notes": scenario.notes,
             "expected_route": scenario.route,
@@ -207,7 +211,17 @@ pub(crate) async fn request_judge_verdict(
         .to_string(),
         ChatRequestOptions::default(),
     );
-    chat_json_with_repair(client, chat_url, &req).await
+    let resp = chat_once_with_timeout(client, chat_url, &req, judge_cfg.timeout_s).await?;
+    let text = extract_response_text(&resp);
+    let first_line = text
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    let value = crate::intel_units::parse_record_dsl_to_value(first_line)
+        .map_err(|e| anyhow::anyhow!("judge DSL parse failed: {e}"))?;
+    serde_json::from_value::<CalibrationJudgeVerdict>(value)
+        .context("Failed to deserialize judge verdict from DSL value")
 }
 
 #[cfg(test)]

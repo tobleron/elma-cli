@@ -9,19 +9,28 @@ mod intel_units_advanced;
 mod intel_units_claim_mapper;
 mod intel_units_classifier;
 mod intel_units_core;
+pub(crate) mod intel_units_dsl;
 mod intel_units_evidence_quality;
 mod intel_units_evidence_staleness;
 mod intel_units_evidence_sufficiency;
-mod intel_units_goal_consistency;
 mod intel_units_final_summary;
+mod intel_units_goal_consistency;
 mod intel_units_intent;
 pub(crate) mod intel_units_maestro;
+mod intel_units_pyramid;
 mod intel_units_repair;
 mod intel_units_responder;
 mod intel_units_turn_summary;
 
 // Re-export maestro types for external use
 pub(crate) use intel_units_maestro::{MaestroInstruction, MaestroOutput, MaestroUnit};
+
+// Re-export DSL output parsing utilities
+pub(crate) use intel_units_dsl::{
+    parse_auto_dsl, parse_claim_block_dsl, parse_critic_verdict_dsl, parse_formula_dsl,
+    parse_intel_dsl_to_value, parse_list_dsl, parse_next_action_dsl, parse_pyramid_block_dsl,
+    parse_record_dsl_to_value, parse_scope_dsl, parse_selection_dsl, parse_verdict_dsl,
+};
 
 // Re-export all intel units for backward compatibility
 pub(crate) use intel_units_advanced::*;
@@ -34,6 +43,7 @@ pub(crate) use intel_units_evidence_sufficiency::*;
 pub(crate) use intel_units_final_summary::*;
 pub(crate) use intel_units_goal_consistency::*;
 pub(crate) use intel_units_intent::*;
+pub(crate) use intel_units_pyramid::*;
 pub(crate) use intel_units_repair::*;
 pub(crate) use intel_units_responder::*;
 pub(crate) use intel_units_turn_summary::*;
@@ -93,7 +103,7 @@ impl IntelUnit for EvidenceCompactorUnit {
             .extra("output")
             .cloned()
             .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
-        let result: EvidenceCompact = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_evidence_compactor_narrative(
@@ -101,6 +111,46 @@ impl IntelUnit for EvidenceCompactorUnit {
             ),
         )
         .await?;
+
+        let result = EvidenceCompact {
+            summary: dsl_result
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            key_facts: dsl_result
+                .get("key_facts")
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    s.split(',')
+                        .filter_map(|t| {
+                            let t = t.trim();
+                            if t.is_empty() {
+                                None
+                            } else {
+                                Some(t.to_string())
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            noise: dsl_result
+                .get("noise")
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    s.split(',')
+                        .filter_map(|t| {
+                            let t = t.trim();
+                            if t.is_empty() {
+                                None
+                            } else {
+                                Some(t.to_string())
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
 
         Ok(IntelOutput::success(
             self.name(),

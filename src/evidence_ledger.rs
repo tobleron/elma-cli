@@ -146,6 +146,98 @@ pub(crate) struct Claim {
     pub(crate) contested_by: Vec<String>,
 }
 
+/// A record of a file that was read during the session.
+/// Tracks the evidence entry ID, path, summary, and raw path for
+/// evidence-aware compaction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct FileReadRecord {
+    /// Evidence entry ID (e.g., "e_003")
+    pub(crate) evidence_id: String,
+    /// File path that was read
+    pub(crate) path: String,
+    /// Timestamp of the read
+    pub(crate) timestamp: u64,
+    /// Human-readable summary of the file contents
+    pub(crate) summary: String,
+    /// Raw path on disk for full content (None if content was small)
+    pub(crate) raw_path: Option<String>,
+}
+
+/// Inventory of files read during the session.
+/// Used by evidence-aware compaction to preserve key facts
+/// even when raw tool messages are compacted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ReadFileInventory {
+    files: Vec<FileReadRecord>,
+}
+
+impl ReadFileInventory {
+    pub(crate) fn new() -> Self {
+        Self { files: Vec::new() }
+    }
+
+    /// Record a file read. If the path already exists, the newest record
+    /// replaces the old one (most recent read is most relevant).
+    pub(crate) fn record_read(
+        &mut self,
+        evidence_id: &str,
+        path: &str,
+        summary: &str,
+        raw_path: Option<String>,
+    ) {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        // Remove existing record for same path
+        self.files.retain(|f| f.path != path);
+        self.files.push(FileReadRecord {
+            evidence_id: evidence_id.to_string(),
+            path: path.to_string(),
+            timestamp,
+            summary: summary.chars().take(500).collect(),
+            raw_path,
+        });
+    }
+
+    /// Number of unique files read
+    pub(crate) fn files_read_count(&self) -> usize {
+        self.files.len()
+    }
+
+    /// Generate a compact summary of all read files for use in compaction.
+    /// Preserves evidence IDs for grounding, file paths for reference,
+    /// and per-file summaries for semantic continuity.
+    pub(crate) fn compact_summary(&self) -> String {
+        if self.files.is_empty() {
+            return String::new();
+        }
+
+        let mut lines = Vec::new();
+        lines.push(format!(
+            "## Read File Inventory ({} files)",
+            self.files.len()
+        ));
+        for file in &self.files {
+            let raw_ref = file
+                .raw_path
+                .as_ref()
+                .map(|p| format!(" [raw: {}]", p))
+                .unwrap_or_default();
+            lines.push(format!(
+                "- `{}` | evidence: {} | {}{}",
+                file.path, file.evidence_id, file.summary, raw_ref
+            ));
+        }
+        lines.join("\n")
+    }
+
+    /// Iterate over file records
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &FileReadRecord> {
+        self.files.iter()
+    }
+}
+
 // ============================================================================
 // Evidence Ledger
 // ============================================================================
@@ -157,6 +249,8 @@ pub(crate) struct EvidenceLedger {
     pub(crate) claims: Vec<Claim>,
     pub(crate) base_dir: String,
     next_id: usize,
+    /// Inventory of files read during the session for evidence-aware compaction
+    pub(crate) read_inventory: ReadFileInventory,
 }
 
 impl EvidenceLedger {
@@ -167,88 +261,97 @@ impl EvidenceLedger {
             claims: Vec::new(),
             base_dir: base_dir.to_string_lossy().to_string(),
             next_id: 1,
+            read_inventory: ReadFileInventory::new(),
         }
     }
 
-     pub(crate) fn add_entry(&mut self, source: EvidenceSource, raw_output: &str) -> &EvidenceEntry {
-         // Strip ANSI escape sequences from raw output
-         let clean_output = match strip_ansi_escapes::strip(raw_output.as_bytes()) {
-             Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
-             Err(_) => raw_output.to_string(), // Fallback: return raw if stripping fails
-         };
-         
-         let id = format!("e_{:03}", self.next_id);
-         self.next_id += 1;
+    pub(crate) fn add_entry(&mut self, source: EvidenceSource, raw_output: &str) -> &EvidenceEntry {
+        // Strip ANSI escape sequences from raw output
+        let clean_output = match strip_ansi_escapes::strip(raw_output.as_bytes()) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+            Err(_) => raw_output.to_string(), // Fallback: return raw if stripping fails
+        };
 
-         let extra = match &source {
-             EvidenceSource::Shell { command, exit_code } => SummarizeExtra {
-                 command: Some(command.clone()),
-                 path: None,
-                 pattern: None,
-                 exit_code: Some(*exit_code),
-             },
-             EvidenceSource::Read { path } => SummarizeExtra {
-                 command: None,
-                 path: Some(path.clone()),
-                 pattern: None,
-                 exit_code: None,
-             },
-             EvidenceSource::Search { path, pattern } => SummarizeExtra {
-                 command: None,
-                 path: Some(path.clone()),
-                 pattern: Some(pattern.clone()),
-                 exit_code: None,
-             },
-             EvidenceSource::Tool { name, input } => SummarizeExtra {
-                 command: None,
-                 path: None,
-                 pattern: None,
-                 exit_code: None,
-             },
-         };
+        let id = format!("e_{:03}", self.next_id);
+        self.next_id += 1;
 
-         let summary = summarize_tool_result(
-             match &source {
-                 EvidenceSource::Shell { .. } => "shell",
-                 EvidenceSource::Read { .. } => "read",
-                 EvidenceSource::Search { .. } => "search",
-                 EvidenceSource::Tool { name, .. } => name.as_str(),
-             },
-             &clean_output, // Use cleaned output for summarization
-             &extra,
-         );
+        let extra = match &source {
+            EvidenceSource::Shell { command, exit_code } => SummarizeExtra {
+                command: Some(command.clone()),
+                path: None,
+                pattern: None,
+                exit_code: Some(*exit_code),
+            },
+            EvidenceSource::Read { path } => SummarizeExtra {
+                command: None,
+                path: Some(path.clone()),
+                pattern: None,
+                exit_code: None,
+            },
+            EvidenceSource::Search { path, pattern } => SummarizeExtra {
+                command: None,
+                path: Some(path.clone()),
+                pattern: Some(pattern.clone()),
+                exit_code: None,
+            },
+            EvidenceSource::Tool { name, input } => SummarizeExtra {
+                command: None,
+                path: None,
+                pattern: None,
+                exit_code: None,
+            },
+        };
 
-         let quality = Self::assess_quality(&source, &clean_output); // Use cleaned output for quality assessment
-         let timestamp = SystemTime::now()
-             .duration_since(UNIX_EPOCH)
-             .unwrap_or_default()
-             .as_secs();
+        let summary = summarize_tool_result(
+            match &source {
+                EvidenceSource::Shell { .. } => "shell",
+                EvidenceSource::Read { .. } => "read",
+                EvidenceSource::Search { .. } => "search",
+                EvidenceSource::Tool { name, .. } => name.as_str(),
+            },
+            &clean_output, // Use cleaned output for summarization
+            &extra,
+        );
 
-         let mut raw_path = None;
-         if should_store_raw(&clean_output) {
-             let evidence_dir = PathBuf::from(&self.base_dir)
-                 .join("evidence")
-                 .join(&self.session_id);
-             std::fs::create_dir_all(&evidence_dir).ok();
-             let file_path = evidence_dir.join(format!("{}_raw.txt", id));
-             if std::fs::write(&file_path, &clean_output).is_ok() { // Store cleaned output
-                 raw_path = Some(file_path.to_string_lossy().to_string());
-             }
-         }
+        let quality = Self::assess_quality(&source, &clean_output); // Use cleaned output for quality assessment
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
-         let entry = EvidenceEntry {
-             id,
-             source,
-             timestamp,
-             summary,
-             raw_path,
-             staleness: Staleness::Fresh,
-             quality,
-         };
+        let mut raw_path = None;
+        if should_store_raw(&clean_output) {
+            let evidence_dir = PathBuf::from(&self.base_dir)
+                .join("evidence")
+                .join(&self.session_id);
+            std::fs::create_dir_all(&evidence_dir).ok();
+            let file_path = evidence_dir.join(format!("{}_raw.txt", id));
+            if std::fs::write(&file_path, &clean_output).is_ok() {
+                // Store cleaned output
+                raw_path = Some(file_path.to_string_lossy().to_string());
+            }
+        }
 
-         self.entries.push(entry);
-         self.entries.last().unwrap()
-     }
+        let entry = EvidenceEntry {
+            id,
+            source,
+            timestamp,
+            summary,
+            raw_path,
+            staleness: Staleness::Fresh,
+            quality,
+        };
+
+        self.entries.push(entry);
+        // Track reads in the file inventory for evidence-aware compaction
+        if let EvidenceSource::Read { path } = &self.entries.last().unwrap().source {
+            let last = self.entries.last().unwrap();
+            let raw_path = last.raw_path.clone();
+            self.read_inventory
+                .record_read(&last.id, path, &last.summary, raw_path);
+        }
+        self.entries.last().unwrap()
+    }
 
     pub(crate) fn mark_stale(&mut self, path: &str) {
         for entry in &mut self.entries {
@@ -349,6 +452,20 @@ impl EvidenceLedger {
             .unwrap_or(0);
         ledger.next_id = max_id + 1;
 
+        // On load from old format, rebuild read_inventory from entries
+        if ledger.read_inventory.files.is_empty() && !ledger.entries.is_empty() {
+            for entry in &ledger.entries {
+                if let EvidenceSource::Read { path } = &entry.source {
+                    ledger.read_inventory.record_read(
+                        &entry.id,
+                        path,
+                        &entry.summary,
+                        entry.raw_path.clone(),
+                    );
+                }
+            }
+        }
+
         Ok(ledger)
     }
 
@@ -373,6 +490,13 @@ impl EvidenceLedger {
             .collect()
     }
 
+    /// Generate an evidence-aware summary of all files read,
+    /// for use during compaction. Preserves evidence IDs, paths,
+    /// and per-file summaries so grounding can still work after compaction.
+    pub(crate) fn read_inventory_summary(&self) -> String {
+        self.read_inventory.compact_summary()
+    }
+
     fn assess_quality(source: &EvidenceSource, raw_output: &str) -> EvidenceQuality {
         match source {
             EvidenceSource::Shell { exit_code, .. } => {
@@ -392,7 +516,9 @@ impl EvidenceLedger {
                 }
             }
             EvidenceSource::Search { .. } => {
-                if !raw_output.trim().is_empty() {
+                if raw_output.to_ascii_lowercase().contains("no matches found") {
+                    EvidenceQuality::Weak
+                } else if !raw_output.trim().is_empty() {
                     EvidenceQuality::Direct
                 } else {
                     EvidenceQuality::Weak
@@ -460,16 +586,17 @@ AVAILABLE EVIDENCE:
 TASK:
 Extract every factual claim from the draft answer. For each claim, identify which evidence entry (by ID) supports it. If no evidence supports a claim, mark it as UNGROUNDED.
 
-Output contract:
-{{"claims": [{{"statement": "...", "evidence_ids": ["e_001"], "status": "GROUNDED|UNGROUNDED"}}]}}"#,
+Output DSL format:
+CLAIM statement="the file exists" evidence_ids="e_001" status=GROUNDED
+CLAIM statement="the value is 42" evidence_ids="e_002,e_003" status=GROUNDED
+CLAIM statement="config is wrong" evidence_ids="" status=UNGROUNDED
+REASON text="3 claims found, 2 grounded"
+END"#,
         draft = draft.trim(),
         summary = summary,
     );
 
-    match crate::intel_trait::execute_intel_json_from_user_content::<serde_json::Value>(
-        client, profile, narrative,
-    )
-    .await
+    match crate::intel_trait::execute_intel_dsl_from_user_content(client, profile, narrative).await
     {
         Ok(result) => {
             let claims: Vec<ClaimVerdict> = result
@@ -671,6 +798,18 @@ mod tests {
     }
 
     #[test]
+    fn test_assess_quality_search_no_matches_is_weak() {
+        let q = EvidenceLedger::assess_quality(
+            &EvidenceSource::Search {
+                path: "src".to_string(),
+                pattern: "missing".to_string(),
+            },
+            "No matches found for: missing",
+        );
+        assert!(matches!(q, EvidenceQuality::Weak));
+    }
+
+    #[test]
     fn test_enforce_grounding_heuristic() {
         let ledger = test_ledger();
         let draft = "I found AGENTS.md in the project root directory.\nThe project uses Cargo.toml for dependencies.";
@@ -855,6 +994,137 @@ mod tests {
             "Narrative without ledger should not have evidence tag. Got:\n{}",
             narrative_without
         );
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_read_inventory_tracks_reads() {
+        let mut ledger = EvidenceLedger::new("s_inv", &PathBuf::from("/tmp/test_inv"));
+        ledger.add_entry(
+            EvidenceSource::Read {
+                path: "src/main.rs".to_string(),
+            },
+            "fn main() { println!(\"hello\"); }",
+        );
+        ledger.add_entry(
+            EvidenceSource::Read {
+                path: "Cargo.toml".to_string(),
+            },
+            "[package]\nname = \"elma-cli\"\nversion = \"0.1.0\"",
+        );
+        // Shell entries should not appear in read inventory
+        ledger.add_entry(
+            EvidenceSource::Shell {
+                command: "ls".to_string(),
+                exit_code: 0,
+            },
+            "file1\nfile2",
+        );
+
+        assert_eq!(ledger.read_inventory.files_read_count(), 2);
+        let summary = ledger.read_inventory_summary();
+        assert!(
+            summary.contains("src/main.rs"),
+            "Summary should contain first path"
+        );
+        assert!(
+            summary.contains("Cargo.toml"),
+            "Summary should contain second path"
+        );
+        assert!(
+            summary.contains("fn main()"),
+            "Summary should contain file content"
+        );
+        assert!(
+            summary.contains("e_001"),
+            "Summary should contain evidence ID"
+        );
+        assert!(
+            !summary.contains("file1"),
+            "Shell output should not appear in read inventory"
+        );
+    }
+
+    #[test]
+    fn test_read_inventory_replaces_on_reread() {
+        let mut ledger = EvidenceLedger::new("s_reread", &PathBuf::from("/tmp/test_reread"));
+        // First read
+        ledger.add_entry(
+            EvidenceSource::Read {
+                path: "config.json".to_string(),
+            },
+            "{\"version\": 1}",
+        );
+        assert_eq!(ledger.read_inventory.files_read_count(), 1);
+        let first_entry_id = ledger
+            .read_inventory
+            .iter()
+            .next()
+            .unwrap()
+            .evidence_id
+            .clone();
+        assert_eq!(first_entry_id, "e_001");
+
+        // Re-read same file — replaces the record
+        ledger.add_entry(
+            EvidenceSource::Read {
+                path: "config.json".to_string(),
+            },
+            "{\"version\": 2, \"debug\": true}",
+        );
+        assert_eq!(
+            ledger.read_inventory.files_read_count(),
+            1,
+            "Re-reading same file should not increase count"
+        );
+        let new_entry_id = ledger
+            .read_inventory
+            .iter()
+            .next()
+            .unwrap()
+            .evidence_id
+            .clone();
+        assert_eq!(new_entry_id, "e_002", "Evidence ID should be the new one");
+        let summary = ledger.read_inventory_summary();
+        assert!(summary.contains("version"), "Should use latest summary");
+    }
+
+    #[test]
+    fn test_read_inventory_load_rebuilds_from_entries() {
+        // Simulate loading a ledger saved without read_inventory (old format)
+        let test_dir = PathBuf::from("/tmp/test_inv_load");
+        let _ = std::fs::remove_dir_all(&test_dir);
+
+        let mut ledger = EvidenceLedger::new("s_load", &test_dir);
+        ledger.add_entry(
+            EvidenceSource::Read {
+                path: "src/lib.rs".to_string(),
+            },
+            "pub fn helper() -> bool { true }",
+        );
+        ledger.add_entry(
+            EvidenceSource::Read {
+                path: "README.md".to_string(),
+            },
+            "# Elma CLI\nA local-first autonomous CLI agent.",
+        );
+        ledger.persist().unwrap();
+
+        // Manually clear the read_inventory to simulate old format
+        ledger.read_inventory = ReadFileInventory::new();
+        assert_eq!(ledger.read_inventory.files_read_count(), 0);
+
+        // Reload — should rebuild inventory from entries
+        let reloaded = EvidenceLedger::load("s_load", &test_dir).unwrap();
+        assert_eq!(
+            reloaded.read_inventory.files_read_count(),
+            2,
+            "Load should rebuild read inventory from Read entries"
+        );
+        let summary = reloaded.read_inventory_summary();
+        assert!(summary.contains("src/lib.rs"));
+        assert!(summary.contains("README.md"));
 
         let _ = std::fs::remove_dir_all(&test_dir);
     }

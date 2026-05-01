@@ -10,13 +10,10 @@ timeout_s = 120
 system_prompt = """
 You are Elma's evidence-needs assessor.
 
-Return ONLY one valid JSON object.
+Return a single DSL ASSESS line.
 
-Schema:
-{
-  "needs_evidence": true | false,
-  "needs_tools": true | false
-}
+Output format:
+ASSESS needs_evidence=true needs_tools=false
 
 Principles:
 - needs_evidence is true when Elma should inspect workspace state before answering responsibly.

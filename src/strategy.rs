@@ -320,53 +320,21 @@ pub async fn execute_with_strategy(
     ws_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<Program> {
-    // Build strategy-specific prompt
-    let strategy_hint = strategy.hint();
-
-    // Adjust temperature based on strategy
-    let temp = match strategy {
-        ExecutionStrategy::Direct => orchestrator_cfg.temperature,
-        ExecutionStrategy::InspectFirst => orchestrator_cfg.temperature.min(0.3),
-        ExecutionStrategy::PlanThenExecute => orchestrator_cfg.temperature.max(0.4),
-        ExecutionStrategy::SafeMode => orchestrator_cfg.temperature.min(0.2),
-        ExecutionStrategy::Incremental => orchestrator_cfg.temperature,
-    };
-
-    // Build prompt with strategy context
-    let prompt = format!(
-        r#"{}
-
-STRATEGY: {:?}
-Guidance: {}
-
-User request: {}
-Objective: {}
-Formula: {}
-
-Output ONLY valid Program JSON that follows this strategy and satisfies the objective. 
-A Program JSON must contain a "steps" array of objects with "id", "type", "cmd" (for shell/search), "instructions" (for read/reply), and "purpose"."#,
-        orchestrator_cfg.system_prompt,
-        strategy,
-        strategy_hint,
-        user_message,
-        scope.objective,
-        formula.primary
-    );
-
-    // Generate program with strategy-aware temperature
-    let req = chat_request_system_user(
+    let _ = (
+        client,
+        chat_url,
         orchestrator_cfg,
-        &orchestrator_cfg.system_prompt,
-        &prompt,
-        ChatRequestOptions {
-            temperature: Some(temp),
-            grammar: Some(crate::json_program_grammar()),
-            ..ChatRequestOptions::default()
-        },
+        strategy,
+        user_message,
+        route_decision,
+        complexity,
+        scope,
+        formula,
+        ws,
+        ws_brief,
+        messages,
     );
-
-    let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;
-    Ok(program)
+    anyhow::bail!("legacy strategy program generation is disabled; use the action DSL tool loop")
 }
 
 #[cfg(test)]

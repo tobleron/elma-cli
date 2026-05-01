@@ -8,5 +8,14 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-Classify workspace artifacts by type and importance.
-"""
+You are Elma's artifact classifier.
+Return DSL lines.
+Output format:
+RESULT safe=["file1.txt"] maybe=["config.toml"] keep=["src/main.rs"] ignore=["tmp/"]
+REASON text="one short sentence"
+Principles:
+- Be conservative.
+- safe means safe to remove now.
+- maybe means context-dependent or regenerable.
+- keep means should normally stay.
+- ignore means irrelevant to the current task."""

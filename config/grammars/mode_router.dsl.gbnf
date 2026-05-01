@@ -1,0 +1,10 @@
+root ::= ws "MODE" ws choice_field ws label_field ws reason_field? ws entropy_field ws
+choice_field ::= "choice=" ("1" | "2" | "3" | "4" | "5")
+label_field ::= "label=" ("INSPECT" | "EXECUTE" | "PLAN" | "MASTERPLAN" | "DECIDE")
+reason_field ::= "reason=" string ws
+entropy_field ::= "entropy=" float
+float ::= digit+ ("." digit+)?
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+digit ::= [0-9]
+ws ::= [ \t]*

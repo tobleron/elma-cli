@@ -308,103 +308,6 @@ pub(crate) async fn chat_once_with_grammar_timeout(
     chat_once_base(client, chat_url, req, Some(timeout_s), Some(profile_name)).await
 }
 
-pub(crate) async fn chat_json_with_repair<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-) -> Result<T> {
-    chat_json_with_repair_impl(client, chat_url, req, None, None).await
-}
-
-pub(crate) async fn chat_json_with_repair_for_profile<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-    profile_name: &str,
-) -> Result<T> {
-    chat_json_with_repair_impl(client, chat_url, req, Some(profile_name), None).await
-}
-
-pub(crate) async fn chat_json_with_repair_timeout<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-    timeout_s: u64,
-) -> Result<T> {
-    chat_json_with_repair_impl(client, chat_url, req, None, Some(timeout_s)).await
-}
-
-pub(crate) async fn chat_json_with_repair_for_profile_timeout<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-    profile_name: &str,
-    timeout_s: u64,
-) -> Result<T> {
-    chat_json_with_repair_impl(client, chat_url, req, Some(profile_name), Some(timeout_s)).await
-}
-
-pub(crate) async fn chat_json_with_repair_text<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-) -> Result<(T, String)> {
-    chat_json_with_repair_text_impl(client, chat_url, req, None, None).await
-}
-
-pub(crate) async fn chat_json_with_repair_text_for_profile<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-    profile_name: &str,
-) -> Result<(T, String)> {
-    chat_json_with_repair_text_impl(client, chat_url, req, Some(profile_name), None).await
-}
-
-pub(crate) async fn chat_json_with_repair_text_timeout<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-    timeout_s: u64,
-) -> Result<(T, String)> {
-    chat_json_with_repair_text_impl(client, chat_url, req, None, Some(timeout_s)).await
-}
-
-pub(crate) async fn chat_json_with_repair_text_for_profile_timeout<
-    T: DeserializeOwned + 'static,
->(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-    profile_name: &str,
-    timeout_s: u64,
-) -> Result<(T, String)> {
-    chat_json_with_repair_text_impl(client, chat_url, req, Some(profile_name), Some(timeout_s))
-        .await
-}
-
-async fn chat_json_with_repair_impl<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-    profile_name: Option<&str>,
-    timeout_s: Option<u64>,
-) -> Result<T> {
-    let text = fetch_chat_text(client, chat_url, req, profile_name, timeout_s).await?;
-    parse_json_response(client, chat_url, req, &text).await
-}
-
-async fn chat_json_with_repair_text_impl<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-    profile_name: Option<&str>,
-    timeout_s: Option<u64>,
-) -> Result<(T, String)> {
-    let text = fetch_chat_text(client, chat_url, req, profile_name, timeout_s).await?;
-    parse_json_response_with_repaired(client, chat_url, req, &text).await
-}
-
 async fn fetch_chat_text(
     client: &reqwest::Client,
     chat_url: &Url,
@@ -423,63 +326,92 @@ async fn fetch_chat_text(
     Ok(extract_response_text(&resp))
 }
 
-async fn parse_json_response<T: DeserializeOwned + 'static>(
+// ── DSL output functions ──
+
+/// Send a request and parse the response as compact DSL.
+///
+/// Unlike the removed JSON auto-repair pipeline, this does not invoke a separate
+/// repair model. Malformed output is retried once with a compact deterministic
+/// DSL repair observation, then returned as an error if still invalid.
+pub(crate) async fn chat_dsl_with_repair(
     client: &reqwest::Client,
     chat_url: &Url,
     req: &ChatCompletionRequest,
-    text: &str,
-) -> Result<T> {
-    let (parsed, _) = parse_json_response_with_repaired::<T>(client, chat_url, req, text).await?;
-    Ok(parsed)
+) -> Result<serde_json::Value> {
+    chat_dsl_with_repair_impl(client, chat_url, req, None, None).await
 }
 
-async fn parse_json_response_with_repaired<T: DeserializeOwned + 'static>(
+pub(crate) async fn chat_dsl_with_repair_for_profile_timeout(
     client: &reqwest::Client,
     chat_url: &Url,
     req: &ChatCompletionRequest,
-    text: &str,
-) -> Result<(T, String)> {
-    match parse_json_loose(text) {
-        Ok(parsed) => Ok((parsed, text.to_string())),
-        Err(parse_error) => {
-            let repair_profile =
-                default_json_repair_config(&base_url_from_chat_url(chat_url), &req.model);
-            let repair_unit = JsonRepairUnit::new(repair_profile);
-            let repaired = repair_unit
-                .repair_with_fallback(
-                    client,
-                    chat_url,
-                    text,
-                    &[format!("Parse failure: {}", parse_error)],
-                )
-                .await?;
-            let parsed = parse_json_loose(&repaired)
-                .context("JSON parsing failed after model-based repair")?;
-            Ok((parsed, repaired))
+    profile_name: &str,
+    timeout_s: u64,
+) -> Result<serde_json::Value> {
+    chat_dsl_with_repair_impl(client, chat_url, req, Some(profile_name), Some(timeout_s)).await
+}
+
+async fn chat_dsl_with_repair_impl(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+    profile_name: Option<&str>,
+    timeout_s: Option<u64>,
+) -> Result<serde_json::Value> {
+    const MAX_REPAIR_RETRIES: usize = 1;
+    let mut working_req = req.clone();
+    let mut last_repair = None;
+
+    for attempt in 0..=MAX_REPAIR_RETRIES {
+        let text = fetch_chat_text(client, chat_url, &working_req, profile_name, timeout_s).await?;
+        let candidates = crate::text_utils::structured_output_candidates(&text);
+        let mut last_error = None;
+        for candidate in &candidates {
+            match crate::intel_units::parse_auto_dsl(candidate) {
+                Ok(value) => return Ok(value),
+                Err(dsl_err) => last_error = Some(dsl_err),
+            }
+        }
+
+        let dsl_err = last_error.unwrap_or_else(|| {
+            crate::dsl::DslError::empty(crate::dsl::ParseContext {
+                dsl_variant: "intel",
+                line: None,
+            })
+        });
+        let preview = if dsl_err.debug_preview.is_empty() {
+            "(empty or whitespace only)".to_string()
+        } else {
+            dsl_err.debug_preview.clone()
+        };
+        // Persist raw model output to trace artifacts for DSL failure analysis
+        let text_preview: String = text.chars().take(500).collect();
+        append_trace_log_line(&format!(
+            "[INTEL_DSL_PREVIEW] attempt={} raw_preview=\"{}\"",
+            attempt + 1,
+            text_preview.replace('"', "'")
+        ));
+        let expected_format = crate::dsl::detect_expected_format(&text);
+        let repair_msg = format!(
+            "INVALID_DSL\ncode: {}\nerror: {}\nExpected: {}\nReturn exactly one DSL line matching the Expected format.",
+            dsl_err.code, preview, expected_format,
+        );
+        last_repair = Some(repair_msg.clone());
+        if attempt < MAX_REPAIR_RETRIES {
+            append_trace_log_line(&format!(
+                "[INTEL_DSL_REPAIR] attempt={} error={}",
+                attempt + 1,
+                dsl_err.code
+            ));
+            working_req
+                .messages
+                .push(ChatMessage::simple("user", &repair_msg));
         }
     }
-}
 
-fn base_url_from_chat_url(chat_url: &Url) -> String {
-    let mut base = format!(
-        "{}://{}",
-        chat_url.scheme(),
-        chat_url.host_str().unwrap_or("localhost")
-    );
-    if let Some(port) = chat_url.port() {
-        base.push(':');
-        base.push_str(&port.to_string());
-    }
-    base
-}
-
-pub(crate) async fn chat_json_text_with_repair(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    req: &ChatCompletionRequest,
-) -> Result<String> {
-    let resp = chat_once(client, chat_url, req).await?;
-    Ok(extract_response_text(&resp))
+    Err(anyhow::anyhow!(last_repair.unwrap_or_else(|| {
+        "INVALID_DSL\ncode: INVALID_DSL\nerror: parser did not return a repair observation\nExpected: one DSL line: COMMAND key=value key2=\"val\"\nReturn exactly one DSL line matching the Expected format.".to_string()
+    })))
 }
 
 fn effective_reasoning_format(req: &ChatCompletionRequest) -> Option<String> {
@@ -495,17 +427,7 @@ fn effective_reasoning_format(req: &ChatCompletionRequest) -> Option<String> {
     Some("none".to_string())
 }
 
-fn request_expects_json(req: &ChatCompletionRequest) -> bool {
-    let system_prompt = req
-        .messages
-        .iter()
-        .find(|m| m.role == "system")
-        .map(|m| m.content.to_ascii_lowercase())
-        .unwrap_or_default();
-    system_prompt.contains("json")
-        || system_prompt.contains("schema:")
-        || system_prompt.contains("output only")
-}
+// Intentionally no JSON-mode helpers: model-produced structured output is DSL.
 
 pub(crate) fn isolate_reasoning_fields(resp: &mut ChatCompletionResponse) {
     for choice in &mut resp.choices {

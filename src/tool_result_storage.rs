@@ -120,63 +120,28 @@ pub(crate) fn apply_tool_result_budget(
     tool_call_id: &str,
     tool_name: &str,
     content: &str,
-    threshold_chars: usize,
+    _threshold_chars: usize,
 ) -> BudgetedResult {
-    if content.len() <= threshold_chars {
-        return BudgetedResult {
-            content_for_model: content.to_string(),
-            persisted: false,
-            persisted_path: None,
-            original_size: content.len(),
-        };
-    }
-
-    // Persist to disk
-    match persist_result(session, tool_call_id, tool_name, content) {
-        Ok(path) => {
-            trace_verbose(
-                true,
-                &format!(
-                    "tool_result_persisted: {} ({} chars → {})",
-                    tool_name,
-                    content.len(),
-                    path.display()
-                ),
-            );
-            let preview = content.chars().take(PREVIEW_SIZE_CHARS).collect::<String>();
-            BudgetedResult {
-                content_for_model: build_persisted_wrapper(
-                    tool_name,
-                    content.len(),
-                    &preview,
-                    &path,
-                ),
-                persisted: true,
-                persisted_path: Some(path),
-                original_size: content.len(),
-            }
-        }
-        Err(e) => {
-            // Fallback: truncate instead of crash
+    // Always return full content to the model context.
+    // Truncation is only for terminal display (handled separately).
+    // Still persist to disk as backup for reference.
+    if content.len() > _threshold_chars {
+        if let Err(e) = persist_result(session, tool_call_id, tool_name, content) {
             trace(
                 args_placeholder(),
                 &format!(
-                    "tool_result_persist_failed: {} (falling back to truncation): {}",
+                    "tool_result_persist_failed: {} (non-fatal): {}",
                     tool_name, e
                 ),
             );
-            let truncated = content.chars().take(threshold_chars).collect::<String>();
-            BudgetedResult {
-                content_for_model: format!(
-                    "{}... [output truncated, {} total chars]",
-                    truncated,
-                    content.len()
-                ),
-                persisted: false,
-                persisted_path: None,
-                original_size: content.len(),
-            }
         }
+    }
+
+    BudgetedResult {
+        content_for_model: content.to_string(),
+        persisted: false,
+        persisted_path: None,
+        original_size: content.len(),
     }
 }
 

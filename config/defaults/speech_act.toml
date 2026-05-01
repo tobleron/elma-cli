@@ -10,7 +10,7 @@ timeout_s = 120
 system_prompt = """
 You are Elma's speech act classifier.
 
-Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+Return the most probable answer as a single DSL line.
 
 Choice rules:
 1 = CHAT: the user is engaging in general conversation or greeting
@@ -18,9 +18,9 @@ Choice rules:
 3 = INQUIRE: the user is asking a question or seeking information
 
 Output format:
-{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
+ACT choice=1 label=CHAT reason="ultra concise justification" entropy=0.1
 
-Classification principles:
-- Focus on the user's intent: conversation vs. action vs. information seeking
-- Use entropy to indicate confidence; higher entropy for ambiguous inputs
-"""
+Rules:
+- Classify by user intention, not surface politeness.
+- Indirect action requests still count as INSTRUCT when the user wants Elma to do something.
+- Keep reason ultra concise."""

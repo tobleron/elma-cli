@@ -2,7 +2,29 @@ use crate::types::{ToolDefinition, ToolFunction};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock, RwLock};
 
-/// Extended tool definition with searchable capability hints and prerequisite check.
+/// Risk classification for a tool (mirror of main crate's ActionRisk).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolRisk {
+    ReadOnly,
+    WorkspaceWrite,
+    ExternalProcess,
+    Network,
+    ConversationState,
+}
+
+/// Execution state classification for a tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolExecutorState {
+    /// Tool can be executed to produce a result.
+    Executable,
+    /// Tool is declared for the model's awareness but results come from elsewhere (e.g., a DSL handler).
+    DeclarationOnly,
+    /// Tool is disabled and should not be used.
+    Disabled,
+}
+
+/// Extended tool definition with searchable capability hints, prerequisite check,
+/// and policy metadata.
 #[derive(Clone)]
 pub struct ToolDefinitionExt {
     pub tool_type: String,
@@ -15,6 +37,16 @@ pub struct ToolDefinitionExt {
     /// None means "always available".
     #[allow(clippy::type_complexity)]
     pub check_fn: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+    /// Risk classification for this tool.
+    pub risks: Vec<ToolRisk>,
+    /// Execution state (executable, declaration-only, or disabled).
+    pub executor_state: ToolExecutorState,
+    /// Whether this tool requires explicit user permission before execution.
+    pub requires_permission: bool,
+    /// Whether this tool requires a prior read of the target file/resource.
+    pub requires_prior_read: bool,
+    /// Whether this tool can safely run concurrently with other tools.
+    pub concurrency_safe: bool,
 }
 
 impl std::fmt::Debug for ToolDefinitionExt {
@@ -25,6 +57,11 @@ impl std::fmt::Debug for ToolDefinitionExt {
             .field("search_hints", &self.search_hints)
             .field("deferred", &self.deferred)
             .field("check_fn", &self.check_fn.as_ref().map(|_| "<closure>"))
+            .field("risks", &self.risks)
+            .field("executor_state", &self.executor_state)
+            .field("requires_permission", &self.requires_permission)
+            .field("requires_prior_read", &self.requires_prior_read)
+            .field("concurrency_safe", &self.concurrency_safe)
             .finish()
     }
 }
@@ -46,6 +83,11 @@ impl ToolDefinitionExt {
             search_hints: hints.into_iter().map(|s| s.to_string()).collect(),
             deferred: true,
             check_fn: None,
+            risks: Vec::new(),
+            executor_state: ToolExecutorState::Executable,
+            requires_permission: false,
+            requires_prior_read: false,
+            concurrency_safe: false,
         }
     }
 
@@ -57,6 +99,36 @@ impl ToolDefinitionExt {
     /// Set a prerequisite check function. Returns self for builder pattern.
     pub fn with_check_fn(mut self, f: impl Fn() -> bool + Send + Sync + 'static) -> Self {
         self.check_fn = Some(Arc::new(f));
+        self
+    }
+
+    /// Set the risk classification. Returns self for builder pattern.
+    pub fn with_risks(mut self, risks: Vec<ToolRisk>) -> Self {
+        self.risks = risks;
+        self
+    }
+
+    /// Set the executor state. Returns self for builder pattern.
+    pub fn with_executor_state(mut self, state: ToolExecutorState) -> Self {
+        self.executor_state = state;
+        self
+    }
+
+    /// Mark as requiring permission. Returns self for builder pattern.
+    pub fn requires_permission(mut self) -> Self {
+        self.requires_permission = true;
+        self
+    }
+
+    /// Mark as requiring prior read. Returns self for builder pattern.
+    pub fn requires_prior_read(mut self) -> Self {
+        self.requires_prior_read = true;
+        self
+    }
+
+    /// Mark as concurrency-safe (read-only). Returns self for builder pattern.
+    pub fn concurrency_safe(mut self) -> Self {
+        self.concurrency_safe = true;
         self
     }
 
@@ -198,12 +270,14 @@ impl DynamicToolRegistry {
     }
 
     /// Get all non-deferred tools (available by default), sorted by name for cache stability.
-    /// Filters out tools whose check_fn returns false (missing prerequisites).
+    /// Filters out tools whose check_fn returns false (missing prerequisites) or that are not executable.
     pub fn default_tools(&self) -> Vec<ToolDefinition> {
         let mut tools: Vec<ToolDefinition> = self
             .tools
             .values()
-            .filter(|t| !t.deferred && t.is_available())
+            .filter(|t| {
+                !t.deferred && t.is_available() && t.executor_state == ToolExecutorState::Executable
+            })
             .map(|t| t.to_tool_definition())
             .collect();
         tools.sort_by(|a, b| a.function.name.cmp(&b.function.name));
@@ -216,12 +290,12 @@ impl DynamicToolRegistry {
     }
 
     /// Get tools by names, sorted by name for cache stability.
-    /// Filters out tools whose prerequisites are not met.
+    /// Filters out tools whose prerequisites are not met or that are not executable.
     pub fn get_tools(&self, names: &[String]) -> Vec<ToolDefinition> {
         let mut tools: Vec<ToolDefinition> = names
             .iter()
             .filter_map(|name| self.tools.get(name))
-            .filter(|t| t.is_available())
+            .filter(|t| t.is_available() && t.executor_state == ToolExecutorState::Executable)
             .map(|t| t.to_tool_definition())
             .collect();
         tools.sort_by(|a, b| a.function.name.cmp(&b.function.name));
@@ -229,11 +303,11 @@ impl DynamicToolRegistry {
     }
 
     /// Convert search results to tool definitions.
-    /// Filters out tools whose prerequisites are not met.
+    /// Filters out tools whose prerequisites are not met or that are not executable.
     pub fn search_and_convert(&self, query: &str) -> Vec<ToolDefinition> {
         self.search(query)
             .into_iter()
-            .filter(|t| t.is_available())
+            .filter(|t| t.is_available() && t.executor_state == ToolExecutorState::Executable)
             .map(|t| t.to_tool_definition())
             .collect()
     }

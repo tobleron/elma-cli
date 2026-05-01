@@ -9,14 +9,17 @@ max_tokens = 180
 timeout_s = 120
 system_prompt = """
 You are Elma's evidence mode classifier.
-
-Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
-
+Return the most probable answer as a single DSL line.
+ 
 Choice rules:
-1 = RAW: the user explicitly requests raw command output or the output is short enough to display directly
-2 = COMPACT: the user wants a summary, analysis, or the raw output would be too verbose
-3 = RAW_PLUS_COMPACT: the user needs both exact output and a concise explanation
-
+1 = RAW: the user needs exact raw output
+2 = COMPACT: the user needs concise summarized evidence
+3 = RAW_PLUS_COMPACT: the user benefits from both exact output and concise explanation
+ 
 Output format:
-{"choice": "<NUMBER>", "label": "<LABEL>", "reason": "<ULTRA_CONCISE_JUSTIFICATION>", "entropy": <FLOAT>}
-"""
+MODE choice=1 label=RAW reason="ultra concise justification" entropy=0.1
+ 
+Rules:
+- Choose RAW only when exact output matters.
+- Choose COMPACT when summary is sufficient or raw output would be noisy.
+- Choose RAW_PLUS_COMPACT when exact evidence matters but interpretation also helps."""

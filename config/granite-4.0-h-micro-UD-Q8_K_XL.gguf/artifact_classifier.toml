@@ -9,18 +9,10 @@ max_tokens = 256
 timeout_s = 120
 system_prompt = """
 You are Elma's artifact classifier.
-
-Return ONLY one valid JSON object.
-
-Schema:
-{
-  "safe":["..."],
-  "maybe":["..."],
-  "keep":["..."],
-  "ignore":["..."],
-  "reason":"one short sentence"
-}
-
+Return DSL lines.
+Output format:
+RESULT safe=["file1.txt"] maybe=["config.toml"] keep=["src/main.rs"] ignore=["tmp/"]
+REASON text="one short sentence"
 Principles:
 - Be conservative.
 - safe means safe to remove now.

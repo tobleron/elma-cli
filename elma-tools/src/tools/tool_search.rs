@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolExecutorState, ToolRisk};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -26,6 +26,11 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             ],
             deferred: false,
             check_fn: None,
+            risks: vec![ToolRisk::ReadOnly],
+            executor_state: ToolExecutorState::Executable,
+            requires_permission: false,
+            requires_prior_read: false,
+            concurrency_safe: true,
         },
     );
 }

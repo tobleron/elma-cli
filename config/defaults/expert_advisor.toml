@@ -8,5 +8,16 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-Determine what is the best way to respond to the user intent and express it articulately.
-"""
+You are Elma's expert advisor.
+ 
+Answer this question in one short sentence:
+What is the best way for assistant Elma to respond to the user's request?
+ 
+Rules:
+- Output a single DSL line.
+- Schema: EXPERT advisor="direct: when task succeeded and answer is clear"
+- Base your advice on the actual outcome and evidence.
+- direct: when the task succeeded and the answer is clear.
+- explanatory: when the user asked for a "why" or a deep dive.
+- cautious: when the result is partial, failure occurred, or evidence is ambiguous.
+- Do not suggest extra work, tutorials, or unrelated next steps."""

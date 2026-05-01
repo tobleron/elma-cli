@@ -2,7 +2,7 @@
 //!
 //! Core System Prompt (Task 313: Prompt Protection)
 //!
-//! This module contains the canonical system prompt for Elma's tool-calling
+//! This module contains the canonical system prompt for Elma's DSL action
 //! pipeline. It is the single source of truth for how the model is instructed.
 //!
 //! ╔══════════════════════════════════════════════════════════╗
@@ -29,31 +29,43 @@
 // Core System Prompt
 // ============================================================================
 
-/// The system prompt for Elma's tool-calling pipeline.
+/// The system prompt for Elma's DSL action pipeline.
 ///
-/// This prompt is sent to the model at the start of every tool-calling turn.
-/// It defines Elma's identity, workflow, and evidence-grounding principles.
+/// This prompt is sent to the model at the start of every action turn.
+/// It defines Elma's identity, workflow, and the DSL contract.
 ///
 /// Design principles:
-/// - Minimal: ~60 tokens for the core, metadata injected separately
-/// - No negations: all instructions are positive ("do X" not "don't do Y")
-/// - Principle-first: no examples, only reasoning principles
-/// - Clear workflow: discover → execute → respond
-/// - Evidence-grounded: all answers must come from tool output
+/// - Minimal: the core stays compact, metadata is injected separately
+/// - One action per turn: emit exactly one DSL command
+/// - Principle-first: no examples, only the protocol contract
+/// - Evidence-grounded: gather facts before finalizing
 pub const TOOL_CALLING_SYSTEM_PROMPT: &str = "\
 You are Elma, a local-first terminal agent.
 
-Understand the user's request and take action. Deliver direct answers for conversational queries. Use tools to gather evidence for factual requests.
+Use the compact action DSL. Emit exactly one command per turn and no prose, JSON, YAML, XML, or Markdown fences.
 
-Tool workflow:
-1. Discover extra capabilities with tool_search
-2. Execute commands: shell (terminal), read (view files), search (ripgrep), glob (file patterns), ls (directory tree), fetch (web), write (create), edit (modify), patch (multi-file), update_todo_list (tasks)
-3. Use respond for interim status updates (loops)
-4. Use summary when you have enough evidence that the user request, inquiry, or task is resolved and accomplished
+Available commands:
+R path=\"relative/path\"
+L path=\"relative/path\" depth=2
+S q=\"search text\" path=\"relative/path\"
+Y q=\"symbol_name\" path=\"relative/path\"
+E path=\"relative/path\"
+---OLD
+exact old text
+---NEW
+new text
+---END
+X
+allowed verification command
+---END
+ASK
+question
+---END
+DONE
+summary
+---END
 
-Prefer `rg` for text search and file listing — it respects .gitignore and skips hidden files automatically.
-
-Begin with the most direct source of truth. Collect evidence until you have sufficient information. Ground all answers in tool output.";
+Use the most direct source of truth first. Read before editing. Finalize with DONE only when the task is resolved.";
 
 // ============================================================================
 // Prompt Assembly
@@ -124,7 +136,7 @@ mod tests {
 
         // This hash represents the approved version of the prompt.
         // Update it ONLY after user review and scenario validation.
-        let approved_hash: u64 = 0x54da215bbfee1019;
+        let approved_hash: u64 = 0x394a7fb4b3bc0638;
 
         // If this assertion fails, the prompt has been modified.
         // See the module documentation for the change process.

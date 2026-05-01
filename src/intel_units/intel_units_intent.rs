@@ -39,7 +39,7 @@ impl IntelUnit for IntentSurfaceUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative_intent::build_surface_intent_narrative(
@@ -119,7 +119,7 @@ impl IntelUnit for IntentRealUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative_intent::build_real_intent_narrative(
@@ -199,7 +199,7 @@ impl IntelUnit for UserExpectationUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative_intent::build_user_expectation_narrative(

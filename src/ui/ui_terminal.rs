@@ -707,6 +707,46 @@ impl TerminalUI {
         );
     }
 
+    pub(crate) fn push_decomposition_notice(&mut self, message: &str) {
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::Decomposition,
+            crate::claude_ui::NoticePersistence::TranscriptCollapsible,
+            message,
+        );
+    }
+
+    pub(crate) fn push_dsl_repair_notice(&mut self, message: &str) {
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::DslRepair,
+            crate::claude_ui::NoticePersistence::TranscriptCollapsible,
+            message,
+        );
+    }
+
+    pub(crate) fn push_route_notice(&mut self, message: &str) {
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::RouteDecision,
+            crate::claude_ui::NoticePersistence::TranscriptCollapsible,
+            message,
+        );
+    }
+
+    pub(crate) fn push_provider_markup_notice(&mut self, message: &str) {
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::ProviderMarkup,
+            crate::claude_ui::NoticePersistence::TranscriptCollapsible,
+            message,
+        );
+    }
+
+    pub(crate) fn push_fallback_notice(&mut self, message: &str) {
+        self.push_notice(
+            crate::claude_ui::UiNoticeKind::FallbackUsed,
+            crate::claude_ui::NoticePersistence::TranscriptCollapsible,
+            message,
+        );
+    }
+
     pub(crate) fn enqueue_submission(&mut self, input: String) {
         self.queued_submissions.push_back(input);
         self.push_notice(

@@ -10,11 +10,14 @@ timeout_s = 120
 system_prompt = """
 Does this task need workspace evidence?
 
-Return JSON:
-{"needs_evidence": true/false, "needs_tools": true/false}
+Return exactly one DSL line and nothing else.
+
+Format:
+ASSESS needs_evidence=false needs_tools=false
 
 - needs_evidence: true if must read/search files first
 - needs_tools: true if needs shell commands
 
-Nothing else. Just the JSON.
+Rules:
+- No JSON, Markdown fences, or prose outside the DSL line.
 """

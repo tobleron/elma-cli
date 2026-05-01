@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Configuration for routing behavior, enabling migration from hardcoded to confidence-based decisions
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RoutingConfig {
     /// Enable confidence-based routing decisions (vs hardcoded heuristics)
     #[serde(default = "default_false")]
@@ -66,6 +66,37 @@ pub struct RoutingConfig {
     pub fallback_chat_entropy_threshold: f64,
     #[serde(default = "default_hard_fallback_margin_threshold")]
     pub hard_fallback_margin_threshold: f64,
+}
+
+impl Default for RoutingConfig {
+    fn default() -> Self {
+        Self {
+            confidence_based_routing: default_false(),
+            min_confidence_margin: default_min_confidence_margin(),
+            max_entropy: default_max_entropy(),
+            route_confidence_weight: default_route_confidence_weight(),
+            workflow_weight: default_workflow_weight(),
+            speech_chat_entropy_threshold: default_speech_chat_entropy_threshold(),
+            speech_chat_margin_threshold: default_speech_chat_margin_threshold(),
+            workflow_chat_entropy_threshold: default_workflow_chat_entropy_threshold(),
+            workflow_chat_margin_threshold: default_workflow_chat_margin_threshold(),
+            workflow_chat_boost_margin_threshold: default_workflow_chat_boost_margin_threshold(),
+            workflow_chat_boost_entropy_threshold: default_workflow_chat_boost_entropy_threshold(),
+            workflow_confident_entropy_threshold: default_workflow_confident_entropy_threshold(),
+            workflow_confident_margin_threshold: default_workflow_confident_margin_threshold(),
+            speech_confident_chat_entropy_threshold:
+                default_speech_confident_chat_entropy_threshold(),
+            speech_confident_chat_margin_threshold: default_speech_confident_chat_margin_threshold(
+            ),
+            speech_confident_instruct_entropy_threshold:
+                default_speech_confident_instruct_entropy_threshold(),
+            speech_confident_instruct_margin_threshold:
+                default_speech_confident_instruct_margin_threshold(),
+            fallback_chat_margin_threshold: default_fallback_chat_margin_threshold(),
+            fallback_chat_entropy_threshold: default_fallback_chat_entropy_threshold(),
+            hard_fallback_margin_threshold: default_hard_fallback_margin_threshold(),
+        }
+    }
 }
 
 fn default_false() -> bool {
@@ -226,5 +257,21 @@ impl RoutingConfig {
         } else {
             0.5
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_uses_threshold_defaults() {
+        let cfg = RoutingConfig::default();
+        assert_eq!(cfg.min_confidence_margin, 0.3);
+        assert_eq!(cfg.max_entropy, 0.5);
+        assert_eq!(cfg.speech_chat_margin_threshold, 0.70);
+        assert_eq!(cfg.speech_chat_entropy_threshold, 0.20);
+        assert_eq!(cfg.workflow_chat_margin_threshold, 0.70);
+        assert_eq!(cfg.workflow_chat_entropy_threshold, 0.20);
     }
 }

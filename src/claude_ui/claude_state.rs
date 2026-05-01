@@ -43,6 +43,11 @@ pub(crate) enum UiNoticeKind {
     StopReason,
     InputHint,
     Session,
+    Decomposition,
+    DslRepair,
+    RouteDecision,
+    FallbackUsed,
+    ProviderMarkup,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -850,6 +855,11 @@ impl UiNoticeKind {
             UiNoticeKind::StopReason => "stop",
             UiNoticeKind::InputHint => "input",
             UiNoticeKind::Session => "session",
+            UiNoticeKind::Decomposition => "decomposition",
+            UiNoticeKind::DslRepair => "dsl_repair",
+            UiNoticeKind::RouteDecision => "route",
+            UiNoticeKind::FallbackUsed => "fallback",
+            UiNoticeKind::ProviderMarkup => "provider_markup",
         }
     }
 }

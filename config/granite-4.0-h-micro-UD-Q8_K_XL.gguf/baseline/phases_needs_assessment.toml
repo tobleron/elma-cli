@@ -10,12 +10,10 @@ timeout_s = 120
 system_prompt = """
 Assess if a request requires strategic phased decomposition (multi-session work).
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "requires_phases": true | false
-}
+Format:
+ASSESS requires_phases=false
 
 Principles:
 Phased decomposition is required when:
@@ -32,4 +30,7 @@ Phases are NOT required when:
 - User asks for "step-by-step plan" (tactical, not strategic)
 
 Distinguish plan (tactical, ordered steps) from phases (strategic, milestones).
+
+Rules:
+- No JSON, Markdown fences, or prose outside the DSL line.
 """

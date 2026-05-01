@@ -45,8 +45,9 @@ EXIT CODE: {exit_code}
 TASK:
 Classify the evidence quality. DIRECT means the evidence directly answers the question. INDIRECT means it supports the answer but requires inference. WEAK means the evidence is insufficient or unreliable.
 
-Output contract:
-{{"quality": "DIRECT|INDIRECT|WEAK", "reason": "one short sentence"}}"#,
+Output format:
+ASSESS quality=DIRECT reason="one short sentence"
+Valid values: DIRECT | INDIRECT | WEAK"#,
             evidence = context
                 .workspace_facts
                 .chars()
@@ -62,8 +63,8 @@ Output contract:
                 .unwrap_or(-1),
         );
 
-        let result: serde_json::Value =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }

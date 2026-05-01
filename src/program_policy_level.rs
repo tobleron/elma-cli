@@ -39,6 +39,20 @@ pub(crate) fn detect_duplicate_step_ratio(program: &Program) -> f64 {
                     format!("read:{}", common.purpose)
                 }
             }
+            Step::Observe {
+                path,
+                paths,
+                common,
+                ..
+            } => {
+                if let Some(p) = path {
+                    format!("observe:{}:{}", p, common.purpose)
+                } else if let Some(ps) = paths {
+                    format!("observe:{} files:{}", ps.len(), common.purpose)
+                } else {
+                    format!("observe:{}", common.purpose)
+                }
+            }
             Step::Search {
                 query,
                 paths,

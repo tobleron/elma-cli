@@ -180,6 +180,9 @@ pub struct RepairObservation {
 
     /// Optional single-line instruction for correction.
     pub hint: Option<String>,
+
+    /// Optional expected format template (concrete DSL syntax).
+    pub expected_format: Option<String>,
 }
 
 impl RepairObservation {
@@ -188,11 +191,17 @@ impl RepairObservation {
             code,
             detail: detail.into(),
             hint: None,
+            expected_format: None,
         }
     }
 
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.hint = Some(hint.into());
+        self
+    }
+
+    pub fn with_expected_format(mut self, format: impl Into<String>) -> Self {
+        self.expected_format = Some(format.into());
         self
     }
 }
@@ -291,6 +300,41 @@ impl DslError {
     pub fn unsupported_dsl(context: ParseContext, detail: impl Into<String>) -> Self {
         Self::new(DslErrorCode::UnsupportedDsl, context, detail.into())
     }
+}
+
+// ── Action repair kind: classifies the shape of a DSL failure so repair
+//     feedback can narrow instead of repeating the same generic message. ──
+
+/// Classifies the *shape* of an action DSL failure.
+///
+/// Derived from the `DslErrorCode` + raw model output. Each variant produces
+/// a focused repair observation instead of the generic "return exactly one
+/// valid action command". After three same-family failures the repair
+/// escalates to a narrower one-bit action-kind decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ActionRepairKind {
+    /// X without a command body (bare `X` or `X` with no `---END`).
+    BareCommand,
+    /// R/L/S/E action with an unquoted literal path (e.g. `R src/main.rs`).
+    UnquotedPath,
+    /// Block action (E, X, ASK, DONE) missing the `---END` terminator.
+    MissingEndMarker,
+    /// Edit action (E) without `---OLD` / `---NEW` / `---END` sections.
+    MissingEditBody,
+    /// Explanatory prose found before the first DSL command.
+    ProseBeforeCommand,
+    /// Provider markup wrapper (`<tool_call>`, `<command>`).
+    ProviderMarkup,
+    /// JSON wrapper instead of native DSL.
+    BareJson,
+    /// A required field (path, q, command) is missing.
+    MissingField,
+    /// Malformed syntax: bad quote, bad field value, unexpected token.
+    MalformedSyntax,
+    /// Unknown action command token (not R/L/S/Y/E/X/ASK/DONE).
+    UnknownCommand,
+    /// Generic uncategorised DSL failure; treated the same as before.
+    GeneralDsl,
 }
 
 // ── Tests ──

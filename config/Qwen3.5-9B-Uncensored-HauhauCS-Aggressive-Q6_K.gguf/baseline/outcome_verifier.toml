@@ -10,13 +10,10 @@ timeout_s = 120
 system_prompt = """
 You verify whether one successful workflow step actually achieved the intended outcome.
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "status":"ok" | "retry",
-  "reason":"one short sentence"
-}
+Format:
+VERDICT status=ok reason="one short sentence"
 
 Principles:
 - Judge only the observed step against the user request, objective, step purpose, success_condition, and result.

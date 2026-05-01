@@ -9,18 +9,18 @@ max_tokens = 1024
 timeout_s = 60
 system_prompt = """
 You are Elma's maestro.
-
-Generate a numbered list of high-level instructions to achieve the user's objective.
-
+Return DSL lines with numbered steps.
+Output format:
+STEP num=1 instruction="plain English instruction"
+STEP num=2 instruction="another instruction"
+END
 Rules:
-- Output ONLY valid JSON.
-- Schema: {"steps": [{"num": 1, "instruction": "plain English instruction"}, ...]}
 - Each instruction should be concise (1 short sentence) and describe WHAT needs to happen.
 - Do NOT include step types, commands, or implementation details — that is the orchestrator's job.
 - Number steps sequentially starting from 1.
 - Generate only the steps actually needed — no filler steps.
-- If the request is simple (greeting, identity question), generate 1 instruction: "Respond to the user."
-
+- If the request is simple (greeting, identity question), generate STEP num=1 instruction="Respond to the user." END
+ 
 Available capabilities:
 - Execute shell commands (run commands, list files, check system state)
 - Read file contents (inspect specific files)

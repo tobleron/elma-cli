@@ -105,6 +105,15 @@ pub(crate) async fn check_permission(
                     command
                 ),
             );
+            crate::event_log::emit_event(crate::event_log::EventKind::Policy(
+                crate::event_log::PolicyEvent {
+                    decision: crate::event_log::PolicyDecision::AutoApproved,
+                    command: command.to_string(),
+                    reason: "safe_mode=off, non-dangerous".into(),
+                    risk_level: format!("{:?}", risk),
+                    context: "permission_gate".into(),
+                },
+            ));
             return true;
         }
     }
@@ -133,6 +142,15 @@ pub(crate) async fn check_permission(
                     mode, command
                 ),
             );
+            crate::event_log::emit_event(crate::event_log::EventKind::Policy(
+                crate::event_log::PolicyEvent {
+                    decision: crate::event_log::PolicyDecision::AutoApproved,
+                    command: command.to_string(),
+                    reason: format!("non-interactive, safe_mode={}", mode),
+                    risk_level: format!("{:?}", risk),
+                    context: "permission_gate".into(),
+                },
+            ));
             return true;
         }
         trace(
@@ -142,6 +160,15 @@ pub(crate) async fn check_permission(
                 mode, command
             ),
         );
+        crate::event_log::emit_event(crate::event_log::EventKind::Policy(
+            crate::event_log::PolicyEvent {
+                decision: crate::event_log::PolicyDecision::Denied,
+                command: command.to_string(),
+                reason: format!("non-interactive, safe_mode={}", mode),
+                risk_level: format!("{:?}", risk),
+                context: "permission_gate".into(),
+            },
+        ));
         return false;
     }
 
@@ -151,6 +178,19 @@ pub(crate) async fn check_permission(
         if approved {
             record_approval(command);
         }
+        crate::event_log::emit_event(crate::event_log::EventKind::Policy(
+            crate::event_log::PolicyEvent {
+                decision: if approved {
+                    crate::event_log::PolicyDecision::Allowed
+                } else {
+                    crate::event_log::PolicyDecision::Denied
+                },
+                command: command.to_string(),
+                reason: "TUI user decision".into(),
+                risk_level: format!("{:?}", risk),
+                context: "permission_gate".into(),
+            },
+        ));
         return approved;
     }
 
@@ -166,9 +206,32 @@ pub(crate) async fn check_permission(
                 mode, command
             ),
         );
+        crate::event_log::emit_event(crate::event_log::EventKind::Policy(
+            crate::event_log::PolicyEvent {
+                decision: crate::event_log::PolicyDecision::Denied,
+                command: command.to_string(),
+                reason: "non-TTY stdin".into(),
+                risk_level: format!("{:?}", risk),
+                context: "permission_gate".into(),
+            },
+        ));
         return false;
     }
-    ask_permission(args, command, &risk)
+    let approved = ask_permission(args, command, &risk);
+    crate::event_log::emit_event(crate::event_log::EventKind::Policy(
+        crate::event_log::PolicyEvent {
+            decision: if approved {
+                crate::event_log::PolicyDecision::Allowed
+            } else {
+                crate::event_log::PolicyDecision::Denied
+            },
+            command: command.to_string(),
+            reason: "interactive user decision".into(),
+            risk_level: format!("{:?}", risk),
+            context: "permission_gate".into(),
+        },
+    ));
+    approved
 }
 
 /// Record that the user approved this command (for session caching).

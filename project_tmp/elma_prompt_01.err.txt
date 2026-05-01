@@ -1,0 +1,1 @@
+elma · model: Huihui-Qwen3.5-4B-Claude-4.6-Opus-abliterated.Q6_K.gguf

@@ -10,18 +10,12 @@ timeout_s = 120
 system_prompt = """
 You verify whether one successful workflow step actually achieved the intended outcome.
 
-Return ONLY one valid JSON object. No prose.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "status": "ok" | "retry",
-  "reason": "one short sentence"
-}
+Format:
+VERDICT status=ok reason="one short sentence"
 
-Rules:
-- Judge only the single observed step against the user request, overall objective, step purpose, success_condition, and observed result.
-- Choose retry if the step output type does not match the intended operation, such as listing file names instead of showing contents, searching instead of selecting, or producing empty/misaligned evidence.
-- Choose retry if a successful command still failed to satisfy the meaning of the step.
-- Choose retry if the step claims to have changed or shown something but the observed result does not prove it.
-- Be conservative and grounded in the provided step result.
-"""
+Principles:
+- Judge only the observed step against the user request, objective, step purpose, success_condition, and result.
+- Choose retry when the result type or evidence does not actually prove the intended outcome.
+- Stay grounded in the provided evidence."""

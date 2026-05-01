@@ -98,6 +98,41 @@ fn fallback_probability_decision(
     }
 }
 
+fn conservative_classifier_fallback(pairs: &'static [(&'static str, &'static str)]) -> String {
+    for preferred in ["WORKFLOW", "INSTRUCT", "INSPECT"] {
+        if pairs.iter().any(|(_, label)| *label == preferred) {
+            return preferred.to_string();
+        }
+    }
+    pairs
+        .first()
+        .map(|(_, label)| (*label).to_string())
+        .unwrap_or_else(|| "WORKFLOW".to_string())
+}
+
+fn dsl_value_to_string(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(s.to_string()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+fn normalize_classifier_label(
+    choice_or_label: &str,
+    pairs: &'static [(&'static str, &'static str)],
+) -> Option<&'static str> {
+    let token = choice_or_label.trim();
+    if token.is_empty() {
+        return None;
+    }
+    pairs
+        .iter()
+        .find(|(code, label)| token == *code || token.eq_ignore_ascii_case(*label))
+        .map(|(_, label)| *label)
+}
+
 pub(crate) async fn infer_digit_router(
     client: &reqwest::Client,
     chat_url: &Url,
@@ -106,32 +141,58 @@ pub(crate) async fn infer_digit_router(
     prompt: String,
     pairs: &'static [(&'static str, &'static str)],
 ) -> Result<ProbabilityDecision> {
-    let req = chat_request_system_user(
+    let reasoning_format = classifier_reasoning_format(router_cfg);
+    let max_tokens = if reasoning_format.eq_ignore_ascii_case("auto") {
+        router_cfg.max_tokens.max(512)
+    } else {
+        router_cfg.max_tokens.min(256)
+    };
+    let mut req = chat_request_system_user(
         router_cfg,
         &router_cfg.system_prompt,
         &prompt,
-        ChatRequestOptions::default(),
+        ChatRequestOptions {
+            temperature: Some(0.0),
+            top_p: Some(1.0),
+            max_tokens: Some(max_tokens),
+            repeat_penalty: Some(Some(runtime_llm_config().default_repeat_penalty)),
+            reasoning_format: Some(Some(reasoning_format)),
+            ..ChatRequestOptions::default()
+        },
     );
-    let resp = chat_once_with_timeout(client, chat_url, &req, router_cfg.timeout_s.min(45)).await?;
-    let raw = resp
-        .choices
-        .get(0)
-        .and_then(|c| c.message.content.clone())
-        .unwrap_or_default();
-    let fallback_choice = pairs
-        .first()
-        .map(|(_, label)| (*label).to_string())
-        .unwrap_or_else(|| "CHAT".to_string());
+    apply_profile_grammar(router_cfg, &mut req)?;
+    let fallback_choice = conservative_classifier_fallback(pairs);
 
-    // Parse JSON output to get choice, label, and entropy
-    let json_entropy = extract_entropy(&raw);
-    let chosen = extract_label(&raw, pairs)
-        .unwrap_or(fallback_choice.as_str())
-        .to_string();
+    // Router classifiers return a single DSL line:
+    //   ROUTE choice=1 label=CHAT reason="..." entropy=0.1
+    //   MODE choice=... label=... reason="..." entropy=...
+    //   ACT choice=... label=... reason="..." entropy=...
+    //
+    // Parse strictly with the shared DSL parser (no JSON, no Markdown fences).
+    let expected_template = classifier_expected_template(pairs);
+    let mut raw =
+        request_classifier_raw(client, chat_url, &req, router_cfg.timeout_s.min(45)).await?;
+    let (chosen, entropy_val, parse_source) = if let Some(parsed) =
+        parse_classifier_candidates(&raw, pairs)
+    {
+        parsed
+    } else {
+        append_trace_log_line(&format!(
+            "[CLASSIFIER_DSL_REPAIR] unit={} error=INVALID_DSL",
+            router_cfg.name
+        ));
+        req.messages.push(ChatMessage::simple(
+            "user",
+            &classifier_repair_observation(&raw, &expected_template),
+        ));
+        req.max_tokens = req.max_tokens.saturating_mul(2).min(512);
+        raw = request_classifier_raw(client, chat_url, &req, router_cfg.timeout_s.min(45)).await?;
+        parse_classifier_candidates(&raw, pairs)
+            .unwrap_or_else(|| (fallback_choice.clone(), 0.1, "dsl_parse_failed"))
+    };
 
-    // Build distribution from JSON choice (not logprobs)
+    // Build distribution from classifier output (not logprobs)
     let other_count = (pairs.len() as f64 - 1.0).max(1.0);
-    let entropy_val = json_entropy.unwrap_or(0.0);
     let mut distribution: Vec<(String, f64)> = pairs
         .iter()
         .map(|(_, label)| {
@@ -147,10 +208,8 @@ pub(crate) async fn infer_digit_router(
 
     distribution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let source = "json_output";
-
-    // Use JSON entropy
-    let raw_entropy = json_entropy.unwrap_or_else(|| route_entropy(&distribution));
+    let source = parse_source;
+    let raw_entropy = entropy_val;
     let distribution = inject_router_noise(&distribution, raw_entropy);
 
     let route = distribution
@@ -165,6 +224,160 @@ pub(crate) async fn infer_digit_router(
         entropy: raw_entropy,
         distribution,
     })
+}
+
+fn classifier_reasoning_format(profile: &Profile) -> String {
+    if let Some(behavior) = crate::ui_state::current_model_behavior_profile() {
+        if behavior
+            .preferred_reasoning_format
+            .eq_ignore_ascii_case("auto")
+            && !behavior.none_final_clean
+        {
+            return "auto".to_string();
+        }
+    }
+    profile.reasoning_format.clone()
+}
+
+async fn request_classifier_raw(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+    timeout_s: u64,
+) -> Result<String> {
+    let resp = chat_once_with_timeout(client, chat_url, req, timeout_s).await?;
+    Ok(resp
+        .choices
+        .get(0)
+        .and_then(|c| c.message.content.clone())
+        .unwrap_or_default())
+}
+
+fn classifier_expected_template(pairs: &[(&str, &str)]) -> String {
+    let labels: Vec<&str> = pairs.iter().map(|(_, l)| *l).collect();
+    let command = if pairs.len() == 2 {
+        "ROUTE"
+    } else if pairs.len() == 3 {
+        "ACT"
+    } else if pairs.len() == 5 {
+        "MODE"
+    } else {
+        ""
+    };
+    let choices = (1..=pairs.len())
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join("|");
+    format!(
+        "{command} choice={choices} label={labels} reason=\"justification\" entropy=N.N",
+        choices = choices,
+        labels = labels.join("|")
+    )
+}
+
+fn classifier_repair_observation(raw: &str, template: &str) -> String {
+    let preview = crate::text_utils::strip_thinking_blocks(raw);
+    let preview = if preview.trim().is_empty() {
+        "model returned prose/thinking or empty output instead of one classifier DSL line"
+            .to_string()
+    } else {
+        preview.chars().take(180).collect::<String>()
+    };
+    format!(
+        "INVALID_FORMAT\nExpected: {template}\nGot: {preview}\nReturn one DSL line matching the Expected format."
+    )
+}
+
+fn parse_classifier_candidates(
+    raw: &str,
+    pairs: &'static [(&'static str, &'static str)],
+) -> Option<(String, f64, &'static str)> {
+    for candidate in crate::text_utils::structured_output_candidates(raw) {
+        let trimmed = candidate.trim();
+
+        // Path 1: Full DSL with command token (e.g., "MODE choice=2 label=EXECUTE...")
+        if let Ok((_cmd, fields)) = parse_intel_dsl_to_value(trimmed) {
+            let chosen = extract_label_from_dsl_fields(&fields, pairs);
+            if let Some(chosen) = chosen {
+                let entropy_val = fields
+                    .get("entropy")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.1)
+                    .clamp(0.0, 1.0);
+                return Some((chosen, entropy_val, "dsl_output"));
+            }
+        }
+
+        // Path 2: Field-only DSL without command token (e.g., "choice=2 label=EXECUTE...")
+        // Small models frequently omit the uppercase command prefix
+        if let Some(chosen) = parse_field_only_dsl(trimmed, pairs) {
+            return Some((chosen.0, chosen.1, "dsl_field_only"));
+        }
+
+        // Path 3: JSON extraction (legacy provider output)
+        if let Some(chosen) = extract_from_json_output(trimmed, pairs) {
+            return Some((chosen.0, chosen.1, "dsl_json_fallback"));
+        }
+    }
+    None
+}
+
+/// Extract label from a parsed DSL fields map
+fn extract_label_from_dsl_fields(
+    fields: &serde_json::Value,
+    pairs: &'static [(&'static str, &'static str)],
+) -> Option<String> {
+    let choice_label = fields
+        .get("choice")
+        .and_then(dsl_value_to_string)
+        .and_then(|s| normalize_classifier_label(&s, pairs).map(str::to_string));
+    let label = fields
+        .get("label")
+        .and_then(|v| v.as_str())
+        .and_then(|s| normalize_classifier_label(s, pairs).map(str::to_string));
+    label.or(choice_label)
+}
+
+/// Parse field-only DSL lines that lack the uppercase command prefix.
+/// Example: "choice=2 label=EXECUTE reason=\"list directory\" entropy=0.1"
+fn parse_field_only_dsl(
+    text: &str,
+    pairs: &'static [(&'static str, &'static str)],
+) -> Option<(String, f64)> {
+    let line = text.lines().next()?.trim();
+    // Must contain at least one known field pattern
+    if !line.starts_with("choice=") && !line.starts_with("label=") {
+        return None;
+    }
+    // The DSL parser requires a command token prefix. Use a synthetic
+    // uppercase token and re-parse the line as a full DSL command.
+    let fake_dsl = format!("FIELDS {}", line);
+    let (_cmd, fields) = parse_intel_dsl_to_value(&fake_dsl).ok()?;
+    let chosen = extract_label_from_dsl_fields(&fields, pairs)?;
+    let entropy_val = fields
+        .get("entropy")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.1)
+        .clamp(0.0, 1.0);
+    Some((chosen, entropy_val))
+}
+
+/// Extract classifier result from JSON output (legacy provider format).
+/// Example: {"choice": "2", "label": "EXECUTE", "reason": "...", "entropy": 0.1}
+fn extract_from_json_output(
+    text: &str,
+    pairs: &'static [(&'static str, &'static str)],
+) -> Option<(String, f64)> {
+    use crate::routing_parse::extract_first_json_object;
+    let json_str = extract_first_json_object(text)?;
+    let parsed: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    let chosen = extract_label_from_dsl_fields(&parsed, pairs)?;
+    let entropy_val = parsed
+        .get("entropy")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.1)
+        .clamp(0.0, 1.0);
+    Some((chosen, entropy_val))
 }
 
 pub(crate) async fn infer_route_prior(
@@ -285,38 +498,102 @@ Conversation so far (most recent last):
         });
     }
 
-    let mode_prompt = format!(
-        "User message:\n{user_message}\n\nWorkflow prior:\n- choice: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
-        workflow.choice,
-        format_route_distribution(&workflow.distribution),
-        workflow.margin,
-        workflow.entropy,
-        workspace_facts.trim(),
-        workspace_brief.trim(),
-        conversation
-    );
-    let mode = infer_digit_router(
-        client,
-        chat_url,
-        mode_router_cfg,
-        router_cal,
-        mode_prompt,
-        mode_code_pairs(),
-    )
-    .await
-    .unwrap_or_else(|_| {
-        let choice = if is_choice_confident(&workflow, "CHAT", 0.0, 1.0) {
-            "DECIDE"
-        } else if is_choice_confident(&speech_act, "INSTRUCT", 0.0, 1.0) {
-            "EXECUTE"
-        } else {
-            "INSPECT"
-        };
-        fallback_probability_decision(choice, mode_code_pairs(), "fallback")
-    });
+    // PRINCIPLE: Bypass mode classifier when routing is already clear.
+    // The mode classifier is the weakest link with small models. When the
+    // first two stages agree on WORKFLOW with high confidence, skip the
+    // mode classifier and route directly to EXECUTE as the safe default.
+    let speech_confident_instruct =
+        is_choice_confident_with_config(&speech_act, "INSTRUCT", &routing_config);
+    let workflow_confident =
+        is_choice_confident_with_config(&workflow, "WORKFLOW", &routing_config);
+    let bypass_mode = speech_confident_instruct && workflow_confident;
 
-    let chat_p = probability_of(&workflow.distribution, "CHAT");
-    let workflow_p = probability_of(&workflow.distribution, "WORKFLOW");
+    let mode = if bypass_mode {
+        fallback_probability_decision("EXECUTE", mode_code_pairs(), "direct_2stage")
+    } else {
+        let mode_prompt = format!(
+            "User message:\n{user_message}\n\nWorkflow prior:\n- choice: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
+            workflow.choice,
+            format_route_distribution(&workflow.distribution),
+            workflow.margin,
+            workflow.entropy,
+            workspace_facts.trim(),
+            workspace_brief.trim(),
+            conversation
+        );
+        // infer_digit_router always returns Ok() — DSL parse failures are
+        // surfaced in the source field (e.g., "dsl_parse_failed"), not as Err.
+        let mode = infer_digit_router(
+            client,
+            chat_url,
+            mode_router_cfg,
+            router_cal,
+            mode_prompt,
+            mode_code_pairs(),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            let choice = if is_choice_confident(&workflow, "CHAT", 0.0, 1.0) {
+                "DECIDE"
+            } else {
+                "EXECUTE"
+            };
+            fallback_probability_decision(choice, mode_code_pairs(), "mode_http_failed")
+        });
+
+        // PRINCIPLE: When mode classifier parse failed AND workflow is WORKFLOW,
+        // preserve WORKFLOW route by overriding mode to EXECUTE instead of
+        // letting the degraded choice propagate. A mode classifier weakness
+        // should not erase correct routing from earlier stages.
+        let mode_dsl_failed = mode.source.contains("dsl_parse_failed");
+        let workflow_is_workflow = is_choice_confident(&workflow, "WORKFLOW", 0.0, 1.0);
+        if mode_dsl_failed && workflow_is_workflow {
+            append_trace_log_line(&format!(
+                "[MODE_DSL_FAILED_PRESERVED_WORKFLOW] overriding mode source={} to EXECUTE",
+                mode.source
+            ));
+            fallback_probability_decision(
+                "EXECUTE",
+                mode_code_pairs(),
+                "mode_dsl_failed_preserved_workflow",
+            )
+        } else {
+            mode
+        }
+    };
+
+    let speech_chat_p = probability_of(&speech_act.distribution, "CHAT");
+    let instruct_p = probability_of(&speech_act.distribution, "INSTRUCT");
+
+    let mut workflow_chat_p = probability_of(&workflow.distribution, "CHAT");
+    let mut workflow_workflow_p = probability_of(&workflow.distribution, "WORKFLOW");
+
+    // When speech act signals INSTRUCT with meaningful probability,
+    // discount the workflow gate's CHAT confidence. The speech act is
+    // the primary intent signal for distinguishing commands from chat.
+    // Without this, a small model that splits evenly between CHAT and
+    // INSTRUCT (e.g. 40/40) will have the workflow gate's CHAT
+    // classification dominate and block shell commands from executing.
+    let speech_instruct_meaningful = instruct_p >= 0.30;
+    let instruct_over_chat = instruct_p >= speech_chat_p * 0.70;
+    let split_uncertainty =
+        speech_chat_p >= 0.30 && instruct_p >= 0.30 && (speech_chat_p + instruct_p) > 0.60;
+    let should_discount_workflow_chat =
+        speech_instruct_meaningful && (instruct_over_chat || split_uncertainty);
+
+    if should_discount_workflow_chat {
+        // Transfer mass from workflow CHAT → WORKFLOW proportional to
+        // how strongly INSTRUCT dominates over CHAT in the speech act.
+        let instruct_advantage = instruct_p / (instruct_p + speech_chat_p + 1e-10);
+        let shift = workflow_chat_p * instruct_advantage * 0.75;
+        if shift > 0.0 {
+            workflow_chat_p -= shift;
+            workflow_workflow_p += shift;
+        }
+    }
+
+    let chat_p = workflow_chat_p;
+    let workflow_p = workflow_workflow_p;
     let shell_p = workflow_p
         * (probability_of(&mode.distribution, "INSPECT")
             + probability_of(&mode.distribution, "EXECUTE"));
@@ -335,24 +612,24 @@ Conversation so far (most recent last):
     // "CHAT" → boost CHAT route (user wants conversation)
     // "INQUIRE" → neutral (user wants information)
     // "INSTRUCT" → boost non-CHAT routes (user wants action)
-    let chat_p = probability_of(&speech_act.distribution, "CHAT");
-    let instruct_p = probability_of(&speech_act.distribution, "INSTRUCT");
 
     // If "CHAT" is high, boost CHAT route
-    if chat_p > 0.5 && should_apply_speech_chat_boost(&workflow) {
+    if speech_chat_p > 0.5 && should_apply_speech_chat_boost(&workflow) {
         for (label, p) in &mut distribution {
             if label == "CHAT" {
-                *p = chat_p + (1.0 - chat_p) * *p;
+                *p = speech_chat_p + (1.0 - speech_chat_p) * *p;
             } else {
-                *p *= 1.0 - chat_p;
+                *p *= 1.0 - speech_chat_p;
             }
         }
     }
 
-    // If "INSTRUCT" is high, boost non-CHAT routes (user wants action)
-    if instruct_p > 0.5 {
+    // If "INSTRUCT" is present, boost non-CHAT routes (user wants action).
+    // Lower threshold (0.3 instead of 0.5) because small models rarely
+    // reach 0.5 confidence on INSTRUCT for actionable inputs.
+    if instruct_p > 0.3 {
         let current_chat_p = probability_of(&distribution, "CHAT");
-        let workflow_boost = (instruct_p - 0.5) * 0.4; // Up to 40% boost
+        let workflow_boost = (instruct_p - 0.3) * 0.7;
         let non_chat_total: f64 = distribution
             .iter()
             .filter(|(l, _)| l != "CHAT")
@@ -378,12 +655,21 @@ Conversation so far (most recent last):
 
     // PRINCIPLE: Under-execute when uncertain.
     // If entropy is high (> 0.6) or margin is low (< 0.2), fallback to CHAT if speech act is CHAT.
-    let fallback_to_chat = (is_choice_confident(&speech_act, "CHAT", 0.0, 1.0)
-        && (margin < 0.20 || entropy > 0.60))
-        || (margin < 0.12); // Hard fallback for any case where we are absolutely guessing
-    let preserve_workflow_route = path_scoped_request
-        && (workflow_confident || speech_confident_instruct)
-        && !speech_confident_chat;
+    // Mode classifier was bypassed or preserved — do not let uncertainty in the
+    // combined distribution erase correct early-stage routing.
+    let mode_is_bypass_or_preserved = mode.source.starts_with("direct_2stage")
+        || mode
+            .source
+            .starts_with("mode_dsl_failed_preserved_workflow")
+        || mode.source.starts_with("mode_failed_salvaged");
+    let fallback_to_chat = !mode_is_bypass_or_preserved
+        && ((is_choice_confident(&speech_act, "CHAT", 0.0, 1.0)
+            && (margin < 0.20 || entropy > 0.60))
+            || (margin < 0.12)); // Hard fallback for any case where we are absolutely guessing
+    let preserve_workflow_route = mode_is_bypass_or_preserved
+        || (path_scoped_request
+            && (workflow_confident || speech_confident_instruct)
+            && !speech_confident_chat);
 
     let route = if preserve_workflow_route {
         top_non_chat_route(&distribution).unwrap_or_else(|| "SHELL".to_string())
@@ -422,6 +708,7 @@ Conversation so far (most recent last):
     } else {
         route
     };
+    let evidence_required = !route.eq_ignore_ascii_case("CHAT");
 
     Ok(RouteDecision {
         route,
@@ -432,7 +719,9 @@ Conversation so far (most recent last):
         speech_act,
         workflow,
         mode,
-        evidence_required: false, // Task 290: Will be set by evidence classifier
+        // In the current runtime, we treat any non-CHAT route as requiring
+        // workspace/tool evidence before answering.
+        evidence_required,
     })
 }
 
@@ -460,6 +749,80 @@ mod tests {
             &workflow,
             &routing_config
         ));
+    }
+
+    #[test]
+    fn classifier_parse_accepts_dsl_wrapped_by_unclosed_think_tag() {
+        let parsed = parse_classifier_candidates(
+            "<think>\nACT choice=1 label=CHAT reason=\"greeting\" entropy=0.1\n",
+            speech_act_code_pairs(),
+        )
+        .expect("wrapped DSL should parse");
+        assert_eq!(parsed.0, "CHAT");
+        assert_eq!(parsed.1, 0.1);
+        assert_eq!(parsed.2, "dsl_output");
+    }
+
+    #[test]
+    fn classifier_repair_observation_shows_expected_template() {
+        let template = "ROUTE choice=1|2 label=CHAT|WORKFLOW reason=\"justification\" entropy=N.N";
+        let repair = classifier_repair_observation("<think>reasoning only", template);
+        assert!(repair.contains("INVALID_FORMAT"));
+        assert!(repair.contains("Expected: ROUTE"));
+        assert!(repair.contains("Got: model returned prose/thinking or empty output"));
+    }
+
+    #[test]
+    fn classifier_parse_accepts_field_only_dsl_without_prefix() {
+        let parsed = parse_classifier_candidates(
+            "choice=2 label=EXECUTE reason=\"run command\" entropy=0.1",
+            mode_code_pairs(),
+        )
+        .expect("field-only DSL should parse");
+        assert_eq!(parsed.0, "EXECUTE");
+        assert_eq!(parsed.2, "dsl_field_only");
+    }
+
+    #[test]
+    fn classifier_parse_accepts_json_fallback() {
+        let parsed = parse_classifier_candidates(
+            r#"{"choice":"1","label":"CHAT","reason":"greeting","entropy":0.1}"#,
+            speech_act_code_pairs(),
+        )
+        .expect("JSON fallback should parse");
+        assert_eq!(parsed.0, "CHAT");
+        assert_eq!(parsed.2, "dsl_json_fallback");
+    }
+
+    #[test]
+    fn classifier_parse_accepts_full_dsl_with_prefix() {
+        let parsed = parse_classifier_candidates(
+            "MODE choice=2 label=EXECUTE reason=\"run\" entropy=0.2",
+            mode_code_pairs(),
+        )
+        .expect("full DSL should parse");
+        assert_eq!(parsed.0, "EXECUTE");
+        assert_eq!(parsed.2, "dsl_output");
+    }
+
+    #[test]
+    fn classifier_parse_rejects_nonsense() {
+        let parsed = parse_classifier_candidates("hello world", speech_act_code_pairs());
+        assert!(parsed.is_none());
+    }
+
+    #[test]
+    fn classifier_expected_template_for_mode() {
+        let template = classifier_expected_template(mode_code_pairs());
+        assert!(template.starts_with("MODE"));
+        assert!(template.contains("INSPECT|EXECUTE|PLAN|MASTERPLAN|DECIDE"));
+    }
+
+    #[test]
+    fn classifier_expected_template_for_speech_act() {
+        let template = classifier_expected_template(speech_act_code_pairs());
+        assert!(template.starts_with("ACT"));
+        assert!(template.contains("CHAT|INSTRUCT|INQUIRE"));
     }
 
     #[test]
@@ -494,5 +857,21 @@ mod tests {
             ("DECIDE".to_string(), 0.15),
         ];
         assert_eq!(top_non_chat_route(&distribution).as_deref(), Some("SHELL"));
+    }
+
+    #[test]
+    fn classifier_parse_fallback_prefers_non_chat_safe_route() {
+        assert_eq!(
+            conservative_classifier_fallback(workflow_code_pairs()),
+            "WORKFLOW"
+        );
+        assert_eq!(
+            conservative_classifier_fallback(speech_act_code_pairs()),
+            "INSTRUCT"
+        );
+        assert_eq!(
+            conservative_classifier_fallback(mode_code_pairs()),
+            "INSPECT"
+        );
     }
 }

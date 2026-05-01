@@ -8,6 +8,7 @@ pub(crate) fn step_kind(s: &Step) -> &'static str {
     match s {
         Step::Shell { .. } => "shell",
         Step::Read { .. } => "read",
+        Step::Observe { .. } => "observe",
         Step::Search { .. } => "search",
         Step::Select { .. } => "select",
         Step::Plan { .. } => "plan",
@@ -25,7 +26,10 @@ pub(crate) fn step_kind(s: &Step) -> &'static str {
 
 pub(crate) fn step_id(s: &Step) -> &str {
     match s {
-        Step::Shell { id, .. } | Step::Read { id, .. } | Step::Search { id, .. } => id,
+        Step::Shell { id, .. }
+        | Step::Read { id, .. }
+        | Step::Observe { id, .. }
+        | Step::Search { id, .. } => id,
         Step::Select { id, .. } => id,
         Step::Plan { id, .. } => id,
         Step::MasterPlan { id, .. } => id,
@@ -42,9 +46,10 @@ pub(crate) fn step_id(s: &Step) -> &str {
 
 pub(crate) fn step_common(s: &Step) -> &StepCommon {
     match s {
-        Step::Shell { common, .. } | Step::Read { common, .. } | Step::Search { common, .. } => {
-            common
-        }
+        Step::Shell { common, .. }
+        | Step::Read { common, .. }
+        | Step::Observe { common, .. }
+        | Step::Search { common, .. } => common,
         Step::Select { common, .. } => common,
         Step::Plan { common, .. } => common,
         Step::MasterPlan { common, .. } => common,
@@ -67,6 +72,7 @@ pub(crate) fn step_purpose(s: &Step) -> String {
     match s {
         Step::Shell { .. } => "shell".to_string(),
         Step::Read { .. } => "read".to_string(),
+        Step::Observe { .. } => "observe".to_string(),
         Step::Search { .. } => "search".to_string(),
         Step::Select { .. } => "select".to_string(),
         Step::Plan { .. } => "plan".to_string(),
@@ -114,6 +120,15 @@ pub(crate) fn program_step_json(step: &Step) -> serde_json::Value {
             if let Some(ps) = paths {
                 obj.insert("paths".to_string(), serde_json::json!(ps));
             }
+        }
+        Step::Observe { path, paths, .. } => {
+            if let Some(p) = path {
+                obj.insert("path".to_string(), serde_json::json!(p.trim()));
+            }
+            if let Some(ps) = paths {
+                obj.insert("paths".to_string(), serde_json::json!(ps));
+            }
+            obj.insert("metadata_only".to_string(), serde_json::json!(true));
         }
         Step::Search { query, paths, .. } => {
             obj.insert("query".to_string(), serde_json::json!(query.trim()));

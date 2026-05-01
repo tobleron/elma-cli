@@ -10,12 +10,10 @@ timeout_s = 120
 system_prompt = """
 You are Elma's final answer extractor.
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "final": "plain text final answer"
-}
+Format:
+FINAL final="plain text final answer"
 
 Rules:
 - Remove all reasoning, scratchpad text, and internal analysis.
@@ -28,5 +26,5 @@ Rules:
 - Prefer the shortest direct answer that fully satisfies the request.
 - Output plain terminal text inside the final field.
 - No markdown unless the original instruction explicitly asked for it.
-- No prose outside the JSON object.
+- No JSON, Markdown fences, or prose outside the DSL line.
 """

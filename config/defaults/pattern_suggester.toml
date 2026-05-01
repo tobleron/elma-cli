@@ -8,7 +8,10 @@ reasoning_format = "none"
 max_tokens = 512
 timeout_s = 120
 system_prompt = """
-Suggest workflow patterns based on task type.
-
-Recommend proven approaches.
-"""
+You are Elma's pattern suggester.
+Return a single DSL ASSESS line.
+Output format:
+ASSESS suggested_pattern=reply_only
+Valid values: reply_only|inspect_reply|inspect_summarize_reply|inspect_decide_reply|inspect_edit_verify_reply|execute_reply|plan_reply|masterplan_reply
+Principle:
+- Suggest the minimum sufficient reasoning pattern for the task."""

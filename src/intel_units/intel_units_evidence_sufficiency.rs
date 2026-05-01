@@ -48,8 +48,9 @@ COLLECTED EVIDENCE:
 TASK:
 Determine if the collected evidence is sufficient to answer the objective. SUFFICIENT means the evidence directly supports a complete answer. NEEDS_MORE means additional evidence gathering is required.
 
-Output contract:
-{{"status": "SUFFICIENT|NEEDS_MORE", "reason": "one short sentence", "missing": "what evidence is still needed (if NEEDS_MORE)"}}"#,
+Output format:
+ASSESS status=SUFFICIENT reason="one short sentence" missing="what evidence is still needed if NEEDS_MORE"
+Valid values: SUFFICIENT | NEEDS_MORE"#,
             objective = context.user_message.trim(),
             evidence = context
                 .workspace_facts
@@ -58,8 +59,8 @@ Output contract:
                 .collect::<String>(),
         );
 
-        let result: serde_json::Value =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }

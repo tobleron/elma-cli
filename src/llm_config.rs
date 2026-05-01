@@ -5,6 +5,18 @@
 use crate::*;
 
 static LLM_RUNTIME_CONFIG: OnceLock<LlmRuntimeConfig> = OnceLock::new();
+static SAVED_BASE_URL: OnceLock<String> = OnceLock::new();
+
+pub(crate) fn set_saved_base_url(url: &str) {
+    let _ = SAVED_BASE_URL.set(url.to_string());
+}
+
+fn saved_base_url() -> &'static str {
+    SAVED_BASE_URL
+        .get()
+        .map(|s| s.as_str())
+        .unwrap_or("http://localhost:8080")
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct LlmRuntimeConfig {
@@ -142,7 +154,7 @@ pub(crate) fn ad_hoc_profile(model: &str, name: &str) -> Profile {
     Profile {
         version: 1,
         name: name.to_string(),
-        base_url: String::new(),
+        base_url: saved_base_url().to_string(),
         model: model.to_string(),
         temperature: 0.0,
         top_p: 1.0,

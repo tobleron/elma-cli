@@ -1,4 +1,4 @@
-//! @efficiency-role: domain-logic
+//! @efficiency-role: domain-logogic
 //!
 //! Auto-Compact (Task 114) — Context Window Management
 //!
@@ -8,10 +8,12 @@
 //!
 //! Inspired by Claude Code's `autoCompact.ts` — simplified for 3B models.
 
+use crate::evidence_ledger::EvidenceLedger;
 use crate::*;
 
 /// Approximate tokens per character for English text.
 /// Conservative estimate: 1 token ≈ 3.5 chars.
+/// This is used as fallback when model tokenizer is unavailable.
 const CHARS_PER_TOKEN: f64 = 3.5;
 
 /// Default buffer tokens to keep free for model response + tool calls.
@@ -52,9 +54,14 @@ impl CompactTracker {
         }
     }
 
-    /// Estimate tokens from a string.
+    /// Estimate tokens from a string using fallback method.
     pub(crate) fn estimate_tokens(text: &str) -> usize {
         (text.len() as f64 / CHARS_PER_TOKEN) as usize
+    }
+
+    /// Estimate tokens from a string using the model's tokenizer.
+    pub(crate) fn estimate_tokens_for_model(text: &str, model_name: &str) -> usize {
+        crate::model_capabilities::estimate_token_count(text, model_name)
     }
 
     /// Update token count from current messages.
@@ -64,6 +71,15 @@ impl CompactTracker {
             .map(|m| Self::estimate_tokens(&m.content))
             .sum();
         // Count user+assistant pairs as turns
+        self.turn_count = messages.iter().filter(|m| m.role == "user").count();
+    }
+
+    /// Update token count using model-specific tokenizer.
+    pub(crate) fn recalculate_with_model(&mut self, messages: &[ChatMessage], model_name: &str) {
+        self.total_tokens = messages
+            .iter()
+            .map(|m| Self::estimate_tokens_for_model(&m.content, model_name))
+            .sum();
         self.turn_count = messages.iter().filter(|m| m.role == "user").count();
     }
 
@@ -90,6 +106,21 @@ impl CompactTracker {
         let should = should && self.compact_failures < MAX_COMPACT_FAILURES;
 
         (should, ctx, buf)
+    }
+
+    /// Check if compact should fire, using model-specific context window.
+    pub(crate) fn should_compact_for_model(
+        &self,
+        model_name: &str,
+        buffer_tokens: Option<usize>,
+    ) -> (bool, usize, usize) {
+        let registry = crate::model_capabilities::ModelCapabilityRegistry::new();
+        let caps = registry.get(model_name);
+        let ctx = caps
+            .map(|c| c.context_window as usize)
+            .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
+        let buf = buffer_tokens.unwrap_or(DEFAULT_COMPACT_BUFFER_TOKENS);
+        self.should_compact(Some(ctx), Some(buf))
     }
 
     /// Task T209: Identify high-risk command patterns likely to produce huge output.
@@ -135,6 +166,7 @@ pub(crate) struct CompactResult {
 pub(crate) fn generate_inline_summary(
     messages: &[ChatMessage],
     keep_recent_turns: usize,
+    evidence_ledger: Option<&EvidenceLedger>,
 ) -> CompactResult {
     if messages.len() <= keep_recent_turns * 2 {
         return CompactResult {
@@ -189,7 +221,19 @@ pub(crate) fn generate_inline_summary(
     }
 
     let summary = if exchanges.is_empty() {
-        "[Earlier conversation: technical tool usage]".to_string()
+        // Include read file inventory if available (evidence-aware compaction)
+        let read_inventory = evidence_ledger
+            .map(|l| l.read_inventory_summary())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_default();
+        if read_inventory.is_empty() {
+            "[Earlier conversation: technical tool usage]".to_string()
+        } else {
+            format!(
+                "[Earlier conversation: technical tool usage]\n\n{}",
+                read_inventory
+            )
+        }
     } else {
         let total = exchanges.len();
         let first = exchanges
@@ -207,6 +251,18 @@ pub(crate) fn generate_inline_summary(
              Details omitted to preserve context window.]",
             total, first, last
         )
+    };
+
+    // Append read file inventory if available (evidence-aware compaction)
+    let summary = if let Some(ledger) = evidence_ledger {
+        let read_inventory = ledger.read_inventory_summary();
+        if !read_inventory.is_empty() {
+            format!("{}\n\n{}", summary, read_inventory)
+        } else {
+            summary
+        }
+    } else {
+        summary
     };
 
     let old_tokens: usize = old_messages
@@ -230,8 +286,9 @@ pub(crate) fn generate_inline_summary(
 pub(crate) fn apply_compact(
     messages: &[ChatMessage],
     keep_recent_turns: usize,
+    evidence_ledger: Option<&EvidenceLedger>,
 ) -> (Vec<ChatMessage>, CompactResult) {
-    let result = generate_inline_summary(messages, keep_recent_turns);
+    let result = generate_inline_summary(messages, keep_recent_turns, evidence_ledger);
     if !result.ok {
         return (messages.to_vec(), result);
     }
@@ -251,10 +308,11 @@ pub(crate) async fn apply_compact_with_summarizer(
     _client: &reqwest::Client,
     _chat_url: &reqwest::Url,
     _cfg: &Profile,
+    evidence_ledger: Option<&EvidenceLedger>,
 ) -> (Vec<ChatMessage>, CompactResult) {
     // In a real implementation, this would call the summarizer intel unit.
     // For now, we use the stable inline summary to satisfy the budget protection goal.
-    apply_compact(messages, keep_recent_turns)
+    apply_compact(messages, keep_recent_turns, evidence_ledger)
 }
 
 fn unix_secs() -> u64 {
@@ -334,5 +392,74 @@ mod tests {
         tracker.total_tokens = EMERGENCY_TOKEN_THRESHOLD + 100;
         let (should, _, _) = tracker.should_compact(None, None);
         assert!(should); // Emergency threshold ignores turn count
+    }
+
+    #[test]
+    fn test_generate_inline_summary_with_read_inventory() {
+        // Verify that evidence-aware compaction includes read file inventory
+        use std::path::PathBuf;
+        let mut ledger =
+            crate::evidence_ledger::EvidenceLedger::new("s_compact_test", &PathBuf::from("/tmp"));
+        ledger.add_entry(
+            crate::evidence_ledger::EvidenceSource::Read {
+                path: "src/main.rs".to_string(),
+            },
+            "fn main() { println!(\"hello\"); }",
+        );
+        ledger.add_entry(
+            crate::evidence_ledger::EvidenceSource::Read {
+                path: "Cargo.toml".to_string(),
+            },
+            "[package]\nname = \"elma-cli\"",
+        );
+
+        // Build messages that trigger the empty-exchanges branch
+        let mut msgs = Vec::new();
+        msgs.push(ChatMessage::simple("user", "read all files"));
+        msgs.push(ChatMessage::simple(
+            "assistant",
+            "[Earlier conversation: read all files]",
+        ));
+        for _ in 0..8 {
+            msgs.push(ChatMessage::simple("user", "do something"));
+            msgs.push(ChatMessage::simple("assistant", "done"));
+        }
+
+        let result = generate_inline_summary(&msgs, 3, Some(&ledger));
+        assert!(result.ok);
+        assert!(
+            result.summary.contains("src/main.rs"),
+            "Evidence-aware compact should preserve read file paths. Got: {}",
+            result.summary
+        );
+        assert!(result.summary.contains("Cargo.toml"));
+        assert!(
+            result.summary.contains("fn main()"),
+            "Should preserve per-file summaries"
+        );
+        assert!(
+            result.summary.contains("Read File Inventory"),
+            "Should contain the inventory heading"
+        );
+        // With enough old messages, tokens should be freed
+        assert!(
+            result.tokens_freed > 0 || result.summary.len() > 50,
+            "Either freed tokens or produced a meaningful summary"
+        );
+    }
+
+    #[test]
+    fn test_generate_inline_summary_without_read_inventory() {
+        // Without ledger, should produce standard summary
+        let mut msgs = Vec::new();
+        for _ in 0..8 {
+            msgs.push(ChatMessage::simple("user", "do something"));
+            msgs.push(ChatMessage::simple("assistant", "done"));
+        }
+
+        let result = generate_inline_summary(&msgs, 3, None);
+        assert!(result.ok);
+        // Should NOT contain file inventory headers
+        assert!(!result.summary.contains("Read File Inventory"));
     }
 }

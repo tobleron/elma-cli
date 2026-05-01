@@ -30,6 +30,7 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     set_runtime_llm_config(llm_runtime_cfg.clone());
     let (base_url, base_url_source) =
         resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref())?;
+    set_saved_base_url(&base_url);
 
     // Persist to elma.toml (primary config) and global.toml (legacy)
     if base_url_source == "cli_or_env" {
@@ -63,12 +64,16 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     // Verify endpoint reachability before proceeding
     match check_endpoint_connectivity(&client, &chat_url).await {
         Ok(_) => {
-            trace(&args, &format!("connectivity_check=passed url={}", chat_url));
+            trace(
+                &args,
+                &format!("connectivity_check=passed url={}", chat_url),
+            );
         }
         Err(e) => {
             // Task 303: For localhost endpoints, fail with actionable error
             // For remote endpoints, warn but continue (offline-first)
-            let is_local = base_url.starts_with("http://localhost") || base_url.starts_with("http://127.0.0.1");
+            let is_local = base_url.starts_with("http://localhost")
+                || base_url.starts_with("http://127.0.0.1");
 
             if is_local {
                 let hint = "Start your local model server (llama.cpp, Ollama, etc.) or configure a remote endpoint with --base-url";
@@ -94,7 +99,13 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
                     eprintln!("{}", warn_yellow(&warning_msg));
                 }
 
-                trace(&args, &format!("connectivity_check=failed_remote url={} error={}", chat_url, e));
+                trace(
+                    &args,
+                    &format!(
+                        "connectivity_check=failed_remote url={} error={}",
+                        chat_url, e
+                    ),
+                );
             }
         }
     }
@@ -343,11 +354,8 @@ async fn check_endpoint_connectivity(client: &reqwest::Client, chat_url: &Url) -
         tools: None,
     };
 
-    let url = format!("{}/v1/chat/completions", chat_url);
-    let url = Url::parse(&url).context("Invalid URL for connectivity check")?;
-
     let resp = client
-        .post(url)
+        .post(chat_url.clone())
         .json(&test_req)
         .timeout(Duration::from_secs(5))
         .send()

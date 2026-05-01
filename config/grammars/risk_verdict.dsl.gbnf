@@ -1,0 +1,6 @@
+root ::= ws verdict ws reason_field? ws
+verdict ::= "OK" | "CAUTION"
+reason_field ::= "reason=" string
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+ws ::= [ \t]*

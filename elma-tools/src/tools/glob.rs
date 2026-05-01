@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolExecutorState, ToolRisk};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -23,6 +23,9 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "file pattern matching",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_risks(vec![ToolRisk::ReadOnly])
+        .with_executor_state(ToolExecutorState::DeclarationOnly)
+        .concurrency_safe(),
     );
 }

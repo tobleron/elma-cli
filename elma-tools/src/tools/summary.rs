@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolRisk};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -22,6 +22,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "request resolved",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_risks(vec![ToolRisk::ConversationState])
+        .concurrency_safe(),
     );
 }

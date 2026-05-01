@@ -42,7 +42,9 @@ pub(crate) enum PolicyError {
         level: ExecutionLevel,
         allowed: String,
     },
-    #[error("Request requires workspace evidence but program has no shell/read/search step")]
+    #[error(
+        "Request requires workspace evidence but program has no shell/read/observe/search step"
+    )]
     MissingEvidenceSteps,
 }
 
@@ -75,6 +77,7 @@ pub(crate) fn compute_program_risk(program: &Program) -> ProgramRisk {
 fn step_risk_level(step: &Step) -> ProgramRisk {
     match step {
         Step::Read { .. }
+        | Step::Observe { .. }
         | Step::Search { .. }
         | Step::Select { .. }
         | Step::Decide { .. }
@@ -177,15 +180,17 @@ pub(crate) fn program_has_workspace_evidence_steps(program: &Program) -> bool {
     program.steps.iter().any(|step| {
         matches!(
             step,
-            Step::Shell { .. } | Step::Read { .. } | Step::Search { .. }
+            Step::Shell { .. } | Step::Read { .. } | Step::Observe { .. } | Step::Search { .. }
         )
     })
 }
 
 pub(crate) fn step_results_have_workspace_evidence(step_results: &[StepResult]) -> bool {
     step_results.iter().any(|result| {
-        matches!(result.kind.as_str(), "shell" | "read" | "search")
-            && result.ok
+        matches!(
+            result.kind.as_str(),
+            "shell" | "read" | "observe" | "search"
+        ) && result.ok
             && (!result.summary.trim().is_empty()
                 || result
                     .raw_output
@@ -233,6 +238,15 @@ pub(crate) fn program_signature(program: &Program) -> String {
                     format!("read:{} files", ps.len())
                 } else {
                     "read".to_string()
+                }
+            }
+            Step::Observe { path, paths, .. } => {
+                if let Some(p) = path {
+                    format!("observe:{}", p.trim())
+                } else if let Some(ps) = paths {
+                    format!("observe:{} files", ps.len())
+                } else {
+                    "observe".to_string()
                 }
             }
             Step::Search { query, .. } => format!("search:{}", query.trim()),
@@ -298,7 +312,7 @@ pub(crate) fn evaluate_program_for_scenario(
                     executable_in_tune = false;
                 }
             }
-            Step::Read { .. } => {
+            Step::Read { .. } | Step::Observe { .. } => {
                 has_read = true;
             }
             Step::Search { .. } => {

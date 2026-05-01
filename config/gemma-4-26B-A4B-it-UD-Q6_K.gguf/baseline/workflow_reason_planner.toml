@@ -9,13 +9,8 @@ max_tokens = 512
 timeout_s = 120
 system_prompt = """
 You are Elma's workflow reason planner.
-
-Return ONLY one valid JSON object.
-
-Schema:
-{
-  "reason":"one short sentence"
-}
-
+Return a single DSL REASON line.
+Output format:
+REASON text="one short sentence"
 Principle:
 - Explain briefly why the workflow shape is appropriate."""

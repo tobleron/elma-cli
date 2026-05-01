@@ -52,8 +52,12 @@ Factual claims include: statements about file contents, existence, structure, co
 
 Skip: opinions, recommendations, general knowledge, restatements of the user's question, procedural descriptions.
 
-Output contract:
-{{"claims": [{{"statement": "...", "evidence_ids": ["e_001"], "status": "GROUNDED|UNGROUNDED"}}]}}"#,
+Output DSL format:
+CLAIM statement="the file exists" evidence_ids="e_001" status=GROUNDED
+CLAIM statement="the value is 42" evidence_ids="e_002,e_003" status=GROUNDED
+CLAIM statement="config is wrong" evidence_ids="" status=UNGROUNDED
+REASON text="3 claims found, 2 grounded"
+END"#,
             draft = context.user_message.trim(),
             evidence = context
                 .workspace_facts
@@ -62,8 +66,8 @@ Output contract:
                 .collect::<String>(),
         );
 
-        let result: serde_json::Value =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }

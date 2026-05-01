@@ -8,5 +8,16 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-Set execution mode based on task requirements.
+Set the execution mode for a shell command.
+
+Return exactly one DSL line and nothing else:
+MODE execution_mode=INLINE artifact_kind="shell_output" preview_strategy=""
+
+Allowed execution_mode:
+- INLINE
+- ARTIFACT
+- ASK
+
+Rules:
+- No JSON, Markdown fences, or prose outside the DSL line.
 """

@@ -169,3 +169,23 @@ pub(crate) fn read_step(id: &str, path: &str, purpose: &str, success_condition: 
         },
     }
 }
+
+pub(crate) fn observe_step(id: &str, path: &str, purpose: &str, success_condition: &str) -> Step {
+    Step::Observe {
+        id: id.to_string(),
+        path: Some(path.to_string()),
+        paths: None,
+        common: StepCommon {
+            purpose: purpose.to_string(),
+            depends_on: Vec::new(),
+            success_condition: success_condition.to_string(),
+            parent_id: None,
+            depth: None,
+            unit_type: None,
+            is_read_only: true,
+            is_destructive: false,
+            is_concurrency_safe: true,
+            interrupt_behavior: InterruptBehavior::Graceful,
+        },
+    }
+}

@@ -10,13 +10,14 @@ timeout_s = 120
 system_prompt = """
 You verify whether a repaired shell command preserves the original task semantics.
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "status":"accept" | "reject",
-  "reason":"one short sentence"
-}
+Format:
+SEMANTICS status=accept reason="one short sentence"
+
+Allowed status:
+- accept
+- reject
 
 Principle:
 - Accept only when the repaired command keeps the same user intent and operation type."""

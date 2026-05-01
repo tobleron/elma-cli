@@ -15,6 +15,7 @@ pub(crate) use std::process::Command;
 pub(crate) use std::sync::{Mutex, OnceLock};
 pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+mod action_policy; // Task 339: Action And Tool Metadata Policy Unification
 mod app;
 mod app_bootstrap;
 mod app_bootstrap_core;
@@ -38,7 +39,10 @@ mod auto_compact; // Task 114: Auto-Compact (Context Window Management)
 mod background_task; // Task 268: Background Task Management
 mod claude_ui;
 mod command_budget; // Task 121: Command Budget & Rate Limiting
+mod config_prompt_sync;
+mod config_schema; // Task 341: Config Schema Generation And Migration
 mod decomposition; // Task 023: Hierarchical decomposition
+mod decomposition_pyramid; // Task 394: Objective→Goal→Task→Action pyramid
 mod defaults;
 mod defaults_core;
 mod defaults_evidence;
@@ -47,12 +51,14 @@ mod defaults_router;
 mod diagnostics;
 mod dirs;
 mod document_adapter; // Task 197: Document intelligence skill stack
+mod dsl; // Compact DSL parser primitives and error model
 mod effective_history; // Task 310: Deferred Pre-Turn Summary
 mod env_utils; // Task 290: Clean environment injection for persistent shell
 mod evaluation;
 mod evaluation_response;
 mod evaluation_routing;
 mod evaluation_workflow;
+mod event_log; // Task 338: Formal Action-Observation Event Log
 mod evidence_ledger; // Task 287: Evidence Ledger
 mod evidence_summary; // Task 287: Evidence Summarization
 mod execution;
@@ -60,6 +66,7 @@ mod execution_ladder; // Execution ladder for minimum-sufficient orchestration
 mod execution_steps;
 mod execution_steps_compat;
 mod execution_steps_edit;
+mod execution_steps_observe;
 mod execution_steps_read;
 mod execution_steps_search;
 mod execution_steps_selectors;
@@ -80,6 +87,7 @@ mod intel_narrative; // Narrative transformation for intel units
 mod intel_narrative_advanced; // Advanced assessment narrative functions
 mod intel_narrative_intent; // Intent analysis narrative functions
 mod intel_narrative_planning; // Planning-related narrative functions
+mod intel_narrative_pyramid; // Pyramid decomposition narrative builders
 mod intel_narrative_steps; // Step-related narrative functions and helpers
 mod intel_narrative_utils; // Shared narrative utility helpers
 mod intel_trait; // Intel unit trait and interfaces
@@ -94,6 +102,7 @@ mod llm_provider; // Task 278: Native Rust LLM API Client
 mod logging;
 mod markdown_ansi; // Markdown-to-ANSI terminal rendering
 mod metrics;
+mod model_capabilities; // Task 343: Model Capability Registry
 mod models_api;
 mod optimization;
 mod optimization_eval;
@@ -160,6 +169,7 @@ mod thinking_content;
 mod tool_calling;
 mod tool_discovery;
 mod tool_loop;
+mod tool_orchestration_certification; // Task 397: Tool Orchestration Coverage Matrix
 mod tool_registry;
 mod tool_result_storage; // Task 113: Tool Result Budget & Disk Persistence
 mod tools; // Tools Module - Combined tools.rs (cache + registry)
@@ -188,6 +198,7 @@ pub(crate) use decomposition::*; // Task 023
 pub(crate) use defaults::*;
 pub(crate) use defaults_evidence::*; // JSON pipeline intel functions
 pub(crate) use document_adapter::*; // Task 197: Document intelligence
+pub(crate) use dsl::*; // Compact DSL parser primitives
 pub(crate) use evaluation::*;
 pub(crate) use execution::*;
 pub(crate) use execution_ladder::*; // Execution ladder types and functions
@@ -274,6 +285,34 @@ async fn main() {
                 match crate::session_gc::run_session_gc(&sessions_root, &gc_args) {
                     Ok(output) => println!("{}", output),
                     Err(e) => eprintln!("Error: {}", e),
+                }
+                return;
+            }
+            crate::types::Commands::SyncPrompts { dry_run } => {
+                let root = {
+                    let p = PathBuf::from(&args.config_root);
+                    if p.is_absolute() {
+                        p
+                    } else {
+                        match crate::paths::repo_root() {
+                            Ok(repo) => repo.join(p),
+                            Err(e) => {
+                                eprintln!("Error resolving repo root: {e}");
+                                return;
+                            }
+                        }
+                    }
+                };
+                match crate::config_prompt_sync::sync_canonical_prompts_in_tree(&root, *dry_run) {
+                    Ok(report) => {
+                        println!(
+                            "sync_prompts scanned={} updated={} dry_run={}",
+                            report.scanned, report.updated, dry_run
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e:#}");
+                    }
                 }
                 return;
             }

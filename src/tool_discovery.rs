@@ -353,7 +353,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
         registry.add_tool(ToolCapability {
             name: "cargo".to_string(),
             description: "Rust build tool and package manager".to_string(),
-            invocation: "cargo <command>".to_string(),
+            invocation: "cargo".to_string(),
             source: ToolSource::SystemTool,
             available,
         });
@@ -370,7 +370,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
         registry.add_tool(ToolCapability {
             name: "npm".to_string(),
             description: "Node.js package manager".to_string(),
-            invocation: "npm <command>".to_string(),
+            invocation: "npm".to_string(),
             source: ToolSource::SystemTool,
             available,
         });
@@ -387,7 +387,7 @@ fn verify_project_tools(workspace_root: &Path, registry: &mut ToolRegistry) -> R
         registry.add_tool(ToolCapability {
             name: "git".to_string(),
             description: "Version control".to_string(),
-            invocation: "git <command>".to_string(),
+            invocation: "git".to_string(),
             source: ToolSource::SystemTool,
             available,
         });

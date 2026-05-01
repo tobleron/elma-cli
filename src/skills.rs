@@ -4,7 +4,7 @@
 
 use crate::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) enum SkillId {
     General,
     TaskSteward,
@@ -359,19 +359,26 @@ pub(crate) async fn select_execution_plan_for_request(
     let formula_catalog = render_formula_catalog().join("\n");
 
     let prompt = format!(
-        "User request:\n{line}\n\nAvailable skills:\n{skill_catalog}\n\nAvailable formulas:\n{formula_catalog}\n\nProject guidance snapshot:\n{}\n\nClassify the request as `simple` or `main_task`. Use `main_task` for multi-step, multi-skill, resumable, or evidence-heavy work. Return JSON: {{\"request_class\":\"simple|main_task\",\"formula\":\"general_reply|repo_explore_then_reply|document_read_then_reply|file_scout_then_reply|file_scout_document_reply|project_task_steward\",\"reason\":\"one short sentence\",\"predicted_tool_calls\":0,\"expected_resume_value\":false}}",
+        "User request:\n{line}\n\nAvailable skills:\n{skill_catalog}\n\nAvailable formulas:\n{formula_catalog}\n\nProject guidance snapshot:\n{}\n\nClassify the request as `simple` or `main_task`. Use `main_task` for multi-step, multi-skill, resumable, or evidence-heavy work. Return a single DSL line using the PLAN format described in the system instructions.",
         guidance.render_for_system_prompt()
     );
 
     let req = chat_request_system_user(
         selector_cfg,
-        "Choose a bounded Elma execution plan. Prefer simple handling unless the request clearly needs persistent task tracking or multiple stages. Output JSON only.",
+        "Choose a bounded Elma execution plan.\n\nReturn exactly one DSL line and nothing else:\nPLAN request_class=simple formula=general_reply reason=\"one short sentence\" predicted_tool_calls=0 expected_resume_value=false\n\nRules:\n- request_class: simple | main_task\n- formula: general_reply | repo_explore_then_reply | document_read_then_reply | file_scout_then_reply | file_scout_document_reply | project_task_steward\n- No JSON, Markdown fences, or prose outside the DSL line.",
         &prompt,
         ChatRequestOptions::deterministic(160),
     );
 
-    let verdict: ExecutionPlanVerdict =
-        crate::ui_chat::chat_json_with_repair_timeout(client, chat_url, &req, 30).await?;
+    let dsl_value = crate::ui_chat::chat_dsl_with_repair_for_profile_timeout(
+        client,
+        chat_url,
+        &req,
+        &selector_cfg.name,
+        30,
+    )
+    .await?;
+    let verdict: ExecutionPlanVerdict = serde_json::from_value(dsl_value)?;
     let request_class = request_class_from_str(&verdict.request_class);
     let formula = builtin_formula(formula_from_str(&verdict.formula));
     let summary_directive = formula_stage_directives(&formula).join(" ");
@@ -437,6 +444,16 @@ mod tests {
     }
 
     #[test]
+    fn all_skills_have_unique_ids() {
+        let manifests = builtin_skill_manifests();
+        assert_eq!(manifests.len(), 5);
+        let mut seen = std::collections::HashSet::new();
+        for skill in &manifests {
+            assert!(seen.insert(skill.id), "duplicate skill id: {:?}", skill.id);
+        }
+    }
+
+    #[test]
     fn formulas_include_multi_stage_document_flow() {
         let formula = builtin_formula(SkillFormulaId::FileScoutDocumentReply);
         assert_eq!(formula.stages.len(), 3);
@@ -445,9 +462,261 @@ mod tests {
     }
 
     #[test]
+    fn all_formulas_have_correct_stage_counts() {
+        let cases = [
+            (SkillFormulaId::GeneralReply, 1),
+            (SkillFormulaId::RepoExploreThenReply, 2),
+            (SkillFormulaId::DocumentReadThenReply, 2),
+            (SkillFormulaId::FileScoutThenReply, 2),
+            (SkillFormulaId::FileScoutDocumentReply, 3),
+            (SkillFormulaId::ProjectTaskSteward, 2),
+        ];
+        for (id, expected) in &cases {
+            let formula = builtin_formula(*id);
+            assert_eq!(
+                formula.stages.len(),
+                *expected,
+                "formula {:?} expected {} stages, got {}",
+                id,
+                expected,
+                formula.stages.len()
+            );
+        }
+    }
+
+    #[test]
+    fn formula_from_str_maps_correctly() {
+        assert_eq!(
+            formula_from_str("general_reply"),
+            SkillFormulaId::GeneralReply
+        );
+        assert_eq!(
+            formula_from_str("repo_explore_then_reply"),
+            SkillFormulaId::RepoExploreThenReply
+        );
+        assert_eq!(
+            formula_from_str("document_read_then_reply"),
+            SkillFormulaId::DocumentReadThenReply
+        );
+        assert_eq!(
+            formula_from_str("file_scout_then_reply"),
+            SkillFormulaId::FileScoutThenReply
+        );
+        assert_eq!(
+            formula_from_str("file_scout_document_reply"),
+            SkillFormulaId::FileScoutDocumentReply
+        );
+        assert_eq!(
+            formula_from_str("project_task_steward"),
+            SkillFormulaId::ProjectTaskSteward
+        );
+    }
+
+    #[test]
+    fn formula_from_str_unknown_defaults_to_general() {
+        assert_eq!(
+            formula_from_str("nonexistent_formula"),
+            SkillFormulaId::GeneralReply
+        );
+        assert_eq!(formula_from_str(""), SkillFormulaId::GeneralReply);
+    }
+
+    #[test]
+    fn all_multi_stage_formulas_end_with_general() {
+        let multi_stage = [
+            SkillFormulaId::RepoExploreThenReply,
+            SkillFormulaId::DocumentReadThenReply,
+            SkillFormulaId::FileScoutThenReply,
+            SkillFormulaId::FileScoutDocumentReply,
+            SkillFormulaId::ProjectTaskSteward,
+        ];
+        for id in &multi_stage {
+            let formula = builtin_formula(*id);
+            let last = formula.stages.last().unwrap();
+            assert_eq!(
+                last.skill_id,
+                SkillId::General,
+                "formula {:?} last stage should be General, got {:?}",
+                id,
+                last.skill_id
+            );
+        }
+    }
+
+    #[test]
+    fn general_formula_has_minimum_budget() {
+        let formula = builtin_formula(SkillFormulaId::GeneralReply);
+        assert_eq!(formula.stages[0].stop_budget, 1);
+        assert_eq!(formula.stages.len(), 1);
+    }
+
+    #[test]
+    fn formula_stage_budgets_are_reasonable() {
+        let all_ids = [
+            SkillFormulaId::GeneralReply,
+            SkillFormulaId::RepoExploreThenReply,
+            SkillFormulaId::DocumentReadThenReply,
+            SkillFormulaId::FileScoutThenReply,
+            SkillFormulaId::FileScoutDocumentReply,
+            SkillFormulaId::ProjectTaskSteward,
+        ];
+        for id in &all_ids {
+            let formula = builtin_formula(*id);
+            for (i, stage) in formula.stages.iter().enumerate() {
+                assert!(
+                    (1..=3).contains(&stage.stop_budget),
+                    "formula {:?} stage {} has budget {} (expected 1-3)",
+                    id,
+                    i,
+                    stage.stop_budget
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn formula_stage_directives_match_stage_count() {
+        let all_ids = [
+            SkillFormulaId::GeneralReply,
+            SkillFormulaId::RepoExploreThenReply,
+            SkillFormulaId::DocumentReadThenReply,
+            SkillFormulaId::FileScoutThenReply,
+            SkillFormulaId::FileScoutDocumentReply,
+            SkillFormulaId::ProjectTaskSteward,
+        ];
+        for id in &all_ids {
+            let formula = builtin_formula(*id);
+            let directives = formula_stage_directives(&formula);
+            assert_eq!(
+                directives.len(),
+                formula.stages.len(),
+                "formula {:?}: expected {} directives, got {}",
+                id,
+                formula.stages.len(),
+                directives.len()
+            );
+        }
+    }
+
+    #[test]
+    fn render_formula_catalog_includes_all_six() {
+        let catalog = render_formula_catalog();
+        assert!(catalog.iter().any(|l| l.contains("general_reply")));
+        assert!(catalog
+            .iter()
+            .any(|l| l.contains("repo_explore_then_reply")));
+        assert!(catalog
+            .iter()
+            .any(|l| l.contains("document_read_then_reply")));
+        assert!(catalog.iter().any(|l| l.contains("file_scout_then_reply")));
+        assert!(catalog
+            .iter()
+            .any(|l| l.contains("file_scout_document_reply")));
+        assert!(catalog.iter().any(|l| l.contains("project_task_steward")));
+        assert_eq!(catalog.len(), 6);
+    }
+
+    #[test]
     fn render_skill_catalog_mentions_formula_and_mode() {
         let rendered = render_skill_catalog(&ExecutionPlanSelection::simple_general());
         assert!(rendered.contains("general_reply"));
         assert!(rendered.contains("session ledger"));
+    }
+
+    #[test]
+    fn primary_skill_returns_expected_skill() {
+        let cases = [
+            (SkillFormulaId::GeneralReply, SkillId::General),
+            (SkillFormulaId::RepoExploreThenReply, SkillId::RepoExplorer),
+            (
+                SkillFormulaId::DocumentReadThenReply,
+                SkillId::DocumentReader,
+            ),
+            (SkillFormulaId::FileScoutThenReply, SkillId::FileScout),
+            (SkillFormulaId::FileScoutDocumentReply, SkillId::FileScout),
+            (SkillFormulaId::ProjectTaskSteward, SkillId::TaskSteward),
+        ];
+        for (formula_id, expected_skill) in &cases {
+            let plan = ExecutionPlanSelection {
+                request_class: RequestClass::MainTask,
+                formula: builtin_formula(*formula_id),
+                reason: String::new(),
+                summary_directive: String::new(),
+                gate: MainTaskGateVerdict {
+                    class: RequestClass::MainTask,
+                    predicted_tool_calls: 0,
+                    expected_resume_value: false,
+                    reason: String::new(),
+                },
+            };
+            assert_eq!(
+                plan.primary_skill(),
+                *expected_skill,
+                "formula {:?} expected primary skill {:?}",
+                formula_id,
+                expected_skill
+            );
+        }
+    }
+
+    #[test]
+    fn simple_general_uses_general_formula() {
+        let plan = ExecutionPlanSelection::simple_general();
+        assert_eq!(plan.request_class, RequestClass::Simple);
+        assert_eq!(plan.formula.id, SkillFormulaId::GeneralReply);
+        assert_eq!(plan.primary_skill(), SkillId::General);
+        assert_eq!(plan.gate.class, RequestClass::Simple);
+    }
+
+    #[test]
+    fn semantic_continuity_simple_does_not_use_multi_stage() {
+        let plan = ExecutionPlanSelection::simple_general();
+        // A simple question like "what is 2+2" must not trigger multi-tool stages
+        assert_eq!(
+            plan.formula.stages.len(),
+            1,
+            "simple formula should have exactly 1 stage"
+        );
+        assert_eq!(
+            plan.formula.stages[0].stop_budget, 1,
+            "simple formula should have minimum budget"
+        );
+    }
+
+    #[test]
+    fn request_class_from_str_maps_correctly() {
+        assert_eq!(request_class_from_str("simple"), RequestClass::Simple);
+        assert_eq!(request_class_from_str("main_task"), RequestClass::MainTask);
+        assert_eq!(request_class_from_str("unknown"), RequestClass::Simple);
+        assert_eq!(request_class_from_str(""), RequestClass::Simple);
+    }
+
+    #[test]
+    fn skill_id_as_str_round_trips() {
+        let all_ids = [
+            SkillId::General,
+            SkillId::TaskSteward,
+            SkillId::RepoExplorer,
+            SkillId::DocumentReader,
+            SkillId::FileScout,
+        ];
+        for id in &all_ids {
+            let s = id.as_str();
+            let found = builtin_skill_manifests()
+                .iter()
+                .any(|m| m.id == *id && m.name == s);
+            assert!(
+                found,
+                "skill {:?} has as_str '{}' but manifest name mismatch",
+                id, s
+            );
+        }
+    }
+
+    #[test]
+    fn short_label_format_is_correct() {
+        let plan = ExecutionPlanSelection::simple_general();
+        let label = plan.short_label();
+        assert_eq!(label, "simple:general_reply");
     }
 }

@@ -1,0 +1,485 @@
+# Model-Output JSON Inventory Fixture
+# Generated: 2026-04-29
+# Checkpoint: ba4eed7d
+# Schema: one [[boundary]] per JSON surface, classified by category.
+
+# ── Intel Unit Prompt Profiles ──
+
+[[boundary]]
+file = "config/defaults/router.toml"
+category = "model_output"
+prompt_name = "router"
+schema = { choice = "ROUTE", label = "ROUTE", reason = "one sentence", entropy = "0.XX" }
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/scope_builder.toml"
+category = "model_output"
+prompt_name = "scope_builder"
+schema = { objective = "string", focus_paths = ["..."], include_globs = ["..."], exclude_globs = ["..."], query_terms = ["..."], expected_artifacts = ["..."], reason = "..." }
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/formula_selector.toml"
+category = "model_output"
+prompt_name = "formula_selector"
+schema = { primary = "formula_name", alternatives = ["..."], reason = "...", memory_id = "..." }
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/selector.toml"
+category = "model_output"
+prompt_name = "selector"
+schema = { items = ["<EXACT_ITEM_TEXT>"], reason = "one short sentence" }
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/complexity_assessor.toml"
+category = "model_output"
+prompt_name = "complexity_assessor"
+schema = { complexity = "DIRECT|INVESTIGATE|...", needs_evidence = "bool", needs_tools = "bool", needs_decision = "bool", needs_plan = "bool", risk = "LOW|..." }
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/ordering_needs_assessment.toml"
+category = "model_output"
+prompt_name = "ordering_needs_assessment"
+schema = { requires_ordering = "bool" }
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/outcome_verifier.toml"
+category = "model_output"
+prompt_name = "outcome_verifier"
+schema = { status = "ok|retry", reason = "one short sentence" }
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/risk_reviewer.toml"
+category = "model_output"
+prompt_name = "risk_reviewer"
+schema = { status = "ok|caution", reason = "one short sentence" }
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/revision_needs_assessment.toml"
+category = "model_output"
+prompt_name = "revision_needs_assessment"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/task_semantics_guard.toml"
+category = "model_output"
+prompt_name = "task_semantics_guard"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/efficiency_reviewer.toml"
+category = "model_output"
+prompt_name = "efficiency_reviewer"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/logical_reviewer.toml"
+category = "model_output"
+prompt_name = "logical_reviewer"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/evidence_chain_assessment.toml"
+category = "model_output"
+prompt_name = "evidence_chain_assessment"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/evidence_compactor.toml"
+category = "model_output"
+prompt_name = "evidence_compactor"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/execution_sufficiency.toml"
+category = "model_output"
+prompt_name = "execution_sufficiency"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/strategy_hint_generator.toml"
+category = "model_output"
+prompt_name = "strategy_hint_generator"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/critic.toml"
+category = "model_output"
+prompt_name = "critic"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/final_answer_extractor.toml"
+category = "model_output"
+prompt_name = "final_answer_extractor"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/level_assessment.toml"
+category = "model_output"
+prompt_name = "level_assessment"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/defaults/refinement.toml"
+category = "model_output"
+prompt_name = "refinement"
+schema = "Program JSON (schema in defaults_core.rs json_program_grammar)"
+target_task = 378
+
+[[boundary]]
+file = "config/defaults/json_repair.toml"
+category = "model_output"
+prompt_name = "json_repair"
+schema = "free-form repaired JSON"
+target_task = 384
+
+[[boundary]]
+file = "config/defaults/json_repair_intel.toml"
+category = "model_output"
+prompt_name = "json_repair_intel"
+schema = "free-form repaired JSON"
+target_task = 384
+
+# ── Profile-specific overrides (sampled — all profiles have same pattern) ──
+
+[[boundary]]
+file = "config/*/status_message_generator.toml"
+category = "model_output"
+prompt_name = "status_message_generator"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/memory_gate.toml"
+category = "model_output"
+prompt_name = "memory_gate"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/pattern_suggester.toml"
+category = "model_output"
+prompt_name = "pattern_suggester"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/workflow_reason_planner.toml"
+category = "model_output"
+prompt_name = "workflow_reason_planner"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/artifact_classifier.toml"
+category = "model_output"
+prompt_name = "artifact_classifier"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/claim_checker.toml"
+category = "model_output"
+prompt_name = "claim_checker"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/command_preflight.toml"
+category = "model_output"
+prompt_name = "command_preflight"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/command_repair.toml"
+category = "model_output"
+prompt_name = "command_repair"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/evidence_need_assessor.toml"
+category = "model_output"
+prompt_name = "evidence_need_assessor"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/reflection.toml"
+category = "model_output"
+prompt_name = "reflection"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/formula_memory_matcher.toml"
+category = "model_output"
+prompt_name = "formula_memory_matcher"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/workflow_complexity_planner.toml"
+category = "model_output"
+prompt_name = "workflow_complexity_planner"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/action_need_assessor.toml"
+category = "model_output"
+prompt_name = "action_need_assessor"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/workflow_planner.toml"
+category = "model_output"
+prompt_name = "workflow_planner"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/expert_advisor.toml"
+category = "model_output"
+prompt_name = "expert_advisor"
+schema = "verdict JSON"
+target_task = 380
+
+[[boundary]]
+file = "config/*/orchestrator.toml"
+category = "model_output"
+prompt_name = "orchestrator"
+schema = "verdict JSON"
+target_task = 378
+
+[[boundary]]
+file = "config/*/the_maestro.toml"
+category = "model_output"
+prompt_name = "the_maestro"
+schema = "verdict JSON"
+target_task = 378
+
+[[boundary]]
+file = "config/*/output_aware.toml"
+category = "model_output"
+prompt_name = "output_aware"
+schema = { summary = "one short paragraph", key_facts = ["..."], artifact_saved = "bool" }
+target_task = 380
+
+# ── Code-Generated JSON ──
+
+[[boundary]]
+file = "src/defaults_core.rs"
+symbol = "json_program_grammar"
+category = "model_output"
+description = "GBNF grammar enforcing mandatory JSON Program schema on model output"
+target_task = 378
+
+[[boundary]]
+file = "src/ui/ui_chat.rs"
+symbol = "chat_json_with_repair (and 11 variants)"
+category = "model_output"
+description = "Model-text → JSON extraction + repair pipeline. Entire family removed post-DSL."
+target_task = 377
+
+[[boundary]]
+file = "src/ui/ui_chat.rs"
+symbol = "parse_json_response / parse_json_response_with_repaired"
+category = "model_output"
+description = "Internal repair-then-reparse logic"
+target_task = 377
+
+[[boundary]]
+file = "src/routing_parse.rs"
+symbol = "parse_json_loose"
+category = "model_output"
+description = "Loose JSON extraction from model text (handles prose, fences, markdown)"
+target_task = 384
+
+[[boundary]]
+file = "src/intel_units/intel_units_core.rs"
+symbol = "execute_intel_json_from_user_content callers"
+category = "model_output"
+description = "Intel unit JSON output parsing for core classifiers"
+target_task = 380
+
+[[boundary]]
+file = "src/intel_units/intel_units_classifier.rs"
+symbol = "execute_intel_json_from_user_content callers"
+category = "model_output"
+description = "Intel unit JSON output parsing for advanced classifiers"
+target_task = 380
+
+[[boundary]]
+file = "src/intel_units/intel_units_maestro.rs"
+symbol = "serde_json::from_str::<MaestroOutput>"
+category = "model_output"
+description = "Maestro orchestration JSON parsing"
+target_task = 378
+
+[[boundary]]
+file = "src/orchestration_helpers/mod.rs"
+symbol = "chat_json_with_repair* callers"
+category = "model_output"
+description = "Orchestration helpers using JSON repair pipeline for Program and verdict parsing"
+target_task = 378
+
+[[boundary]]
+file = "src/orchestration_helpers/grounding.rs"
+symbol = "chat_json_with_repair"
+category = "model_output"
+description = "Grounding verdict JSON parsing"
+target_task = 380
+
+[[boundary]]
+file = "src/verification.rs"
+symbol = "chat_json_with_repair callers"
+category = "model_output"
+description = "Verification verdict JSON parsing"
+target_task = 380
+
+[[boundary]]
+file = "src/refinement.rs"
+symbol = "parse_json_loose"
+category = "model_output"
+description = "Refined program JSON parsing"
+target_task = 378
+
+[[boundary]]
+file = "src/reflection.rs"
+symbol = "parse_json_loose"
+category = "model_output"
+description = "Reflection verdict JSON parsing"
+target_task = 380
+
+[[boundary]]
+file = "src/guardrails_refinement.rs"
+symbol = "chat_json_with_repair_text + json_program_grammar"
+category = "model_output"
+description = "Guardrails refinement Program JSON"
+target_task = 378
+
+[[boundary]]
+file = "src/strategy.rs"
+symbol = "chat_json_with_repair_text + json_program_grammar"
+category = "model_output"
+description = "Strategy Program JSON generation"
+target_task = 378
+
+[[boundary]]
+file = "src/defaults_evidence_core.rs"
+symbol = "chat_json_with_repair"
+category = "model_output"
+description = "Evidence assessment JSON parsing"
+target_task = 380
+
+[[boundary]]
+file = "src/orchestration_retry.rs"
+symbol = "parse_json_loose"
+category = "model_output"
+description = "Orchestration retry JSON parsing (3 call sites)"
+target_task = 378
+
+# ── Provider Wire (stays JSON) ──
+
+[[boundary]]
+file = "src/llm_provider.rs"
+symbol = "build_request_body"
+category = "provider_wire"
+description = "OpenAI-compatible and Anthropic HTTP request body construction"
+target_task = "none"
+
+[[boundary]]
+file = "src/llm_provider.rs"
+symbol = "parse_streaming_response / parse_non_streaming_response"
+category = "provider_wire"
+description = "Provider API response parsing"
+target_task = "none"
+
+[[boundary]]
+file = "src/types_api.rs"
+symbol = "ChatMessage / ToolCall / Choice"
+category = "provider_wire"
+description = "API wire types for provider communication"
+target_task = "none"
+
+[[boundary]]
+file = "src/tool_loop.rs"
+symbol = "finish_streaming_tool_calls / SSE chunk parsing"
+category = "provider_wire"
+description = "Streaming SSE tool call aggregation from provider"
+target_task = "none"
+
+[[boundary]]
+file = "src/tool_loop.rs"
+symbol = "tool call function.arguments parsing"
+category = "provider_wire"
+description = "Parsing provider-native function.arguments JSON in tool calls"
+target_task = "none"
+
+[[boundary]]
+file = "src/stop_policy.rs"
+symbol = "tool call argument inspection"
+category = "provider_wire"
+description = "Inspecting provider-native tool call arguments for stop decisions"
+target_task = "none"
+
+# ── Local State (stays JSON for now) ──
+
+[[boundary]]
+file = "src/session_write.rs"
+symbol = "session.json read/write"
+category = "local_state"
+description = "Session state persistence. May migrate per Task 345."
+target_task = "none"
+
+[[boundary]]
+file = "src/evidence_ledger.rs"
+symbol = "EvidenceLedger serialize/deserialize"
+category = "local_state"
+description = "Evidence ledger persistence to disk"
+target_task = "none"
+
+# ── Config (TOML-first per Task 383) ──
+
+[[boundary]]
+file = "config/*.toml"
+symbol = "Prompt configuration files"
+category = "config"
+description = "Profile prompt configs. Already TOML; content (system_prompt fields) drives model-output JSON."
+target_task = 383
+
+[[boundary]]
+file = "config/grammars/*.gbnf"
+symbol = "GBNF grammar files"
+category = "config"
+description = "Grammar-constrained decoding files. Currently encode JSON schemas; migrate to DSL grammars per Task 382."
+target_task = 382
+
+[[boundary]]
+file = "config/grammar_mapping.toml"
+symbol = "Grammar-to-prompt mapping"
+category = "config"
+description = "Maps prompts to grammar files. Update when prompts migrate to DSL."
+target_task = 382

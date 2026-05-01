@@ -170,10 +170,7 @@ impl ClaudeRenderer {
                             } => match status {
                                 crate::claude_ui::claude_state::ToolTraceStatus::Running => {
                                     let display_name = if name == "shell" { "$" } else { &name };
-                                    line = format!(
-                                        "{} {} {}\n",
-                                        ts, display_name, command
-                                    );
+                                    line = format!("{} {} {}\n", ts, display_name, command);
                                 }
                                 crate::claude_ui::claude_state::ToolTraceStatus::Completed {
                                     success,
@@ -181,7 +178,10 @@ impl ClaudeRenderer {
                                     duration_ms,
                                 } => {
                                     let display_name = if name == "shell" { "$" } else { &name };
-                                    line = format!("{} {} success={} duration={:?}\n{}\n", ts, display_name, success, duration_ms, output);
+                                    line = format!(
+                                        "{} {} success={} duration={:?}\n{}\n",
+                                        ts, display_name, success, duration_ms, output
+                                    );
                                 }
                             },
                             ClaudeMessage::PermissionRequest { command, reason } => {

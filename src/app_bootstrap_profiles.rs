@@ -278,6 +278,20 @@ pub(crate) fn sync_and_upgrade_profiles(
     )?;
     sync_managed_profile(
         args,
+        &model_cfg_dir.join("summarizer.toml"),
+        &mut profiles.summarizer_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("turn_summary.toml"),
+        &mut profiles.turn_summary_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
         &model_cfg_dir.join("formula_selector.toml"),
         &mut profiles.formula_cfg,
         base_url,

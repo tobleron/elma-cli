@@ -5,7 +5,7 @@
 //! and stagnation logic from tool_loop.rs into a single enforcement point.
 
 use crate::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +20,7 @@ pub(crate) enum StopReason {
     WallClockExceeded,
     ModelProgressStalled,
     UserInterrupted,
+    InvalidDsl,
 }
 
 impl StopReason {
@@ -35,6 +36,7 @@ impl StopReason {
             StopReason::WallClockExceeded => "wall_clock_exceeded",
             StopReason::ModelProgressStalled => "model_progress_stalled",
             StopReason::UserInterrupted => "user_interrupted",
+            StopReason::InvalidDsl => "invalid_dsl",
         }
     }
 }
@@ -44,6 +46,7 @@ pub(crate) struct StageBudget {
     pub max_tool_calls: usize,
     pub max_iterations: usize,
     pub max_repeated_failures: usize,
+    pub max_repeated_dsl_failures: usize,
     pub max_stagnation_cycles: usize,
     pub max_wall_clock_s: u64,
 }
@@ -52,8 +55,11 @@ impl Default for StageBudget {
     fn default() -> Self {
         Self {
             max_tool_calls: 0, // 0 = unlimited (context window + memory are the only hard limits)
-            max_iterations: 0, // 0 = unlimited (context compaction + stagnation detection are the guards)
+            max_iterations: 40, // Hard cap: stagnation detection is a primary guard but
+            // path-variation tricks (e.g. alternating L path="." and
+            // L path="docs/") can evade it. This cap is the safety net.
             max_repeated_failures: 3,
+            max_repeated_dsl_failures: 3,
             max_stagnation_cycles: 3,
             max_wall_clock_s: 300,
         }
@@ -94,6 +100,17 @@ pub(crate) struct StopPolicy {
     has_real_tool_calls_this_turn: bool,
     // Goal consistency: track when we last checked at 18-tool-call milestones
     last_milestone_checked: usize,
+    // DSL failure tracking (Task 381)
+    consecutive_dsl_failures: usize,
+    total_dsl_failures: usize,
+    // Per-family DSL repair tracking (Task 393)
+    repair_family_counts: HashMap<ActionRepairKind, usize>,
+    last_repair_kind: Option<ActionRepairKind>,
+    // Task 408: Fuzzy stagnation detection - track action type (verb letter)
+    // not just exact text. L path="." and L path="docs/" are both
+    // list actions and should count as stagnation.
+    last_action_verb: Option<String>,
+    consecutive_same_verb: usize,
 }
 
 impl StopPolicy {
@@ -118,6 +135,12 @@ impl StopPolicy {
             consecutive_respond_only_turns: 0,
             has_real_tool_calls_this_turn: false,
             last_milestone_checked: 0,
+            consecutive_dsl_failures: 0,
+            total_dsl_failures: 0,
+            repair_family_counts: HashMap::new(),
+            last_repair_kind: None,
+            last_action_verb: None,
+            consecutive_same_verb: 0,
         }
     }
 
@@ -185,6 +208,32 @@ impl StopPolicy {
             }
         }
 
+        // Task 408: Fuzzy stagnation detection - track action verb for detection.
+        // If action verb (R, L, S, Y, X, E) repeats, count it toward stagnation.
+        None
+    }
+
+    /// Task 408: Record action DSL verb for fuzzy stagnation detection.
+    /// Called after DSL action parsing with the verb letter (e.g., "L" for list).
+    pub(crate) fn record_action_verb(&mut self, verb: &str) {
+        let verb_upper = verb.to_uppercase();
+        if self.last_action_verb.as_ref() == Some(&verb_upper) {
+            self.consecutive_same_verb += 1;
+        } else {
+            self.last_action_verb = Some(verb_upper);
+            self.consecutive_same_verb = 1;
+        }
+    }
+
+    /// Task 408: Check if fuzzy stagnation threshold reached.
+    /// Returns a stop outcome if the same verb action has repeated N times.
+    pub(crate) fn check_fuzzy_stagnation(&self) -> Option<StopOutcome> {
+        if self.consecutive_same_verb >= self.budget.max_stagnation_cycles {
+            return Some(self.build_outcome(
+                StopReason::RepeatedNoNewEvidence,
+                "Fuzzy stagnation detected: same action type repeated without producing new evidence.",
+            ));
+        }
         None
     }
 
@@ -307,6 +356,62 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
         self.stagnation_runs = 0;
     }
 
+    /// Record a DSL parse/validation failure.
+    pub(crate) fn record_dsl_failure(&mut self, _unit_name: &str) {
+        self.consecutive_dsl_failures += 1;
+        self.total_dsl_failures += 1;
+    }
+
+    /// Get the current consecutive DSL failure count.
+    pub(crate) fn consecutive_dsl_failures(&self) -> usize {
+        self.consecutive_dsl_failures
+    }
+
+    /// Get the total DSL failure count.
+    pub(crate) fn total_dsl_failures(&self) -> usize {
+        self.total_dsl_failures
+    }
+
+    /// Reset the consecutive DSL failure streak after a valid action makes
+    /// progress. Total failures remain available for diagnostics.
+    pub(crate) fn reset_dsl_failure_streak(&mut self) {
+        self.consecutive_dsl_failures = 0;
+        self.repair_family_counts.clear();
+        self.last_repair_kind = None;
+    }
+
+    /// Record a DSL failure classified by repair kind (Task 393).
+    ///
+    /// Tracks per-family failure counts so the repair ladder can escalate
+    /// after three same-family failures instead of repeating a generic retry.
+    pub(crate) fn record_dsl_failure_with_kind(&mut self, kind: ActionRepairKind) {
+        self.consecutive_dsl_failures += 1;
+        self.total_dsl_failures += 1;
+        *self.repair_family_counts.entry(kind).or_insert(0) += 1;
+        self.last_repair_kind = Some(kind);
+    }
+
+    /// Get the consecutive failure count for a specific repair family.
+    pub(crate) fn repair_family_count(&self, kind: ActionRepairKind) -> usize {
+        self.repair_family_counts.get(&kind).copied().unwrap_or(0)
+    }
+
+    /// Check whether the current repair family has reached the escalation
+    /// threshold (3 same-family failures). When true the caller should send
+    /// a narrower one-bit action-kind decision instead of the focused repair.
+    pub(crate) fn should_escalate_repair(&self, kind: ActionRepairKind) -> bool {
+        self.repair_family_counts.get(&kind).copied().unwrap_or(0) >= 3
+    }
+
+    /// Clear the per-family repair counter for the given kind.
+    /// Called on successful action execution to reset the escalation ladder.
+    pub(crate) fn clear_repair_family(&mut self, kind: ActionRepairKind) {
+        self.repair_family_counts.remove(&kind);
+        if self.last_repair_kind == Some(kind) {
+            self.last_repair_kind = None;
+        }
+    }
+
     /// Register a tool signal so the policy knows whether future calls are novel.
     pub(crate) fn register_signal(&mut self, signal: String) -> bool {
         self.seen_signals.insert(signal)
@@ -392,6 +497,13 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
             return Some(self.build_outcome(
                 StopReason::WallClockExceeded,
                 "Wall-clock budget exhausted.",
+            ));
+        }
+
+        if self.consecutive_dsl_failures >= self.budget.max_repeated_dsl_failures {
+            return Some(self.build_outcome(
+                StopReason::InvalidDsl,
+                "DSL parsing/validation failed repeatedly. Correct the DSL syntax or provide clearer context.",
             ));
         }
 
@@ -505,8 +617,9 @@ fn next_step_hint(reason: &StopReason) -> String {
         StopReason::ModelProgressStalled => {
             "Restart the turn with a simpler, more direct prompt.".to_string()
         }
-        StopReason::UserInterrupted => "Resume with a refined objective when ready.".to_string(),
-    }
+            StopReason::UserInterrupted => "Resume with a refined objective when ready.".to_string(),
+            StopReason::InvalidDsl => "Correct the DSL syntax or regenerate the program with valid step structure.".to_string(),
+        }
 }
 
 /// Estimate command scope: "narrow", "medium", or "wide".
@@ -630,7 +743,7 @@ mod tests {
     #[test]
     fn default_budget_matches_legacy_constants() {
         let b = StageBudget::default();
-        assert_eq!(b.max_iterations, 0); // 0 = unlimited
+        assert_eq!(b.max_iterations, 40); // Task 407: Hard cap as safety net
         assert_eq!(b.max_stagnation_cycles, 3);
     }
 
@@ -809,6 +922,30 @@ mod tests {
         assert!(
             policy.check_should_stop().is_some(),
             "Should stop, Strategy 2 failed twice"
+        );
+    }
+
+    #[test]
+    fn valid_dsl_progress_resets_consecutive_dsl_failures_only() {
+        let budget = StageBudget {
+            max_repeated_dsl_failures: 3,
+            ..Default::default()
+        };
+        let mut policy = StopPolicy::new(budget);
+
+        policy.record_dsl_failure("action");
+        policy.record_dsl_failure("action");
+        assert_eq!(policy.consecutive_dsl_failures(), 2);
+        assert_eq!(policy.total_dsl_failures(), 2);
+
+        policy.reset_dsl_failure_streak();
+
+        assert_eq!(policy.consecutive_dsl_failures(), 0);
+        assert_eq!(policy.total_dsl_failures(), 2);
+        policy.record_dsl_failure("action");
+        assert!(
+            policy.check_should_stop().is_none(),
+            "a successful action should prevent old repair attempts from stopping the turn"
         );
     }
 
@@ -1123,8 +1260,12 @@ mod tests {
         assert!(!policy.is_struggling());
 
         // Add repeated failures
-        policy.tool_failures.push(("cmd".to_string(), "error".to_string()));
-        policy.tool_failures.push(("cmd".to_string(), "error".to_string()));
+        policy
+            .tool_failures
+            .push(("cmd".to_string(), "error".to_string()));
+        policy
+            .tool_failures
+            .push(("cmd".to_string(), "error".to_string()));
         assert!(policy.is_struggling());
 
         // Reset and test stagnation
@@ -1142,5 +1283,102 @@ mod tests {
     fn respond_abuse_reason_has_hint() {
         let hint = next_step_hint(&StopReason::RespondAbuse);
         assert!(hint.contains("search") || hint.contains("read") || hint.contains("shell"));
+    }
+
+    // ── Task 393: Per-family DSL repair tracking tests ──
+
+    #[test]
+    fn per_family_count_starts_at_zero() {
+        let budget = StageBudget::default();
+        let policy = StopPolicy::new(budget);
+        assert_eq!(policy.repair_family_count(ActionRepairKind::BareCommand), 0);
+        assert_eq!(
+            policy.repair_family_count(ActionRepairKind::UnquotedPath),
+            0
+        );
+    }
+
+    #[test]
+    fn per_family_count_increments_on_record() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        assert_eq!(policy.repair_family_count(ActionRepairKind::BareCommand), 1);
+        assert_eq!(
+            policy.repair_family_count(ActionRepairKind::UnquotedPath),
+            0
+        );
+    }
+
+    #[test]
+    fn per_family_escalates_after_three_same_family() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        assert!(!policy.should_escalate_repair(ActionRepairKind::BareCommand));
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        assert!(!policy.should_escalate_repair(ActionRepairKind::BareCommand));
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        assert!(!policy.should_escalate_repair(ActionRepairKind::BareCommand));
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        // After 3 same-family → escalate
+        assert!(policy.should_escalate_repair(ActionRepairKind::BareCommand));
+    }
+
+    #[test]
+    fn different_family_does_not_escalate() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        // BareCommand escalated
+        assert!(policy.should_escalate_repair(ActionRepairKind::BareCommand));
+        // UnquotedPath should NOT be escalated (different family)
+        assert!(!policy.should_escalate_repair(ActionRepairKind::UnquotedPath));
+    }
+
+    #[test]
+    fn reset_streak_clears_repair_families() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        assert!(policy.should_escalate_repair(ActionRepairKind::BareCommand));
+        policy.reset_dsl_failure_streak();
+        assert!(!policy.should_escalate_repair(ActionRepairKind::BareCommand));
+        // Total failures are preserved
+        assert_eq!(policy.total_dsl_failures(), 3);
+    }
+
+    #[test]
+    fn clear_repair_family_removes_single_family() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::UnquotedPath);
+        assert_eq!(policy.repair_family_count(ActionRepairKind::BareCommand), 1);
+        assert_eq!(
+            policy.repair_family_count(ActionRepairKind::UnquotedPath),
+            1
+        );
+        policy.clear_repair_family(ActionRepairKind::BareCommand);
+        assert_eq!(policy.repair_family_count(ActionRepairKind::BareCommand), 0);
+        // Other family unaffected
+        assert_eq!(
+            policy.repair_family_count(ActionRepairKind::UnquotedPath),
+            1
+        );
+    }
+
+    #[test]
+    fn consecutive_failures_also_tracked_with_kind() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::BareCommand);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::UnquotedPath);
+        policy.record_dsl_failure_with_kind(ActionRepairKind::ProseBeforeCommand);
+        assert_eq!(policy.consecutive_dsl_failures(), 3);
+        assert_eq!(policy.total_dsl_failures(), 3);
     }
 }

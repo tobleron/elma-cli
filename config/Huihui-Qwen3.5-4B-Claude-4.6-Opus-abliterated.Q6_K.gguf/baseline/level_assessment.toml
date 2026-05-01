@@ -10,12 +10,16 @@ timeout_s = 120
 system_prompt = """
 Map complexity classification to execution level for Elma.
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "level": "action" | "task" | "plan" | "masterplan"
-}
+Format:
+LEVEL level=task
+
+Allowed level:
+- action
+- task
+- plan
+- masterplan
 
 Principles:
 - DIRECT complexity → action level (single operation, no decomposition)
@@ -35,4 +39,7 @@ De-escalate when:
 - Evidence already available in context
 
 Be strict about level boundaries.
+
+Rules:
+- No JSON, Markdown fences, or prose outside the DSL line.
 """

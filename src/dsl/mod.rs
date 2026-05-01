@@ -15,20 +15,30 @@ mod action;
 mod error;
 mod parser;
 mod render;
+mod repair_templates;
 mod safety;
 mod sanitize;
+mod tool_call_xml;
 
-pub use action::{parse_action_dsl, parse_actions_batch, render_action_repair, validate_workspace_path, AgentAction};
-pub use error::{DslError, DslErrorCode, DslResult, ParseContext, RepairObservation};
+pub use action::{
+    classify_action_repair, parse_action_dsl, parse_actions_batch, render_action_repair,
+    render_focused_repair, validate_workspace_path, AgentAction,
+};
+pub use error::{
+    ActionRepairKind, DslError, DslErrorCode, DslResult, ParseContext, RepairObservation,
+};
 pub use parser::{
     expect_command, expect_eol, expect_field_line, expect_key_value, expect_quoted_field,
     expect_terminator, extract_block_body, parse_line, require_field, strip_first_line, DslBlock,
     DslBlockParser, DslField, DslLine,
 };
-pub use render::{render_compact_error, render_repair_hint};
+pub use render::{render_compact_error, render_repair_hint, render_repair_hint_with_format};
+pub use repair_templates::detect_expected_format;
 pub(crate) use safety::{
-    apply_exact_edit, ensure_session_edit_snapshot, execute_command_policy, record_session_read,
-    require_session_read_before_edit, resolve_workspace_path, CommandOutcome, CommandPolicy,
-    ExactEditOutcome,
+    apply_exact_edit, ensure_session_edit_snapshot, execute_command_policy,
+    execute_command_policy_async, record_session_read, require_session_read_before_edit,
+    resolve_workspace_path, validate_command, CommandOutcome, CommandPolicy, ExactEditOutcome,
 };
 pub use sanitize::{sanitize_control, strip_ansi_for_dsl, CRLF_TO_LF};
+pub use tool_call_xml::convert_tool_call_to_action;
+pub use tool_call_xml::parse_tool_call_xml;

@@ -205,6 +205,7 @@ impl Step {
         match self {
             Step::Shell { id, .. }
             | Step::Read { id, .. }
+            | Step::Observe { id, .. }
             | Step::Search { id, .. }
             | Step::Select { id, .. }
             | Step::Plan { id, .. }
@@ -224,6 +225,7 @@ impl Step {
         match self {
             Step::Shell { .. } => "shell",
             Step::Read { .. } => "read",
+            Step::Observe { .. } => "observe",
             Step::Search { .. } => "search",
             Step::Select { .. } => "select",
             Step::Plan { .. } => "plan",
@@ -243,6 +245,7 @@ impl Step {
         match self {
             Step::Shell { common, .. }
             | Step::Read { common, .. }
+            | Step::Observe { common, .. }
             | Step::Search { common, .. }
             | Step::Select { common, .. }
             | Step::Plan { common, .. }

@@ -12,6 +12,7 @@ config/*/tune/
 config/*/trace_debug.log
 _stress_testing/
 _dev-system/
+_knowledge_base/
 logo/
 tmp/
 *.pdf
@@ -45,3 +46,12 @@ TEST_PLAN.md
 .aider*
 .opencode/
 document_adapter_tmp.rs
+
+# Gokin working files
+.gokin/.session-memory.md
+.gokin/.working-memory.md
+.gokin/project-memory.md
+.gokin/task-output/
+.gokin/checkpoints/
+.gokin/learning.yaml
+GOKIN.local.md

@@ -9,8 +9,13 @@ max_tokens = 512
 timeout_s = 120
 system_prompt = """
 You are Elma's scope builder.
-Return ONLY one valid JSON object.
-Schema: {"focus_paths":["..."],"include_globs":["..."],"exclude_globs":["..."],"query_terms":["..."]}
+Return DSL lines.
+Output format:
+SCOPE objective="inspect tool path"
+F path="src/tool_loop.rs"
+F path="src/tool_calling.rs"
+Q text="tool_calls"
+END
 Principles:
 - Return the smallest scope that still supports responsible execution.
 - Prefer precise paths and query terms over broad globs."""

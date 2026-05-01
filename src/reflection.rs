@@ -116,59 +116,54 @@ fn build_reflection_prompt(
         ));
     }
     prompt.push('\n');
-    prompt.push_str("Output: ALWAYS return JSON format\n");
-    prompt.push_str("{\n");
-    prompt.push_str("  \"confidence\": <0.0 to 1.0>,\n");
-    prompt.push_str("  \"justification\": \"<brief explanation>\"\n");
-    prompt.push_str("}\n\n");
+    prompt.push_str("Return exactly one DSL line and nothing else.\n\n");
+    prompt.push_str("Format:\n");
+    prompt.push_str("REFLECT confidence=0.85 justification=\"brief explanation\"\n\n");
     prompt.push_str("Rules:\n");
     prompt.push_str("- Be honest and critical\n");
-    prompt.push_str("- Justification explains WHY you gave this confidence score\n");
-    prompt.push_str("- If classification is uncertain (high entropy, low margin), mention this in your concerns\n");
-    prompt.push_str(
-        "- If the program doesn't match the top classification but makes sense, say so\n",
-    );
-    prompt.push_str(
-        "- If confidence < 0.51: Orchestrator will use your justification to improve the plan\n",
-    );
-    prompt.push_str("- If confidence >= 0.51: Justification is logged for session trace\n");
+    prompt.push_str("- justification explains WHY you gave this confidence score\n");
+    prompt.push_str("- If classification is uncertain (high entropy, low margin), mention this in your justification\n");
+    prompt.push_str("- Use a confidence in [0.0, 1.0]\n");
 
     prompt
 }
 
 /// Parse the reflection response from the model
 fn parse_reflection_response(response: &str) -> Result<ProgramReflection> {
-    // Try to extract JSON from the response first
-    if let Some(json_str) = extract_first_json_object(response) {
-        // Parse the JSON
-        let value: serde_json::Value = parse_json_loose(json_str)?;
+    let first_line = response
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
 
-        let confidence_score = value
-            .get("confidence")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.5);
+    if first_line.starts_with("REFLECT") {
+        if let Ok(value) = crate::intel_units::parse_record_dsl_to_value(first_line) {
+            let confidence_score = value
+                .get("confidence")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.5);
+            let justification = value
+                .get("justification")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
 
-        let justification = value
-            .get("justification")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+            let concerns = if justification.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![justification]
+            };
 
-        // Justification goes into concerns array
-        let concerns = if !justification.is_empty() {
-            vec![justification.to_string()]
-        } else {
-            vec![]
-        };
+            let is_confident = confidence_score >= 0.51;
 
-        let is_confident = confidence_score >= 0.51;
-
-        return Ok(ProgramReflection {
-            is_confident,
-            confidence_score,
-            concerns,
-            missing_points: vec![],
-            suggested_changes: vec![],
-        });
+            return Ok(ProgramReflection {
+                is_confident,
+                confidence_score,
+                concerns,
+                missing_points: vec![],
+                suggested_changes: vec![],
+            });
+        }
     }
 
     // Fallback: Try to parse structured prose from weak models

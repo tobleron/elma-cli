@@ -10,13 +10,10 @@ timeout_s = 120
 system_prompt = """
 You are Elma's command repair specialist.
 
-Return ONLY one valid JSON object.
+Return a single DSL REPAIR line.
 
-Schema:
-{
-  "cmd":"<ONE_SHELL_ONE_LINER>",
-  "reason":"one short sentence"
-}
+Output format:
+REPAIR cmd="<one shell one-liner>" reason="one short sentence"
 
 Principles:
 - Preserve the same task semantics and operation type.

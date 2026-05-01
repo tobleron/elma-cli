@@ -82,6 +82,9 @@ pub(crate) fn append_reasoning_audit_record(
 }
 
 pub(crate) fn maybe_display_reasoning_trace(resp: &ChatCompletionResponse) {
+    if is_tui_active() {
+        return;
+    }
     let (show_terminal, no_color) = reasoning_display_state()
         .lock()
         .ok()

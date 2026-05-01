@@ -107,8 +107,60 @@ pub(crate) fn inject_grammar_for_profile(
         let grammar = load_grammar(&grammar_path, config_root)?;
         inject_grammar(request, &grammar)?;
         Ok(true)
+    } else if let Some(grammar) = builtin_grammar_for_profile(profile_name) {
+        inject_grammar(request, grammar)?;
+        Ok(true)
     } else {
         Ok(false)
+    }
+}
+
+pub(crate) fn builtin_grammar_for_profile(profile_name: &str) -> Option<&'static str> {
+    match profile_name {
+        "speech_act" => Some(
+            r#"root ::= ws "ACT" ws choice_field ws label_field ws reason_field? ws entropy_field ws
+choice_field ::= "choice=" ("1" | "2" | "3")
+label_field ::= "label=" ("CHAT" | "INSTRUCT" | "INQUIRE")
+reason_field ::= "reason=" string ws
+entropy_field ::= "entropy=" float
+float ::= digit+ ("." digit+)?
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+digit ::= [0-9]
+ws ::= [ \t]*"#,
+        ),
+        "router" => Some(
+            r#"root ::= ws "ROUTE" ws choice_field ws label_field ws reason_field? ws entropy_field ws
+choice_field ::= "choice=" ("1" | "2")
+label_field ::= "label=" ("CHAT" | "WORKFLOW")
+reason_field ::= "reason=" string ws
+entropy_field ::= "entropy=" float
+float ::= digit+ ("." digit+)?
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+digit ::= [0-9]
+ws ::= [ \t]*"#,
+        ),
+        "mode_router" => Some(
+            r#"root ::= ws "MODE" ws choice_field ws label_field ws reason_field? ws entropy_field ws
+choice_field ::= "choice=" ("1" | "2" | "3" | "4" | "5")
+label_field ::= "label=" ("INSPECT" | "EXECUTE" | "PLAN" | "MASTERPLAN" | "DECIDE")
+reason_field ::= "reason=" string ws
+entropy_field ::= "entropy=" float
+float ::= digit+ ("." digit+)?
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+digit ::= [0-9]
+ws ::= [ \t]*"#,
+        ),
+        "evidence_need_assessor" | "evidence_needs_classifier" => Some(
+            r#"root ::= ws "ASSESS" ws evidence_field ws tools_field ws
+evidence_field ::= "needs_evidence=" bool
+tools_field ::= "needs_tools=" bool
+bool ::= "true" | "false"
+ws ::= [ \t]*"#,
+        ),
+        _ => None,
     }
 }
 
@@ -153,6 +205,7 @@ pub(crate) fn validate_grammar(grammar: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_validate_grammar_valid() -> Result<()> {
@@ -185,5 +238,28 @@ mod tests {
         let result = load_grammar("nonexistent.gbnf", &PathBuf::from("/tmp"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_migrated_dsl_grammar_files_exist_and_validate() -> Result<()> {
+        let config_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config");
+        let profiles = [
+            "router",
+            "selector",
+            "scope_builder",
+            "critic",
+            "logical_reviewer",
+            "efficiency_reviewer",
+            "risk_reviewer",
+        ];
+
+        for profile in profiles {
+            let grammar_path = get_grammar_for_profile(profile, &config_root)?
+                .unwrap_or_else(|| panic!("missing grammar mapping for {}", profile));
+            let grammar = load_grammar(&grammar_path, &config_root)?;
+            validate_grammar(&grammar)?;
+        }
+
+        Ok(())
     }
 }

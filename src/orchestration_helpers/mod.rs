@@ -127,29 +127,8 @@ pub(crate) async fn request_program_or_repair(
     prompt: &str,
     use_grammar: bool,
 ) -> Result<(Program, String)> {
-    let grammar = if use_grammar {
-        Some(json_program_grammar())
-    } else {
-        None
-    };
-
-    let orch_req = chat_request_system_user(
-        orchestrator_cfg,
-        &orchestrator_cfg.system_prompt,
-        prompt,
-        ChatRequestOptions {
-            grammar,
-            ..ChatRequestOptions::default()
-        },
-    );
-    let (program, json_text) = chat_json_with_repair_text_timeout(
-        client,
-        chat_url,
-        &orch_req,
-        orchestrator_cfg.timeout_s.min(45),
-    )
-    .await?;
-    Ok((program, json_text))
+    let _ = (client, chat_url, orchestrator_cfg, prompt, use_grammar);
+    anyhow::bail!("legacy program orchestration is disabled; use the action DSL tool loop")
 }
 
 pub(crate) async fn request_recovery_program(
@@ -159,54 +138,8 @@ pub(crate) async fn request_recovery_program(
     prompt: &str,
     failed_steps: &[StepResult], // NEW: Track failed steps to forbid repetition
 ) -> Result<Program> {
-    // Build list of failed commands to explicitly forbid
-    let failed_commands: Vec<String> = failed_steps
-        .iter()
-        .filter(|s| s.kind == "shell" && !s.ok)
-        .filter_map(|s| s.command.clone())
-        .collect();
-
-    let failed_commands_str = if failed_commands.is_empty() {
-        "None".to_string()
-    } else {
-        failed_commands
-            .iter()
-            .map(|c| format!("- {}", c))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
-    let recovery_system = format!(
-                "{}\n\nRECOVERY MODE:\n\
-                - A previous workflow attempt failed or was unusable.\n\
-                - Return ONLY one valid Program JSON object.\n\
-                - Do not output reply-only for a non-CHAT route unless asking one concise clarifying question is the only safe next step.\n\
-                - Use current_program_steps and observed_step_results to repair the workflow, not to restate or hallucinate completion.\n\
-                - DO NOT repeat previously FAILED commands (see list below).\n\
-                - If the task asks to choose, rank, prioritize, or select workspace items, inspect evidence first, then decide or summarize, then reply.\n\
-                - Prefer the smallest valid program that can still satisfy the request.\n\n\
-                PREVIOUSLY FAILED COMMANDS (DO NOT REPEAT):\n{}\n",
-                orchestrator_cfg.system_prompt,
-                failed_commands_str
-            );
-    let recovery_req = chat_request_system_user(
-        orchestrator_cfg,
-        &recovery_system,
-        &prompt,
-        ChatRequestOptions {
-            temperature: Some(0.0),
-            top_p: Some(1.0),
-            max_tokens: Some(orchestrator_cfg.max_tokens.min(1536)),
-            ..ChatRequestOptions::default()
-        },
-    );
-    chat_json_with_repair_timeout(
-        client,
-        chat_url,
-        &recovery_req,
-        orchestrator_cfg.timeout_s.min(45),
-    )
-    .await
+    let _ = (client, chat_url, orchestrator_cfg, prompt, failed_steps);
+    anyhow::bail!("legacy program recovery is disabled; use the action DSL tool loop")
 }
 
 pub(crate) async fn request_critic_verdict(
@@ -234,14 +167,12 @@ pub(crate) async fn request_critic_verdict(
         &narrative,
         ChatRequestOptions::default(),
     );
-    chat_json_with_repair_for_profile_timeout(
-        client,
-        chat_url,
-        &critic_req,
-        &critic_cfg.name,
-        critic_cfg.timeout_s,
-    )
-    .await
+    let resp = chat_once_with_timeout(client, chat_url, &critic_req, critic_cfg.timeout_s).await?;
+    let text = extract_response_text(&resp);
+    let value = crate::intel_units::parse_auto_dsl(&text)
+        .map_err(|e| anyhow::anyhow!("critic DSL parse failed: {e}"))?;
+    serde_json::from_value::<CriticVerdict>(value)
+        .context("Failed to deserialize critic verdict from DSL value")
 }
 
 pub(crate) async fn request_reviewer_verdict(
@@ -265,14 +196,13 @@ pub(crate) async fn request_reviewer_verdict(
         &narrative,
         ChatRequestOptions::default(),
     );
-    chat_json_with_repair_for_profile_timeout(
-        client,
-        chat_url,
-        &reviewer_req,
-        &reviewer_cfg.name,
-        reviewer_cfg.timeout_s,
-    )
-    .await
+    let resp =
+        chat_once_with_timeout(client, chat_url, &reviewer_req, reviewer_cfg.timeout_s).await?;
+    let text = extract_response_text(&resp);
+    let value = crate::intel_units::parse_auto_dsl(&text)
+        .map_err(|e| anyhow::anyhow!("reviewer DSL parse failed: {e}"))?;
+    serde_json::from_value::<CriticVerdict>(value)
+        .context("Failed to deserialize reviewer verdict from DSL value")
 }
 
 pub(crate) async fn request_risk_review(
@@ -298,14 +228,12 @@ pub(crate) async fn request_risk_review(
         &narrative,
         ChatRequestOptions::default(),
     );
-    chat_json_with_repair_for_profile_timeout(
-        client,
-        chat_url,
-        &risk_req,
-        &risk_cfg.name,
-        risk_cfg.timeout_s,
-    )
-    .await
+    let resp = chat_once_with_timeout(client, chat_url, &risk_req, risk_cfg.timeout_s).await?;
+    let text = extract_response_text(&resp);
+    let value = crate::intel_units::parse_auto_dsl(&text)
+        .map_err(|e| anyhow::anyhow!("risk DSL parse failed: {e}"))?;
+    serde_json::from_value::<RiskReviewVerdict>(value)
+        .context("Failed to deserialize risk verdict from DSL value")
 }
 
 pub(crate) async fn request_chat_final_text_streaming(

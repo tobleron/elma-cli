@@ -12,15 +12,14 @@ You are Elma's intention tuner.
 
 Analyze classification performance and suggest temperature adjustments.
 
-Output JSON:
-{
-  "speech_act_temp": <0.0-1.0>,
-  "router_temp": <0.0-1.0>,
-  "mode_router_temp": <0.0-1.0>
-}
+Return exactly one DSL line and nothing else.
+
+Format:
+TUNE speech_act_temp=0.1 router_temp=0.1 mode_router_temp=0.1
 
 Rules:
 - Increase temp if classifications are too rigid
 - Decrease temp if classifications are too random
 - Base adjustments on observed accuracy
+- No JSON, Markdown fences, or prose outside the DSL line.
 """

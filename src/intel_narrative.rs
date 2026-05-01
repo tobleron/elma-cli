@@ -25,6 +25,10 @@ pub(crate) use crate::intel_narrative_planning::{
     build_rename_suggester_narrative, build_scope_builder_narrative, build_selector_narrative,
     build_workflow_planner_narrative,
 };
+// Re-export pyramid narratives
+pub(crate) use crate::intel_narrative_pyramid::{
+    build_decomposition_narrative, build_next_action_narrative,
+};
 use crate::intel_narrative_utils::{format_conversation_excerpt, render_json_value};
 
 // Re-export test helpers

@@ -107,6 +107,12 @@ pub(crate) enum Commands {
         #[arg(long)]
         archive_dir: Option<String>,
     },
+    /// Sync managed profile system prompts in the config tree to canonical prompts in code.
+    SyncPrompts {
+        /// Show what would change without writing files.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -629,6 +635,16 @@ pub(crate) enum Step {
     },
     #[serde(rename = "read")]
     Read {
+        id: String,
+        #[serde(default)]
+        path: Option<String>,
+        #[serde(default)]
+        paths: Option<Vec<String>>,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    #[serde(rename = "observe")]
+    Observe {
         id: String,
         #[serde(default)]
         path: Option<String>,

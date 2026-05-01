@@ -6,17 +6,24 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 // Pre-compiled regex patterns for performance
-static PATH_TOKEN_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[^\s"'`;:(){}\[\]\/\\]+/[^\s"'`;:(){}\[\]\/\\]*|[^\s"'`;:(){}\[\]\/\\]+\\[^\s"'`;:(){}\[\]\/\\]*"#).unwrap());
-static FILE_EXTENSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)\.(toml|md|rs|txt|json|lock)$"#).unwrap());
+static PATH_TOKEN_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"[^\s"'`;:(){}\[\]\/\\]+/[^\s"'`;:(){}\[\]\/\\]*|[^\s"'`;:(){}\[\]\/\\]+\\[^\s"'`;:(){}\[\]\/\\]*"#).unwrap()
+});
+static FILE_EXTENSION_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?i)\.(toml|md|rs|txt|json|lock)$"#).unwrap());
 
-/// Strip `...</thinking>` blocks that
-/// leak from models even when reasoning_format=none.
-pub(crate) fn strip_thinking_blocks(text: &str) -> String {
+/// Strip reasoning blocks that leak from models even when reasoning_format=none.
+///
+/// This preserves tool/action markup so the action parser can still normalize it.
+pub(crate) fn strip_reasoning_blocks(text: &str) -> String {
     let mut result = text.to_string();
     loop {
         if let Some(start) = result.find("<think>") {
             if let Some(end) = result.find("</think>") {
                 result.replace_range(start..end + "</think>".len(), "");
+                continue;
+            } else {
+                result.replace_range(start.., "");
                 continue;
             }
         }
@@ -24,16 +31,28 @@ pub(crate) fn strip_thinking_blocks(text: &str) -> String {
             if let Some(end) = result.find("</thinking>") {
                 result.replace_range(start..end + "</thinking>".len(), "");
                 continue;
+            } else {
+                result.replace_range(start.., "");
+                continue;
             }
         }
         if let Some(start) = result.find("<reasoning>") {
             if let Some(end) = result.find("</reasoning>") {
                 result.replace_range(start..end + "</reasoning>".len(), "");
                 continue;
+            } else {
+                result.replace_range(start.., "");
+                continue;
             }
         }
         break;
     }
+    result.trim().to_string()
+}
+
+/// Strip reasoning and provider tool-call blocks for final user-visible text.
+pub(crate) fn strip_thinking_blocks(text: &str) -> String {
+    let mut result = strip_reasoning_blocks(text);
     loop {
         if let Some(start) = result.find("<tool_call>") {
             if let Some(end) = result.find("</tool_call>") {
@@ -46,6 +65,47 @@ pub(crate) fn strip_thinking_blocks(text: &str) -> String {
     result.trim().to_string()
 }
 
+pub(crate) fn structured_output_candidates(text: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    let reasoning_stripped = strip_reasoning_blocks(text);
+    push_unique_candidate(&mut candidates, reasoning_stripped);
+
+    let stripped = strip_thinking_blocks(text);
+    push_unique_candidate(&mut candidates, stripped);
+
+    if let Some(unwrapped) = unwrap_unclosed_thinking_wrapper(text) {
+        push_unique_candidate(&mut candidates, unwrapped);
+    }
+
+    candidates
+}
+
+fn push_unique_candidate(candidates: &mut Vec<String>, candidate: String) {
+    let candidate = candidate.trim().to_string();
+    if candidate.is_empty() || candidates.iter().any(|existing| existing == &candidate) {
+        return;
+    }
+    candidates.push(candidate);
+}
+
+fn unwrap_unclosed_thinking_wrapper(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    for (open, close) in [
+        ("<think>", "</think>"),
+        ("<thinking>", "</thinking>"),
+        ("<reasoning>", "</reasoning>"),
+    ] {
+        let Some(rest) = trimmed.strip_prefix(open) else {
+            continue;
+        };
+        if trimmed.contains(close) {
+            continue;
+        }
+        return Some(rest.trim().to_string());
+    }
+    None
+}
+
 pub(crate) fn looks_like_path_token(s: &str) -> bool {
     // Trim common punctuation
     let t = s.trim_matches(|c: char| {
@@ -54,21 +114,19 @@ pub(crate) fn looks_like_path_token(s: &str) -> bool {
             '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}'
         )
     });
-    
+
     if t.is_empty() {
         return false;
     }
-    
+
     // Check if it contains path separators
     if t.contains('/') || t.contains('\\') {
         return true;
     }
-    
+
     // Check if it ends with known file extensions
     let lower = t.to_ascii_lowercase();
-    FILE_EXTENSION_REGEX.is_match(&lower) || 
-        lower == "makefile" || 
-        lower == "dockerfile"
+    FILE_EXTENSION_REGEX.is_match(&lower) || lower == "makefile" || lower == "dockerfile"
 }
 
 fn existing_workspace_token(s: &str) -> Option<String> {
@@ -280,6 +338,15 @@ mod tests {
     }
 
     #[test]
+    fn strip_reasoning_blocks_preserves_tool_call_tags() {
+        let raw = "<think>\ninternal reasoning\n</think>\n<tool_call>{\"name\":\"read\",\"arguments\":{\"path\":\"Cargo.toml\"}}</tool_call>";
+        assert_eq!(
+            strip_reasoning_blocks(raw),
+            "<tool_call>{\"name\":\"read\",\"arguments\":{\"path\":\"Cargo.toml\"}}</tool_call>"
+        );
+    }
+
+    #[test]
     fn strip_thinking_blocks_removes_tool_call_tags() {
         let raw = "<tool_call>{\"name\":\"respond\"}</tool_call>\nanswer";
         assert_eq!(strip_thinking_blocks(raw), "answer");
@@ -289,6 +356,32 @@ mod tests {
     fn strip_thinking_blocks_handles_nested_blocks() {
         let raw = "<think>think1</think>\n<think>think2</think>\nanswer";
         assert_eq!(strip_thinking_blocks(raw), "answer");
+    }
+
+    #[test]
+    fn strip_thinking_blocks_removes_unclosed_trailing_think() {
+        let raw = "answer\n<think>unfinished internal reasoning";
+        assert_eq!(strip_thinking_blocks(raw), "answer");
+    }
+
+    #[test]
+    fn structured_output_candidates_preserve_dsl_inside_unclosed_think_wrapper() {
+        let raw = "<think>\nASSESS needs_evidence=true needs_tools=true\n";
+        assert_eq!(
+            structured_output_candidates(raw),
+            vec!["ASSESS needs_evidence=true needs_tools=true"]
+        );
+    }
+
+    #[test]
+    fn structured_output_candidates_preserve_tool_call_after_thinking() {
+        let raw = "<think>inspect</think>\n<tool_call>{\"name\":\"read\",\"arguments\":{\"path\":\"Cargo.toml\"}}</tool_call>";
+        assert_eq!(
+            structured_output_candidates(raw),
+            vec![
+                "<tool_call>{\"name\":\"read\",\"arguments\":{\"path\":\"Cargo.toml\"}}</tool_call>"
+            ]
+        );
     }
 
     #[test]

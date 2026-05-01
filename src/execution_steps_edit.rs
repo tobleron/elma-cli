@@ -97,6 +97,7 @@ pub(crate) fn handle_edit_step(
     std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
 
     let old_content = std::fs::read_to_string(&path).unwrap_or_default();
+    crate::dsl::record_session_read(&session.root.display().to_string(), &spec.path);
 
     let mut diff_text = String::new();
     let action_summary = match operation {
@@ -163,33 +164,11 @@ pub(crate) fn handle_edit_step(
             if spec.find.is_empty() {
                 anyhow::bail!("replace_text requires non-empty find");
             }
-            let replaced = old_content.replace(&spec.find, &spec.replace);
-            if replaced == old_content {
-                anyhow::bail!("replace_text found no matches in {}", path.display());
-            }
-            std::fs::write(&path, replaced.as_bytes())
-                .with_context(|| format!("write {}", path.display()))?;
-            let new_content = replaced;
-            diff_text = {
-                let diff_viewer = StructuredDiff::new(
-                    &path.display().to_string(),
-                    &path.display().to_string(),
-                    &old_content,
-                    &new_content,
-                );
-                let diff_lines = diff_viewer.render_ratatui(80);
-                diff_lines
-                    .iter()
-                    .map(|l| {
-                        l.spans
-                            .iter()
-                            .map(|s| s.content.clone())
-                            .collect::<String>()
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
-            format!("updated {}", path.display())
+            let outcome =
+                crate::dsl::apply_exact_edit(workdir, &spec.path, &spec.find, &spec.replace)
+                    .map_err(anyhow::Error::msg)?;
+            diff_text = outcome.diff;
+            format!("updated {}", outcome.path.display())
         }
         _ => unreachable!(),
     };

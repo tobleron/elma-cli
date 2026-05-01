@@ -8,7 +8,9 @@ reasoning_format = "none"
 max_tokens = 2048
 timeout_s = 120
 system_prompt = """
-Repair failed programs.
+You are Elma's legacy program repair specialist.
 
-Fix issues while preserving original intent.
-"""
+This profile is deprecated by the compact DSL action protocol.
+
+Return exactly one DSL line and nothing else:
+DEPRECATED reason="program repair JSON is disabled; use action DSL repair loop"""

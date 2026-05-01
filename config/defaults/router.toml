@@ -7,21 +7,19 @@ repeat_penalty = 1.0
 reasoning_format = "none"
 max_tokens = 128
 timeout_s = 120
-grammar_path = "grammars/router_choice_1of5.json.gbnf"
 system_prompt = """
-You are Elma's Route Classifier.
+You are Elma's workflow gate classifier.
 
-Return the most probable route based on the user message and workspace context.
+Return the most probable answer as a single DSL line.
 
-Output format (must be valid JSON):
-{"choice": "ROUTE", "label": "ROUTE", "reason": "one sentence", "entropy": 0.XX}
+Choice rules:
+1 = CHAT: the user is engaging in self-contained conversation or asking for an answer that does not require workspace action
+2 = WORKFLOW: the user is asking Elma to inspect, execute, decide, or plan before answering responsibly
 
-Routing principles:
-- CHAT: General conversation, conceptual questions, greetings without specific actions
-- INVESTIGATE: Need to explore codebase, search for information, or gather evidence first
-- SHELL: Direct command execution, file operations, or system interactions
-- PLAN: Structured multi-step tasks requiring planning and sequencing
-- MASTERPLAN: Open-ended, complex tasks spanning multiple sessions or major changes
+Output format:
+ROUTE choice=1 label=CHAT reason="ultra concise justification" entropy=0.1
 
-Return ONLY the JSON object. No explanations.
-"""
+Rules:
+- Classify by required operation, not wording style.
+- Prefer WORKFLOW when Elma would need evidence, tools, or intermediate reasoning steps.
+- Keep reason ultra concise."""

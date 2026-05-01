@@ -6,7 +6,10 @@
 
 use crate::app::AppRuntime;
 use crate::app_chat_fast_paths::build_direct_reply_program;
+use crate::decomposition_pyramid::DecompositionPyramid;
 use crate::formulas::{select_optimal_formula, FormulaPattern, FormulaScores};
+use crate::intel_trait::IntelContext;
+use crate::intel_units::DecompositionUnit;
 use crate::tool_loop::run_tool_loop;
 use crate::tools::ToolRegistry;
 use crate::*;
@@ -111,14 +114,33 @@ pub(crate) async fn run_tool_calling_pipeline(
     runtime: &mut AppRuntime,
     line: &str,
     tui: &mut crate::ui_terminal::TerminalUI,
-    context_hint: &str,
-    evidence_required: bool,
+    route_decision: &RouteDecision,
 ) -> Result<(String, usize, usize, bool)> {
+    // Emit route decision as a collapsible transcript row
+    let route_msg = format!(
+        "route={} source=\"{}\" margin={:.2} entropy={:.2} evidence={}",
+        route_decision.route,
+        route_decision.source,
+        route_decision.margin,
+        route_decision.entropy,
+        route_decision.evidence_required,
+    );
+    tui.push_route_notice(&route_msg);
+
+    if should_use_direct_chat_path(route_decision) {
+        return run_direct_chat_pipeline(runtime, line, tui).await;
+    }
+
+    let context_hint = route_decision.route.as_str();
+    let evidence_required = route_decision.evidence_required;
     let system_prompt = build_tool_calling_system_prompt(runtime, line);
     trace(
         &runtime.args,
-        "tool_calling: direct model planning (no Maestro)",
+        "tool_calling: compact action DSL planning (no provider-native tools)",
     );
+
+    // Generate decomposition pyramid for non-CHAT routes (Task 394)
+    let pyramid = generate_decomposition_pyramid(runtime, line, route_decision).await;
 
     tui.start_status("Executing...");
 
@@ -139,12 +161,51 @@ pub(crate) async fn run_tool_calling_pipeline(
         evidence_required,
         runtime.ctx_max,
         &runtime.goal_state,
+        pyramid.as_ref(),
     )
     .await?;
+
+    // Emit pyramid as a transcript event for visibility
+    if let Some(ref pyra) = pyramid {
+        if !pyra.objective.is_empty() {
+            let event = format!(
+                "🗂 Decomposition pyramid: objective=\"{}\" risk={} goals={} tasks={}",
+                pyra.objective,
+                pyra.risk,
+                pyra.goals.len(),
+                pyra.tasks.len()
+            );
+            trace(&runtime.args, &event);
+            tui.push_meta_event("PYRAMID", &event);
+            tui.push_decomposition_notice(&event);
+
+            // Save pyramid to session metadata for replay continuity
+            let session_root = &runtime.session.root;
+            let _ = crate::session_write::save_pyramid(
+                session_root,
+                &pyra.objective,
+                &pyra.risk,
+                &pyra.goals,
+                &pyra.tasks,
+            );
+        }
+    }
 
     tui.complete_status("Done");
 
     runtime.last_stop_outcome = result.stop_outcome.clone();
+
+    // Emit stop reason as a persistent transcript row
+    if let Some(ref outcome) = result.stop_outcome {
+        let stop_msg = format!(
+            "reason={} iterations={} tool_calls={} summary=\"{}\"",
+            outcome.reason.as_str(),
+            result.iterations,
+            result.tool_calls_made,
+            outcome.summary,
+        );
+        tui.push_stop_notice(&stop_msg);
+    }
 
     // Strip leaked thinking/tool_call blocks before returning to the user
     let clean_answer = crate::text_utils::strip_thinking_blocks(&result.final_answer);
@@ -157,166 +218,238 @@ pub(crate) async fn run_tool_calling_pipeline(
     ))
 }
 
+pub(crate) fn should_use_direct_chat_path(route_decision: &RouteDecision) -> bool {
+    route_decision.route.eq_ignore_ascii_case("CHAT") && !route_decision.evidence_required
+}
+
+/// Generate a decomposition pyramid for a complex request (Task 394).
+///
+/// Returns None for simple CHAT routes or if generation fails gracefully.
+async fn generate_decomposition_pyramid(
+    runtime: &AppRuntime,
+    line: &str,
+    route_decision: &RouteDecision,
+) -> Option<DecompositionPyramid> {
+    // Only generate for non-CHAT routes that need tools/evidence
+    if should_use_direct_chat_path(route_decision) {
+        return None;
+    }
+
+    let profile = crate::llm_config::ad_hoc_profile(&runtime.model_id, "decomposition");
+    let unit = DecompositionUnit::new(profile);
+
+    let context = IntelContext::new(
+        line.to_string(),
+        route_decision.clone(),
+        runtime.ws.clone(),
+        runtime.ws_brief.clone(),
+        runtime.messages.clone(),
+        runtime.client.clone(),
+    );
+
+    match unit.execute_with_fallback(&context).await {
+        Ok(output) => {
+            let objective = output
+                .get("objective")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if objective.is_empty() {
+                return None;
+            }
+            let risk = output
+                .get("risk")
+                .and_then(|v| v.as_str())
+                .unwrap_or("low")
+                .to_string();
+            let goals: Vec<crate::decomposition_pyramid::PyramidGoal> = output
+                .get("goals")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|g| crate::decomposition_pyramid::PyramidGoal {
+                            text: g
+                                .get("text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            evidence_needed: g
+                                .get("evidence_needed")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let tasks: Vec<crate::decomposition_pyramid::PyramidTask> = output
+                .get("tasks")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|t| crate::decomposition_pyramid::PyramidTask {
+                            id: t.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                            text: t
+                                .get("text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            status: t
+                                .get("status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("pending")
+                                .to_string(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            trace(
+                &runtime.args,
+                &format!(
+                    "pyramid_generated objective=\"{}\" risk={} goals={} tasks={}",
+                    objective,
+                    risk,
+                    goals.len(),
+                    tasks.len()
+                ),
+            );
+
+            Some(DecompositionPyramid {
+                objective,
+                risk,
+                goals,
+                tasks,
+                next_action: None,
+            })
+        }
+        Err(_) => None,
+    }
+}
+
+async fn run_direct_chat_pipeline(
+    runtime: &mut AppRuntime,
+    line: &str,
+    tui: &mut crate::ui_terminal::TerminalUI,
+) -> Result<(String, usize, usize, bool)> {
+    trace(&runtime.args, "tool_calling: direct chat response path");
+    tui.start_status("Responding...");
+    let profile = ad_hoc_profile(&runtime.model_id, "direct_chat");
+    let req = chat_request_from_profile(
+        &profile,
+        vec![
+            ChatMessage::simple(
+                "system",
+                "You are Elma, a concise local-first terminal assistant. Reply in plain text with no emoji and no marketing claims. Use general help language for casual chat. Do not imply a shell command should run unless the user asks for one. Do not claim tools ran, exchanges succeeded, or hidden actions happened unless the user explicitly asked about them.",
+            ),
+            ChatMessage::simple("user", line),
+        ],
+        ChatRequestOptions {
+            temperature: Some(0.3),
+            top_p: Some(1.0),
+            max_tokens: Some(512),
+            repeat_penalty: Some(None),
+            reasoning_format: Some(Some("none".to_string())),
+            tools: None,
+            ..ChatRequestOptions::default()
+        },
+    );
+    let response = crate::ui_chat::chat_once_with_timeout(
+        &runtime.client,
+        &runtime.chat_url,
+        &req,
+        runtime_llm_config().final_answer_timeout_s,
+    )
+    .await?;
+    let answer = response
+        .choices
+        .first()
+        .map(|choice| choice.message.content.clone().unwrap_or_default())
+        .unwrap_or_default();
+    tui.complete_status("Done");
+    let clean = crate::text_utils::strip_thinking_blocks(&answer)
+        .trim()
+        .to_string();
+    Ok((
+        if clean.is_empty() {
+            "I'm here.".to_string()
+        } else {
+            clean
+        },
+        1,
+        0,
+        false,
+    ))
+}
+
 /// Compute risk deterministically from the tool-calling result metadata.
 pub(crate) fn compute_program_risk(_tool_calls_made: usize, _iterations: usize) -> ProgramRisk {
     ProgramRisk::Low
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direct_chat_path_only_for_chat_without_evidence_requirement() {
+        fn prob(choice: &str, margin: f64, entropy: f64) -> ProbabilityDecision {
+            ProbabilityDecision {
+                choice: choice.to_string(),
+                source: "test".to_string(),
+                distribution: vec![(choice.to_string(), 1.0)],
+                margin,
+                entropy,
+            }
+        }
+
+        let mut route = RouteDecision {
+            route: "CHAT".to_string(),
+            source: "test".to_string(),
+            distribution: vec![("CHAT".to_string(), 1.0)],
+            margin: 1.0,
+            entropy: 0.0,
+            speech_act: prob("CHAT", 1.0, 0.0),
+            workflow: prob("CHAT", 1.0, 0.0),
+            mode: prob("DECIDE", 1.0, 0.0),
+            evidence_required: false,
+        };
+
+        assert!(should_use_direct_chat_path(&route));
+        route.evidence_required = true;
+        assert!(!should_use_direct_chat_path(&route));
+        route.evidence_required = false;
+        route.route = "SHELL".to_string();
+        assert!(!should_use_direct_chat_path(&route));
+        route.route = "CHAT".to_string();
+        route.speech_act = prob("INSTRUCT", 1.0, 0.0);
+        assert!(should_use_direct_chat_path(&route));
+        route.speech_act = prob("CHAT", 0.4, 0.0);
+        assert!(should_use_direct_chat_path(&route));
+    }
 }
 
 // ============================================================================
 // Legacy compatibility — keep for non-tool-calling paths
 // ============================================================================
 
-/// Transform a single Maestro instruction into 1-9 structured JSON steps.
-/// Accumulates steps with proper depends_on wiring.
-/// Retries up to 2 additional times with deterministic (t=0.0) settings on JSON parse failure.
+/// Legacy compatibility shim: Maestro→Program orchestration.
+///
+/// Disabled by the compact DSL action protocol migration (Task 384). The live
+/// runtime uses the action DSL tool loop instead of program JSON generation.
 pub(crate) async fn orchestrate_instruction_once(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    orchestrator_cfg: &Profile,
-    instruction: &str,
-    user_message: &str,
-    intent: &str,
-    expert_advice: &str,
-    ws: &str,
-    ws_brief: &str,
-    previous_steps: &[Step],
-    step_counter: &mut u32,
+    _client: &reqwest::Client,
+    _chat_url: &Url,
+    _orchestrator_cfg: &Profile,
+    _instruction: &str,
+    _user_message: &str,
+    _intent: &str,
+    _expert_advice: &str,
+    _ws: &str,
+    _ws_brief: &str,
+    _previous_steps: &[Step],
+    _step_counter: &mut u32,
 ) -> Result<Vec<Step>> {
-    let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let _tool_registry = ToolRegistry::new(&workspace_path);
-
-    // Build capabilities list in plain English
-    let capabilities = "Available capabilities:\n\
-        - shell: Execute shell commands (run commands, list files, check system state)\n\
-        - read: Read file contents (inspect specific files)\n\
-        - search: Search with ripgrep (find patterns, locate definitions)\n\
-        - edit: Edit files (modify content, fix bugs)\n\
-        - explore: Explore codebases (map unfamiliar modules, form and test hypotheses)\n\
-        - write: Create new files (write new content)\n\
-        - delete: Remove files (delete content)\n\
-        - select: Select items from list (choose from options)\n\
-        - decide: Make decisions (evaluate options, choose best path)\n\
-        - plan: Create plans (break complex work into steps)\n\
-        - summarize: Summarize findings (organize and present conclusions)\n\
-        - reply: Respond to users (answer from knowledge or evidence)";
-
-    let previous_steps_text = if previous_steps.is_empty() {
-        "No previous steps.".to_string()
-    } else {
-        format!(
-            "Previous steps (use their IDs for depends_on if needed):\n{}",
-            previous_steps
-                .iter()
-                .map(|s| format!("- {} ({}) — {}", step_id(s), step_kind(s), step_purpose(s)))
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    };
-
-    let next_id = *step_counter + 1;
-
-    let system_prompt = r#"You are Elma's step composer. Transform English instructions into 1-9 structured JSON steps for Elma's execution pipeline.
-
-Step types available: shell, read, search, edit, explore, write, delete, select, decide, plan, masterplan, summarize, reply, respond.
-
-Output ONLY valid JSON with a steps array:
-{"steps":[{"id":"s1","type":"shell","cmd":"ls -1","purpose":"list files","depends_on":[],"success_condition":"files listed"}]}
-
-Each step needs: id, type, purpose, depends_on (array of step IDs), success_condition.
-Shell steps need: cmd. Read steps need: path. Search steps need: query and paths. Edit steps need: path, operation, find, replace. Reply/Respond steps need: instructions."#;
-
-    let base_prompt = format!(
-        r#"USER REQUEST: {user_message}
-
-INTENT: {intent}
-
-EXPERT ADVICE: {expert_advice}
-
-CURRENT INSTRUCTION (transform this into 1-9 structured steps):
-{instruction}
-
-WORKSPACE FACTS:
-{ws}
-
-WORKSPACE BRIEF:
-{ws_brief}
-
-{capabilities}
-
-{previous_steps_text}
-
-TASK: Transform the current instruction into 1-9 structured JSON steps.
-- Use step IDs starting from s{next_id}
-- Wire depends_on to reference previous step IDs if this instruction depends on prior work
-- Each step must have a clear purpose and success condition
-- Use the simplest step types that achieve the goal
-
-Output ONLY valid JSON object with a "steps" array, like:
-{{"steps":[
-  {{"id":"s1","type":"shell","cmd":"ls -1 src/","purpose":"list source files","depends_on":[],"success_condition":"file list returned"}},
-  {{"id":"s2","type":"reply","instructions":"Summarize findings","purpose":"answer user","depends_on":["s1"],"success_condition":"user receives summary"}}
-]}}"#,
-        user_message = user_message.trim(),
-        intent = intent.trim(),
-        expert_advice = expert_advice.trim(),
-        instruction = instruction.trim(),
-        ws = ws.trim(),
-        ws_brief = ws_brief.trim(),
-        next_id = next_id,
-    );
-
-    const MAX_RETRIES: u32 = 2;
-    let mut last_error: Option<anyhow::Error> = None;
-
-    for attempt in 0..=MAX_RETRIES {
-        let (options, user_prompt) = if attempt == 0 {
-            (
-                ChatRequestOptions {
-                    max_tokens: Some(orchestrator_cfg.max_tokens.min(2048)),
-                    ..ChatRequestOptions::default()
-                },
-                base_prompt.clone(),
-            )
-        } else {
-            let retry_prefix = format!(
-                "VALID JSON REQUIRED — your previous output had structural errors and could not be parsed. Output ONLY the JSON object, no prose.\n\n{}",
-                base_prompt
-            );
-            let max_toks = if attempt == 1 { 2048 } else { 1536 };
-            (ChatRequestOptions::deterministic(max_toks), retry_prefix)
-        };
-
-        let orch_req = chat_request_system_user(
-            orchestrator_cfg,
-            system_prompt,
-            &user_prompt,
-            options,
-        );
-
-        match crate::ui_chat::chat_json_with_repair_timeout::<Program>(
-            client,
-            chat_url,
-            &orch_req,
-            orchestrator_cfg.timeout_s.min(45),
-        )
-        .await
-        {
-            Ok(program) => {
-                *step_counter += program.steps.len() as u32;
-                return Ok(program.steps);
-            }
-            Err(e) => {
-                last_error = Some(e);
-            }
-        }
-    }
-
-    Err(last_error.unwrap_or_else(|| {
-        anyhow::anyhow!(
-            "Orchestrator failed after {} attempts",
-            MAX_RETRIES + 1
-        )
-    }))
+    anyhow::bail!("legacy maestro orchestration disabled; use the action DSL tool loop")
 }
 
 /// Build a program from Maestro instructions.

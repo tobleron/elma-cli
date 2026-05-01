@@ -22,27 +22,34 @@
 pending/  →  active/  →  completed/
 ```
 
-### 1. Pickup
-Move the task file from `_tasks/pending/` to `_tasks/active/` when starting formal implementation.
+The normal procedure for handling any task:
 
-### 2. Implement
+### Step 1: Start Work (pending → active)
+When you begin working on a task:
+1. Move the task file from `_tasks/pending/` to `_tasks/active/`
+2. Update the task status in the file header if applicable
+3. Begin implementation following the task's plan
+
+**Never work on a task while it remains in `pending/`. Always move it to `active/` first.**
+
+### Step 2: Implement
 Make the change surgically. Follow the task's implementation plan. Do not expand scope without updating the task file.
 
-### 3. Verify
+### Step 3: Verify
 ```bash
 cargo build
 cargo test
 ```
-Verify behavior with the relevant probes and scenario scripts.
+Verify behavior with the relevant probes and scenario scripts. Ensure all checks pass before proceeding.
 
-### 4. Report
-Report results while the task is still active. Include:
-- What was implemented
-- Verification results (build, tests, probes)
-- Any design decisions made during implementation
+### Step 4: Complete Work (active → completed)
+When implementation is finished and verified:
+1. Ensure `cargo build` and `cargo test` pass
+2. Rename the task file with `_DONE` suffix (e.g., `301_My_Task_DONE.md`)
+3. Move the file from `_tasks/active/` to `_tasks/completed/`
+4. Report completion with a summary of what was done
 
-### 5. Archive
-After approval, rename to `_DONE` suffix (e.g., `301_My_Task_DONE.md`) and move to `_tasks/completed/`.
+**Never leave a finished task in `active/`. Always move it to `completed/` when done.**
 
 ## Handling Duplicate Work
 

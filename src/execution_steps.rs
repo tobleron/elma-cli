@@ -5,6 +5,7 @@
 //! Re-exports from specialized sub-modules:
 //! - execution_steps_compat: Command compatibility and probing
 //! - execution_steps_edit: Edit step handling
+//! - execution_steps_observe: Observe step handling
 //! - execution_steps_shell: Shell step handling
 //! - execution_steps_read: Read step handling
 //! - execution_steps_search: Search step handling
@@ -14,6 +15,7 @@ use crate::*;
 
 pub(crate) use execution_steps_compat::*;
 pub(crate) use execution_steps_edit::*;
+pub(crate) use execution_steps_observe::*;
 pub(crate) use execution_steps_read::*;
 pub(crate) use execution_steps_search::*;
 pub(crate) use execution_steps_shell::*;
@@ -642,10 +644,15 @@ pub(crate) async fn handle_program_step(
     let is_tool_step = !matches!(step, Step::Reply { .. } | Step::Respond { .. });
     if is_tool_step {
         operator_trace(args, &purpose);
+        // Prefer showing the exact shell command in the transcript for shell steps.
+        let tool_command = match &step {
+            Step::Shell { cmd, .. } => cmd.replace('\n', " "),
+            _ => purpose.clone(),
+        };
         if let Some(ref mut t) = tui {
             t.handle_ui_event(crate::claude_ui::UiEvent::ToolStarted {
                 name: kind.clone(),
-                command: purpose.clone(),
+                command: tool_command,
             });
             t.set_coordinator_status(purpose.clone(), true);
         }
@@ -680,6 +687,22 @@ pub(crate) async fn handle_program_step(
                 success_condition,
                 &query,
                 paths,
+                state,
+            )
+            .await?
+        }
+        Step::Observe { path, paths, .. } => {
+            handle_observe_step(
+                args,
+                session,
+                workdir,
+                sid,
+                &kind,
+                purpose,
+                depends_on,
+                success_condition,
+                path.as_deref(),
+                paths.as_deref(),
                 state,
             )
             .await?

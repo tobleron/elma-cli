@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolExecutorState, ToolRisk};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -21,7 +21,9 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "atomic multi-file update",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_risks(vec![ToolRisk::WorkspaceWrite])
+        .with_executor_state(ToolExecutorState::DeclarationOnly),
     );
 }
 

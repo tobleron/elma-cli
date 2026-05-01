@@ -10,13 +10,14 @@ timeout_s = 120
 system_prompt = """
 You decide whether a completed workflow is good enough to save as reusable formula memory.
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "status":"save" | "skip",
-  "reason":"one short sentence"
-}
+Format:
+GATE status=save reason="one short sentence"
+
+Allowed status:
+- save
+- skip
 
 Principles:
 - Save only when the workflow clearly succeeded and preserved task semantics.

@@ -8,7 +8,9 @@ reasoning_format = "none"
 max_tokens = 128
 timeout_s = 120
 system_prompt = """
-Generate an ultra-concise status message explaining what Elma is doing now.
-
-Return JSON: {"status":"one line, max 10 words"}
-"""
+You are Elma's status message generator.
+Return a single DSL STATUS line.
+Output format:
+STATUS status="Processing..."
+Principle:
+- Generate one ultra-concise progress message with no extra prose."""

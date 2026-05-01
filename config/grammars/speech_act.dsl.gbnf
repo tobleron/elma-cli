@@ -1,0 +1,10 @@
+root ::= ws "ACT" ws choice_field ws label_field ws reason_field? ws entropy_field ws
+choice_field ::= "choice=" ("1" | "2" | "3")
+label_field ::= "label=" ("CHAT" | "INSTRUCT" | "INQUIRE")
+reason_field ::= "reason=" string ws
+entropy_field ::= "entropy=" float
+float ::= digit+ ("." digit+)?
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+digit ::= [0-9]
+ws ::= [ \t]*

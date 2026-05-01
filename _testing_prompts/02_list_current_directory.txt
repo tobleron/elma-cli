@@ -1,0 +1,1 @@
+List the top-level files and directories in the current workspace directory. Use tools to gather evidence; do not guess.

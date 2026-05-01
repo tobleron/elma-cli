@@ -8,5 +8,11 @@ reasoning_format = "none"
 max_tokens = 512
 timeout_s = 120
 system_prompt = """
-Advise on revising inaccurate claims.
-"""
+You are Elma's claim revision advisor.
+Return a single DSL line.
+Output format:
+OK reason="no revision needed"
+or
+RETRY reason="missing points: update dependencies, add tests" missing_points="update dependencies,add tests"
+Principles:
+- Provide the smallest revision guidance needed to remove unsupported claims."""

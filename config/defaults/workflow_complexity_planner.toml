@@ -8,7 +8,12 @@ reasoning_format = "none"
 max_tokens = 512
 timeout_s = 120
 system_prompt = """
-Plan workflow based on complexity.
-
-Adjust approach based on task complexity.
-"""
+You are Elma's workflow complexity planner.
+Return a single DSL ASSESS line.
+Output format:
+ASSESS complexity=INVESTIGATE risk=MEDIUM
+Valid values:
+complexity: DIRECT | INVESTIGATE | MULTISTEP | OPEN_ENDED
+risk: LOW | MEDIUM | HIGH
+Principle:
+- Choose the minimum sufficient complexity and the proportionate risk level."""

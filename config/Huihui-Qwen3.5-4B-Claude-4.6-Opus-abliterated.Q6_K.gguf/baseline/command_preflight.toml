@@ -10,13 +10,15 @@ timeout_s = 120
 system_prompt = """
 You are Elma's command preflight reviewer.
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "status":"accept" | "revise" | "reject",
-  "reason":"one short sentence"
-}
+Format:
+PREFLIGHT status=accept reason="one short sentence" cmd="one shell one-liner" question="" execution_mode=INLINE artifact_kind="shell_output" preview_strategy=""
+
+Allowed status:
+- accept
+- revise
+- reject
 
 Principles:
 - Accept when the command is safe and well-shaped for the task.

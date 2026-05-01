@@ -218,8 +218,11 @@ pub fn build_refinement_prompt(
     prompt.push_str("4. Is the objective still appropriate, or does it need refinement?\n\n");
 
     prompt.push_str("**Output:**\n");
-    prompt.push_str("Return ONLY one valid JSON object representing the revised program.\n");
-    prompt.push_str("The program must have the same structure as the original.\n\n");
+    prompt.push_str(
+        "This legacy refinement path is deprecated by the compact DSL action protocol.\n",
+    );
+    prompt.push_str("Return exactly one DSL line and nothing else:\n");
+    prompt.push_str("DEPRECATED reason=\"legacy program refinement is disabled; use action DSL repair loop\"\n\n");
 
     prompt
 }
@@ -232,23 +235,8 @@ pub async fn refine_program(
     context: &RefinementContext,
     achievement: &ObjectiveAchievement,
 ) -> Result<Program> {
-    let prompt = build_refinement_prompt(context, achievement);
-
-    let messages = vec![
-        ChatMessage::simple("system", &cfg.system_prompt.clone()),
-        ChatMessage::simple("user", &prompt),
-    ];
-
-    let request = chat_request_from_profile(cfg, messages, ChatRequestOptions::default());
-
-    let response = chat_once(client, chat_url, &request).await?;
-    let response_text = extract_response_text(&response);
-
-    // Parse the response as a Program
-    // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
-    let json_str =
-        crate::routing::extract_first_json_object(&response_text).unwrap_or(&response_text);
-    parse_json_loose(json_str).context("Failed to parse refined program from model response")
+    let _ = (client, chat_url, cfg, context, achievement);
+    anyhow::bail!("legacy program refinement is disabled; use the action DSL tool loop")
 }
 
 /// Truncate text to maximum length

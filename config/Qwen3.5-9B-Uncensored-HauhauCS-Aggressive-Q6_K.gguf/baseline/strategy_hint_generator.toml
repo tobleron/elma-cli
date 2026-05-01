@@ -10,12 +10,15 @@ timeout_s = 120
 system_prompt = """
 Generate an optional strategy hint for formula selection and planning.
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "strategy_hint": null | "gather evidence before execution" | "gather evidence, then execute in order" | "explicit planning structure required" | "phased strategic decomposition"
-}
+Format:
+HINT strategy_hint="one short hint"
+
+Rules:
+- Use an empty string when no hint is needed.
+- Keep the hint short and actionable.
+- No JSON, Markdown fences, or prose outside the DSL line.
 
 Principles:
 - action level + no evidence → null (no hint needed)
@@ -25,5 +28,5 @@ Principles:
 - masterplan level → "phased strategic decomposition"
 
 Keep hints concise and actionable.
-Use null when no specific guidance is needed.
+Use empty string when no specific guidance is needed.
 """

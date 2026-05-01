@@ -85,8 +85,9 @@ impl IntelUnit for DomainDifficultyUnit {
                 )
             });
 
-        let result: DomainDifficultyAssessment =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let dsl_result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
+        let result: DomainDifficultyAssessment = serde_json::from_value(dsl_result)?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -191,8 +192,9 @@ impl IntelUnit for FreshnessRequirementUnit {
                 )
             });
 
-        let result: FreshnessRequirementAssessment =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let dsl_result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
+        let result: FreshnessRequirementAssessment = serde_json::from_value(dsl_result)?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -305,8 +307,9 @@ impl IntelUnit for AssumptionTrackerUnit {
                 )
             });
 
-        let result: AssumptionTrackerAssessment =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let dsl_result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
+        let result: AssumptionTrackerAssessment = serde_json::from_value(dsl_result)?;
 
         Ok(IntelOutput::success(
             self.name(),
@@ -420,8 +423,9 @@ impl IntelUnit for EdgeCaseEvaluatorUnit {
                 )
             });
 
-        let result: EdgeCaseEvaluatorAssessment =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let dsl_result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
+        let result: EdgeCaseEvaluatorAssessment = serde_json::from_value(dsl_result)?;
 
         Ok(IntelOutput::success(
             self.name(),

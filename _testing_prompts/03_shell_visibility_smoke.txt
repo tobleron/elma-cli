@@ -1,0 +1,1 @@
+Run a shell command that prints the current working directory. Then list the workspace root contents using the available file-listing action. Use evidence; do not guess.

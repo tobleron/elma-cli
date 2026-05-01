@@ -21,22 +21,17 @@ pub async fn run_refinement_phase(
     ws: &str,
     ws_brief: &str,
 ) -> Result<Program> {
-    // Build refinement prompt
-    let prompt =
-        build_refinement_prompt(original_objective, step_results, drift_reason, ws, ws_brief);
-
-    let req = chat_request_system_user(
+    let _ = (
+        client,
+        chat_url,
         refinement_cfg,
-        &refinement_cfg.system_prompt,
-        &prompt,
-        ChatRequestOptions {
-            grammar: Some(crate::json_program_grammar()),
-            ..ChatRequestOptions::default()
-        },
+        original_objective,
+        step_results,
+        drift_reason,
+        ws,
+        ws_brief,
     );
-
-    let (program, _) = crate::chat_json_with_repair_text(client, chat_url, &req).await?;
-    Ok(program)
+    anyhow::bail!("legacy guardrails refinement is disabled; use the action DSL tool loop")
 }
 
 /// Build refinement prompt
@@ -92,7 +87,7 @@ fn build_refinement_prompt(
     prompt.push_str("   - Uses the minimum steps necessary\n");
     prompt.push_str("   - Has clear success criteria\n\n");
 
-    prompt.push_str("Output ONLY valid Program JSON.\n");
+    // Legacy prompt retained for context only; output contract is no longer JSON.
 
     prompt
 }

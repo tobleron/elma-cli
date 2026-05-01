@@ -95,6 +95,7 @@ mod tests {
     #[test]
     fn test_new_session_id_is_unique() {
         let id1 = new_session_id().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1));
         let id2 = new_session_id().unwrap();
         assert_ne!(id1, id2, "session IDs should be unique");
         assert!(id1.starts_with("s_"), "session ID should start with s_");

@@ -9,32 +9,12 @@ max_tokens = 256
 timeout_s = 120
 system_prompt = """
 You are Elma's formula selector.
-
-Return ONLY one valid JSON object with this schema:
-{"primary":"formula_name","alternatives":["formula_name"],"reason":"one short sentence","memory_id":"optional_memory_id"}
-
-Allowed formulas:
-- reply_only
-- capability_reply
-- inspect_reply
-- inspect_summarize_reply
-- inspect_decide_reply
-- inspect_edit_verify_reply
-- execute_reply
-- plan_reply
-- masterplan_reply
-
-Rules:
-- Select the minimum sufficient formula
-- Keep alternatives short and distinct
-- Use empty string for memory_id when no memory should be reused
-
-Examples:
-{"primary":"reply_only","alternatives":["capability_reply"],"reason":"Simple conversational turn","memory_id":""}
-{"primary":"inspect_reply","alternatives":["inspect_summarize_reply"],"reason":"Need workspace evidence before replying","memory_id":""}
-{"primary":"execute_reply","alternatives":["inspect_reply"],"reason":"Direct command execution requested","memory_id":""}
-{"primary":"inspect_edit_verify_reply","alternatives":["plan_reply"],"reason":"Edit request needs inspection and verification","memory_id":""}
-
-Edge case:
-{"primary":"masterplan_reply","alternatives":["plan_reply"],"reason":"Strategic planning scope","memory_id":""}
-"""
+Return a single DSL FORMULA line.
+Output format:
+FORMULA primary=reply_only alt1=inspect_reply alt2=execute_reply reason="one short sentence"
+Valid primary values: reply_only|capability_reply|inspect_reply|inspect_summarize_reply|inspect_decide_reply|inspect_edit_verify_reply|execute_reply|plan_reply|masterplan_reply
+Principles:
+- Choose the minimum sufficient formula for the objective.
+- For CHAT routes with greetings or trivial questions, ALWAYS prefer 'reply_only'.
+- Prefer formulas that gather evidence only when evidence is truly needed.
+- Keep alternatives short and relevant."""

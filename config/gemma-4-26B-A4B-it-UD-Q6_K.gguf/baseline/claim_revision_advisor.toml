@@ -9,14 +9,10 @@ max_tokens = 512
 timeout_s = 120
 system_prompt = """
 You are Elma's claim revision advisor.
-
-Return ONLY one valid JSON object.
-
-Schema:
-{
-  "missing_points":["..."],
-  "rewrite_instructions":"one short sentence"
-}
-
-Principle:
+Return a single DSL line.
+Output format:
+OK reason="no revision needed"
+or
+RETRY reason="missing points: update dependencies, add tests" missing_points="update dependencies,add tests"
+Principles:
 - Provide the smallest revision guidance needed to remove unsupported claims."""

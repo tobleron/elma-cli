@@ -2,18 +2,21 @@ This file provides universal guidance for agents working in this repository.
 
 ## Elma CLI Philosophy
 
-Elma is a local-first autonomous CLI agent designed to deliver the highest reliability and practical usefulness possible on constrained local models.
+Elma is a local-first autonomous CLI agent designed to deliver correct, grounded answers on any model size. The model is a given. The system adapts.
 
 Core philosophy:
-- Reliability before speed.
-- Adaptive reasoning before deterministic rule playback.
-- Small-model-friendly decomposition before asking one model call to do too much.
-- Truth-grounded answers before polished but weakly supported answers.
-- Offline-first behavior by default, with network use only when truly necessary.
-- Prompt principles over long brittle examples.
-- Classification signals are soft guidance, not hard law.
+- **Accuracy over speed.** Elma should take as many model calls and as much wall-clock time as necessary to produce a correct answer. Speed is secondary.
+- **Small-model-first.** The system targets 3B-class models. If a 3B model cannot perform a step reliably, the step is too complex. Decompose it. Larger models (thinking models, tool-calling-native models) must still be supported — their capabilities should be utilized when available, never stripped.
+- **Reliability before speed.** Wait for correctness. Never shortcut for latency.
+- **Adaptive reasoning before deterministic rule playback.** Use model confidence, entropy, and evidence — never hardcoded keyword triggers.
+- **Truth-grounded answers before polished but weakly supported answers.** Every factual claim must trace back to collected evidence.
+- **Offline-first behavior by default.** Network use only when truly necessary.
+- **Prompt principles over long brittle examples.** Explain what to do and why, not what not to do with five counterexamples.
+- **Classification signals are soft guidance, not hard law.** Routing is probabilistic, not boolean.
 
-Elma should feel premium, careful, and capable even on low-end hardware. The system must maximize quality per token, quality per unit of reasoning, and quality per unit of context window.
+If a model fails to produce correct output, the failure belongs to the system — the prompt, the decomposition, the cognitive load per call. Never blame the model. Never suggest switching to a larger model. The correct response is always: split the job into smaller, single-purpose intel units that the model can handle.
+
+Elma must feel premium, careful, and capable on 3B-class hardware. The system maximizes quality per token, quality per unit of reasoning, and quality per unit of context window.
 
 ## Critical Behavioral Rules
 
@@ -40,22 +43,46 @@ When a small model struggles:
 
 Never respond to small-model weakness by stuffing more examples, overfitting rules, forcing giant prompts, or merging cognitive jobs into one prompt. Preferred pattern: one intel unit, one role, one narrow decision.
 
-### 5. Keep The Bottom Status Bar Limited To Core Runtime Metrics Only
+### 5. Model-Produced Structured Output Must Use Compact DSL
+
+Every new or changed intel unit that asks a model for structured output must use a compact Rust-native DSL contract, not JSON, YAML, TOML, XML, Markdown tables, or prose-shaped pseudo-structure.
+
+The DSL must be designed for constrained local models:
+- Use the smallest grammar that represents the job: one token for simple verdicts, one key/value line for bounded records, repeated prefixed lines for short lists, and block bodies only when multiline text is truly required.
+- Keep the grammar boring: uppercase tags or commands, explicit field names, quoted strings only where needed, clear block terminators, and no hidden syntax.
+- Do not add nesting, batches, variables, conditionals, loops, or arbitrary sublanguages.
+- Keep the cognitive unit narrow: one intel unit, one role, one decision shape.
+- Prefer compact repair feedback over examples-heavy prompts.
+
+The LLM output is always untrusted text. For every structured intel output:
+- Parse with a strict Rust parser.
+- Reject empty output, prose before or after the DSL, Markdown fences, JSON-looking output, duplicate fields, malformed quotes, and missing block terminators.
+- Do not extract the "best looking" fragment from messy output.
+- Do not silently fix quotes, missing fields, or missing terminators.
+- Validate semantics after parsing before the value affects routing, execution, memory, or finalization.
+- Return a short deterministic repair observation when parsing or validation fails.
+
+Grammar-constrained decoding such as GBNF is useful but optional defense-in-depth. Grammar may reduce garbage; the parser proves syntax, validators prove meaning, and execution code proves safety.
+
+User-facing configuration should be TOML-first. JSON may remain only for provider wire formats, third-party contracts, or documented local-state boundaries. It must not be used as the model-output format for intel units.
+
+### 6. Keep The Bottom Status Bar Limited To Core Runtime Metrics Only
 
 The footer/status bar must show only: model name, token count, elapsed time. Execution mode, queue notices, operational notifications, and routing decisions belong in the chat transcript, not the footer.
 
-### 6. Prefer Transcript-Native Operational Visibility
+### 7. Prefer Transcript-Native Operational Visibility
 
 Budgeting, routing/formula choice, compaction, stop reasons, and hidden processes must surface as collapsible transcript rows. Do not bury these in trace-only state, debug logs, or hidden metadata. The transcript is the single source of truth for what happened during a session.
 
 **This rule is critically important and is not currently applied properly.** Current behavior hides compaction triggers, routing decisions, and stop reasons behind trace-only logging. These must be surfaced as visible, collapsible transcript rows.
 
-### 7. Never Blame The Model — Improve The System
+### 8. Never Blame The Model — Improve The System
 
 Small-model weakness is an expected constraint, not a defect. When a model produces poor output, hallucinates, enters stagnation, or fails to follow instructions:
 
 - **Do not** add comments like "model is too weak" or "this fails because the model is small"
 - **Do not** respond by stuffing more examples into prompts, overfitting rules, or bloating context
+- **Do not** suggest switching to a larger model as a solution. The model is a given. The system adapts. Larger models must still be supported as a capability tier — their thinking/reasoning and tool-calling features should be utilized when available.
 - **Do** decompose: add a focused intermediary intel unit, tighten narrative context, or reduce cognitive load per step
 - **Do** increase iteration budget, add retry with temperature variation, or use clean-context reset for finalization
 - **Do** add real timeout mechanisms for blocking I/O instead of relying on model self-correction
@@ -63,7 +90,7 @@ Small-model weakness is an expected constraint, not a defect. When a model produ
 
 The model is a given. The system must adapt to it. Every failure is a signal to improve decomposition, context hygiene, or execution robustness — never an excuse to blame the model.
 
-### 8. Protect The Core System Prompt
+### 9. Protect The Core System Prompt
 
 `src/prompt_core.rs` contains the canonical system prompt sent to the model on every tool-calling turn. It is the result of extensive iteration and performance tuning.
 
@@ -76,6 +103,45 @@ If you believe the prompt needs adjustment:
 4. Only then update the prompt and its build-time hash
 
 This rule applies to all agents, including Elma itself, external coding assistants, and automated refactoring tools.
+
+### 10. Compact DSL Is Permanent Architecture
+
+Compact DSL is the canonical model-output format for all intel units. JSON model output is permanently deprecated. This is an architectural decision, not a temporary experiment.
+
+- **Never** propose returning to JSON, YAML, TOML, XML, or any other format for model-produced structured output.
+- **Never** suggest that JSON would be "easier for the model" — the model is the one that must adapt to the DSL, not the other way around.
+- **Never** introduce a new intel unit that produces JSON output.
+- **Do** tighten prompts, grammar, and repair feedback when a model struggles with DSL.
+- **Do** decompose multi-field DSL units into single-field units when the model fails to produce all fields correctly.
+- **Do** add a dedicated DSL format specialist intel unit whose only job is to generate exact DSL syntax for a given decision.
+
+JSON may only exist at provider wire boundaries (OpenAI-compatible chat API), third-party contracts, and documented local-state storage. It must never appear in a model-output prompt contract.
+
+### 11. One Intel Unit = One Decision
+
+When a 3B model fails to produce correct multi-field DSL from a single prompt, the prompt is asking too much. The fix is not a bigger model — it is a narrower intel unit.
+
+Every intel unit must make exactly one meaningful decision and emit exactly one compact DSL command:
+- A classifier returns one label from a bounded set.
+- An assessor returns one boolean verdict.
+- A selector picks one item from a list.
+- A summarizer composes one narrative from pre-filled facts.
+
+Multi-field output (e.g., `needs_evidence` AND `needs_tools` in one response) is a decomposition failure. Split it into two intel units each returning one field. DSL generation (formatting a decision into exact syntax) is a separate cognitive job from making the decision. Split them.
+
+When in doubt, prefer more narrow intel calls over fewer complex ones. A 3B model making 5 single-field correct decisions is better than making 1 multi-field wrong one.
+
+### 12. Accuracy Over Speed — No Shortcuts
+
+Elma must produce a correct, grounded answer regardless of how many model calls or how much wall-clock time it takes.
+
+- Never shortcut a safety check, verification step, or evidence requirement for latency.
+- Never collapse two classification stages into one to save an LLM call.
+- Never omit repair feedback because "the model might fix it on its own."
+- Never skip evidence assessment because the route looks confident.
+- Each intel unit call, each repair retry, each verification pass is justified if it increases correctness.
+
+The user can wait. A wrong answer costs more than a slow one.
 
 ## Theme
 

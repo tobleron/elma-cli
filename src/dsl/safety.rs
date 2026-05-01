@@ -11,6 +11,7 @@ use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 static SESSION_READ_FINGERPRINTS: Lazy<Mutex<HashMap<String, HashSet<String>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -176,11 +177,91 @@ pub(crate) fn clear_session_edit_gates() {
     }
 }
 
+/// Default timeout for command execution via the async path (seconds).
+pub(crate) const DEFAULT_COMMAND_TIMEOUT_SECS: u64 = 30;
+
+/// Execute a validated command asynchronously with a timeout.
+///
+/// Uses `tokio::process::Command` so the async runtime manages the child process
+/// and `tokio::time::timeout` to enforce a bounded wall-clock limit.
+///
+/// Returns a compact repair observation on timeout or execution failure.
+pub(crate) async fn execute_command_policy_async(
+    workdir: &Path,
+    command: &str,
+    policy: CommandPolicy,
+    timeout_secs: u64,
+) -> Result<CommandOutcome, String> {
+    let parts = validate_command(command, policy)?;
+
+    let mut cmd = tokio::process::Command::new(&parts[0]);
+    cmd.args(&parts[1..]).current_dir(workdir);
+    cmd.kill_on_drop(true);
+
+    let output = match tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output()).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
+            return Err(render_compact_error(
+                &RepairObservation::new(
+                    DslErrorCode::UnsafeCommand,
+                    format!("failed to execute {}: {}", parts[0], e),
+                )
+                .with_hint("use a direct command from the allowlist"),
+            ));
+        }
+        Err(_) => {
+            return Err(render_compact_error(
+                &RepairObservation::new(
+                    DslErrorCode::UnsafeCommand,
+                    format!(
+                        "command timed out after {} seconds: {}",
+                        timeout_secs, parts[0]
+                    ),
+                )
+                .with_hint("use a faster command or split the work"),
+            ));
+        }
+    };
+
+    Ok(CommandOutcome {
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        exit_code: output.status.code(),
+    })
+}
+
 pub(crate) fn execute_command_policy(
     workdir: &Path,
     command: &str,
     policy: CommandPolicy,
 ) -> Result<CommandOutcome, String> {
+    let parts = validate_command(command, policy)?;
+
+    let mut cmd = std::process::Command::new(&parts[0]);
+    cmd.args(&parts[1..]).current_dir(workdir);
+    let output = cmd.output().map_err(|err| {
+        render_compact_error(
+            &RepairObservation::new(
+                DslErrorCode::UnsafeCommand,
+                format!("failed to execute {}: {}", parts[0], err),
+            )
+            .with_hint("use a direct command from the allowlist"),
+        )
+    })?;
+
+    Ok(CommandOutcome {
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        exit_code: output.status.code(),
+    })
+}
+
+/// Validate a command string against the given policy without executing it.
+/// Returns the parsed command parts on success.
+pub(crate) fn validate_command(
+    command: &str,
+    policy: CommandPolicy,
+) -> Result<Vec<String>, String> {
     if matches!(policy, CommandPolicy::Disabled) {
         return Err(render_compact_error(
             &RepairObservation::new(DslErrorCode::UnsafeCommand, "command execution is disabled")
@@ -238,23 +319,7 @@ pub(crate) fn execute_command_policy(
         ));
     }
 
-    let mut cmd = std::process::Command::new(&parts[0]);
-    cmd.args(&parts[1..]).current_dir(workdir);
-    let output = cmd.output().map_err(|err| {
-        render_compact_error(
-            &RepairObservation::new(
-                DslErrorCode::UnsafeCommand,
-                format!("failed to execute {}: {}", parts[0], err),
-            )
-            .with_hint("use a direct command from the allowlist"),
-        )
-    })?;
-
-    Ok(CommandOutcome {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        exit_code: output.status.code(),
-    })
+    Ok(parts)
 }
 
 pub(crate) fn apply_exact_edit(
@@ -539,5 +604,80 @@ mod tests {
         clear_session_edit_gates();
         record_session_read("session-edit-gate-accepts", "file.txt");
         assert!(require_session_read_before_edit("session-edit-gate-accepts", "file.txt").is_ok());
+    }
+
+    #[test]
+    fn validate_command_rejects_empty() {
+        let err = validate_command("", CommandPolicy::Strict).unwrap_err();
+        assert!(err.contains("UNSAFE_COMMAND"));
+    }
+
+    #[test]
+    fn validate_command_rejects_control_chars() {
+        // Embedded null byte should be rejected even after trim
+        let err = validate_command("ls\0extra", CommandPolicy::Strict).unwrap_err();
+        assert!(err.contains("UNSAFE_COMMAND"));
+    }
+
+    #[test]
+    fn validate_command_accepts_known() {
+        let parts = validate_command("ls -la", CommandPolicy::Strict).unwrap();
+        assert_eq!(parts, vec!["ls", "-la"]);
+    }
+
+    #[test]
+    fn validate_command_rejects_pipeline() {
+        let err = validate_command("ls | cat", CommandPolicy::Strict).unwrap_err();
+        assert!(err.contains("UNSAFE_COMMAND"));
+    }
+
+    #[test]
+    fn validate_command_rejects_disallowed() {
+        let err = validate_command("rm -rf .", CommandPolicy::Strict).unwrap_err();
+        assert!(err.contains("UNSAFE_COMMAND"));
+    }
+
+    #[test]
+    fn validate_command_disabled_policy() {
+        let err = validate_command("ls", CommandPolicy::Disabled).unwrap_err();
+        assert!(err.contains("UNSAFE_COMMAND"));
+    }
+
+    #[tokio::test]
+    async fn execute_command_async_success() {
+        let root = tempfile::tempdir().unwrap();
+        let outcome = execute_command_policy_async(root.path(), "ls", CommandPolicy::Strict, 10)
+            .await
+            .unwrap();
+        assert_eq!(outcome.exit_code, Some(0));
+    }
+
+    #[tokio::test]
+    async fn execute_command_async_rejects_disallowed() {
+        let root = tempfile::tempdir().unwrap();
+        let err = execute_command_policy_async(root.path(), "rm -rf .", CommandPolicy::Strict, 10)
+            .await
+            .unwrap_err();
+        assert!(err.contains("UNSAFE_COMMAND"));
+    }
+
+    #[tokio::test]
+    async fn execute_command_async_timeout() {
+        // Use a very short timeout to trigger timeout on a "sleep 1" command
+        // but only if the allowlist allows it. Since sleep isn't allowed,
+        // test that policy validation happens before execution.
+        let root = tempfile::tempdir().unwrap();
+        let err = execute_command_policy_async(root.path(), "sleep 60", CommandPolicy::Strict, 1)
+            .await
+            .unwrap_err();
+        // Should fail at policy validation (sleep is not in the allowlist)
+        assert!(err.contains("UNSAFE_COMMAND"));
+    }
+
+    #[tokio::test]
+    async fn validate_command_does_not_execute() {
+        // validate_command should not execute anything, just validate syntax+policies
+        let parts = validate_command("grep -r foo src", CommandPolicy::Strict).unwrap();
+        assert_eq!(parts, vec!["grep", "-r", "foo", "src"]);
     }
 }

@@ -45,8 +45,9 @@ NEW ACTION:
 TASK:
 Determine if the existing evidence is stale after the new action. FRESH means the evidence is still valid. POTENTIALLY_STALE means it might be outdated. STALE means the evidence is definitely outdated.
 
-Output contract:
-{{"staleness": "FRESH|POTENTIALLY_STALE|STALE", "reason": "one short sentence"}}"#,
+Output format:
+ASSESS staleness=FRESH reason="one short sentence"
+Valid values: FRESH | POTENTIALLY_STALE | STALE"#,
             evidence = context
                 .workspace_facts
                 .chars()
@@ -58,8 +59,8 @@ Output contract:
                 .unwrap_or("unknown"),
         );
 
-        let result: serde_json::Value =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
 
         Ok(IntelOutput::success(self.name(), result, 0.9))
     }

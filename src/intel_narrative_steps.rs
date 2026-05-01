@@ -81,6 +81,7 @@ pub(crate) fn step_kind(step: &Step) -> &'static str {
     match step {
         Step::Shell { .. } => "shell",
         Step::Read { .. } => "read",
+        Step::Observe { .. } => "observe",
         Step::Search { .. } => "search",
         Step::Select { .. } => "select",
         Step::Plan { .. } => "plan",
@@ -107,6 +108,15 @@ pub(crate) fn step_detail(step: &Step) -> String {
                 format!("Read {} files", ps.len())
             } else {
                 "Read".to_string()
+            }
+        }
+        Step::Observe { path, paths, .. } => {
+            if let Some(p) = path.as_deref() {
+                format!("Observe metadata for \"{}\"", p)
+            } else if let Some(ps) = paths {
+                format!("Observe metadata for {} targets", ps.len())
+            } else {
+                "Observe metadata".to_string()
             }
         }
         Step::Search { query, paths, .. } => {
@@ -147,6 +157,7 @@ pub(crate) fn step_purpose(step: &Step) -> String {
     let common = match step {
         Step::Shell { common, .. }
         | Step::Read { common, .. }
+        | Step::Observe { common, .. }
         | Step::Search { common, .. }
         | Step::Select { common, .. }
         | Step::Plan { common, .. }
@@ -243,6 +254,7 @@ pub(crate) fn step_id(step: &Step) -> &str {
     match step {
         Step::Shell { id, .. }
         | Step::Read { id, .. }
+        | Step::Observe { id, .. }
         | Step::Search { id, .. }
         | Step::Select { id, .. }
         | Step::Plan { id, .. }

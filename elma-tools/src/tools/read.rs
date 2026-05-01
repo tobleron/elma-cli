@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolRisk};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -26,6 +26,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "read multiple files",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_risks(vec![ToolRisk::ReadOnly])
+        .concurrency_safe(),
     );
 }

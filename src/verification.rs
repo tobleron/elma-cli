@@ -17,13 +17,23 @@ fn mk_intel_req(cfg: &Profile, user_content: String) -> ChatCompletionRequest {
     )
 }
 
-async fn chat_and_parse(
+async fn chat_and_parse_dsl<T: DeserializeOwned + 'static>(
     client: &reqwest::Client,
     chat_url: &Url,
     cfg: &Profile,
     narrative: String,
-) -> Result<ClaimCheckVerdict> {
-    chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, narrative)).await
+) -> Result<T> {
+    let mut req = mk_intel_req(cfg, narrative);
+    apply_profile_grammar(cfg, &mut req)?;
+    let value = crate::ui_chat::chat_dsl_with_repair_for_profile_timeout(
+        client,
+        chat_url,
+        &req,
+        &cfg.name,
+        cfg.timeout_s,
+    )
+    .await?;
+    Ok(serde_json::from_value(value)?)
 }
 
 pub(crate) async fn claim_check_once(
@@ -41,7 +51,7 @@ pub(crate) async fn claim_check_once(
         draft,
         step_results,
     );
-    chat_and_parse(client, chat_url, cfg, narrative).await
+    chat_and_parse_dsl(client, chat_url, cfg, narrative).await
 }
 
 pub(crate) async fn guard_repair_semantics_once(
@@ -61,7 +71,7 @@ pub(crate) async fn guard_repair_semantics_once(
         repaired_cmd,
         &summarize_shell_output(failed_output),
     );
-    chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, narrative)).await
+    chat_and_parse_dsl(client, chat_url, cfg, narrative).await
 }
 
 pub(crate) async fn check_execution_sufficiency_once(
@@ -78,22 +88,11 @@ pub(crate) async fn check_execution_sufficiency_once(
         program,
         step_results,
     );
-    chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, narrative)).await
+    chat_and_parse_dsl(client, chat_url, cfg, narrative).await
 }
 
 fn truncate_output(s: &String) -> &str {
     &s[..s.len().min(200)]
-}
-
-fn outcome_verifier_configs(cfg: &Profile) -> (Profile, Profile, Profile, Profile) {
-    let base = &cfg.base_url;
-    let model = &cfg.model;
-    (
-        default_text_generator_config(base, model),
-        default_json_converter_config(base, model),
-        default_verify_checker_config(base, model),
-        default_json_repair_config(base, model),
-    )
 }
 
 pub(crate) async fn verify_outcome_match_intent(
@@ -115,68 +114,20 @@ pub(crate) async fn verify_outcome_match_intent(
         step_result.raw_output.as_ref().map(truncate_output)
     );
 
-    let (text_gen_cfg, json_conv_cfg, verify_cfg, repair_cfg) =
-        outcome_verifier_configs(outcome_verifier_cfg);
-
-    let text = match generate_text_from_reasoning(client, chat_url, &text_gen_cfg, &reasoning).await
+    match chat_and_parse_dsl::<OutcomeVerificationVerdict>(
+        client,
+        chat_url,
+        outcome_verifier_cfg,
+        reasoning,
+    )
+    .await
     {
-        Ok(t) => t,
+        Ok(v) => Ok(v),
         Err(e) => {
-            trace(args, &format!("text_generator_failed error={}", e));
-            reasoning
+            trace(args, &format!("outcome_verifier_failed error={}", e));
+            Ok(default_outcome_verdict(step_result.exit_code.unwrap_or(0)))
         }
-    };
-
-    let schema_desc = r#"{"type":"object","required":["status","reason"],"properties":{"status":{"enum":["ok","retry"]},"reason":{"type":"string","minLength":1}}}"#;
-    let json_str =
-        match convert_text_to_json(client, chat_url, &json_conv_cfg, &text, schema_desc).await {
-            Ok(j) => j,
-            Err(e) => {
-                trace(args, &format!("json_converter_failed error={}", e));
-                return Ok(default_outcome_verdict(step_result.exit_code.unwrap_or(0)));
-            }
-        };
-
-    let verify_result = match verify_json(client, chat_url, &verify_cfg, &json_str).await {
-        Ok(r) => r,
-        Err(e) => {
-            trace(args, &format!("verify_checker_failed error={}", e));
-            return parse_verdict_from_json(&json_str, step_result);
-        }
-    };
-
-    let final_json = if verify_result.status == "problems" && !verify_result.problems.is_empty() {
-        match repair_json(
-            client,
-            chat_url,
-            &repair_cfg,
-            &json_str,
-            &verify_result.problems,
-        )
-        .await
-        {
-            Ok(repaired) => {
-                trace(args, "json_repaired successfully");
-                repaired
-            }
-            Err(e) => {
-                trace(args, &format!("json_repair_failed error={}", e));
-                json_str
-            }
-        }
-    } else {
-        trace(args, "json_verification_passed");
-        json_str
-    };
-    parse_verdict_from_json(&final_json, step_result)
-}
-
-fn parse_verdict_from_json(
-    json_str: &str,
-    step_result: &StepResult,
-) -> Result<OutcomeVerificationVerdict> {
-    serde_json::from_str(json_str)
-        .or_else(|_| Ok(default_outcome_verdict(step_result.exit_code.unwrap_or(0))))
+    }
 }
 
 fn mark_result_ok(result: &mut StepResult, id: &str, reason: &str, args: &Args) {
@@ -455,7 +406,7 @@ pub(crate) async fn gate_formula_memory_once(
         "program_signature": program_signature(program),
         "step_results": step_results.iter().map(step_result_json).collect::<Vec<_>>(),
     });
-    chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, payload.to_string())).await
+    chat_and_parse_dsl(client, chat_url, cfg, payload.to_string()).await
 }
 
 pub(crate) async fn preflight_command_once(
@@ -481,5 +432,5 @@ pub(crate) async fn preflight_command_once(
         "primary_bin": primary_bin, "command_exists": command_exists,
         "command_lookup": command_lookup,
     });
-    chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, payload.to_string())).await
+    chat_and_parse_dsl(client, chat_url, cfg, payload.to_string()).await
 }

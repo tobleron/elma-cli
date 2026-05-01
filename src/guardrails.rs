@@ -101,6 +101,7 @@ fn check_step_goal_mismatch(objective: &str, program: &Program) -> Option<String
             matches!(
                 s,
                 Step::Read { .. }
+                    | Step::Observe { .. }
                     | Step::Search { .. }
                     | Step::Plan { .. }
                     | Step::MasterPlan { .. }

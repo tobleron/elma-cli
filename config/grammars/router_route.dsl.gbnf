@@ -1,0 +1,13 @@
+root ::= ws "ROUTE" ws name_field ws confidence_field ws entropy_field ws evidence_field ws reason_field? ws
+name_field ::= "name=" route_name
+route_name ::= "CHAT" | "INVESTIGATE" | "SHELL" | "PLAN" | "MASTERPLAN" | "DECIDE"
+confidence_field ::= "confidence=" float
+entropy_field ::= "entropy=" float
+evidence_field ::= "evidence=" yesno
+reason_field ::= ws "reason=" string
+float ::= digit+ ("." digit+)?
+yesno ::= "yes" | "no"
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+digit ::= [0-9]
+ws ::= [ \t]*

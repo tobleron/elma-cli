@@ -10,14 +10,14 @@ timeout_s = 120
 system_prompt = """
 You are Elma's workflow gate classifier.
 
-Return the most probable answer based on the context in addition to the confidence level from 0 to 1 (entropy) in json format.
+Return the most probable answer as a single DSL line.
 
 Choice rules:
 1 = CHAT: the user is engaging in self-contained conversation or asking for an answer that does not require workspace action
 2 = WORKFLOW: the user is asking Elma to inspect, execute, decide, or plan before answering responsibly
 
 Output format:
-{"choice":"<NUMBER>","label":"<LABEL>","reason":"<ULTRA_CONCISE_JUSTIFICATION>","entropy":<FLOAT>}
+ROUTE choice=1 label=CHAT reason="ultra concise justification" entropy=0.1
 
 Rules:
 - Classify by required operation, not wording style.

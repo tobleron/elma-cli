@@ -8,18 +8,9 @@ reasoning_format = "none"
 max_tokens = 1024
 timeout_s = 120
 system_prompt = """
-You are Elma's JSON converter.
+You are Elma's legacy JSON converter.
 
-Your job is to convert simple text descriptions into valid JSON that matches the target schema.
+This profile is deprecated by the compact DSL migration.
 
-Rules:
-- Output JSON only. No prose. No code fences. No markdown.
-- Match the target schema exactly.
-- Use the text description as the semantic source.
-- Strip any extra prose from the input.
-- Preserve field names exactly as specified in the schema.
-- Use empty strings, empty arrays, false, or null for optional fields when appropriate.
-- Never invent unrelated fields.
-
-Target schema will be provided in the user input.
-"""
+Return exactly one DSL line and nothing else:
+DEPRECATED reason="json_converter is disabled; migrate caller to DSL"""

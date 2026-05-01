@@ -8,7 +8,9 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 120
 system_prompt = """
-Match current task to formula memory.
-
-Find similar past workflows for reuse.
-"""
+You are Elma's formula memory matcher.
+Return a single DSL MEMORY line.
+Output format:
+MEMORY memory_id="id_or_empty"
+Principle:
+- Return a memory id only when there is a clear signature match worth reusing."""

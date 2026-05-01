@@ -130,13 +130,13 @@ impl SearchModal {
             .iter()
             .enumerate()
             .map(|(i, result)| {
-                 let style = if i == self.selected_index {
-                     Style::default()
-                         .bg(theme.accent_primary.to_ratatui_color())
-                         .fg(theme.fg.to_ratatui_color())
-                 } else {
-                     Style::default()
-                 };
+                let style = if i == self.selected_index {
+                    Style::default()
+                        .bg(theme.accent_primary.to_ratatui_color())
+                        .fg(theme.fg.to_ratatui_color())
+                } else {
+                    Style::default()
+                };
                 ListItem::new(Line::from(vec![
                     Span::styled(&result.file, style.fg(theme.fg.to_ratatui_color())),
                     Span::raw(":"),

@@ -159,6 +159,35 @@ impl SessionStore {
             CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at);
             CREATE INDEX IF NOT EXISTS idx_session_tags_session ON session_tags(session_id);
             CREATE INDEX IF NOT EXISTS idx_session_tags_tag ON session_tags(tag);
+
+            -- Task 338: Formal Action-Observation Event Log
+            CREATE TABLE IF NOT EXISTS event_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                timestamp TEXT NOT NULL,
+                turn_number INTEGER NOT NULL DEFAULT 0,
+                kind TEXT NOT NULL,
+                tool_name TEXT,
+                input_summary TEXT,
+                success INTEGER,
+                duration_ms INTEGER,
+                output_size INTEGER,
+                exit_code INTEGER,
+                timed_out INTEGER,
+                signal_killed INTEGER,
+                decision TEXT,
+                command TEXT,
+                reason TEXT,
+                risk_level TEXT,
+                context TEXT,
+                lifecycle_kind TEXT,
+                detail TEXT,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_event_log_session ON event_log(session_id);
+            CREATE INDEX IF NOT EXISTS idx_event_log_seq ON event_log(session_id, seq);
             ",
             )
             .with_context(|| "Failed to run database migrations")?;

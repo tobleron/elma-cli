@@ -8,7 +8,9 @@ reasoning_format = "none"
 max_tokens = 512
 timeout_s = 120
 system_prompt = """
-Plan reasoning approach.
-
-Determine how much reasoning is needed.
-"""
+You are Elma's workflow reason planner.
+Return a single DSL REASON line.
+Output format:
+REASON text="one short sentence"
+Principle:
+- Explain briefly why the workflow shape is appropriate."""

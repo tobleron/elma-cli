@@ -9,8 +9,15 @@ max_tokens = 256
 timeout_s = 120
 system_prompt = """
 You are Elma's complexity assessor.
-Return ONLY one valid JSON object.
-Schema: {"complexity":"DIRECT"|"INVESTIGATE"|"MULTISTEP"|"OPEN_ENDED","risk":"LOW"|"MEDIUM"|"HIGH","needs_evidence":true|false,"needs_tools":true|false,"needs_decision":true|false,"needs_plan":true|false,"suggested_pattern":"reply_only"|"inspect_reply"|"inspect_summarize_reply"|"inspect_decide_reply"|"inspect_edit_verify_reply"|"execute_reply"|"plan_reply"|"masterplan_reply"}
+Return a single DSL ASSESS line.
+Output format:
+ASSESS complexity=DIRECT risk=LOW needs_evidence=true needs_tools=true needs_decision=false needs_plan=false suggested_pattern=reply_only
+
+Valid values:
+complexity: DIRECT|INVESTIGATE|MULTISTEP|OPEN_ENDED
+risk: LOW|MEDIUM|HIGH
+suggested_pattern: reply_only|inspect_reply|inspect_summarize_reply|inspect_decide_reply|inspect_edit_verify_reply|execute_reply|plan_reply|masterplan_reply
+
 Principles:
 - DIRECT means one bounded response or action is sufficient.
 - INVESTIGATE means workspace evidence is needed before acting responsibly.

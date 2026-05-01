@@ -16,7 +16,7 @@ pub(crate) fn default_router_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "none".to_string(),
         max_tokens: 1,
         timeout_s: 120,
-        system_prompt: "You are Elma's workflow gate estimator.\n\nReturn exactly one digit and nothing else.\n\nMapping:\n1 = CHAT\n2 = WORKFLOW\n\nInterpretation:\n- 1 CHAT: answer directly without an internal workflow.\n- 2 WORKFLOW: use internal reasoning steps, workspace evidence, or another intel unit before the final answer.\n\nImportant distinctions:\n- Greetings or general knowledge questions are usually 1.\n- Questions about the current project, files, code, commands, or tasks that need planning or decisions are usually 2.\n\nRules:\n- Output must be exactly one digit from 1 to 2.\n- No punctuation.\n- No explanation.\n- Choose the digit that best represents whether Elma should enter workflow mode.\n".to_string(),
+        system_prompt: "You are Elma's workflow gate estimator.\n\nReturn exactly one DSL line:\nROUTE name=CHAT confidence=0.50 entropy=0.50 evidence=yes\n\nAllowed names:\nCHAT\nWORKFLOW\n\nRules:\n- Output exactly one ROUTE line.\n- Include confidence and entropy as decimals between 0 and 1.\n- Use evidence=yes only when workspace evidence is needed.\n- No JSON, markdown, or prose.\n".to_string(),
     }
 }
 
@@ -132,7 +132,7 @@ pub(crate) fn default_selector_config(base_url: &str, model: &str) -> Profile {
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "You select structured items for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"items\": [\"...\", \"...\"],\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Return exact items only. No prose outside the JSON object.\n- When selecting file paths, return exact relative paths that can be used in later shell commands.\n- Preserve the requested order when ranking or prioritization matters.\n- When the instructions ask for an exact count such as top 3, return exactly that many items when the evidence supports it.\n- For project-file ranking, prefer files that define project identity, entry points, or primary configuration before secondary helpers.\n- Every returned item must appear verbatim in the provided evidence. Do not invent unseen files or paths.\n- If the evidence is insufficient, return an empty items list and explain why in reason.\n- Be precise and conservative.\n"
+        system_prompt: "You select structured items for Elma.\n\nReturn a compact selection DSL.\n\nFormat:\nITEM value=\"exact item\"\nITEM value=\"another exact item\"\nREASON text=\"one short sentence\"\n\nRules:\n- Preserve exact item text from the observed evidence.\n- Return the minimum sufficient set of items.\n- If one best item is requested, return exactly one ITEM line.\n- If no item is supported by the evidence, return only REASON.\n- No JSON or prose outside the DSL.\n"
             .to_string(),
     }
 }
@@ -183,7 +183,7 @@ pub(crate) fn default_json_outputter_config(base_url: &str, model: &str) -> Prof
         reasoning_format: "none".to_string(),
         max_tokens: 2048,
         timeout_s: 120,
-        system_prompt: "You are Elma's JSON outputter.\n\nYour only job is to return EXACTLY one valid JSON object that matches the target schema described in the provided task instructions.\n\nRules:\n- Output JSON only.\n- No prose.\n- No code fences.\n- No markdown.\n- No explanations.\n- Use the provided target system prompt and target user input as the schema contract.\n- Use the raw model draft as the semantic source.\n- If the raw draft contains extra prose, strip it and keep only the schema-valid content.\n- If a parser error is provided, fix the JSON to satisfy that parser error without changing the intended meaning.\n- Preserve field names exactly.\n- Preserve required enums exactly.\n- If the draft omits optional fields, use empty strings, empty arrays, false, or null only when that fits the schema.\n- Never invent unrelated fields.\n"
+        system_prompt: "You are Elma's legacy JSON outputter.\n\nThis profile is deprecated by the compact DSL migration.\n\nReturn exactly one DSL line and nothing else:\nDEPRECATED reason=\"json_outputter is disabled; migrate caller to DSL\"\n"
             .to_string(),
     }
 }
@@ -200,7 +200,7 @@ pub(crate) fn default_final_answer_extractor_config(base_url: &str, model: &str)
         reasoning_format: "none".to_string(),
         max_tokens: 160,
         timeout_s: 120,
-        system_prompt: "You are Elma's final answer extractor.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"final\": \"plain text final answer\"\n}\n\nRules:\n- Remove all reasoning, scratchpad text, and internal analysis.\n- Preserve the intended answer faithfully.\n- Use the original system prompt and original user input as the instruction contract.\n- Use the assistant draft and separated reasoning as the semantic source.\n- If the draft has no final answer but the reasoning clearly implies one, produce the shortest faithful final answer.\n- Do not broaden the answer beyond what the original user asked.\n- Do not add workspace background, architecture details, or extra explanations unless the original request explicitly asked for them.\n- Prefer the shortest direct answer that fully satisfies the request.\n- Output plain terminal text inside the final field.\n- No markdown unless the original instruction explicitly asked for it.\n- No prose outside the JSON object.\n"
+        system_prompt: "You are Elma's final answer extractor.\n\nReturn exactly one DSL line and nothing else:\nFINAL final=\"plain text final answer\"\n\nRules:\n- Remove all reasoning, scratchpad text, and internal analysis.\n- Preserve the intended answer faithfully.\n- Prefer the shortest direct answer that fully satisfies the request.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -217,7 +217,7 @@ pub(crate) fn default_calibration_judge_config(base_url: &str, model: &str) -> P
         reasoning_format: "none".to_string(),
         max_tokens: 512,
         timeout_s: 120,
-        system_prompt: "You evaluate whether Elma's final answer satisfied a calibration scenario.\n\nReturn ONLY one valid JSON object. No prose. No code fences.\n\nSchema:\n{\n  \"status\": \"pass\" | \"fail\",\n  \"reason\": \"one short sentence\",\n  \"answered_request\": true | false,\n  \"faithful_to_evidence\": true | false,\n  \"plain_text\": true | false\n}\n\nRules:\n- Pass only when the answer clearly addresses the user's final request.\n- faithful_to_evidence must be true only if the answer stays within the provided evidence or clearly marks uncertainty.\n- plain_text must be false if the answer uses Markdown and the user did not ask for Markdown.\n- Be strict.\n"
+        system_prompt: "You evaluate whether Elma's final answer satisfied a calibration scenario.\n\nReturn exactly one DSL line and nothing else:\nJUDGE status=pass reason=\"one short sentence\" answered_request=true faithful_to_evidence=true plain_text=true\n\nRules:\n- status: pass | fail\n- answered_request/faithful_to_evidence/plain_text: true|false\n- Be strict and concise.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -234,7 +234,7 @@ pub(crate) fn default_complexity_assessor_config(base_url: &str, model: &str) ->
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "Assess task complexity. Return JSON: {\"complexity\":\"DIRECT\"|\"INVESTIGATE\"|\"MULTISTEP\"|\"OPEN_ENDED\",\"risk\":\"LOW\"|\"MEDIUM\"|\"HIGH\"}"
+        system_prompt: "Return exactly one DSL line and nothing else:\nASSESS complexity=DIRECT risk=LOW needs_evidence=false needs_tools=false needs_decision=false needs_plan=false suggested_pattern=reply_only\n"
             .to_string(),
     }
 }
@@ -251,7 +251,7 @@ pub(crate) fn default_evidence_need_assessor_config(base_url: &str, model: &str)
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Assess if the task needs workspace evidence. Return JSON: {\"needs_evidence\":bool,\"needs_tools\":bool}"
+        system_prompt: "Return exactly one DSL line and nothing else:\nASSESS needs_evidence=false needs_tools=false\n"
             .to_string(),
     }
 }
@@ -268,7 +268,7 @@ pub(crate) fn default_action_need_assessor_config(base_url: &str, model: &str) -
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Assess if the task needs decision or planning. Return JSON: {\"needs_decision\":bool,\"needs_plan\":bool}"
+        system_prompt: "Return exactly one DSL line and nothing else:\nASSESS needs_decision=false needs_plan=false\n"
             .to_string(),
     }
 }
@@ -285,8 +285,9 @@ pub(crate) fn default_pattern_suggester_config(base_url: &str, model: &str) -> P
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Suggest the reasoning pattern for this task. Return JSON: {\"suggested_pattern\":\"reply_only\"|\"inspect_reply\"|\"inspect_summarize_reply\"|\"inspect_decide_reply\"|\"inspect_edit_verify_reply\"|\"execute_reply\"|\"plan_reply\"|\"masterplan_reply\"}"
-            .to_string(),
+        system_prompt:
+            "Return exactly one DSL line and nothing else:\nPATTERN suggested_pattern=reply_only\n"
+                .to_string(),
     }
 }
 
@@ -302,7 +303,7 @@ pub(crate) fn default_formula_selector_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "Select the best reasoning formula for this task. Return JSON: {\"primary\":\"formula_name\",\"alternatives\":[],\"reason\":\"...\"}"
+        system_prompt: "Return exactly one DSL line and nothing else:\nFORMULA primary=reply_only alt1=capability_reply reason=\"one short sentence\" memory_id=\"\"\n"
             .to_string(),
     }
 }
@@ -319,7 +320,7 @@ pub(crate) fn default_formula_memory_matcher_config(base_url: &str, model: &str)
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Match the task to a formula memory by signature. Return JSON: {\"memory_id\":\"...\"|\"\"}"
+        system_prompt: "Return exactly one DSL line and nothing else:\nMATCH memory_id=\"\"\n"
             .to_string(),
     }
 }
@@ -336,7 +337,7 @@ pub(crate) fn default_workflow_planner_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 768,
         timeout_s: 120,
-        system_prompt: "Plan the workflow scope and evidence needs. Return JSON: {\"objective\":\"...\",\"scope\":{\"focus_paths\":[],\"include_globs\":[],\"exclude_globs\":[],\"query_terms\":[],\"expected_artifacts\":[]}}"
+        system_prompt: "Return exactly one WORKFLOW DSL block and nothing else:\nWORKFLOW objective=\"one sentence\" complexity=DIRECT risk=LOW needs_evidence=false preferred_formula=reply_only memory_id=\"\" reason=\"one short sentence\" scope_objective=\"one sentence\" scope_reason=\"one short sentence\"\nEND\n"
             .to_string(),
     }
 }
@@ -353,8 +354,9 @@ pub(crate) fn default_workflow_complexity_planner_config(base_url: &str, model: 
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Plan workflow complexity and risk. Return JSON: {\"complexity\":\"DIRECT\"|\"INVESTIGATE\"|\"MULTISTEP\"|\"OPEN_ENDED\",\"risk\":\"LOW\"|\"MEDIUM\"|\"HIGH\"}"
-            .to_string(),
+        system_prompt:
+            "Return exactly one DSL line and nothing else:\nASSESS complexity=DIRECT risk=LOW\n"
+                .to_string(),
     }
 }
 
@@ -370,7 +372,8 @@ pub(crate) fn default_workflow_reason_planner_config(base_url: &str, model: &str
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Explain the workflow planning decision. Return JSON: {\"reason\":\"one short sentence\"}"
-            .to_string(),
+        system_prompt:
+            "Return exactly one DSL line and nothing else:\nREASON reason=\"one short sentence\"\n"
+                .to_string(),
     }
 }

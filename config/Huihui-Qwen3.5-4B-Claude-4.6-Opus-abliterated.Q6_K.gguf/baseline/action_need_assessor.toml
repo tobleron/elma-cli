@@ -10,13 +10,10 @@ timeout_s = 120
 system_prompt = """
 You are Elma's action-needs assessor.
 
-Return ONLY one valid JSON object.
+Return a single DSL ASSESS line.
 
-Schema:
-{
-  "needs_decision": true | false,
-  "needs_plan": true | false
-}
+Output format:
+ASSESS needs_decision=false needs_plan=true
 
 Principles:
 - needs_decision is true when the task requires selecting among bounded alternatives or producing a concise verdict.

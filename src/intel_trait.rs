@@ -418,12 +418,9 @@ pub(crate) fn apply_profile_grammar(
     req: &mut ChatCompletionRequest,
 ) -> Result<()> {
     if let Some(config_root) = crate::ui_chat::get_config_root_for_intel() {
-        if let Some(grammar_content) =
-            crate::json_grammar::get_grammar_for_profile(&profile.name, config_root)?
-        {
-            let grammar_str = crate::json_grammar::load_grammar(&grammar_content, config_root)?;
-            req.grammar = Some(grammar_str);
-        }
+        crate::json_grammar::inject_grammar_for_profile(req, &profile.name, config_root)?;
+    } else if let Some(grammar) = crate::json_grammar::builtin_grammar_for_profile(&profile.name) {
+        req.grammar = Some(grammar.to_string());
     }
     Ok(())
 }
@@ -448,23 +445,6 @@ pub(crate) fn build_intel_system_user_request(
     )
 }
 
-pub(crate) async fn execute_intel_json_for_profile<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    profile: &Profile,
-    mut req: ChatCompletionRequest,
-) -> Result<T> {
-    apply_profile_grammar(profile, &mut req)?;
-    let chat_url = intel_chat_url(profile)?;
-    chat_json_with_repair_for_profile_timeout(
-        client,
-        &chat_url,
-        &req,
-        &profile.name,
-        profile.timeout_s,
-    )
-    .await
-}
-
 fn log_intel_trace(unit_name: &str, profile: &Profile, chat_url: &Url, grammar_injected: bool) {
     append_trace_log_line(&format!(
         "[INTEL_EXECUTE] unit={} model={}",
@@ -481,45 +461,6 @@ fn log_intel_trace(unit_name: &str, profile: &Profile, chat_url: &Url, grammar_i
             unit_name
         ));
     }
-}
-
-pub(crate) async fn execute_traced_intel_json_for_profile<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    unit_name: &str,
-    profile: &Profile,
-    mut req: ChatCompletionRequest,
-) -> Result<T> {
-    let chat_url = intel_chat_url(profile)?;
-    let had_grammar = req.grammar.is_some();
-    apply_profile_grammar(profile, &mut req)?;
-    log_intel_trace(
-        unit_name,
-        profile,
-        &chat_url,
-        had_grammar || req.grammar.is_some(),
-    );
-    let result = chat_json_with_repair_for_profile_timeout(
-        client,
-        &chat_url,
-        &req,
-        &profile.name,
-        profile.timeout_s,
-    )
-    .await?;
-    append_trace_log_line(&format!(
-        "[INTEL_HTTP_DONE] unit={} received response",
-        unit_name
-    ));
-    Ok(result)
-}
-
-pub(crate) async fn execute_intel_json_from_user_content<T: DeserializeOwned + 'static>(
-    client: &reqwest::Client,
-    profile: &Profile,
-    user_content: String,
-) -> Result<T> {
-    let req = build_intel_system_user_request(profile, user_content);
-    execute_intel_json_for_profile(client, profile, req).await
 }
 
 pub(crate) async fn execute_intel_text_for_profile(
@@ -546,6 +487,52 @@ pub(crate) async fn execute_intel_text_from_user_content(
 ) -> Result<String> {
     let req = build_intel_system_user_request(profile, user_content);
     execute_intel_text_for_profile(client, profile, req).await
+}
+
+// ── DSL output execution ──
+
+/// Execute an intel request and parse the response as compact DSL.
+/// Returns a serde_json::Value that can be used with serde_json::from_value
+/// to populate domain types, or wrapped in IntelOutput.
+pub(crate) async fn execute_intel_dsl_for_profile(
+    client: &reqwest::Client,
+    profile: &Profile,
+    mut req: ChatCompletionRequest,
+) -> Result<serde_json::Value> {
+    let chat_url = intel_chat_url(profile)?;
+    apply_profile_grammar(profile, &mut req)?;
+    let reasoning_format = intel_dsl_reasoning_format(profile);
+    if reasoning_format.eq_ignore_ascii_case("auto") {
+        req.max_tokens = req.max_tokens.max(512);
+    }
+    req.reasoning_format = Some(reasoning_format);
+    req.temperature = 0.0;
+    req.top_p = 1.0;
+    log_intel_trace(&profile.name, profile, &chat_url, req.grammar.is_some());
+    chat_dsl_with_repair(client, &chat_url, &req).await
+}
+
+fn intel_dsl_reasoning_format(profile: &Profile) -> String {
+    if let Some(behavior) = crate::ui_state::current_model_behavior_profile() {
+        if behavior
+            .preferred_reasoning_format
+            .eq_ignore_ascii_case("auto")
+            && !behavior.none_final_clean
+        {
+            return "auto".to_string();
+        }
+    }
+    profile.reasoning_format.clone()
+}
+
+/// Build a system+user request and execute it, parsing the response as DSL.
+pub(crate) async fn execute_intel_dsl_from_user_content(
+    client: &reqwest::Client,
+    profile: &Profile,
+    user_content: String,
+) -> Result<serde_json::Value> {
+    let req = build_intel_system_user_request(profile, user_content);
+    execute_intel_dsl_for_profile(client, profile, req).await
 }
 
 // Tests

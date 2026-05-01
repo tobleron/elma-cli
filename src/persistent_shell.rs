@@ -137,10 +137,14 @@ impl PersistentShell {
             self.recreate()?;
         }
 
+        // IMPORTANT: the marker echo must be on its own line.
+        //
+        // Appending a trailing `;` breaks heredoc terminators (`EOF;`), which can leave the
+        // shell stuck waiting for the terminator and cause follow-up commands to fail.
         let full_cmd = if cfg!(windows) {
-            format!("{}; \necho '{}' $LASTEXITCODE\r\n", cmd, self.marker)
+            format!("{}\n echo '{}' $LASTEXITCODE\r\n", cmd, self.marker)
         } else {
-            format!("{}; \necho '{}' $?\r\n", cmd, self.marker)
+            format!("{}\n echo '{}' $?\r\n", cmd, self.marker)
         };
 
         self.master.write_all(full_cmd.as_bytes())?;
@@ -173,14 +177,19 @@ impl PersistentShell {
                         return;
                     }
                     Ok(_) => {
-                        if line.contains(&marker) && !line.contains(';') && !line.contains("echo") {
-                            let exit_code = line
+                        // Treat the marker line as complete only when we can parse an exit code
+                        // from the suffix. This avoids false positives when the PTY echoes the
+                        // input command text (which also includes the marker string).
+                        if line.contains(&marker) {
+                            if let Some(exit_code) = line
                                 .split(&marker)
                                 .nth(1)
                                 .and_then(|s| s.trim().parse::<i32>().ok())
-                                .unwrap_or(0);
-                            let _ = tx.send(Ok((exit_code, output.trim().to_string(), buf_reader)));
-                            return;
+                            {
+                                let _ =
+                                    tx.send(Ok((exit_code, output.trim().to_string(), buf_reader)));
+                                return;
+                            }
                         }
                         output.push_str(&line);
                     }

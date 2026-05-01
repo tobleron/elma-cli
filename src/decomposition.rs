@@ -6,6 +6,152 @@
 
 use crate::*;
 
+fn ctx_named(name: &'static str) -> crate::dsl::ParseContext {
+    crate::dsl::ParseContext {
+        dsl_variant: name,
+        line: None,
+    }
+}
+
+fn parse_masterplan_dsl(input: &str) -> crate::dsl::DslResult<Masterplan> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(crate::dsl::DslError::empty(ctx_named("masterplan")));
+    }
+    let parser = crate::dsl::DslBlockParser::new(ctx_named("masterplan"));
+    let block = parser.parse_block(input, "END")?;
+    if block.command != "MASTERPLAN" {
+        return Err(crate::dsl::DslError::unknown_command(
+            ctx_named("masterplan"),
+            &block.command,
+        ));
+    }
+    let goal = crate::dsl::require_field(&block.fields, "goal", &ctx_named("masterplan"))?;
+
+    let mut phases = Vec::new();
+    for line in &block.lines {
+        match line {
+            crate::dsl::DslLine::Text { text } => {
+                if !text.trim().is_empty() {
+                    return Err(crate::dsl::DslError::invalid_dsl(
+                        ctx_named("masterplan"),
+                        "unexpected text line; expected only PHASE commands",
+                    ));
+                }
+            }
+            crate::dsl::DslLine::Marker { marker } => {
+                return Err(crate::dsl::DslError::invalid_dsl(
+                    ctx_named("masterplan"),
+                    format!("unexpected marker {marker}"),
+                ));
+            }
+            crate::dsl::DslLine::Command { name, fields } => {
+                if name != "PHASE" {
+                    return Err(crate::dsl::DslError::unknown_command(
+                        ctx_named("masterplan"),
+                        name,
+                    ));
+                }
+                let name = crate::dsl::require_field(fields, "name", &ctx_named("masterplan"))?;
+                let objective =
+                    crate::dsl::require_field(fields, "objective", &ctx_named("masterplan"))?;
+                let success =
+                    crate::dsl::require_field(fields, "success", &ctx_named("masterplan"))?;
+                let deps = fields
+                    .iter()
+                    .find(|f| f.key == "deps")
+                    .map(|f| f.value.as_str())
+                    .unwrap_or("");
+                let dependencies = deps
+                    .split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>();
+                phases.push(Phase {
+                    name: name.to_string(),
+                    objective: objective.to_string(),
+                    success_criteria: success.to_string(),
+                    dependencies,
+                });
+            }
+        }
+    }
+    if phases.is_empty() {
+        return Err(crate::dsl::DslError::missing_field(
+            ctx_named("masterplan"),
+            "PHASE",
+        ));
+    }
+    if phases.len() > 6 {
+        return Err(crate::dsl::DslError::invalid_dsl(
+            ctx_named("masterplan"),
+            "too many phases (max 6)",
+        ));
+    }
+    Ok(Masterplan {
+        goal: goal.to_string(),
+        phases,
+    })
+}
+
+fn parse_subgoals_dsl(input: &str) -> crate::dsl::DslResult<Vec<String>> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(crate::dsl::DslError::empty(ctx_named("subgoals")));
+    }
+    let parser = crate::dsl::DslBlockParser::new(ctx_named("subgoals"));
+    let block = parser.parse_block(input, "END")?;
+    if block.command != "SUBGOALS" {
+        return Err(crate::dsl::DslError::unknown_command(
+            ctx_named("subgoals"),
+            &block.command,
+        ));
+    }
+    let mut out = Vec::new();
+    for line in &block.lines {
+        match line {
+            crate::dsl::DslLine::Text { text } => {
+                if !text.trim().is_empty() {
+                    return Err(crate::dsl::DslError::invalid_dsl(
+                        ctx_named("subgoals"),
+                        "unexpected text line; expected only SG commands",
+                    ));
+                }
+            }
+            crate::dsl::DslLine::Marker { marker } => {
+                return Err(crate::dsl::DslError::invalid_dsl(
+                    ctx_named("subgoals"),
+                    format!("unexpected marker {marker}"),
+                ));
+            }
+            crate::dsl::DslLine::Command { name, fields } => {
+                if name != "SG" {
+                    return Err(crate::dsl::DslError::unknown_command(
+                        ctx_named("subgoals"),
+                        name,
+                    ));
+                }
+                let text = crate::dsl::require_field(fields, "text", &ctx_named("subgoals"))?;
+                out.push(text.to_string());
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(crate::dsl::DslError::missing_field(
+            ctx_named("subgoals"),
+            "SG",
+        ));
+    }
+    if out.len() > 8 {
+        return Err(crate::dsl::DslError::invalid_dsl(
+            ctx_named("subgoals"),
+            "too many subgoals (max 8)",
+        ));
+    }
+    Ok(out)
+}
+
 /// Unit types in the hierarchy
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnitType {
@@ -96,19 +242,15 @@ For this OPEN_ENDED task, generate a MASTERPLAN with strategic overview.
 {}
 
 Generate a masterplan with:
-- Clear ultimate goal
-- 3-5 major phases
-- Success criteria for each phase
-- Dependencies between phases
+- Clear ultimate goal (one sentence)
+- 3-5 phases with objectives and success criteria
+- Dependencies between phases (by phase name)
 
-Output JSON format:
-{{
-  "goal": "ultimate objective",
-  "phases": [
-    {{"name": "Discovery", "objective": "...", "success_criteria": "...", "dependencies": []}},
-    ...
-  ]
-}}
+Return exactly one compact DSL block and nothing else:
+MASTERPLAN goal="one sentence"
+PHASE name="Phase name" objective="one sentence" success="one sentence" deps="Comma separated phase names or empty"
+PHASE name="..." objective="..." success="..." deps="..."
+END
 "#,
         objective,
         ws.trim(),
@@ -125,10 +267,15 @@ Output JSON format:
     let resp = chat_once(client, chat_url, &req).await?;
     let text = extract_response_text(&resp);
 
-    // Parse JSON
-    let masterplan: Masterplan = serde_json::from_str(&text)
-        .map_err(|e| anyhow::anyhow!("Failed to parse masterplan JSON: {}", e))?;
-
+    let masterplan = parse_masterplan_dsl(&text).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse masterplan DSL: {}",
+            crate::dsl::render_repair_hint_with_format(
+                &e,
+                "OBJECTIVE text=\"one line\" risk=low|medium|high\nGOAL text=\"...\" evidence_needed=true|false\nTASK id=N text=\"...\" status=ready|pending\nEND"
+            )
+        )
+    })?;
     Ok(masterplan)
 }
 
@@ -153,7 +300,12 @@ Each subgoal should be:
 - Measurable (clear completion criteria)
 - Ordered logically
 
-Output as JSON array of subgoal descriptions."#,
+Return exactly one compact DSL block and nothing else:
+SUBGOALS
+SG text="one subgoal"
+SG text="..."
+END
+"#,
         masterplan.goal,
         masterplan
             .phases
@@ -177,10 +329,15 @@ Output as JSON array of subgoal descriptions."#,
     let resp = chat_once(client, chat_url, &req).await?;
     let text = extract_response_text(&resp);
 
-    // Parse as array of strings
-    let subgoals: Vec<String> = serde_json::from_str(&text)
-        .map_err(|e| anyhow::anyhow!("Failed to parse subgoals JSON: {}", e))?;
-
+    let subgoals = parse_subgoals_dsl(&text).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to parse subgoals DSL: {}",
+            crate::dsl::render_repair_hint_with_format(
+                &e,
+                "SUBGOALS\nSG text=\"one subgoal description\"\nSG text=\"...\"\nEND"
+            )
+        )
+    })?;
     Ok(subgoals)
 }
 

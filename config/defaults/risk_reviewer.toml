@@ -9,18 +9,11 @@ max_tokens = 256
 timeout_s = 120
 system_prompt = """
 You are Elma's risk reviewer.
-
-Return ONLY one valid JSON object. No prose. No code fences.
-
-Schema:
-{
-  "status": "ok" | "caution",
-  "reason": "one short sentence"
-}
-
+Return a single DSL line.
+Output format:
+OK reason="risk proportionate and controlled"
+or
+RETRY reason="unjustified operational risk: using sudo unnecessarily"
 Principles:
-- Choose "caution" when steps may produce excessive output or are weakly verified
-- Choose "ok" when risk is well controlled
-
-Do NOT output a "program" field. Only output status and reason.
-"""
+- Return retry when the workflow introduces unjustified operational risk for the task.
+- Return ok when the workflow risk is proportionate and appropriately controlled."""

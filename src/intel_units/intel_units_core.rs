@@ -4,6 +4,7 @@
 //! WorkflowPlanner, FormulaSelector, ScopeBuilder, PatternSuggestion.
 
 use crate::intel_trait::*;
+use crate::intel_units::*;
 use crate::*;
 use serde_json::Value;
 
@@ -35,7 +36,8 @@ impl IntelUnit for ComplexityAssessmentUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let req = build_intel_system_user_request(
+        let dsl_result = execute_intel_dsl_from_user_content(
+            &context.client,
             &self.profile,
             crate::intel_narrative::build_complexity_narrative(
                 &context.user_message,
@@ -56,13 +58,80 @@ impl IntelUnit for ComplexityAssessmentUnit {
                     .clone()
                     .unwrap_or(serde_json::Value::Null),
             ),
+        )
+        .await?;
+
+        // Parse DSL result into assessment fields
+        let complexity = dsl_result
+            .get("complexity")
+            .and_then(|v| v.as_str())
+            .unwrap_or("INVESTIGATE")
+            .to_string();
+
+        let risk = dsl_result
+            .get("risk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("LOW")
+            .to_string();
+
+        let needs_evidence = dsl_result
+            .get("needs_evidence")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let needs_tools = dsl_result
+            .get("needs_tools")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let needs_decision = dsl_result
+            .get("needs_decision")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let needs_plan = dsl_result
+            .get("needs_plan")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let suggested_pattern = dsl_result
+            .get("suggested_pattern")
+            .and_then(|v| v.as_str())
+            .unwrap_or("reply_only")
+            .to_string();
+
+        let mut result = serde_json::Map::new();
+        result.insert(
+            "complexity".to_string(),
+            serde_json::Value::String(complexity),
+        );
+        result.insert("risk".to_string(), serde_json::Value::String(risk));
+        result.insert(
+            "needs_evidence".to_string(),
+            serde_json::Value::Bool(needs_evidence),
+        );
+        result.insert(
+            "needs_tools".to_string(),
+            serde_json::Value::Bool(needs_tools),
+        );
+        result.insert(
+            "needs_decision".to_string(),
+            serde_json::Value::Bool(needs_decision),
+        );
+        result.insert(
+            "needs_plan".to_string(),
+            serde_json::Value::Bool(needs_plan),
+        );
+        result.insert(
+            "suggested_pattern".to_string(),
+            serde_json::Value::String(suggested_pattern),
         );
 
-        let result: serde_json::Value =
-            execute_traced_intel_json_for_profile(&context.client, self.name(), &self.profile, req)
-                .await?;
-
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::Value::Object(result),
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -72,6 +141,21 @@ impl IntelUnit for ComplexityAssessmentUnit {
         }
         if d.get("risk").is_none() {
             return Err(IntelError::MissingField("risk".to_string()).into());
+        }
+        if d.get("needs_evidence").is_none() {
+            return Err(IntelError::MissingField("needs_evidence".to_string()).into());
+        }
+        if d.get("needs_tools").is_none() {
+            return Err(IntelError::MissingField("needs_tools".to_string()).into());
+        }
+        if d.get("needs_decision").is_none() {
+            return Err(IntelError::MissingField("needs_decision".to_string()).into());
+        }
+        if d.get("needs_plan").is_none() {
+            return Err(IntelError::MissingField("needs_plan".to_string()).into());
+        }
+        if d.get("suggested_pattern").is_none() {
+            return Err(IntelError::MissingField("suggested_pattern".to_string()).into());
         }
         match d.get("complexity").and_then(|v| v.as_str()) {
             Some("DIRECT") | Some("INVESTIGATE") | Some("MULTISTEP") | Some("OPEN_ENDED") => {}
@@ -99,10 +183,13 @@ impl IntelUnit for ComplexityAssessmentUnit {
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
-                "complexity": "INVESTIGATE", "risk": "LOW",
-                "needs_evidence": false, "needs_tools": false,
-                "needs_decision": false, "needs_plan": false,
-                "suggested_pattern": "reply_only",
+                "complexity": "INVESTIGATE".to_string(),
+                "risk": "LOW".to_string(),
+                "needs_evidence": false,
+                "needs_tools": false,
+                "needs_decision": false,
+                "needs_plan": false,
+                "suggested_pattern": "reply_only".to_string(),
             }),
             &format!("complexity assessment failed: {}", error),
         ))
@@ -137,7 +224,7 @@ impl IntelUnit for EvidenceNeedsUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_evidence_needs_narrative(
@@ -149,7 +236,33 @@ impl IntelUnit for EvidenceNeedsUnit {
             ),
         )
         .await?;
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+
+        // Parse DSL result into needs_evidence and needs_tools values
+        let needs_evidence = dsl_result
+            .get("needs_evidence")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let needs_tools = dsl_result
+            .get("needs_tools")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let mut result = serde_json::Map::new();
+        result.insert(
+            "needs_evidence".to_string(),
+            serde_json::Value::Bool(needs_evidence),
+        );
+        result.insert(
+            "needs_tools".to_string(),
+            serde_json::Value::Bool(needs_tools),
+        );
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::Value::Object(result),
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -166,7 +279,10 @@ impl IntelUnit for EvidenceNeedsUnit {
         trace_fallback(self.name(), error);
         Ok(IntelOutput::fallback(
             self.name(),
-            serde_json::json!({ "needs_evidence": false, "needs_tools": false }),
+            serde_json::json!({
+                "needs_evidence": false,
+                "needs_tools": false,
+            }),
             &format!("evidence needs assessment failed: {}", error),
         ))
     }
@@ -200,7 +316,7 @@ impl IntelUnit for ActionNeedsUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_action_needs_narrative(
@@ -212,7 +328,33 @@ impl IntelUnit for ActionNeedsUnit {
             ),
         )
         .await?;
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+
+        // Parse DSL result into needs_decision and needs_plan values
+        let needs_decision = dsl_result
+            .get("needs_decision")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let needs_plan = dsl_result
+            .get("needs_plan")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let mut result = serde_json::Map::new();
+        result.insert(
+            "needs_decision".to_string(),
+            serde_json::Value::Bool(needs_decision),
+        );
+        result.insert(
+            "needs_plan".to_string(),
+            serde_json::Value::Bool(needs_plan),
+        );
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::Value::Object(result),
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -229,7 +371,10 @@ impl IntelUnit for ActionNeedsUnit {
         trace_fallback(self.name(), error);
         Ok(IntelOutput::fallback(
             self.name(),
-            serde_json::json!({ "needs_decision": false, "needs_plan": false }),
+            serde_json::json!({
+                "needs_decision": false,
+                "needs_plan": false,
+            }),
             &format!("action needs assessment failed: {}", error),
         ))
     }
@@ -263,7 +408,7 @@ impl IntelUnit for WorkflowPlannerUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: WorkflowPlannerOutput = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_workflow_planner_narrative(
@@ -275,6 +420,8 @@ impl IntelUnit for WorkflowPlannerUnit {
             ),
         )
         .await?;
+
+        let result: WorkflowPlannerOutput = serde_json::from_value(dsl_result)?;
         Ok(IntelOutput::success(
             self.name(),
             serde_json::to_value(result)?,
@@ -292,6 +439,21 @@ impl IntelUnit for WorkflowPlannerUnit {
         if output.get("risk").is_none() {
             return Err(IntelError::MissingField("risk".to_string()).into());
         }
+        if output.get("needs_evidence").is_none() {
+            return Err(IntelError::MissingField("needs_evidence".to_string()).into());
+        }
+        if output.get("scope").is_none() {
+            return Err(IntelError::MissingField("scope".to_string()).into());
+        }
+        if output.get("preferred_formula").is_none() {
+            return Err(IntelError::MissingField("preferred_formula".to_string()).into());
+        }
+        if output.get("memory_id").is_none() {
+            return Err(IntelError::MissingField("memory_id".to_string()).into());
+        }
+        if output.get("reason").is_none() {
+            return Err(IntelError::MissingField("reason".to_string()).into());
+        }
         Ok(())
     }
 
@@ -300,15 +462,23 @@ impl IntelUnit for WorkflowPlannerUnit {
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
-                "objective": "Complete the user's request", "complexity": "DIRECT", "risk": "LOW",
+                "objective": "Complete the user's request".to_string(),
+                "complexity": "INVESTIGATE".to_string(),
+                "risk": "LOW".to_string(),
                 "needs_evidence": false,
                 "scope": {
-                    "objective": "Complete the user's request",
-                    "focus_paths": [], "include_globs": [], "exclude_globs": [],
-                    "query_terms": [], "expected_artifacts": [], "reason": "fallback scope"
+                    "objective": "Complete the user's request".to_string(),
+                    "focus_paths": Vec::<String>::new(),
+                    "include_globs": Vec::<String>::new(),
+                    "exclude_globs": Vec::<String>::new(),
+                    "query_terms": Vec::<String>::new(),
+                    "expected_artifacts": Vec::<String>::new(),
+                    "reason": "fallback scope".to_string()
                 },
-                "preferred_formula": "reply_only", "alternatives": [], "memory_id": "",
-                "reason": "fallback workflow",
+                "preferred_formula": "reply_only".to_string(),
+                "alternatives": Vec::<String>::new(),
+                "memory_id": "".to_string(),
+                "reason": "fallback workflow".to_string(),
             }),
             &format!("workflow planner failed: {}", error),
         ))
@@ -343,7 +513,7 @@ impl IntelUnit for PatternSuggestionUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             serde_json::json!({
@@ -403,7 +573,7 @@ impl IntelUnit for ScopeBuilderUnit {
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
         let complexity = serde_json::to_value(&context.complexity).unwrap_or(Value::Null);
-        let result: ScopePlan = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_scope_builder_narrative(
@@ -416,6 +586,7 @@ impl IntelUnit for ScopeBuilderUnit {
             ),
         )
         .await?;
+        let result: ScopePlan = serde_json::from_value(dsl_result)?;
         Ok(IntelOutput::success(
             self.name(),
             serde_json::to_value(result)?,
@@ -482,7 +653,7 @@ impl IntelUnit for FormulaSelectorUnit {
             .cloned()
             .unwrap_or_else(|| serde_json::json!([]));
         let complexity = serde_json::to_value(&context.complexity).unwrap_or(Value::Null);
-        let result: FormulaSelection = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_formula_selector_narrative(
@@ -507,6 +678,7 @@ impl IntelUnit for FormulaSelectorUnit {
             ),
         )
         .await?;
+        let result: FormulaSelection = serde_json::from_value(dsl_result)?;
         Ok(IntelOutput::success(
             self.name(),
             serde_json::to_value(result)?,

@@ -5,36 +5,26 @@ temperature = 0.2
 top_p = 1.0
 repeat_penalty = 1.0
 reasoning_format = "none"
-max_tokens = 180
+max_tokens = 512
 timeout_s = 120
 system_prompt = """
 You are Elma's workflow planner.
+Return exactly one compact DSL block, and nothing else.
 
-Analyze the user's request and classification priors to determine the minimum sufficient workflow structure.
-
-Return a JSON object with:
-- objective: One sentence describing what the workflow should achieve
-- complexity: DIRECT, INVESTIGATE, MULTISTEP, or OPEN_ENDED
-- risk: LOW, MEDIUM, or HIGH
-- needs_evidence: true if workspace inspection is needed
-- scope: object with objective, focus_paths, include_globs, exclude_globs, query_terms, expected_artifacts, reason
-- preferred_formula: one of reply_only, capability_reply, inspect_reply, inspect_summarize_reply, inspect_decide_reply, inspect_edit_verify_reply, execute_reply, plan_reply, masterplan_reply
-- alternatives: 0-3 alternative formulas
-- memory_id: matched formula memory id or empty string
-- reason: one short sentence
+Format:
+WORKFLOW objective="one sentence" complexity=DIRECT risk=LOW needs_evidence=false preferred_formula=reply_only memory_id="" reason="one short sentence" scope_objective="one sentence" scope_reason="one short sentence"
+F path="relative/path"
+IG glob="glob/**"
+EG glob="glob/**"
+Q text="query term"
+A artifact="expected artifact"
+ALT formula="formula_name"
+END
 
 Rules:
-- Return only valid JSON
-- Keep arrays short and relevant
-- Prefer the smallest sufficient scope
-- If no formula memory matches, use an empty string for memory_id
-
-Examples:
-{"objective":"List repository files","complexity":"DIRECT","risk":"LOW","needs_evidence":false,"scope":{"objective":"List repository files","focus_paths":[],"include_globs":[],"exclude_globs":[],"query_terms":[],"expected_artifacts":[],"reason":"Command output is self-contained"},"preferred_formula":"execute_reply","alternatives":["inspect_reply"],"memory_id":"","reason":"Single direct command"}
-{"objective":"Inspect Cargo workspace configuration","complexity":"INVESTIGATE","risk":"LOW","needs_evidence":true,"scope":{"objective":"Inspect Cargo workspace configuration","focus_paths":["Cargo.toml"],"include_globs":["Cargo.toml"],"exclude_globs":[],"query_terms":["workspace"],"expected_artifacts":[],"reason":"Need config evidence"},"preferred_formula":"inspect_reply","alternatives":["inspect_summarize_reply"],"memory_id":"","reason":"Requires focused inspection"}
-{"objective":"Update session logging implementation","complexity":"MULTISTEP","risk":"MEDIUM","needs_evidence":true,"scope":{"objective":"Update session logging implementation","focus_paths":["src"],"include_globs":["src/**/*.rs"],"exclude_globs":["target/**"],"query_terms":["session log"],"expected_artifacts":["code changes","verification output"],"reason":"Need code inspection before edits"},"preferred_formula":"inspect_edit_verify_reply","alternatives":["plan_reply"],"memory_id":"","reason":"Edit flow needs inspection and verification"}
-{"objective":"Design a local AI CLI roadmap","complexity":"OPEN_ENDED","risk":"MEDIUM","needs_evidence":false,"scope":{"objective":"Design a local AI CLI roadmap","focus_paths":[],"include_globs":[],"exclude_globs":[],"query_terms":[],"expected_artifacts":["roadmap"],"reason":"High-level planning task"},"preferred_formula":"masterplan_reply","alternatives":["plan_reply"],"memory_id":"","reason":"Strategic multi-phase planning"}
-
-Edge case:
-{"objective":"Answer a short conversational turn","complexity":"DIRECT","risk":"LOW","needs_evidence":false,"scope":{"objective":"Answer a short conversational turn","focus_paths":[],"include_globs":[],"exclude_globs":[],"query_terms":[],"expected_artifacts":[],"reason":"No workspace evidence needed"},"preferred_formula":"reply_only","alternatives":["capability_reply"],"memory_id":"","reason":"Keep the response lightweight"}
-"""
+- Output exactly one WORKFLOW block terminated by END.
+- Keep lists short (0-6 lines per list type).
+- Use workspace-relative paths and globs only.
+- preferred_formula must be one of: reply_only, capability_reply, inspect_reply, inspect_summarize_reply, inspect_decide_reply, inspect_edit_verify_reply, execute_reply, plan_reply, masterplan_reply.
+- Use memory_id="" when no memory should be reused.
+- No JSON, Markdown fences, or prose outside the DSL."""

@@ -10,12 +10,10 @@ timeout_s = 120
 system_prompt = """
 Assess if a request requires explicit ordering of steps (dependencies matter).
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "requires_ordering": true | false
-}
+Format:
+ASSESS requires_ordering=false
 
 Principles:
 Explicit ordering is required when:
@@ -32,4 +30,7 @@ Ordering is NOT required when:
 - Simple read/summarize without transformation
 
 Be conservative: if steps build on each other, require ordering.
+
+Rules:
+- No JSON, Markdown fences, or prose outside the DSL line.
 """

@@ -1,0 +1,106 @@
+# Ground-truth assertions for core DSL action E2E prompts (Task 367).
+# Each entry maps a prompt file to expected DSL actions and outcomes.
+# The harness can use this to validate model behavior automatically.
+
+[prompts]
+  [prompts.p005_read_core_alpha]
+    file = "005_read_core_alpha.md"
+    expected_actions = ["R"]
+    forbidden_actions = ["S", "X"]
+    min_lines = 3
+    contains_marker = "DSL_CORE_ALPHA"
+
+  [prompts.p006_list_sandbox_dirs]
+    file = "006_list_sandbox_dirs.md"
+    expected_actions = ["L"]
+    forbidden_actions = ["X"]
+    min_list_results = 8
+
+  [prompts.p007_search_core_beta]
+    file = "007_search_core_beta.md"
+    expected_actions = ["S", "R"]
+    forbidden_actions = ["X"]
+    contains_marker = "DSL_CORE_BETA"
+    expected_file = "DslCoreBeta.txt"
+
+  [prompts.p008_search_symbol_alpha]
+    file = "008_search_symbol_alpha.md"
+    expected_actions = ["Y", "R"]
+    forbidden_actions = ["S", "X"]
+    contains_marker = "DSL_SYMBOL_ALPHA"
+    expected_file = "DslSymbolAlpha.rs"
+
+  [prompts.p009_verify_line_count]
+    file = "009_verify_line_count.md"
+    expected_actions = ["X", "R"]
+    expected_count = 3
+
+  [prompts.p010_ask_ambiguous_search]
+    file = "010_ask_ambiguous_search.md"
+    expected_actions = ["S", "ASK"]
+    forbidden_actions_before_ask = ["R"]
+    ambiguous_match_count = 2
+
+  [prompts.p011_done_after_read]
+    file = "011_done_after_read.md"
+    expected_actions = ["R", "DONE"]
+    forbidden_actions = ["X"]
+    contains_marker = "DSL_CORE_BETA"
+
+  [prompts.p012_mutation_exact_edit]
+    file = "012_mutation_exact_edit.md"
+    expected_actions = ["R", "E", "R"]
+    forbidden_actions = ["X"]
+    contains_marker = "DSL_MUTATION_NEW"
+    file_unchanged_expected = false
+
+  [prompts.p013_mutation_ambiguous_edit]
+    file = "013_mutation_ambiguous_edit.md"
+    expected_actions = ["R"]
+    forbidden_actions = ["E"]
+    safe_failure = true
+    file_unchanged_expected = true
+
+  [prompts.p014_mutation_nonexistent_old]
+    file = "014_mutation_nonexistent_old.md"
+    expected_actions = ["R"]
+    forbidden_actions = ["E"]
+    safe_failure = true
+    file_unchanged_expected = true
+
+  [prompts.p015_mutation_stale_read]
+    file = "015_mutation_stale_read.md"
+    expected_actions = ["R", "R", "E", "R"]
+    forbidden_actions = ["X"]
+    contains_marker = "STALE_MARKER_REPLACED"
+
+  [prompts.p104_skills_formulas_repo_inspection]
+    file = "skills_formulas.md#prompt-1-repo-inspection"
+    expected_actions = ["S", "R"]
+    forbidden_actions = ["E", "X", "ASK"]
+    skill_hint = "repo_explorer"
+
+  [prompts.p105_skills_formulas_document_read]
+    file = "skills_formulas.md#prompt-2-document-read"
+    expected_actions = ["R"]
+    forbidden_actions = ["E", "X", "S"]
+    skill_hint = "document_reader"
+
+  [prompts.p106_skills_formulas_safe_edit]
+    file = "skills_formulas.md#prompt-3-safe-edit"
+    expected_actions = ["R", "E", "R"]
+    forbidden_actions = ["X"]
+    skill_hint = "task_steward"
+    file_unchanged_expected = false
+
+  [prompts.p107_skills_formulas_multi_step_plan]
+    file = "skills_formulas.md#prompt-4-multi-step"
+    expected_actions = ["S", "R"]
+    forbidden_actions = ["ASK", "X"]
+    skill_hint = "repo_explorer"
+
+  [prompts.p108_skills_formulas_direct_answer]
+    file = "skills_formulas.md#prompt-5-direct-answer"
+    expected_actions = ["DONE"]
+    forbidden_actions = ["S", "R", "L", "Y", "E", "X", "ASK"]
+    skill_hint = "general"

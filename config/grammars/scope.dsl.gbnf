@@ -1,0 +1,11 @@
+root ::= scope_header ws scope_line* ws "END" ws
+scope_header ::= "SCOPE" ws "objective=" string
+scope_line ::= focus_path | include_glob | exclude_glob | query_term | artifact_line
+focus_path ::= "F" ws "path=" string
+include_glob ::= "I" ws "glob=" string
+exclude_glob ::= "X" ws "glob=" string
+query_term ::= "Q" ws "text=" string
+artifact_line ::= "A" ws "value=" string
+string ::= "\"" char* "\""
+char ::= [^"\\\r\n] | "\\" ["\\nrt]
+ws ::= [ \t\n\r]*

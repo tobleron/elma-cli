@@ -241,6 +241,40 @@ pub(crate) fn mark_summary_applied(session_root: &Path, turn_number: usize) -> R
     Ok(())
 }
 
+/// Save decomposition pyramid to session metadata for replay continuity.
+pub(crate) fn save_pyramid(
+    session_root: &Path,
+    objective: &str,
+    risk: &str,
+    goals: &[crate::decomposition_pyramid::PyramidGoal],
+    tasks: &[crate::decomposition_pyramid::PyramidTask],
+) -> Result<()> {
+    let path = session_root.join("session.json");
+    let mut session_data: serde_json::Value = if path.exists() {
+        let raw =
+            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    session_data["pyramid"] = serde_json::json!({
+        "objective": objective,
+        "risk": risk,
+        "goals": goals.iter().map(|g| serde_json::json!({
+            "text": g.text,
+            "evidence_needed": g.evidence_needed,
+        })).collect::<Vec<_>>(),
+        "tasks": tasks.iter().map(|t| serde_json::json!({
+            "id": t.id,
+            "text": t.text,
+            "status": t.status,
+        })).collect::<Vec<_>>(),
+    });
+    let json = serde_json::to_string_pretty(&session_data).context("pretty-print session.json")?;
+    std::fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
 // ── sequence helpers ──────────────────────────────────────────────────
 
 fn next_shell_seq(artifacts_dir: &Path) -> Result<u32> {
@@ -280,4 +314,63 @@ fn next_seq_in_dir(dir: &Path, prefix: &str) -> Result<u32> {
         }
     }
     Ok(max + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decomposition_pyramid::{PyramidGoal, PyramidTask};
+
+    #[test]
+    fn test_save_pyramid_creates_session_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        let session_root = tmp.path().to_path_buf();
+        let goals = vec![PyramidGoal {
+            text: "Test routing".to_string(),
+            evidence_needed: true,
+        }];
+        let tasks = vec![PyramidTask {
+            id: 1,
+            text: "Test infer".to_string(),
+            status: "ready".to_string(),
+        }];
+        save_pyramid(&session_root, "Test the router", "low", &goals, &tasks).unwrap();
+
+        let path = session_root.join("session.json");
+        assert!(path.exists(), "session.json should exist");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let data: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(data["pyramid"]["objective"], "Test the router");
+        assert_eq!(data["pyramid"]["risk"], "low");
+        assert_eq!(data["pyramid"]["goals"].as_array().unwrap().len(), 1);
+        assert_eq!(data["pyramid"]["tasks"].as_array().unwrap().len(), 1);
+        assert_eq!(data["pyramid"]["tasks"][0]["id"], 1);
+    }
+
+    #[test]
+    fn test_save_pyramid_merges_with_existing_data() {
+        let tmp = tempfile::tempdir().unwrap();
+        let session_root = tmp.path().to_path_buf();
+
+        // Write existing session.json with goal_state
+        let initial = serde_json::json!({
+            "goal_state": {"status": "active"},
+        });
+        std::fs::write(
+            session_root.join("session.json"),
+            serde_json::to_string_pretty(&initial).unwrap(),
+        )
+        .unwrap();
+
+        let goals = vec![];
+        let tasks = vec![];
+        save_pyramid(&session_root, "Test", "low", &goals, &tasks).unwrap();
+
+        let raw = std::fs::read_to_string(session_root.join("session.json")).unwrap();
+        let data: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        // Existing data preserved
+        assert_eq!(data["goal_state"]["status"], "active");
+        // New pyramid data added
+        assert_eq!(data["pyramid"]["objective"], "Test");
+    }
 }

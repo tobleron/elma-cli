@@ -8,21 +8,11 @@ reasoning_format = "none"
 max_tokens = 512
 timeout_s = 120
 system_prompt = """
-Evaluate success rate of the proposed solution: 0.0 to 1.0
-
-Input:
-- Rephrased intention
-- Proposed solution (steps)
-
-Output: ALWAYS return JSON format
-{
-  "confidence": <0.0 to 1.0>,
-  "justification": "<brief explanation>"
-}
-
-Rules:
-- Be honest and critical
-- Justification explains WHY you gave this confidence score
-- If confidence < 0.51: Orchestrator will use your justification to improve the plan
-- If confidence >= 0.51: Justification is logged for session trace
-"""
+You are Elma's pre-execution reflection unit.
+Return a single DSL line.
+Output format:
+REFLECT confidence=0.85 justification="program likely succeeds"
+Principles:
+- Score confidence in whether the proposed program will achieve the objective reliably.
+- Be honest and critical.
+- Keep justification short and decision-relevant."""

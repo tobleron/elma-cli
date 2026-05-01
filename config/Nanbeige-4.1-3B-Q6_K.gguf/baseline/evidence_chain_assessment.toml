@@ -10,12 +10,10 @@ timeout_s = 120
 system_prompt = """
 Assess if a request requires an evidence chain (multiple evidence-gathering steps).
 
-Return ONLY one valid JSON object.
+Return exactly one DSL line and nothing else.
 
-Schema:
-{
-  "requires_evidence_chain": true | false
-}
+Format:
+ASSESS requires_evidence_chain=false
 
 Principles:
 Evidence chain is required when:
@@ -31,4 +29,7 @@ Evidence chain is NOT required when:
 - Simple greeting or capability check
 
 Be conservative: if uncertain, prefer evidence chain.
+
+Rules:
+- No JSON, Markdown fences, or prose outside the DSL line.
 """

@@ -434,6 +434,16 @@ async fn refine_route_with_evidence_needs(
     user_message: &str,
     mut route_decision: RouteDecision,
 ) -> RouteDecision {
+    // Skip evidence assessment for all CHAT routes. CHAT by definition does
+    // not require tools or evidence. This removes wasted LLM calls for
+    // greetings, self-identity questions, and ambiguous-but-CHAT turns
+    // while preserving the assessment for SHELL/WORKFLOW/PLAN routes.
+    if route_decision.route.eq_ignore_ascii_case("CHAT") {
+        trace(&runtime.args, "evidence_needs: skipping for CHAT route");
+        route_decision.evidence_required = false;
+        return route_decision;
+    }
+
     let mut conversation_excerpt = runtime
         .messages
         .iter()
@@ -496,51 +506,6 @@ async fn refine_route_with_evidence_needs(
 
     if output.fallback_used || !(needs_evidence || needs_tools) {
         return route_decision;
-    }
-
-    if route_decision.route.eq_ignore_ascii_case("CHAT") {
-        // Preserve a high-confidence CHAT route even when the evidence
-        // assessor thinks tools are needed. The primary classifiers
-        // (speech_act, workflow, mode) are more authoritative for
-        // route determination than the evidence assessor, which
-        // sometimes flags greetings as needs_tools=true due to the
-        // workspace brief making it seem like work is needed.
-        let is_confident_chat = route_decision.entropy < 0.3
-            || route_decision.workflow.choice.eq_ignore_ascii_case("CHAT");
-        if is_confident_chat {
-            return route_decision;
-        }
-        route_decision.route = "SHELL".to_string();
-        route_decision.source = format!(
-            "evidence_needs_override previous_source:{}",
-            route_decision.source
-        );
-        route_decision.distribution = vec![
-            ("SHELL".to_string(), 1.0),
-            ("CHAT".to_string(), 0.0),
-            ("PLAN".to_string(), 0.0),
-            ("MASTERPLAN".to_string(), 0.0),
-            ("DECIDE".to_string(), 0.0),
-        ];
-        route_decision.margin = 1.0;
-        route_decision.entropy = 0.0;
-        route_decision.workflow = ProbabilityDecision {
-            choice: "WORKFLOW".to_string(),
-            source: "evidence_needs_override".to_string(),
-            distribution: vec![("WORKFLOW".to_string(), 1.0), ("CHAT".to_string(), 0.0)],
-            margin: 1.0,
-            entropy: 0.0,
-        };
-        route_decision.mode = ProbabilityDecision {
-            choice: if needs_tools { "EXECUTE" } else { "INSPECT" }.to_string(),
-            source: "evidence_needs_override".to_string(),
-            distribution: vec![(
-                if needs_tools { "EXECUTE" } else { "INSPECT" }.to_string(),
-                1.0,
-            )],
-            margin: 1.0,
-            entropy: 0.0,
-        };
     }
 
     route_decision.evidence_required = true;
@@ -1265,10 +1230,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                     .collect();
                 runtime
                     .messages
-                    .push(ChatMessage::simple(
-                        "tool",
-                        &tool_summary.join("\n"),
-                    ));
+                    .push(ChatMessage::simple("tool", &tool_summary.join("\n")));
             }
         }
 
@@ -1334,6 +1296,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             .filter(|sr| sr.kind == "tool_call")
             .filter_map(|sr| sr.command.clone())
             .collect();
+        let tool_call_count = tools_used.len();
         let step_results_json: Vec<serde_json::Value> = step_results
             .iter()
             .map(|sr| {
@@ -1366,6 +1329,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 .with_extra("final_text", &final_text_clone)
                 .and_then(|c| c.with_extra("step_results", &step_results_json))
                 .and_then(|c| c.with_extra("tools_used", &tools_used.join(",")))
+                .and_then(|c| c.with_extra("tool_call_count", &tool_call_count.to_string()))
                 .and_then(|c| c.with_extra("formula", &formula_clone));
                 match context {
                     Ok(ctx) => match unit.execute_with_fallback(&ctx).await {

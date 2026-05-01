@@ -71,7 +71,13 @@ impl IntelUnit for TurnSummaryUnit {
         let tools_used = context
             .extra("tools_used")
             .and_then(|v| v.as_str())
-            .unwrap_or("none");
+            .unwrap_or("");
+        let tool_call_count = context
+            .extra("tool_call_count")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0")
+            .parse::<u64>()
+            .unwrap_or(0) as u64;
         let step_results = context
             .extra("step_results")
             .and_then(|v| v.as_array())
@@ -89,6 +95,7 @@ impl IntelUnit for TurnSummaryUnit {
 ROUTE: {route}
 FORMULA: {formula}
 TOOLS USED: {tools_used}
+TOOL CALL COUNT: {tool_call_count}
 STEP RESULTS: {step_results}
 FINAL RESPONSE: {final_text}
 
@@ -96,12 +103,13 @@ TASK:
 Summarize what happened in this turn. Write a compact narrative that captures what the user asked, what actions Elma took, and what the outcome was. This summary will replace the raw turn messages in the next turn's context.
 
 Output DSL format (single line):
-TURN summary_narrative="compact narrative" status_category=completed noteworthy=false tools_used="read,bash" tool_call_count=4 errors="" artifacts_created="path/to/file"
+TURN summary_narrative="compact narrative" status_category=completed noteworthy=false tools_used="{tools_used}" tool_call_count={tool_call_count} errors="" artifacts_created=""
 
 CRITICAL: Output ONLY the raw TURN line. Do NOT wrap it in backticks, markdown code blocks, or any other formatting. No prose before or after. Just one TURN line exactly as shown.
 
 Valid status_category values: completed | blocked | failed | waiting | partial
-Use comma-separated strings for array fields (tools_used, errors, artifacts_created)."#
+Use comma-separated strings for array fields (tools_used, errors, artifacts_created).
+IMPORTANT: Copy tools_used and tool_call_count VERBATIM from the input — do not guess."#
         );
 
         let dsl_result =

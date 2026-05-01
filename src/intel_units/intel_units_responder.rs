@@ -50,7 +50,7 @@ impl IntelUnit for SelectorUnit {
             .extra("evidence")
             .cloned()
             .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
-        let result: SelectionOutput = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_selector_narrative(
@@ -61,6 +61,23 @@ impl IntelUnit for SelectorUnit {
             ),
         )
         .await?;
+
+        let result = SelectionOutput {
+            items: dsl_result
+                .get("items")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            reason: dsl_result
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        };
 
         Ok(IntelOutput::success(
             self.name(),
@@ -129,7 +146,7 @@ impl IntelUnit for RenameSuggesterUnit {
             .extra("evidence")
             .cloned()
             .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
-        let result: RenameSuggestion = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_rename_suggester_narrative(
@@ -140,6 +157,19 @@ impl IntelUnit for RenameSuggesterUnit {
             ),
         )
         .await?;
+
+        let result = RenameSuggestion {
+            identifier: dsl_result
+                .get("identifier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            reason: dsl_result
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        };
 
         Ok(IntelOutput::success(
             self.name(),
@@ -332,7 +362,7 @@ impl IntelUnit for ExpertAdvisorUnit {
             .extra("step_results")
             .cloned()
             .unwrap_or_else(|| serde_json::json!([]));
-        let result: ExpertAdvisorAdvice = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_expert_advisor_narrative(
@@ -344,6 +374,15 @@ impl IntelUnit for ExpertAdvisorUnit {
             ),
         )
         .await?;
+
+        // Map DSL field "advisor" to struct field "expert_advice"
+        let result = ExpertAdvisorAdvice {
+            expert_advice: dsl_result
+                .get("advisor")
+                .and_then(|v| v.as_str())
+                .unwrap_or("direct: answer clearly")
+                .to_string(),
+        };
 
         Ok(IntelOutput::success(
             self.name(),
@@ -419,7 +458,7 @@ impl IntelUnit for StatusMessageUnit {
             .extra("step_purpose")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_status_message_narrative(

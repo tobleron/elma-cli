@@ -4,6 +4,7 @@
 //! RiskClassifier, EvidenceNeedsClassifier, ActionNeedsClassifier.
 
 use crate::intel_trait::*;
+use crate::intel_units::*;
 use crate::*;
 
 // ============================================================================
@@ -51,13 +52,46 @@ impl IntelUnit for EvidenceModeUnit {
                 })
                 .to_string()
             });
-        let result: EvidenceModeDecision =
-            execute_intel_json_from_user_content(&context.client, &self.profile, user_content)
+        let dsl_result =
+            execute_intel_dsl_from_user_content(&context.client, &self.profile, user_content)
                 .await?;
+
+        // Parse DSL result into EvidenceModeDecision
+        let choice = dsl_result
+            .get("choice")
+            .and_then(|v| v.as_str())
+            .unwrap_or("1")
+            .to_string();
+        let label = dsl_result
+            .get("label")
+            .and_then(|v| v.as_str())
+            .unwrap_or("CHAT")
+            .to_string();
+        let reason = dsl_result
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("fallback: ultra concise")
+            .to_string();
+        let entropy = dsl_result
+            .get("entropy")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.1);
+
+        let mode = match choice.as_str() {
+            "1" => "RAW".to_string(),
+            "2" => "COMPACT".to_string(),
+            "3" => "RAW_PLUS_COMPACT".to_string(),
+            _ => "RAW".to_string(),
+        };
+
+        let decision = EvidenceModeDecision {
+            mode,
+            reason: format!("{label}: {reason}"),
+        };
 
         Ok(IntelOutput::success(
             self.name(),
-            serde_json::to_value(result)?,
+            serde_json::to_value(&decision)?,
             0.9,
         ))
     }
@@ -65,6 +99,9 @@ impl IntelUnit for EvidenceModeUnit {
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("mode").is_none() {
             return Err(anyhow::anyhow!("Missing 'mode' field"));
+        }
+        if output.get("reason").is_none() {
+            return Err(anyhow::anyhow!("Missing 'reason' field"));
         }
         Ok(())
     }
@@ -75,7 +112,7 @@ impl IntelUnit for EvidenceModeUnit {
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
-                "mode": "RAW",
+                "mode": "RAW".to_string(),
                 "reason": "fallback: show raw output".to_string(),
             }),
             &format!("evidence mode failed: {}", error),
@@ -127,7 +164,7 @@ impl IntelUnit for ArtifactClassifierUnit {
             .extra("evidence")
             .cloned()
             .unwrap_or_else(|| serde_json::json!(context.workspace_facts));
-        let result: ArtifactClassification = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             crate::intel_narrative::build_artifact_classifier_narrative(
@@ -136,9 +173,56 @@ impl IntelUnit for ArtifactClassifierUnit {
         )
         .await?;
 
+        // Parse DSL result into ArtifactClassification
+        let safe: Vec<String> = dsl_result
+            .get("safe")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        let maybe: Vec<String> = dsl_result
+            .get("maybe")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        let keep: Vec<String> = dsl_result
+            .get("keep")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        let ignore: Vec<String> = dsl_result
+            .get("ignore")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        let reason = dsl_result
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("fallback: no classifications")
+            .to_string();
+
+        let classification = ArtifactClassification {
+            safe,
+            maybe,
+            keep,
+            ignore,
+            reason,
+        };
+
         Ok(IntelOutput::success(
             self.name(),
-            serde_json::to_value(result)?,
+            serde_json::to_value(&classification)?,
             0.9,
         ))
     }
@@ -146,6 +230,18 @@ impl IntelUnit for ArtifactClassifierUnit {
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("safe").is_none() {
             return Err(anyhow::anyhow!("Missing 'safe' field"));
+        }
+        if output.get("maybe").is_none() {
+            return Err(anyhow::anyhow!("Missing 'maybe' field"));
+        }
+        if output.get("keep").is_none() {
+            return Err(anyhow::anyhow!("Missing 'keep' field"));
+        }
+        if output.get("ignore").is_none() {
+            return Err(anyhow::anyhow!("Missing 'ignore' field"));
+        }
+        if output.get("reason").is_none() {
+            return Err(anyhow::anyhow!("Missing 'reason' field"));
         }
         Ok(())
     }
@@ -160,7 +256,7 @@ impl IntelUnit for ArtifactClassifierUnit {
                 "maybe": Vec::<String>::new(),
                 "keep": Vec::<String>::new(),
                 "ignore": Vec::<String>::new(),
-                "reason": "fallback: no classifications".to_string(),
+                "reason": "fallback: no classifications",
             }),
             &format!("artifact classifier failed: {}", error),
         ))
@@ -199,7 +295,7 @@ impl IntelUnit for ComplexityClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             serde_json::json!({
@@ -209,7 +305,31 @@ impl IntelUnit for ComplexityClassifierUnit {
         )
         .await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        // Parse DSL result into complexity and risk values
+        let complexity = dsl_result
+            .get("complexity")
+            .and_then(|v| v.as_str())
+            .unwrap_or("INVESTIGATE")
+            .to_string();
+
+        let risk = dsl_result
+            .get("risk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("MEDIUM")
+            .to_string();
+
+        let mut result = serde_json::Map::new();
+        result.insert(
+            "complexity".to_string(),
+            serde_json::Value::String(complexity),
+        );
+        result.insert("risk".to_string(), serde_json::Value::String(risk));
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::Value::Object(result),
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -223,7 +343,7 @@ impl IntelUnit for ComplexityClassifierUnit {
         trace_fallback(self.name(), error);
         Ok(IntelOutput::fallback(
             self.name(),
-            serde_json::json!({"complexity": "INVESTIGATE"}),
+            serde_json::json!({"complexity": "INVESTIGATE".to_string()}),
             &format!("complexity classification failed: {}", error),
         ))
     }
@@ -257,7 +377,7 @@ impl IntelUnit for RiskClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             serde_json::json!({
@@ -267,7 +387,21 @@ impl IntelUnit for RiskClassifierUnit {
         )
         .await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        // Parse DSL result into risk value
+        let risk = dsl_result
+            .get("risk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("MEDIUM")
+            .to_string();
+
+        let mut result = serde_json::Map::new();
+        result.insert("risk".to_string(), serde_json::Value::String(risk));
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::Value::Object(result),
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
@@ -281,7 +415,7 @@ impl IntelUnit for RiskClassifierUnit {
         trace_fallback(self.name(), error);
         Ok(IntelOutput::fallback(
             self.name(),
-            serde_json::json!({"risk": "MEDIUM"}),
+            serde_json::json!({"risk": "MEDIUM".to_string()}),
             &format!("risk classification failed: {}", error),
         ))
     }
@@ -315,7 +449,7 @@ impl IntelUnit for EvidenceNeedsClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             serde_json::json!({
@@ -325,12 +459,40 @@ impl IntelUnit for EvidenceNeedsClassifierUnit {
         )
         .await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        // Parse DSL result into needs_evidence and needs_tools values
+        let needs_evidence = dsl_result
+            .get("needs_evidence")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let needs_tools = dsl_result
+            .get("needs_tools")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let mut result = serde_json::Map::new();
+        result.insert(
+            "needs_evidence".to_string(),
+            serde_json::Value::Bool(needs_evidence),
+        );
+        result.insert(
+            "needs_tools".to_string(),
+            serde_json::Value::Bool(needs_tools),
+        );
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::Value::Object(result),
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("needs_evidence").is_none() {
             return Err(anyhow::anyhow!("Missing 'needs_evidence' field"));
+        }
+        if output.get("needs_tools").is_none() {
+            return Err(anyhow::anyhow!("Missing 'needs_tools' field"));
         }
         Ok(())
     }
@@ -339,7 +501,10 @@ impl IntelUnit for EvidenceNeedsClassifierUnit {
         trace_fallback(self.name(), error);
         Ok(IntelOutput::fallback(
             self.name(),
-            serde_json::json!({"needs_evidence": false, "needs_tools": false}),
+            serde_json::json!({
+                "needs_evidence": false,
+                "needs_tools": false,
+            }),
             &format!("evidence needs classification failed: {}", error),
         ))
     }
@@ -372,7 +537,7 @@ impl IntelUnit for ActionNeedsClassifierUnit {
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
-        let result: serde_json::Value = execute_intel_json_from_user_content(
+        let dsl_result = execute_intel_dsl_from_user_content(
             &context.client,
             &self.profile,
             serde_json::json!({
@@ -382,12 +547,40 @@ impl IntelUnit for ActionNeedsClassifierUnit {
         )
         .await?;
 
-        Ok(IntelOutput::success(self.name(), result, 0.9))
+        // Parse DSL result into needs_decision and needs_plan values
+        let needs_decision = dsl_result
+            .get("needs_decision")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let needs_plan = dsl_result
+            .get("needs_plan")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let mut result = serde_json::Map::new();
+        result.insert(
+            "needs_decision".to_string(),
+            serde_json::Value::Bool(needs_decision),
+        );
+        result.insert(
+            "needs_plan".to_string(),
+            serde_json::Value::Bool(needs_plan),
+        );
+
+        Ok(IntelOutput::success(
+            self.name(),
+            serde_json::Value::Object(result),
+            0.9,
+        ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
         if output.get("needs_decision").is_none() {
             return Err(anyhow::anyhow!("Missing 'needs_decision' field"));
+        }
+        if output.get("needs_plan").is_none() {
+            return Err(anyhow::anyhow!("Missing 'needs_plan' field"));
         }
         Ok(())
     }
@@ -396,7 +589,10 @@ impl IntelUnit for ActionNeedsClassifierUnit {
         trace_fallback(self.name(), error);
         Ok(IntelOutput::fallback(
             self.name(),
-            serde_json::json!({"needs_decision": false, "needs_plan": false}),
+            serde_json::json!({
+                "needs_decision": false,
+                "needs_plan": false,
+            }),
             &format!("action needs classification failed: {}", error),
         ))
     }

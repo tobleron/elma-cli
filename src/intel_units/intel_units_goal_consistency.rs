@@ -12,9 +12,9 @@ use crate::*;
 /// Verdict from the goal consistency check.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct GoalConsistencyVerdict {
-    pub status: String,    // CONsISTENT | DRIFTING | OFF_TRACK
-    pub reason: String,    // one short sentence
-    pub steering: String,  // what to focus on instead (empty if CONSISTENT)
+    pub status: String,   // CONsISTENT | DRIFTING | OFF_TRACK
+    pub reason: String,   // one short sentence
+    pub steering: String, // what to focus on instead (empty if CONSISTENT)
 }
 
 /// Run the goal consistency check as a fire-and-forget intel call.
@@ -72,24 +72,39 @@ Output contract:
 {{"status": "CONSISTENT|DRIFTING|OFF_TRACK", "reason": "one short sentence", "steering": "specific redirection message (empty if CONSISTENT)"}}"#,
     );
 
-    let result: serde_json::Value =
-        match execute_intel_json_from_user_content(client, profile, narrative).await {
-            Ok(v) => v,
-            Err(e) => {
-                trace_fallback("goal_consistency", &format!("LLM call failed: {}", e));
-                return None;
-            }
-        };
-
-    let verdict: GoalConsistencyVerdict = match serde_json::from_value(result) {
+    let dsl_result = match execute_intel_dsl_from_user_content(client, profile, narrative).await {
         Ok(v) => v,
         Err(e) => {
-            trace_fallback(
-                "goal_consistency",
-                &format!("parse failed: {}", e),
-            );
+            trace_fallback("goal_consistency", &format!("DSL call failed: {}", e));
             return None;
         }
+    };
+
+    // Parse DSL output: expect CONSISTENT, DRIFTING, or OFF_TRACK
+    let status = dsl_result
+        .get("status")
+        .or_else(|| dsl_result.get("verdict"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNKNOWN")
+        .to_string();
+
+    let reason = dsl_result
+        .get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let steering = dsl_result
+        .get("steering")
+        .or_else(|| dsl_result.get("text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let verdict = GoalConsistencyVerdict {
+        status,
+        reason,
+        steering,
     };
 
     match verdict.status.as_str() {

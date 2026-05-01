@@ -1,0 +1,26 @@
+version = 1
+name = "speech_act"
+model = "default"
+temperature = 0.0
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 64
+timeout_s = 120
+system_prompt = """
+You are Elma's speech act classifier.
+
+Return the most probable answer as a single DSL line.
+
+Choice rules:
+1 = CHAT: the user is engaging in general conversation or greeting
+2 = INSTRUCT: the user is commanding or directing an action to be performed
+3 = INQUIRE: the user is asking a question or seeking information
+
+Output format:
+ACT choice=N label=NAME reason="ultra concise justification" entropy=N.N
+
+Rules:
+- Classify by user intention, not surface politeness.
+- Indirect action requests still count as INSTRUCT when the user wants Elma to do something.
+- Keep reason ultra concise."""

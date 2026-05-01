@@ -1,11 +1,12 @@
 //! @efficiency-role: domain-logic
 //!
-//! Runtime Config Healthcheck (Task 069)
+//! Runtime Config Healthcheck (Task 069, Task 341)
 //!
 //! Validates profiles, prompts, grammars, and global config at startup
 //! so Elma fails early and clearly when runtime configuration is inconsistent.
 
 use crate::app::LoadedProfiles;
+use crate::config_schema::{validate_toml_config, ConfigValidationError};
 use crate::*;
 
 /// Result of a single healthcheck
@@ -221,6 +222,41 @@ fn validate_profile(p: &Profile, name: &str, issues: &mut Vec<HealthCheckIssue>)
 
     // base_url being empty is acceptable (will be synced at startup)
     // but worth noting for debugging
+}
+
+pub fn validate_profile_file(path: &std::path::Path, issues: &mut Vec<HealthCheckIssue>) {
+    if !path.exists() {
+        issues.push(HealthCheckIssue {
+            severity: HealthSeverity::Error,
+            component: path.to_string_lossy().to_string(),
+            message: "Config file not found".into(),
+        });
+        return;
+    }
+
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            issues.push(HealthCheckIssue {
+                severity: HealthSeverity::Error,
+                component: path.to_string_lossy().to_string(),
+                message: format!("Failed to read config: {}", e),
+            });
+            return;
+        }
+    };
+
+    match validate_toml_config::<Profile>(content.as_str(), path) {
+        Ok(_) => {}
+        Err(e) => {
+            let remediation = e.remediation.unwrap_or_else(|| "Fix the config file".to_string());
+            issues.push(HealthCheckIssue {
+                severity: HealthSeverity::Error,
+                component: path.to_string_lossy().to_string(),
+                message: format!("{}: {}", e.message, e.field_path),
+            });
+        }
+    }
 }
 
 fn validate_grammar_existence(config_root: &str, issues: &mut Vec<HealthCheckIssue>) {

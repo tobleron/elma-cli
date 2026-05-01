@@ -5,13 +5,16 @@
 # Grammar files are loaded from config/grammars/ directory.
 
 [router]
-grammar_path = "grammars/workflow_gate_choice_1of2.json.gbnf"
+grammar_path = "grammars/workflow_gate.dsl.gbnf"
 
 [speech_act]
-grammar_path = "grammars/speech_act_choice_1of3.json.gbnf"
+grammar_path = "grammars/speech_act.dsl.gbnf"
 
 [mode_router]
-grammar_path = "grammars/mode_router_choice_1of5.json.gbnf"
+grammar_path = "grammars/mode_router.dsl.gbnf"
+
+[evidence_need_assessor]
+grammar_path = "grammars/evidence_needs.dsl.gbnf"
 
 [workflow_planner]
 grammar_path = "grammars/workflow_planner.json.gbnf"
@@ -20,19 +23,19 @@ grammar_path = "grammars/workflow_planner.json.gbnf"
 grammar_path = "grammars/formula_selector.json.gbnf"
 
 [selector]
-grammar_path = "grammars/selector.json.gbnf"
+grammar_path = "grammars/selection.dsl.gbnf"
 
 [scope_builder]
-grammar_path = "grammars/scope_builder.json.gbnf"
+grammar_path = "grammars/scope.dsl.gbnf"
 
 [critic]
-grammar_path = "grammars/critic_verdict.json.gbnf"
+grammar_path = "grammars/verdict.dsl.gbnf"
 
 [logical_reviewer]
-grammar_path = "grammars/critic_verdict.json.gbnf"
+grammar_path = "grammars/verdict.dsl.gbnf"
 
 [efficiency_reviewer]
-grammar_path = "grammars/critic_verdict.json.gbnf"
+grammar_path = "grammars/verdict.dsl.gbnf"
 
 [risk_reviewer]
-grammar_path = "grammars/risk_review_verdict.json.gbnf"
+grammar_path = "grammars/risk_verdict.dsl.gbnf"

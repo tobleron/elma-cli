@@ -19,7 +19,7 @@ pub(crate) fn default_command_repair_config(base_url: &str, model: &str) -> Prof
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "You repair one failed shell command for Elma.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\"cmd\":\"<one shell one-liner>\",\"reason\":\"one short sentence\"}\n\nRules:\n- Fix quoting, globbing, regex, filename casing, or command-shape issues.\n- Preserve the same task semantics and operation type.\n- Keep the same intent.\n- Prefer rg over grep.\n- Do not introduce network, remote, destructive, or privileged commands.\n- If the command cannot be safely repaired without changing the task, return the original command.\n"
+        system_prompt: "You are Elma's command repair specialist.\n\nReturn exactly one DSL line and nothing else.\n\nFormat:\nREPAIR cmd=\"<one shell one-liner>\" reason=\"one short sentence\"\n\nPrinciples:\n- Preserve the same task semantics and operation type.\n- Fix quoting, globbing, regex, filename casing, or command-shape issues.\n- Prefer rg over grep.\n- Do not introduce network, remote, destructive, or privileged commands.\n- If safe repair is not possible without changing the task, return the original command.\n"
             .to_string(),
     }
 }
@@ -36,19 +36,7 @@ pub(crate) fn default_task_semantics_guard_config(base_url: &str, model: &str) -
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: r#"You verify whether a repaired shell command preserves the original task semantics.
-
-Return ONLY one valid JSON object. No prose.
-
-Schema:
-{
-  "status": "accept" | "reject",
-  "reason": "one short sentence"
-}
-
-Rule:
-- Accept only if the repaired command keeps the same operation type and user intent. Reject otherwise.
-"#
+        system_prompt: "You verify whether a repaired shell command preserves the original task semantics.\n\nReturn exactly one DSL line and nothing else:\nSEMANTICS status=accept reason=\"one short sentence\"\n\nAllowed status:\n- accept\n- reject\n\nRule:\n- Accept only if the repaired command keeps the same operation type and user intent. Reject otherwise.\n"
             .to_string(),
     }
 }
@@ -65,30 +53,7 @@ pub(crate) fn default_execution_sufficiency_config(base_url: &str, model: &str) 
         reasoning_format: "none".to_string(),
         max_tokens: 1024,
         timeout_s: 120,
-        system_prompt: r#"Judge if the executed workflow satisfied the user's request.
-
-Return ONLY one valid JSON object. No prose.
-
-Schema:
-{
-  "status": "ok" | "retry",
-  "reason": "one short sentence",
-  "program": <Program or null>
-}
-
-Principles:
-- Choose "ok" when step results provide evidence that directly addresses the user's request
-- Choose "retry" when there is a clear mismatch between what was requested and what was delivered
-
-Use "ok" only when there is verifiable evidence from the output that denotes success:
-- Command succeeded (exit_code=0) AND output is relevant to the request
-- Requested files or data appear in the output
-- Selected items are actually used in subsequent steps
-
-Do not choose retry based on vague judgments. Ground decisions in observable evidence.
-
-When choosing retry, provide a corrected Program only if you can safely fix the issue.
-Do not invent files, commands, or outputs not grounded in the evidence."#
+        system_prompt: "Judge if the executed workflow satisfied the user's request.\n\nReturn exactly one DSL line and nothing else:\nVERDICT status=ok reason=\"one short sentence\"\n\nRules:\n- status: ok | retry\n- Ground the decision in observed evidence.\n- Do not emit a corrected program here.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -105,7 +70,7 @@ pub(crate) fn default_execution_program_repair_config(base_url: &str, model: &st
         reasoning_format: "none".to_string(),
         max_tokens: 2048,
         timeout_s: 120,
-        system_prompt: "Repair a program that failed to satisfy the user's request. Output a complete Program JSON object."
+        system_prompt: "This profile is deprecated by the compact DSL action protocol.\n\nReturn exactly one DSL line and nothing else:\nDEPRECATED reason=\"execution_program_repair disabled\"\n"
             .to_string(),
     }
 }
@@ -122,7 +87,7 @@ pub(crate) fn default_outcome_verifier_config(base_url: &str, model: &str) -> Pr
         reasoning_format: "none".to_string(),
         max_tokens: 384,
         timeout_s: 120,
-        system_prompt: "You verify whether one successful workflow step actually achieved the intended outcome.\n\nReturn ONLY one valid JSON object. No prose.\n\nSchema:\n{\n  \"status\": \"ok\" | \"retry\",\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Judge only the single observed step against the user request, overall objective, step purpose, success_condition, and observed result.\n- Choose retry if the step output type does not match the intended operation, such as listing file names instead of showing contents, searching instead of selecting, or producing empty/misaligned evidence.\n- Choose retry if a successful command still failed to satisfy the meaning of the step.\n- Choose retry if the step claims to have changed or shown something but the observed result does not prove it.\n- Be conservative and grounded in the provided step result.\n"
+        system_prompt: "You verify whether one successful workflow step actually achieved the intended outcome.\n\nReturn exactly one DSL line and nothing else:\nVERDICT status=ok reason=\"one short sentence\"\n\nRules:\n- status: ok | retry\n- Judge only the single observed step against the user request, objective, purpose, success_condition, and observed result.\n- Be conservative and evidence-grounded.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -139,7 +104,7 @@ pub(crate) fn default_memory_gate_config(base_url: &str, model: &str) -> Profile
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "You decide whether a completed workflow is good enough to save as reusable formula memory.\n\nReturn ONLY one valid JSON object.\n\nSchema:\n{\n  \"status\": \"save\" | \"skip\",\n  \"reason\": \"one short sentence\"\n}\n\nRules:\n- Save only when the workflow succeeded, preserved task semantics, and clearly satisfied the user request.\n- Skip when the result was repaired into a different task, partially correct, noisy, hallucinated, low-confidence, or dependent on parse-error fallbacks.\n- Skip when a broad request was rejected or required clarification.\n- Be conservative.\n"
+        system_prompt: "You decide whether a completed workflow is good enough to save as reusable formula memory.\n\nReturn exactly one DSL line and nothing else:\nGATE status=save reason=\"one short sentence\"\n\nAllowed status:\n- save\n- skip\n\nRules:\n- Save only when the workflow clearly succeeded and preserved task semantics.\n- Skip partial, noisy, or low-confidence outcomes.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -156,7 +121,7 @@ pub(crate) fn default_command_preflight_config(base_url: &str, model: &str) -> P
         reasoning_format: "none".to_string(),
         max_tokens: 384,
         timeout_s: 120,
-        system_prompt: "Review shell command safety before execution. Return JSON: {\"status\":\"accept\"|\"revise\"|\"reject\",\"reason\":\"...\"}"
+        system_prompt: "Pre-flight check for shell commands.\n\nReturn exactly one DSL line and nothing else:\nPREFLIGHT status=accept reason=\"one short sentence\" cmd=\"one shell one-liner\" question=\"\" execution_mode=INLINE artifact_kind=\"shell_output\" preview_strategy=\"\"\n\nAllowed status:\n- accept\n- revise\n- reject\n\nRules:\n- If you revise, set cmd to the revised command.\n- If you need clarification, set status=reject and put the question in question.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -173,7 +138,7 @@ pub(crate) fn default_command_reviser_config(base_url: &str, model: &str) -> Pro
         reasoning_format: "none".to_string(),
         max_tokens: 256,
         timeout_s: 120,
-        system_prompt: "Revise an unsafe or imprecise shell command. Return JSON: {\"revised_cmd\":\"...\",\"reason\":\"...\"}"
+        system_prompt: "Revise an unsafe or imprecise shell command.\n\nReturn exactly one DSL line and nothing else:\nREVISE revised_cmd=\"one shell one-liner\" reason=\"one short sentence\"\n\nRules:\n- Preserve task intent.\n- Prefer safe read-only commands when possible.\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -190,7 +155,7 @@ pub(crate) fn default_execution_mode_setter_config(base_url: &str, model: &str) 
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt: "Set the execution mode for a shell command. Return JSON: {\"execution_mode\":\"INLINE\"|\"ARTIFACT\"|\"ASK\",\"artifact_kind\":\"...\",\"preview_strategy\":\"...\"}"
+        system_prompt: "Set the execution mode for a shell command.\n\nReturn exactly one DSL line and nothing else:\nMODE execution_mode=INLINE artifact_kind=\"shell_output\" preview_strategy=\"\"\n\nAllowed execution_mode:\n- INLINE\n- ARTIFACT\n- ASK\n\nRules:\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
             .to_string(),
     }
 }
@@ -207,7 +172,7 @@ pub(crate) fn default_scope_builder_config(base_url: &str, model: &str) -> Profi
         reasoning_format: "none".to_string(),
         max_tokens: 384,
         timeout_s: 120,
-        system_prompt: "Define the evidence scope for the task. Return JSON: {\"focus_paths\":[],\"include_globs\":[],\"exclude_globs\":[],\"query_terms\":[]}"
+        system_prompt: "Define the evidence scope for the task.\n\nReturn exactly one DSL block and nothing else:\nSCOPE objective=\"one sentence\"\nF path=\"relative/path\"\nIG glob=\"glob/**\"\nEG glob=\"glob/**\"\nQ text=\"query\"\nA artifact=\"artifact\"\nEND\n\nRules:\n- Keep lists short.\n- No JSON, Markdown fences, or prose outside the DSL.\n"
             .to_string(),
     }
 }
@@ -224,9 +189,8 @@ pub(crate) fn default_scope_objective_builder_config(base_url: &str, model: &str
         reasoning_format: "none".to_string(),
         max_tokens: 128,
         timeout_s: 120,
-        system_prompt:
-            "Define the scope objective for the task. Return JSON: {\"objective\":\"...\"}"
-                .to_string(),
+        system_prompt: "Define the scope objective for the task.\n\nReturn exactly one DSL line and nothing else:\nOBJECTIVE objective=\"one sentence\"\n\nRules:\n- No JSON, Markdown fences, or prose outside the DSL line.\n"
+            .to_string(),
     }
 }
 
@@ -287,20 +251,7 @@ pub(crate) fn default_json_converter_config(base_url: &str, model: &str) -> Prof
         reasoning_format: "none".to_string(),
         max_tokens: 1024,
         timeout_s: 120,
-        system_prompt: r#"You are Elma's JSON converter.
-
-Your job is to convert simple text descriptions into valid JSON that matches the target schema.
-
-Rules:
-- Output JSON only. No prose. No code fences. No markdown.
-- Match the target schema exactly.
-- Use the text description as the semantic source.
-- Strip any extra prose from the input.
-- Preserve field names exactly as specified in the schema.
-- Use empty strings, empty arrays, false, or null for optional fields when appropriate.
-- Never invent unrelated fields.
-
-Target schema will be provided in the user input."#
+        system_prompt: "You are Elma's legacy JSON converter.\n\nThis profile is deprecated by the compact DSL migration.\n\nReturn exactly one DSL line and nothing else:\nDEPRECATED reason=\"json_converter disabled\"\n"
             .to_string(),
     }
 }
@@ -317,25 +268,7 @@ pub(crate) fn default_json_repair_config(base_url: &str, model: &str) -> Profile
         reasoning_format: "none".to_string(),
         max_tokens: 1024,
         timeout_s: 120,
-        system_prompt: r#"You are Elma's JSON repair specialist.
-
-Your job is to fix JSON based on a list of identified problems.
-
-Return ONLY the repaired JSON object. No prose. No code fences. No markdown.
-
-Rules:
-- Fix each problem listed without changing unrelated content.
-- Preserve the original intent and meaning.
-- Do not add new fields unless required to fix a listed problem.
-- Do not remove fields unless they are causing a listed problem.
-- Ensure the repaired JSON is valid and complete.
-- If a problem cannot be fixed without changing semantics, preserve the original value.
-
-Input format:
-- Original JSON: <the json to repair>
-- Problems: <list of problems to fix>
-
-Output: Only the repaired JSON."#
+        system_prompt: "You are Elma's legacy JSON repair specialist.\n\nThis profile is deprecated by the compact DSL migration.\n\nReturn exactly one DSL line and nothing else:\nDEPRECATED reason=\"json_repair disabled\"\n"
             .to_string(),
     }
 }

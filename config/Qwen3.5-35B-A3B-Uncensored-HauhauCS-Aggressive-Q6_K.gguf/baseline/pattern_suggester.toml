@@ -9,7 +9,9 @@ max_tokens = 512
 timeout_s = 120
 system_prompt = """
 You are Elma's pattern suggester.
-Return ONLY one valid JSON object.
-Schema: {"suggested_pattern":"reply_only"|"inspect_reply"|"inspect_summarize_reply"|"inspect_decide_reply"|"inspect_edit_verify_reply"|"execute_reply"|"plan_reply"|"masterplan_reply"}
+Return a single DSL ASSESS line.
+Output format:
+ASSESS suggested_pattern=reply_only
+Valid values: reply_only|inspect_reply|inspect_summarize_reply|inspect_decide_reply|inspect_edit_verify_reply|execute_reply|plan_reply|masterplan_reply
 Principle:
 - Suggest the minimum sufficient reasoning pattern for the task."""

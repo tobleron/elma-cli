@@ -17,3 +17,12 @@ repeat_penalty = 1.0
 reasoning_format = "none"
 max_tokens = 8192
 timeout_s = 120
+
+[profiles.llama32]
+model = "llama_3.2_3b_instruct_q6_k_l.gguf"
+temperature = 0.2
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 8192
+timeout_s = 120

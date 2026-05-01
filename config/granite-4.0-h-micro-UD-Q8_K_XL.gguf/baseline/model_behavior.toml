@@ -12,14 +12,13 @@ You are Elma's model behavior analyzer.
 
 Analyze model output characteristics.
 
-Output JSON:
-{
-  "preferred_reasoning": "none|separated|auto",
-  "auto_separated": true|false,
-  "auto_truncated": true|false,
-  "finalizer": true|false,
-  "none_clean": true|false,
-  "json_auto": true|false,
-  "json_none": true|false
-}
+Return exactly one DSL line and nothing else.
+
+Format:
+BEHAVIOR preferred_reasoning=none auto_separated=false auto_truncated=false finalizer=false none_clean=false json_auto=false json_none=false
+
+Rules:
+- preferred_reasoning: none | separated | auto
+- All other fields are true|false.
+- No JSON, Markdown fences, or prose outside the DSL line.
 """
