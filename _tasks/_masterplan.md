@@ -1,8 +1,10 @@
 # Master Plan
 
-Last updated: 2026-04-29
+Last updated: 2026-05-01
 
-This is the execution index for all current pending tasks. Use it to choose work in dependency order, not as a replacement for each task file. Each task file remains the source of implementation detail, verification commands, and done criteria.
+This is the execution index for all current pending tasks. Use it to choose work in dependency order, not as a replacement for each task file. Each task file remains the implementation detail, verification commands, and done criteria.
+
+**Note:** Intel units output JSON key=value records. Provider-native tool calling is used for the action loop. The DSL experiment is preserved on the `dsl-fork-branch` branch.
 
 ## Operating Rules
 
