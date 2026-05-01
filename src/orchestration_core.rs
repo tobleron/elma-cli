@@ -21,14 +21,25 @@ use crate::*;
 /// The core prompt is defined in `prompt_core::TOOL_CALLING_SYSTEM_PROMPT`
 /// and is protected from modification by CODEOWNERS, AGENTS.md Rule 8,
 /// and build-time hash verification.
-fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String {
-    // Workspace facts (platform, cwd, git state)
-    let workspace_facts = runtime.ws.trim();
+fn build_tool_calling_system_prompt(runtime: &AppRuntime, line: &str) -> String {
+    // Short conversational inputs (< 30 chars) get no workspace context.
+    // This prevents the model from dumping workspace facts, file tree,
+    // project guidance, or skill context when the user just says "hey".
+    // Using message length (not keyword matching) to avoid Rule 1 violations.
+    let is_short_message = line.trim().len() < 30;
 
-    // Workspace brief (file tree)
-    let workspace_brief = runtime.ws_brief.trim();
+    let workspace_facts = if is_short_message {
+        ""
+    } else {
+        runtime.ws.trim()
+    };
 
-    // Recent conversation excerpt
+    let workspace_brief = if is_short_message {
+        ""
+    } else {
+        runtime.ws_brief.trim()
+    };
+
     let conversation = if runtime.messages.is_empty() {
         String::new()
     } else {
@@ -49,11 +60,17 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
         format!("\n## Recent conversation\n{}", last_msgs.join("\n"))
     };
 
-    // Skill context (repo overview, document capabilities, etc.)
-    let skill_context = build_skill_context(runtime);
+    let skill_context = if is_short_message {
+        String::new()
+    } else {
+        build_skill_context(runtime)
+    };
 
-    // Project guidance (AGENTS.md + TASKS.md excerpts)
-    let project_guidance = runtime.guidance.render_for_system_prompt();
+    let project_guidance = if is_short_message {
+        String::new()
+    } else {
+        runtime.guidance.render_for_system_prompt()
+    };
 
     crate::prompt_core::assemble_system_prompt(
         workspace_facts,

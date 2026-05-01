@@ -73,30 +73,38 @@ pub fn assemble_system_prompt(
     skill_context: &str,
     project_guidance: &str,
 ) -> String {
-    format!(
-        r##"{core}
+    let mut extra = String::new();
+    if !workspace_facts.is_empty() {
+        extra.push_str(&format!("\n## Workspace\n{}\n", workspace_facts));
+    }
+    if !workspace_brief.is_empty() {
+        extra.push_str(&format!("\n## File tree\n{}\n", workspace_brief));
+    }
+    if !conversation.is_empty() {
+        extra.push_str(conversation);
+        extra.push('\n');
+    }
+    if !skill_context.is_empty() {
+        extra.push_str(&format!("\n## Skill context\n{}\n", skill_context));
+    }
+    if !project_guidance.is_empty() {
+        extra.push_str(&format!(
+            "\n## Project guidance\n{}\n",
+            project_guidance
+        ));
+    }
 
----
+    if extra.is_empty() {
+        TOOL_CALLING_SYSTEM_PROMPT.to_string()
+    } else {
+        format!(
+            r##"{core}
 
-## Workspace
-{workspace_facts}
-
-## File tree
-{workspace_brief}
-{conversation}
-
-## Skill context
-{skill_context}
-
-## Project guidance
-{project_guidance}"##,
-        core = TOOL_CALLING_SYSTEM_PROMPT,
-        workspace_facts = workspace_facts,
-        workspace_brief = workspace_brief,
-        conversation = conversation,
-        skill_context = skill_context,
-        project_guidance = project_guidance,
-    )
+---{extra}"##,
+            core = TOOL_CALLING_SYSTEM_PROMPT,
+            extra = extra,
+        )
+    }
 }
 
 // ============================================================================
