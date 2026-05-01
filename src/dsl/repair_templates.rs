@@ -111,6 +111,8 @@ pub fn detect_expected_format(raw_output: &str) -> String {
         "ASK" => "ASK\n<question>\n---END".to_string(),
         "DONE" => "DONE summary=\"one-line summary\"".to_string(),
         "UTIL" => "UTIL action=read|search|shell path=\"...\"".to_string(),
+        // ── Action Selector ──
+        "SELECT" => "SELECT action=R reason=\"short justification\"".to_string(),
 
         // ── Fallback: no recognizable token ──
         _ => {

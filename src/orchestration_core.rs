@@ -152,6 +152,9 @@ pub(crate) async fn run_tool_calling_pipeline(
     // Generate decomposition pyramid for non-CHAT routes (Task 394)
     let pyramid = generate_decomposition_pyramid(runtime, line, route_decision).await;
 
+    // Run action selector to narrow the model's action type decision (Task 416)
+    let user_message_with_hint = run_action_selector_hint(runtime, line, route_decision).await;
+
     tui.start_status("Executing...");
 
     let result = run_tool_loop(
@@ -160,7 +163,7 @@ pub(crate) async fn run_tool_calling_pipeline(
         &runtime.chat_url,
         &runtime.model_id,
         &system_prompt,
-        line,
+        &user_message_with_hint,
         &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         &runtime.session,
         0.2, // temperature — low for reliability
@@ -333,6 +336,36 @@ async fn generate_decomposition_pyramid(
             })
         }
         Err(_) => None,
+    }
+}
+
+/// Run the action selector intel unit to narrow the model's action type
+/// decision for the upcoming tool loop turn (Task 416).
+///
+/// Falls back gracefully — when the selector fails, the original user
+/// message is used unchanged.
+async fn run_action_selector_hint(
+    runtime: &AppRuntime,
+    line: &str,
+    route_decision: &RouteDecision,
+) -> String {
+    let unit =
+        crate::intel_units::ActionSelectorUnit::new(runtime.profiles.action_selector_cfg.clone());
+    let context = IntelContext::new(
+        line.to_string(),
+        route_decision.clone(),
+        runtime.ws.clone(),
+        runtime.ws_brief.clone(),
+        runtime.messages.clone(),
+        runtime.client.clone(),
+    );
+    match unit.execute_with_fallback(&context).await {
+        Ok(output) => {
+            let action = output.get_str("action").unwrap_or("R");
+            let reason = output.get_str("reason").unwrap_or("default");
+            format!("[ACTION_HINT: prefer {action} because {reason}]\n{line}")
+        }
+        Err(_) => line.to_string(),
     }
 }
 

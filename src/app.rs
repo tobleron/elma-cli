@@ -20,6 +20,7 @@ pub(crate) struct LoadedProfiles {
     pub(crate) complexity_cfg: Profile,
     pub(crate) evidence_need_cfg: Profile,
     pub(crate) action_need_cfg: Profile,
+    pub(crate) action_selector_cfg: Profile,
     pub(crate) formula_cfg: Profile,
     pub(crate) workflow_planner_cfg: Profile,
     pub(crate) evidence_mode_cfg: Profile,

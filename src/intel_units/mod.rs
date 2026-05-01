@@ -5,6 +5,7 @@
 //! This module contains Elma's trait-based intel units.
 //! Re-exports from sub-modules for backward compatibility.
 
+mod intel_units_action_selector;
 mod intel_units_advanced;
 mod intel_units_claim_mapper;
 mod intel_units_classifier;
@@ -33,6 +34,7 @@ pub(crate) use intel_units_dsl::{
 };
 
 // Re-export all intel units for backward compatibility
+pub(crate) use intel_units_action_selector::*;
 pub(crate) use intel_units_advanced::*;
 pub(crate) use intel_units_claim_mapper::*;
 pub(crate) use intel_units_classifier::*;
