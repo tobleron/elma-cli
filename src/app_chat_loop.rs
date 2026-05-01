@@ -853,6 +853,24 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             }
         };
 
+        // Task 380: Create continuity tracker with route alignment check
+        let mut continuity_tracker = crate::continuity::ContinuityTracker::new(
+            line.to_string(),
+            &route_decision.route,
+            "pending",
+        );
+        continuity_tracker.check_route_alignment(&route_decision);
+        if !continuity_tracker.last_checkpoint_is_aligned() {
+            trace(
+                &runtime.args,
+                &format!(
+                    "continuity_route_drift score={:.2} reason={:?}",
+                    continuity_tracker.alignment_score,
+                    continuity_tracker.checkpoints.last().map(|c| &c.reason)
+                ),
+            );
+        }
+
         let needs_tools = route_decision.evidence_required
             || route_decision.speech_act.choice != "CHAT"
             || route_decision.route != "CHAT";
@@ -1030,6 +1048,20 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             )
             .await?
         };
+
+        // Task 380: Post-execution continuity check
+        let has_evidence = !step_results.is_empty()
+            && step_results.iter().any(|r| r.ok);
+        continuity_tracker.check_final_answer(&final_text, has_evidence);
+        trace(
+            &runtime.args,
+            &format!(
+                "continuity_score={:.2} needs_fallback={} last_stage={}",
+                continuity_tracker.alignment_score,
+                continuity_tracker.needs_fallback(),
+                continuity_tracker.checkpoints.last().map(|c| c.stage.as_str()).unwrap_or("none"),
+            ),
+        );
 
         // Show assistant response (thinking is already stripped from final_text)
         if !final_text.is_empty() {

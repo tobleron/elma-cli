@@ -90,9 +90,13 @@ These tasks make complex requests manageable for small models by decomposing and
 - File: `_tasks/completed/391_Instruction_Level_Repair_And_Result_Recombiner_DONE.md`
 
 ### 380 Semantic Continuity Tracking
-- Preserve original intent through routing, graph decomposition, execution, and finalization.
-- Retry or block when output drifts from the original objective.
-- File: `_tasks/pending/380_Semantic_Continuity_Tracking.md`
+- [x] `ContinuityTracker` struct with `ContinuityCheckpoint`, `ContinuityVerdict` (Aligned/Drifted/Mismatch).
+- [x] `check_route_alignment()` — flags simple queries with complex routes, high-entropy decisions.
+- [x] `check_final_answer()` — detects empty, evidence-lacking, or too-short answers.
+- [x] `AnswerContinuityUnit` intel unit (3-field JSON: aligned, confidence, reason).
+- [x] Wired into chat loop: route check after classification, final check after resolve_final_text.
+- [x] 19 tests covering creation, scoring, route alignment, final answer checks, fallback.
+- File: `_tasks/completed/380_Semantic_Continuity_Tracking_DONE.md`
 
 ### 381 Transcript-Native Operational Visibility
 - Show routing, formula, tool discovery, stop, retry, compaction, and decomposition events.

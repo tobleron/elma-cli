@@ -39,6 +39,7 @@ mod auto_compact; // Task 114: Auto-Compact (Context Window Management)
 mod background_task; // Task 268: Background Task Management
 mod claude_ui;
 mod command_budget; // Task 121: Command Budget & Rate Limiting
+mod continuity; // Task 380: Semantic Continuity Tracking
 mod decomposition; // Task 023: Hierarchical decomposition
 mod defaults;
 mod defaults_core;
