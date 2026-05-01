@@ -69,6 +69,7 @@ mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
 mod file_scout; // Task 198: Read-only whole-system file scout
+mod final_answer; // Task 384: Clean-Context Finalization Enforcement
 mod format;
 mod formulas;
 mod fs_intel; // Task 072: Specialized Filesystem Intel

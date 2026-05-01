@@ -104,9 +104,12 @@ These tasks make complex requests manageable for small models by decomposing and
 - File: `_tasks/pending/381_Transcript_Operational_Visibility.md`
 
 ### 384 Clean-Context Finalization Enforcement
-- Strip internal framing, stop reasons, and tool-loop artifacts.
-- Keep final terminal answers direct and plain text.
-- File: `_tasks/pending/384_Clean_Context_Finalization_Enforcement.md`
+- [x] `sanitize_final_answer()` — strips headers, evidence framing, analysis/verification artifacts.
+- [x] `contains_blocked_pattern()` — blocklist of 24 patterns that must never appear in answers.
+- [x] `FinalCleanerUnit` intel unit (3-field JSON: cleaned_text, cleaned_aspects, confidence).
+- [x] Wired into app_chat_loop after resolve_final_text — automatic sanitize + blocked-pattern check.
+- [x] 16 tests for sanitization, blocklist, multi-frame removal, legitimate text preservation.
+- File: `_tasks/completed/384_Clean_Context_Finalization_Enforcement_DONE.md`
 
 ### 392 Plaintext Default And Markdown Output Tool
 - Make ratatui output plain text by default.
