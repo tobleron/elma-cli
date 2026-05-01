@@ -22,15 +22,24 @@ use std::time::{Duration, Instant};
 // Legacy constants absorbed into StopPolicy (StageBudget::default).
 // Kept briefly for reference; remove after validation.
 
-/// Load the action DSL GBNF grammar for the tool loop.
-/// Grammar constrains model output to valid DSL command tokens (R, L, S, Y, E, X, ASK, DONE)
-/// preventing the 3B model from producing bash/prose output.
-/// Returns None if config_root is unavailable or grammar file is missing (graceful fallback).
+/// Embedded GBNF grammar for action DSL output.
+/// The config root resolves to the system config directory
+/// (~/Library/Application Support/...), not the repo config/ tree,
+/// so grammar is embedded in the binary rather than loaded from disk.
+const ACTION_DSL_GBNF: &str = r##"root ::= r-line | l-line | s-line | y-line | x-block | ask-block | done-block | e-block
+r-line ::= "R " rest "\n"
+l-line ::= "L " rest "\n"
+s-line ::= "S " rest "\n"
+y-line ::= "Y " rest "\n"
+x-block   ::= "X\n"    body "\n---END\n"
+ask-block ::= "ASK\n"  body "\n---END\n"
+done-block ::= "DONE\n" body "\n---END\n"
+e-block ::= "E " rest "\n---OLD\n" body "\n---NEW\n" body "\n---END\n"
+rest ::= [^\n]*
+body ::= [^\n]*"##;
+
 fn load_action_grammar() -> Option<String> {
-    let config_root = crate::ui_chat::get_config_root_for_intel()?;
-    let mapping = crate::json_grammar::load_grammar_mapping(config_root).unwrap_or_default();
-    let path = mapping.get("tool_loop")?;
-    crate::json_grammar::load_grammar(path, config_root).ok()
+    Some(ACTION_DSL_GBNF.to_string())
 }
 
 async fn await_with_busy_input<T, F>(
