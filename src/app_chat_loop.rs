@@ -957,15 +957,13 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Redraw after planning so user sees the plan before execution
         tui.pump_ui()?;
 
-        let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
-            && formula.primary.eq_ignore_ascii_case("reply_only");
-
         // Tool-calling pipeline produces a single Respond step with pre-built answer.
         // Detect this and skip the legacy orchestration retry chain.
+        // All other programs (including CHAT+reply_only) go through retry orchestration.
         let is_tool_calling_result = program.steps.len() == 1
             && matches!(&program.steps[0], Step::Respond { instructions, .. } if !instructions.trim().is_empty());
 
-        let mut loop_outcome = if is_trivial || is_tool_calling_result {
+        let mut loop_outcome = if is_tool_calling_result {
             tui.set_activity("Responding", "Responding...");
             tui.pump_ui()?;
             AutonomousLoopOutcome {

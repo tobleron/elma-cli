@@ -30,9 +30,9 @@ These tasks remove current wrong-answer causes and give Elma a reliable view of 
 - File: `_tasks/completed/376_Replace_Length_Heuristic_With_LLM_Route_Inference_DONE.md`
 
 ### 377 Remove Trivial Chat Bypass In Orchestration
-- Ensure all turns can reach retry, repair, and tool discovery.
-- Stop direct hallucinated `reply_only` answers from bypassing orchestration.
-- File: `_tasks/pending/377_Remove_Trivial_Chat_Bypass_In_Orchestration.md`
+- [x] Ensure all turns can reach retry, repair, and tool discovery.
+- [x] Stop direct hallucinated `reply_only` answers from bypassing orchestration.
+- File: `_tasks/completed/377_Remove_Trivial_Chat_Bypass_In_Orchestration_DONE.md`
 
 ### 378 JSON Complexity Constraint And Repair
 - Enforce strict intel-unit JSON limits.
