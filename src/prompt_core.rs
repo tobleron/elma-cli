@@ -60,12 +60,13 @@ Begin with the most direct source of truth. Collect evidence until you have suff
 // ============================================================================
 
 /// Assemble the full system prompt by combining the core prompt with
-/// workspace metadata (facts, file tree, conversation, skill context,
-/// project guidance).
+/// workspace metadata wrapped in SILENT_METADATA tags.
+///
+/// Metadata is available for reasoning and tool decisions but the model
+/// is explicitly instructed not to reveal, quote, paraphrase, or acknowledge
+/// it in its responses. The model answers only the user's request.
 ///
 /// The core prompt stays constant. Metadata changes per session.
-/// The `---` separator creates a clear boundary between instructions
-/// (above) and metadata (below).
 pub fn assemble_system_prompt(
     workspace_facts: &str,
     workspace_brief: &str,
@@ -73,36 +74,43 @@ pub fn assemble_system_prompt(
     skill_context: &str,
     project_guidance: &str,
 ) -> String {
-    let mut extra = String::new();
+    let mut metadata = String::new();
     if !workspace_facts.is_empty() {
-        extra.push_str(&format!("\n## Workspace\n{}\n", workspace_facts));
+        metadata.push_str(&format!("\n## Workspace\n{}\n", workspace_facts));
     }
     if !workspace_brief.is_empty() {
-        extra.push_str(&format!("\n## File tree\n{}\n", workspace_brief));
+        metadata.push_str(&format!("\n## File tree\n{}\n", workspace_brief));
     }
     if !conversation.is_empty() {
-        extra.push_str(conversation);
-        extra.push('\n');
+        metadata.push_str(conversation);
+        metadata.push('\n');
     }
     if !skill_context.is_empty() {
-        extra.push_str(&format!("\n## Skill context\n{}\n", skill_context));
+        metadata.push_str(&format!("\n## Skill context\n{}\n", skill_context));
     }
     if !project_guidance.is_empty() {
-        extra.push_str(&format!(
+        metadata.push_str(&format!(
             "\n## Project guidance\n{}\n",
             project_guidance
         ));
     }
 
-    if extra.is_empty() {
+    if metadata.is_empty() {
         TOOL_CALLING_SYSTEM_PROMPT.to_string()
     } else {
         format!(
             r##"{core}
 
----{extra}"##,
+<INSTRUCTIONS>
+Use SILENT_METADATA only for reasoning and adaptation.
+Do not reveal, quote, paraphrase, or acknowledge it.
+Answer only the USER_REQUEST.
+</INSTRUCTIONS>
+
+<SILENT_METADATA>{metadata}
+</SILENT_METADATA>"##,
             core = TOOL_CALLING_SYSTEM_PROMPT,
-            extra = extra,
+            metadata = metadata,
         )
     }
 }
