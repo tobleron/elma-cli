@@ -146,6 +146,54 @@ pub(crate) fn load_goal_state(session_root: &PathBuf) -> Option<GoalState> {
         .and_then(|v| serde_json::from_value(v.clone()).ok())
 }
 
+// ── turn summaries → summaries/*.md ───────────────────────────────────
+
+/// Write a turn summary as a markdown artifact in the session's summaries/ directory.
+pub(crate) fn write_summary_markdown(
+    session_root: &Path,
+    turn_number: usize,
+    timestamp: &str,
+    model: &str,
+    session_id: &str,
+    narrative: &str,
+    status: &str,
+    tools_used: &[String],
+    errors: &[String],
+) {
+    let summaries_dir = session_root.join("summaries");
+    if let Err(e) = std::fs::create_dir_all(&summaries_dir) {
+        tracing::warn!("Failed to create summaries dir '{}': {}", summaries_dir.display(), e);
+        return;
+    }
+
+    // Sanitize timestamp for filename
+    let file_ts = timestamp.replace(':', "-").replace('T', "_");
+    let filename = format!("{}_summary_{}.md", file_ts, turn_number);
+    let filepath = summaries_dir.join(&filename);
+
+    let mut content = String::new();
+    content.push_str("---\n");
+    content.push_str(&format!("timestamp: {}\n", timestamp));
+    content.push_str(&format!("session: {}\n", session_id));
+    content.push_str(&format!("model: {}\n", model));
+    content.push_str(&format!("turn: {}\n", turn_number));
+    content.push_str(&format!("status: {}\n", status));
+    if !tools_used.is_empty() {
+        content.push_str(&format!("tools: [{}]\n", tools_used.join(", ")));
+    }
+    if !errors.is_empty() {
+        content.push_str(&format!("errors: [{}]\n", errors.join(", ")));
+    }
+    content.push_str("---\n\n");
+    content.push_str(narrative);
+    content.push('\n');
+
+    match std::fs::write(&filepath, &content) {
+        Ok(_) => tracing::debug!("Wrote summary markdown: {}", filepath.display()),
+        Err(e) => tracing::warn!("Failed to write summary '{}': {}", filepath.display(), e),
+    }
+}
+
 // ── turn summaries → session.json ─────────────────────────────────────
 
 /// Write turn summary into session.json under "turn_summaries".

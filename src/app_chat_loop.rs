@@ -1173,6 +1173,8 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             let route_clone = route_decision.clone();
             let formula_clone = formula.clone();
             let user_message_clone = line.to_string();
+            let model_id = runtime.model_id.clone();
+            let session_id = runtime.session.root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "unknown".to_string());
             tokio::spawn(async move {
                 let unit = crate::intel_units::TurnSummaryUnit::new(summarizer_cfg);
                 let context = crate::intel_trait::IntelContext::new(
@@ -1197,6 +1199,18 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                                     &session_root,
                                     turn_number,
                                     &summary,
+                                );
+                                // Task 385: Persist as markdown artifact
+                                crate::session_write::write_summary_markdown(
+                                    &session_root,
+                                    turn_number,
+                                    &chrono::Utc::now().to_rfc3339(),
+                                    &model_id,
+                                    &session_id,
+                                    &summary.summary_narrative,
+                                    &summary.status_category,
+                                    &summary.tools_used,
+                                    &summary.errors,
                                 );
                             }
                         }

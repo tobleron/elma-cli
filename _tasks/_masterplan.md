@@ -124,9 +124,11 @@ These tasks make complex requests manageable for small models by decomposing and
 - File: `_tasks/completed/392_Plaintext_Default_And_Markdown_Output_Tool_DONE.md`
 
 ### 385 Persist Finalized Summaries As Markdown
-- Persist summaries as optional markdown artifacts in session folders.
-- Do not make markdown the terminal default.
-- File: `_tasks/pending/385_Persist_Finalized_Summaries_As_Markdown.md`
+- [x] `write_summary_markdown()` in `session_write.rs` — writes frontmatter + narrative to `summaries/*.md`.
+- [x] Error handling: creates dir if missing, logs warnings on failure, no session interruption.
+- [x] Wired into turn summary path in `app_chat_loop.rs` — called after `save_turn_summary()`.
+- [x] Markdown artifact format: frontmatter (timestamp, session, model, turn, status, tools, errors) + narrative.
+- File: `_tasks/completed/385_Persist_Finalized_Summaries_As_Markdown_DONE.md`
 
 ## Wave 3: Offline Rust-Native Tool Equivalence
 
