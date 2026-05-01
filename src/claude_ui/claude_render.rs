@@ -1381,14 +1381,24 @@ fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterMod
   888    .o  888   888   888   888  d8(  888  
   `Y8bod8P' o888o o888o o888o o888o `Y888""8o 
 "#;
-    for logo_line in logo.lines() {
-        lines.push(Line::from(vec![Span::styled(logo_line, logo_color)]));
+    let logo_lines: Vec<&str> = logo.lines().collect();
+    let logo_width = logo_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    for logo_line in &logo_lines {
+        lines.push(Line::from(vec![Span::styled(*logo_line, logo_color)]));
     }
 
-    // Version tagline
+    // Version tagline centered under logo
     lines.push(Line::from(""));
+    let tagline = "Local first terminal agent v0.1.0";
+    let tagline_width = tagline.chars().count();
+    let tagline_pad = if tagline_width < logo_width {
+        (logo_width - tagline_width) / 2
+    } else {
+        0
+    };
+    let tagline_padded = format!("{: >width$}", "", width = tagline_pad) + tagline;
     lines.push(Line::from(vec![Span::styled(
-        "Local first terminal agent v0.1.0",
+        tagline_padded,
         Style::default().fg(theme.accent_secondary.to_ratatui_color()),
     )]));
     lines.push(Line::from(""));
@@ -1482,7 +1492,7 @@ fn render_footer_plain(model: &FooterModel, streaming_state: Option<String>) -> 
         let bar_width = 6usize;
         let filled = (ctx.min(100) * bar_width) / 100;
         parts.push(format!(
-            "[ctx {}% {}{}]",
+            "ctx {}% [{}{}]",
             ctx.min(100),
             "█".repeat(filled),
             "░".repeat(bar_width.saturating_sub(filled))
@@ -1545,17 +1555,16 @@ fn render_footer_line(
         let filled = (ctx.min(100) * bar_width) / 100;
         let empty = bar_width.saturating_sub(filled);
 
-        segments.push(("[".to_string(), accent_style));
         segments.push((format!("ctx {}% ", ctx.min(100)), dim_style));
+        segments.push(("[".to_string(), accent_style));
         segments.push(("█".repeat(filled), primary_fill_style));
         segments.push(("░".repeat(empty), dim_style));
+        segments.push(("]".to_string(), accent_style));
 
         if let Some(tx) = &model.transcript_metric {
             tx_metric_idx = Some(segments.len());
             segments.push((format!("  {}", tx), dim_style));
         }
-
-        segments.push(("]".to_string(), accent_style));
     }
 
     if let Some(state) = streaming_state.as_ref() {
