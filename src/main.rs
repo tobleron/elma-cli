@@ -88,6 +88,7 @@ mod json_error_handler; // JSON error handling with circuit breaker
 mod json_grammar; // GBNF grammar loading and injection
 mod json_parser; // Robust JSON parsing for intel unit outputs
 mod json_parser_extract; // Extraction helpers for json_parser
+mod json_repair; // Deterministic JSON repair pipeline (Task 378)
 mod json_tuning; // JSON temperature tuning
 mod llm_config;
 mod llm_provider; // Task 278: Native Rust LLM API Client

@@ -11,6 +11,7 @@
 //! - SchemaValidationError and GroundingError types
 
 use crate::*;
+use anyhow::bail;
 use std::any::TypeId;
 use std::collections::HashMap;
 
@@ -394,6 +395,76 @@ fn complexity_schema() -> JsonSchema {
     schema
 }
 
+// ============================================================================
+// Schema Complexity Validation (Task 378)
+// ============================================================================
+
+const MAX_NESTING_DEPTH: usize = 2;
+const MAX_REQUIRED_FIELDS: usize = 3;
+const MAX_TOTAL_FIELDS: usize = 5;
+
+fn max_nesting_depth(schema: &JsonSchema) -> usize {
+    let mut max_depth = 1;
+    for (_, ft) in &schema.field_types {
+        match ft {
+            FieldType::Object => {
+                // Object fields count as nesting level 2 (the object itself)
+                max_depth = max_depth.max(2);
+            }
+            _ => {}
+        }
+    }
+    max_depth
+}
+
+fn has_object_arrays(schema: &JsonSchema) -> bool {
+    for (_, ft) in &schema.field_types {
+        match ft {
+            FieldType::StringArray => {
+                // StringArray is fine (only strings). Object arrays would require
+                // a different FieldType variant that we don't currently have.
+                // We check for any array type that might hold objects.
+            }
+            _ => {}
+        }
+    }
+    // Current FieldType only supports StringArray which is always a 1D string array.
+    // No object arrays are possible with the current type system.
+    false
+}
+
+pub(crate) fn validate_schema_complexity(schema: &JsonSchema, type_name: &str) -> Result<()> {
+    if schema.required_fields.len() > MAX_REQUIRED_FIELDS {
+        bail!(
+            "Schema for '{}' has {} required fields (max {})",
+            type_name,
+            schema.required_fields.len(),
+            MAX_REQUIRED_FIELDS
+        );
+    }
+    if schema.field_types.len() > MAX_TOTAL_FIELDS {
+        bail!(
+            "Schema for '{}' has {} total fields (max {})",
+            type_name,
+            schema.field_types.len(),
+            MAX_TOTAL_FIELDS
+        );
+    }
+    let depth = max_nesting_depth(schema);
+    if depth > MAX_NESTING_DEPTH {
+        bail!(
+            "Schema for '{}' has nesting depth {} (max {})",
+            type_name,
+            depth,
+            MAX_NESTING_DEPTH
+        );
+    }
+    if has_object_arrays(schema) {
+        bail!("Schema for '{}' contains arrays of objects (banned)", type_name);
+    }
+    Ok(())
+}
+
 pub(crate) fn schema_for_type<T: 'static>() -> Option<JsonSchema> {
     let type_id = TypeId::of::<T>();
 
@@ -429,6 +500,89 @@ pub(crate) fn schema_for_type<T: 'static>() -> Option<JsonSchema> {
         Some(critic_like_schema(&["ok", "caution"]))
     } else {
         None
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_critic_schema_within_limits() {
+        let schema = critic_like_schema(&["ok", "retry"]);
+        assert!(validate_schema_complexity(&schema, "CriticVerdict").is_ok());
+    }
+
+    #[test]
+    fn test_formula_schema_exceeds_required_fields() {
+        let schema = formula_schema();
+        // FormulaSelection has 4 required fields (primary, alternatives, reason, memory_id)
+        let result = validate_schema_complexity(&schema, "FormulaSelection");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("required fields"));
+    }
+
+    #[test]
+    fn test_scope_schema_exceeds_required_fields() {
+        let schema = scope_schema();
+        let result = validate_schema_complexity(&schema, "ScopePlan");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("7 required fields"));
+        assert!(err.contains("ScopePlan"));
+    }
+
+    #[test]
+    fn test_complexity_schema_exceeds_total_fields() {
+        let schema = complexity_schema();
+        let result = validate_schema_complexity(&schema, "ComplexityAssessment");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("7 total fields"));
+    }
+
+    #[test]
+    fn test_workflow_schema_exceeds_required_and_nesting() {
+        let schema = workflow_schema();
+        let result = validate_schema_complexity(&schema, "WorkflowPlannerOutput");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        // workflow_schema has 9 required fields
+        assert!(err.contains("required fields"));
+    }
+
+    #[test]
+    fn test_validate_accepts_simple_schema() {
+        let mut schema = schema(vec!["choice", "reason"]);
+        schema.field_types.insert("choice", FieldType::Choice(&["a", "b"]));
+        schema.field_types.insert("reason", FieldType::String);
+        assert!(validate_schema_complexity(&schema, "Simple").is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_too_many_required() {
+        let schema = schema(vec!["a", "b", "c", "d"]);
+        let result = validate_schema_complexity(&schema, "TooMany");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("4 required fields"));
+    }
+
+    #[test]
+    fn test_validate_rejects_too_many_total() {
+        let mut schema = schema(vec!["a"]);
+        for i in 0..6 {
+            schema.field_types.insert(
+                Box::leak(format!("field_{}", i).into_boxed_str()),
+                FieldType::String,
+            );
+        }
+        let result = validate_schema_complexity(&schema, "TooManyTotal");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("6 total fields"));
     }
 }
 

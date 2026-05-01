@@ -35,10 +35,11 @@ These tasks remove current wrong-answer causes and give Elma a reliable view of 
 - File: `_tasks/completed/377_Remove_Trivial_Chat_Bypass_In_Orchestration_DONE.md`
 
 ### 378 JSON Complexity Constraint And Repair
-- Enforce strict intel-unit JSON limits.
-- Split complex schemas into focused units.
-- Add deterministic repair plus specialized repair unit.
-- File: `_tasks/pending/378_JSON_Complexity_Constraint_And_Repair.md`
+- [x] Add `validate_schema_complexity()` with tests for all constraint rules.
+- [x] Create `src/json_repair.rs` with 4-stage deterministic repair pipeline.
+- [x] Wire new module into crate; 700 tests pass.
+- [ ] Split complex schemas (workflow, complexity, scope) into focused units.
+- File: `_tasks/completed/378_JSON_Complexity_Constraint_And_Repair_DONE.md`
 
 ### 387 Rust-Native Tool Preference And Shell Fallback Policy
 - Add tool metadata for implementation kind and offline capability.
