@@ -170,8 +170,8 @@ pub(crate) async fn infer_digit_router(
 pub(crate) async fn infer_route_prior(
     client: &reqwest::Client,
     chat_url: &Url,
-    speech_act_cfg: &Profile,
-    workflow_router_cfg: &Profile,
+    _speech_act_cfg: &Profile,
+    _workflow_router_cfg: &Profile,
     mode_router_cfg: &Profile,
     router_cal: &RouterCalibration,
     user_message: &str,
@@ -189,111 +189,12 @@ pub(crate) async fn infer_route_prior(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let speech_prompt = format!(
-        r#"User message:
-{user_message}
-
-Workspace facts:
-{facts}
-
-Workspace brief:
-{brief}
-
-Conversation so far (most recent last):
-{conversation}"#,
+    let mode_prompt = format!(
+        "User message:\n{user_message}\n\nWorkspace facts:\n{facts}\n\nWorkspace brief:\n{brief}\n\nConversation so far (most recent last):\n{conversation}",
         user_message = user_message,
         facts = workspace_facts.trim(),
         brief = workspace_brief.trim(),
         conversation = conversation,
-    );
-    let speech_act = infer_digit_router(
-        client,
-        chat_url,
-        speech_act_cfg,
-        router_cal,
-        speech_prompt,
-        speech_act_code_pairs(),
-    )
-    .await
-    .unwrap_or_else(|_| {
-        fallback_probability_decision("INQUIRE", speech_act_code_pairs(), "fallback")
-    });
-
-    let workflow_prompt = format!(
-        "User message:\n{user_message}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
-        workspace_facts.trim(),
-        workspace_brief.trim(),
-        conversation
-    );
-    let workflow = infer_digit_router(
-        client,
-        chat_url,
-        workflow_router_cfg,
-        router_cal,
-        workflow_prompt,
-        workflow_code_pairs(),
-    )
-    .await
-    .unwrap_or_else(|_| {
-        let choice = if is_choice_confident(&speech_act, "CHAT", 0.0, 1.0) {
-            "CHAT"
-        } else {
-            "WORKFLOW"
-        };
-        fallback_probability_decision(choice, workflow_code_pairs(), "fallback")
-    });
-
-    // Create a default routing config for now - in practice this would come from application state
-    let routing_config = RoutingConfig::default();
-    if should_short_circuit_chat_route(&speech_act, &workflow, &routing_config) {
-        let workflow = ProbabilityDecision {
-            choice: "CHAT".to_string(),
-            source: "speech_short_circuit".to_string(),
-            distribution: vec![("CHAT".to_string(), 1.0), ("WORKFLOW".to_string(), 0.0)],
-            margin: 1.0,
-            entropy: 0.0,
-        };
-        let mode = ProbabilityDecision {
-            choice: "DECIDE".to_string(),
-            source: "speech_short_circuit".to_string(),
-            distribution: vec![
-                ("DECIDE".to_string(), 1.0),
-                ("INSPECT".to_string(), 0.0),
-                ("EXECUTE".to_string(), 0.0),
-                ("PLAN".to_string(), 0.0),
-                ("MASTERPLAN".to_string(), 0.0),
-            ],
-            margin: 1.0,
-            entropy: 0.0,
-        };
-        return Ok(RouteDecision {
-            route: "CHAT".to_string(),
-            source: "speech_short_circuit".to_string(),
-            distribution: vec![
-                ("CHAT".to_string(), 1.0 - speech_act.entropy),
-                ("SHELL".to_string(), 0.0),
-                ("PLAN".to_string(), 0.0),
-                ("MASTERPLAN".to_string(), 0.0),
-                ("DECIDE".to_string(), 0.0),
-            ],
-            margin: 1.0,
-            entropy: speech_act.entropy,
-            speech_act,
-            workflow,
-            mode,
-            evidence_required: false,
-        });
-    }
-
-    let mode_prompt = format!(
-        "User message:\n{user_message}\n\nWorkflow prior:\n- choice: {}\n- distribution: {}\n- margin: {:.2}\n- entropy: {:.2}\n\nWorkspace facts:\n{}\n\nWorkspace brief:\n{}\n\nConversation so far (most recent last):\n{}",
-        workflow.choice,
-        format_route_distribution(&workflow.distribution),
-        workflow.margin,
-        workflow.entropy,
-        workspace_facts.trim(),
-        workspace_brief.trim(),
-        conversation
     );
     let mode = infer_digit_router(
         client,
@@ -305,134 +206,51 @@ Conversation so far (most recent last):
     )
     .await
     .unwrap_or_else(|_| {
-        let choice = if is_choice_confident(&workflow, "CHAT", 0.0, 1.0) {
-            "DECIDE"
-        } else if is_choice_confident(&speech_act, "INSTRUCT", 0.0, 1.0) {
-            "EXECUTE"
-        } else {
-            "INSPECT"
-        };
-        fallback_probability_decision(choice, mode_code_pairs(), "fallback")
+        fallback_probability_decision("EXECUTE", mode_code_pairs(), "fallback")
     });
 
-    let chat_p = probability_of(&workflow.distribution, "CHAT");
-    let workflow_p = probability_of(&workflow.distribution, "WORKFLOW");
-    let shell_p = workflow_p
-        * (probability_of(&mode.distribution, "INSPECT")
-            + probability_of(&mode.distribution, "EXECUTE"));
-    let plan_p = workflow_p * probability_of(&mode.distribution, "PLAN");
-    let masterplan_p = workflow_p * probability_of(&mode.distribution, "MASTERPLAN");
-    let decide_p = workflow_p * probability_of(&mode.distribution, "DECIDE");
-    let mut distribution = vec![
-        ("CHAT".to_string(), chat_p),
-        ("SHELL".to_string(), shell_p),
-        ("PLAN".to_string(), plan_p),
-        ("MASTERPLAN".to_string(), masterplan_p),
-        ("DECIDE".to_string(), decide_p),
+    // Map mode classification to route
+    let route = match mode.choice.as_str() {
+        "EXECUTE" | "INSPECT" => "SHELL",
+        "DECIDE" => "CHAT",
+        "PLAN" => "PLAN",
+        "MASTERPLAN" => "MASTERPLAN",
+        _ => "SHELL",
+    };
+
+    let distribution = vec![
+        ("CHAT".to_string(), probability_of(&mode.distribution, "DECIDE")),
+        ("SHELL".to_string(), probability_of(&mode.distribution, "EXECUTE") + probability_of(&mode.distribution, "INSPECT")),
+        ("PLAN".to_string(), probability_of(&mode.distribution, "PLAN")),
+        ("MASTERPLAN".to_string(), probability_of(&mode.distribution, "MASTERPLAN")),
+        ("DECIDE".to_string(), 0.0),
     ];
 
-    // Map speech act labels to route adjustments
-    // "CHAT" → boost CHAT route (user wants conversation)
-    // "INQUIRE" → neutral (user wants information)
-    // "INSTRUCT" → boost non-CHAT routes (user wants action)
-    let chat_p = probability_of(&speech_act.distribution, "CHAT");
-    let instruct_p = probability_of(&speech_act.distribution, "INSTRUCT");
-
-    // If "CHAT" is high, boost CHAT route
-    if chat_p > 0.5 && should_apply_speech_chat_boost(&workflow) {
-        for (label, p) in &mut distribution {
-            if label == "CHAT" {
-                *p = chat_p + (1.0 - chat_p) * *p;
-            } else {
-                *p *= 1.0 - chat_p;
-            }
-        }
-    }
-
-    // If "INSTRUCT" is high, boost non-CHAT routes (user wants action)
-    if instruct_p > 0.5 {
-        let current_chat_p = probability_of(&distribution, "CHAT");
-        let workflow_boost = (instruct_p - 0.5) * 0.4; // Up to 40% boost
-        let non_chat_total: f64 = distribution
-            .iter()
-            .filter(|(l, _)| l != "CHAT")
-            .map(|(_, p)| *p)
-            .sum();
-
-        for (label, p) in &mut distribution {
-            if label != "CHAT" && non_chat_total > 0.0 {
-                *p += workflow_boost * (*p / non_chat_total);
-            } else if label == "CHAT" {
-                *p *= 1.0 - workflow_boost;
-            }
-        }
-    }
-
-    distribution.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let margin = route_margin(&distribution);
     let entropy = route_entropy(&distribution);
-    let path_scoped_request = extract_first_path_from_user_text(user_message).is_some();
-    let workflow_confident = is_choice_confident(&workflow, "WORKFLOW", 0.30, 0.60);
-    let speech_confident_chat = is_choice_confident(&speech_act, "CHAT", 0.50, 0.40);
-    let speech_confident_instruct = is_choice_confident(&speech_act, "INSTRUCT", 0.30, 0.60);
-
-    // PRINCIPLE: Under-execute when uncertain.
-    // If entropy is high (> 0.6) or margin is low (< 0.2), fallback to CHAT if speech act is CHAT.
-    let fallback_to_chat = (is_choice_confident(&speech_act, "CHAT", 0.0, 1.0)
-        && (margin < 0.20 || entropy > 0.60))
-        || (margin < 0.12); // Hard fallback for any case where we are absolutely guessing
-    let preserve_workflow_route = path_scoped_request
-        && (workflow_confident || speech_confident_instruct)
-        && !speech_confident_chat;
-
-    let route = if preserve_workflow_route {
-        top_non_chat_route(&distribution).unwrap_or_else(|| "SHELL".to_string())
-    } else if fallback_to_chat {
-        "CHAT".to_string()
-    } else {
-        distribution
-            .first()
-            .map(|(label, _)| label.clone())
-            .unwrap_or_else(|| "CHAT".to_string())
-    };
-    let source = if preserve_workflow_route {
-        format!(
-            "preserve_workflow_route speech:{} workflow:{} mode:{}",
-            speech_act.source, workflow.source, mode.source
-        )
-    } else if fallback_to_chat {
-        format!(
-            "conservative_chat_fallback speech:{} workflow:{} mode:{}",
-            speech_act.source, workflow.source, mode.source
-        )
-    } else {
-        format!(
-            "speech:{} workflow:{} mode:{}",
-            speech_act.source, workflow.source, mode.source
-        )
-    };
-
-    // PRINCIPLE: Distinguish selection from categorization.
-    // Categorization (DECIDE) needs a label. Selection (SELECT) needs a choice from workspace items.
-    // Use speech act classification to determine if this is a selection request
-    let is_selection_request = is_choice_confident(&speech_act, "INQUIRE", 0.0, 1.0)
-        || is_choice_confident(&speech_act, "INSTRUCT", 0.0, 1.0);
-    let route = if is_selection_request && is_choice_confident(&workflow, "DECIDE", 0.0, 1.0) {
-        "SELECT".to_string()
-    } else {
-        route
-    };
 
     Ok(RouteDecision {
-        route,
-        source,
+        route: route.to_string(),
+        source: format!("mode:{} entropy:{:.2} margin:{:.2}", mode.choice, entropy, margin),
         margin,
         entropy,
         distribution,
-        speech_act,
-        workflow,
+        speech_act: ProbabilityDecision {
+            choice: "INSTRUCT".to_string(),
+            source: "mode_derived".to_string(),
+            distribution: vec![("INSTRUCT".to_string(), 1.0), ("CHAT".to_string(), 0.0)],
+            margin: 1.0,
+            entropy: 0.0,
+        },
+        workflow: ProbabilityDecision {
+            choice: "WORKFLOW".to_string(),
+            source: "mode_derived".to_string(),
+            distribution: vec![("WORKFLOW".to_string(), 1.0), ("CHAT".to_string(), 0.0)],
+            margin: 1.0,
+            entropy: 0.0,
+        },
         mode,
-        evidence_required: false, // Task 290: Will be set by evidence classifier
+        evidence_required: false,
     })
 }
 
