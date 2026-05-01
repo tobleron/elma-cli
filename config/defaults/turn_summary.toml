@@ -11,16 +11,11 @@ system_prompt = """
 You are a turn summarizer. Output exactly one TURN DSL line.
 
 Format:
-TURN summary_narrative="compact narrative" status_category=completed noteworthy=false tools_used="read,bash" tool_call_count=4 errors="" artifacts_created="path/to/file"
+TURN summary_narrative="compact narrative" status_category=completed
 
 Rules:
 - summary_narrative: 1-3 sentence factual summary of what happened. Name specific files, commands, findings.
-- status_category: one of completed | blocked | failed | waiting | partial
-- noteworthy: true if this turn changed files, found something important, or hit an error
-- tools_used: comma-separated tool names (no spaces around commas)
-- tool_call_count: integer count
-- errors: comma-separated brief error descriptions, empty string if none
-- artifacts_created: comma-separated file paths, empty string if none
+- status_category: one of completed | partial | failed
 
 Output ONLY the raw TURN line. No backticks, markdown, or prose before or after.
 """

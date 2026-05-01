@@ -27,7 +27,7 @@ These tasks give the biggest immediate improvement for 3B DSL reliability with t
 | Order | Task | Title | Effort | Gain | Depends On |
 |-------|------|-------|--------|------|------------|
 | ~~1~~ | ~~418~~ | ~~Concrete repair hints for DSL parse failures~~ | ~~small-med~~ | ~~critical~~ | DONE |
-| 2 | [417](pending/417_Simplify_Turn_Summarizer_To_Single_Decision_DSL.md) | Simplify turn summarizer to two-field DSL | small-med | high — eliminates prose/hallucination in summaries | 411 |
+| ~~2~~ | ~~417~~ | ~~Simplify turn summarizer to two-field DSL~~ | ~~small-med~~ | ~~high~~ | DONE |
 | 3 | [412](pending/412_Deterministic_Fallback_On_Repeated_Classifier_DSL_Parse_Failure.md) | Deterministic fallback on repeated classifier DSL parse failure | small | medium-high — safety net for classifier parse loops | none |
 
 ### Tier 2: Action DSL Decomposition (Medium ROI)

@@ -4,7 +4,11 @@
 //!
 //! One job: summarize a single conversation turn into a compact narrative
 //! that can replace the raw messages in the next turn's context.
-//! Output: structured JSON with narrative, status, tools, artifacts.
+//! Output: structured data with narrative, status, tools, artifacts.
+//!
+//! The model produces only two fields (summary_narrative + status_category).
+//! All factual fields (tools_used, tool_call_count, errors, artifacts_created,
+//! noteworthy) are pre-filled by Rust from the execution trace.
 
 use crate::intel_trait::*;
 use crate::*;
@@ -68,16 +72,6 @@ impl IntelUnit for TurnSummaryUnit {
             .extra("final_text")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let tools_used = context
-            .extra("tools_used")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let tool_call_count = context
-            .extra("tool_call_count")
-            .and_then(|v| v.as_str())
-            .unwrap_or("0")
-            .parse::<u64>()
-            .unwrap_or(0) as u64;
         let step_results = context
             .extra("step_results")
             .and_then(|v| v.as_array())
@@ -90,12 +84,33 @@ impl IntelUnit for TurnSummaryUnit {
             })
             .unwrap_or_default();
 
+        // Read factual fields from context extras — populated by Rust from the
+        // execution trace (Task 411 + Task 417). The model is NOT asked to
+        // produce these; they never appear in the narrative prompt.
+        let tools_used_str = context
+            .extra("tools_used")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let tool_call_count = context
+            .extra("tool_call_count")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0")
+            .parse::<u64>()
+            .unwrap_or(0) as u64;
+        let errors_str = context
+            .extra("errors")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let artifacts_str = context
+            .extra("artifacts_created")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Model is asked for only TWO fields: narrative + status.
         let narrative = format!(
             r#"USER REQUEST: {user_message}
 ROUTE: {route}
 FORMULA: {formula}
-TOOLS USED: {tools_used}
-TOOL CALL COUNT: {tool_call_count}
 STEP RESULTS: {step_results}
 FINAL RESPONSE: {final_text}
 
@@ -103,18 +118,35 @@ TASK:
 Summarize what happened in this turn. Write a compact narrative that captures what the user asked, what actions Elma took, and what the outcome was. This summary will replace the raw turn messages in the next turn's context.
 
 Output DSL format (single line):
-TURN summary_narrative="compact narrative" status_category=completed noteworthy=false tools_used="{tools_used}" tool_call_count={tool_call_count} errors="" artifacts_created=""
+TURN summary_narrative="compact narrative" status_category=completed
 
 CRITICAL: Output ONLY the raw TURN line. Do NOT wrap it in backticks, markdown code blocks, or any other formatting. No prose before or after. Just one TURN line exactly as shown.
 
-Valid status_category values: completed | blocked | failed | waiting | partial
-Use comma-separated strings for array fields (tools_used, errors, artifacts_created).
-IMPORTANT: Copy tools_used and tool_call_count VERBATIM from the input — do not guess."#
+Valid status_category values: completed | partial | failed"#
         );
 
         let dsl_result =
             execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
-        // Convert DSL result to TurnSummaryOutput (comma-separated strings to arrays)
+
+        // Parse comma-separated extras into vectors — populated from Rust, not model.
+        let parse_csv = |s: &str| -> Vec<String> {
+            s.split(',')
+                .filter_map(|t| {
+                    let trimmed = t.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect()
+        };
+
+        let tools_parsed: Vec<String> = parse_csv(tools_used_str);
+        let errors_parsed: Vec<String> = parse_csv(errors_str);
+        let artifacts_parsed: Vec<String> = parse_csv(artifacts_str);
+
+        // Only two fields from model; the rest from Rust.
         let result = TurnSummaryOutput {
             summary_narrative: dsl_result
                 .get("summary_narrative")
@@ -126,62 +158,13 @@ IMPORTANT: Copy tools_used and tool_call_count VERBATIM from the input — do no
                 .and_then(|v| v.as_str())
                 .unwrap_or("completed")
                 .to_string(),
-            noteworthy: dsl_result
-                .get("noteworthy")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-            tools_used: dsl_result
-                .get("tools_used")
-                .and_then(|v| v.as_str())
-                .map(|s| {
-                    s.split(',')
-                        .filter_map(|t| {
-                            let trimmed = t.trim();
-                            if trimmed.is_empty() {
-                                None
-                            } else {
-                                Some(trimmed.to_string())
-                            }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            tool_call_count: dsl_result
-                .get("tool_call_count")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as usize,
-            errors: dsl_result
-                .get("errors")
-                .and_then(|v| v.as_str())
-                .map(|s| {
-                    s.split(',')
-                        .filter_map(|t| {
-                            let trimmed = t.trim();
-                            if trimmed.is_empty() {
-                                None
-                            } else {
-                                Some(trimmed.to_string())
-                            }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            artifacts_created: dsl_result
-                .get("artifacts_created")
-                .and_then(|v| v.as_str())
-                .map(|s| {
-                    s.split(',')
-                        .filter_map(|t| {
-                            let trimmed = t.trim();
-                            if trimmed.is_empty() {
-                                None
-                            } else {
-                                Some(trimmed.to_string())
-                            }
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
+            noteworthy: !errors_parsed.is_empty()
+                || !artifacts_parsed.is_empty()
+                || tool_call_count > 0,
+            tools_used: tools_parsed,
+            tool_call_count: tool_call_count as usize,
+            errors: errors_parsed,
+            artifacts_created: artifacts_parsed,
         };
 
         Ok(IntelOutput::success(
@@ -205,25 +188,57 @@ IMPORTANT: Copy tools_used and tool_call_count VERBATIM from the input — do no
         trace_fallback(self.name(), error);
 
         let user_msg = context.user_message.chars().take(120).collect::<String>();
-        let tools = context
-            .extra("tools_used")
-            .and_then(|v| v.as_str())
-            .unwrap_or("none");
         let formula = context
             .extra("formula")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
 
+        // Populate factual fields from context extras in fallback too.
+        let parse_csv = |s: &str| -> Vec<String> {
+            s.split(',')
+                .filter_map(|t| {
+                    let trimmed = t.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect()
+        };
+
+        let tools_str = context
+            .extra("tools_used")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let tools_parsed: Vec<String> = parse_csv(tools_str);
+        let tc = context
+            .extra("tool_call_count")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0")
+            .parse::<usize>()
+            .unwrap_or(0);
+        let err_str = context
+            .extra("errors")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let errors_parsed: Vec<String> = parse_csv(err_str);
+        let art_str = context
+            .extra("artifacts_created")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let artifacts_parsed: Vec<String> = parse_csv(art_str);
+
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
-                "summary_narrative": format!("User asked: \"{user_msg}\". Elma responded (formula: {formula}, tools: {tools}) but the summary generation failed."),
+                "summary_narrative": format!("User asked: \"{user_msg}\". Elma responded (formula: {formula}) but the summary generation failed."),
                 "status_category": "partial",
                 "noteworthy": false,
-                "tools_used": [],
-                "tool_call_count": 0,
+                "tools_used": tools_parsed,
+                "tool_call_count": tc,
                 "errors": [error.to_string()],
-                "artifacts_created": [],
+                "artifacts_created": artifacts_parsed,
             }),
             &format!("turn summary failed: {}", error),
         ))
@@ -278,5 +293,27 @@ mod tests {
                 .map(|a| a.len()),
             Some(2)
         );
+    }
+
+    #[test]
+    fn test_turn_summary_fields_from_rust_not_model() {
+        // Verify that TurnSummaryOutput is constructed with all fields
+        // even though the model only provides summary_narrative and status_category.
+        let output = TurnSummaryOutput {
+            summary_narrative: "Test narrative".to_string(),
+            status_category: "completed".to_string(),
+            noteworthy: true,
+            tools_used: vec!["read".to_string(), "bash".to_string()],
+            tool_call_count: 2,
+            errors: vec!["timeout".to_string()],
+            artifacts_created: vec!["output.txt".to_string()],
+        };
+        assert_eq!(output.summary_narrative, "Test narrative");
+        assert_eq!(output.status_category, "completed");
+        assert!(output.noteworthy);
+        assert_eq!(output.tools_used.len(), 2);
+        assert_eq!(output.tool_call_count, 2);
+        assert_eq!(output.errors.len(), 1);
+        assert_eq!(output.artifacts_created.len(), 1);
     }
 }

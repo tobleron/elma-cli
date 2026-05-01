@@ -1297,6 +1297,21 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             .filter_map(|sr| sr.command.clone())
             .collect();
         let tool_call_count = tools_used.len();
+        let errors: Vec<String> = step_results
+            .iter()
+            .filter(|sr| !sr.ok)
+            .map(|sr| {
+                sr.outcome_reason
+                    .clone()
+                    .filter(|r| !r.is_empty())
+                    .unwrap_or_else(|| format!("step {}: {}", sr.id, sr.summary))
+            })
+            .collect();
+        let artifacts_created: Vec<String> = step_results
+            .iter()
+            .filter(|sr| sr.artifact_path.is_some())
+            .filter_map(|sr| sr.artifact_path.clone())
+            .collect();
         let step_results_json: Vec<serde_json::Value> = step_results
             .iter()
             .map(|sr| {
@@ -1330,6 +1345,8 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 .and_then(|c| c.with_extra("step_results", &step_results_json))
                 .and_then(|c| c.with_extra("tools_used", &tools_used.join(",")))
                 .and_then(|c| c.with_extra("tool_call_count", &tool_call_count.to_string()))
+                .and_then(|c| c.with_extra("errors", &errors.join(",")))
+                .and_then(|c| c.with_extra("artifacts_created", &artifacts_created.join(",")))
                 .and_then(|c| c.with_extra("formula", &formula_clone));
                 match context {
                     Ok(ctx) => match unit.execute_with_fallback(&ctx).await {
