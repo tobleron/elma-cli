@@ -675,15 +675,28 @@ Conversation so far (most recent last):
     // If entropy is high (> 0.6) or margin is low (< 0.2), fallback to CHAT if speech act is CHAT.
     // Mode classifier was bypassed or preserved — do not let uncertainty in the
     // combined distribution erase correct early-stage routing.
+    //
+    // Task 412 bugfix: is_choice_confident(&speech_act, "CHAT", 0.0, 1.0) was
+    // a permissive gate that collapsed ALL borderline routes to CHAT because
+    // it required zero confidence (margin=0.0). Use RoutingConfig thresholds
+    // instead and never collapse to CHAT when workflow gate is confident about
+    // WORKFLOW — the user was asking for action.
     let mode_is_bypass_or_preserved = mode.source.starts_with("direct_2stage")
         || mode
             .source
             .starts_with("mode_dsl_failed_preserved_workflow")
         || mode.source.starts_with("mode_failed_salvaged");
+    // Only fall back to CHAT when speech_act is genuinely confident about CHAT
+    // (using configurable thresholds) AND the route distribution is uncertain.
+    // When workflow says WORKFLOW with confidence, preserve action routes.
+    let speech_actually_chat =
+        is_choice_confident_with_config(&speech_act, "CHAT", &routing_config);
     let fallback_to_chat = !mode_is_bypass_or_preserved
-        && ((is_choice_confident(&speech_act, "CHAT", 0.0, 1.0)
-            && (margin < 0.20 || entropy > 0.60))
-            || (margin < 0.12)); // Hard fallback for any case where we are absolutely guessing
+        && speech_actually_chat
+        && !workflow_confident
+        && ((margin < routing_config.fallback_chat_margin_threshold
+            || entropy > routing_config.fallback_chat_entropy_threshold)
+            || (margin < routing_config.hard_fallback_margin_threshold));
     let preserve_workflow_route = mode_is_bypass_or_preserved
         || (path_scoped_request
             && (workflow_confident || speech_confident_instruct)

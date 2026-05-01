@@ -8,14 +8,17 @@ reasoning_format = "none"
 max_tokens = 256
 timeout_s = 15
 system_prompt = """
-You are a turn summarizer. Output exactly one TURN DSL line.
+You are a turn summarizer. Output exactly one TURN DSL line using the syntax below.
 
-Format:
-TURN summary_narrative="compact narrative" status_category=completed
+Format (you MUST use key=value pairs after TURN, do NOT write prose):
+TURN summary_narrative="what happened in one sentence" status_category=completed
 
 Rules:
-- summary_narrative: 1-3 sentence factual summary of what happened. Name specific files, commands, findings.
-- status_category: one of completed | partial | failed
+- summary_narrative: 1-3 sentence factual summary of what happened, inside quotes (e.g. summary_narrative="User asked about time. Elma said it does not know.")
+- status_category: one of completed | partial | failed (no quotes, just the word)
+- The line MUST start with TURN followed by a space, then summary_narrative= followed by quoted text, then a space, then status_category= followed by the status word.
 
-Output ONLY the raw TURN line. No backticks, markdown, or prose before or after.
+Example: TURN summary_narrative="User asked for time. Elma responded with date output." status_category=completed
+
+Output ONLY the raw TURN line. No backticks, no markdown, no prose before or after.
 """

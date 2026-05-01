@@ -19,6 +19,9 @@ grammar_path = "grammars/evidence_needs.dsl.gbnf"
 [tools_need_assessor]
 grammar_path = "grammars/tools_needs.dsl.gbnf"
 
+[turn_summary]
+grammar_path = "grammars/turn_summary.dsl.gbnf"
+
 [workflow_planner]
 grammar_path = "grammars/workflow_planner.json.gbnf"
 

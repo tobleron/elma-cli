@@ -1,0 +1,5 @@
+root ::= TURN_DSL
+TURN_DSL ::= ws "TURN" ws "summary_narrative=" string ws "status_category=" status
+string ::= "\"" [^"]* "\""
+status ::= "completed" | "partial" | "failed"
+ws ::= [ \t]*
