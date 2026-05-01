@@ -59,14 +59,18 @@ These tasks remove current wrong-answer causes and give Elma a reliable view of 
 These tasks make complex requests manageable for small models by decomposing and repairing the smallest failing unit.
 
 ### 389 Pyramid Work Graph Complexity Assessment
-- Represent requests as Objective -> Goals -> Sub-Goals -> Plans -> Instructions.
-- Build graph state in Rust while keeping model JSON simple.
-- File: `_tasks/pending/389_Pyramid_Work_Graph_Complexity_Assessment.md`
+- [x] `WorkGraph` + `WorkGraphBuilder` types with 5 node kinds and approach tracking.
+- [x] `GraphComplexityUnit` intel unit (3-field JSON compliant with Task 378).
+- [x] 13 tests for graph construction, depth, children, kind filtering, topological order.
+- File: `_tasks/completed/389_Pyramid_Work_Graph_Complexity_Assessment_DONE.md`
 
 ### 379 Dynamic Decomposition On Weakness
-- Detect failure classes and choose focused decomposition strategies.
-- Repair by tightening context, changing tools, or splitting fields.
-- File: `_tasks/pending/379_Dynamic_Decomposition_On_Weakness.md`
+- [x] `FailureClass` enum with 7 variants and detection from error context.
+- [x] `decompose_on_failure()` now returns true for stale/parse/multi-failure signals.
+- [x] `strategy_for_failure()` maps each class to decomposition guidance.
+- [x] Wired into retry loop: failure class detection on every retry after first.
+- [x] 18 tests (11 new) for detection, labeling, strategies, and decomposition gating.
+- File: `_tasks/completed/379_Dynamic_Decomposition_On_Weakness_DONE.md`
 
 ### 390 Approach Branch Retry And Prune Engine
 - Stop failed approaches from continuing down the graph.

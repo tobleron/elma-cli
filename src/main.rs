@@ -182,6 +182,7 @@ mod ui;
 mod ui_status_thread; // Task 311: Persistent Status Thread
 mod verification;
 mod verification_evidence;
+mod work_graph; // Task 389: Pyramid Work Graph
 mod workspace;
 mod workspace_tree; // Task 169: Claude Code-style Terminal UI
 
