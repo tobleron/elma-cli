@@ -1923,6 +1923,25 @@ impl TerminalUI {
                         self.tasks.toggle();
                         self.pending_draw = true;
                     }
+                    'm' => {
+                        // Toggle response mode (Concise <-> Long)
+                        use crate::ui_state::ResponseMode;
+                        let new_mode = match crate::ui_state::current_response_mode() {
+                            ResponseMode::Concise => ResponseMode::Long,
+                            ResponseMode::Long => ResponseMode::Concise,
+                        };
+                        crate::ui_state::set_response_mode(new_mode.clone());
+                        let label = match new_mode {
+                            ResponseMode::Concise => "Concise",
+                            ResponseMode::Long => "Long",
+                        };
+                        self.push_notice(
+                            crate::claude_ui::UiNoticeKind::InputHint,
+                            crate::claude_ui::NoticePersistence::EphemeralPromptHint,
+                            &format!("Response mode: {}", label),
+                        );
+                        self.pending_draw = true;
+                    }
                     _ => {}
                 },
                 KeyCode::Char(c) => {

@@ -110,13 +110,17 @@ pub(crate) async fn resolve_final_text(
     let reply_instructions = final_reply.clone().unwrap_or_else(|| {
         "Respond to the user in plain terminal text. Use any step outputs as evidence.".to_string()
     });
+    let presenter_cfg = match crate::ui_state::current_response_mode() {
+        crate::ui_state::ResponseMode::Concise => &runtime.profiles.result_presenter_concise_cfg,
+        crate::ui_state::ResponseMode::Long => &runtime.profiles.result_presenter_long_cfg,
+    };
     let (final_text, usage) = generate_final_answer_once(
         &runtime.client,
         &runtime.chat_url,
         &runtime.profiles.elma_cfg,
         &runtime.profiles.evidence_mode_cfg,
         &runtime.profiles.expert_advisor_cfg,
-        &runtime.profiles.result_presenter_cfg,
+        presenter_cfg,
         &runtime.profiles.claim_checker_cfg,
         &runtime.profiles.formatter_cfg,
         &runtime.system_content,

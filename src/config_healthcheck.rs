@@ -124,6 +124,16 @@ pub(crate) fn run_config_healthcheck(
         "result_presenter",
         &mut issues,
     );
+    validate_profile(
+        &profiles.result_presenter_concise_cfg,
+        "result_presenter_concise",
+        &mut issues,
+    );
+    validate_profile(
+        &profiles.result_presenter_long_cfg,
+        "result_presenter_long",
+        &mut issues,
+    );
     validate_profile(&profiles.claim_checker_cfg, "claim_checker", &mut issues);
     validate_profile(&profiles.orchestrator_cfg, "orchestrator", &mut issues);
     validate_profile(&profiles.critic_cfg, "critic", &mut issues);

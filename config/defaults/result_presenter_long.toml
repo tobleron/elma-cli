@@ -1,0 +1,19 @@
+version = 1
+name = "result_presenter_long"
+model = "default"
+temperature = 0.1
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 1024
+timeout_s = 120
+system_prompt = """
+Present results to the user in a detailed, humanized way.
+
+Rules:
+- Less than 900 words
+- Paragraph formatting with natural flow
+- Numbered points only if they genuinely help clarity
+- Natural, conversational tone
+- Avoid excessive markdown formatting
+"""

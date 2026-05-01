@@ -11,6 +11,38 @@ static REASONING_DISPLAY: OnceLock<Mutex<(bool, bool)>> = OnceLock::new();
 static JSON_OUTPUTTER_PROFILE: OnceLock<Mutex<Option<Profile>>> = OnceLock::new();
 static FINAL_ANSWER_EXTRACTOR_PROFILE: OnceLock<Mutex<Option<Profile>>> = OnceLock::new();
 static MODEL_BEHAVIOR_PROFILE: OnceLock<Mutex<Option<ModelBehaviorProfile>>> = OnceLock::new();
+/// Response mode for final summarizer: Concise (default) or Long.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum ResponseMode {
+    Concise,
+    Long,
+}
+
+impl Default for ResponseMode {
+    fn default() -> Self {
+        Self::Concise
+    }
+}
+
+static RESPONSE_MODE: OnceLock<Mutex<ResponseMode>> = OnceLock::new();
+
+/// Set the current response mode.
+pub(crate) fn set_response_mode(mode: ResponseMode) {
+    if let Ok(mut slot) = RESPONSE_MODE.get_or_init(|| Mutex::new(ResponseMode::Concise)).lock() {
+        *slot = mode;
+    }
+}
+
+/// Get the current response mode.
+pub(crate) fn current_response_mode() -> ResponseMode {
+    RESPONSE_MODE
+        .get_or_init(|| Mutex::new(ResponseMode::Concise))
+        .lock()
+        .ok()
+        .map(|guard| guard.clone())
+        .unwrap_or(ResponseMode::Concise)
+}
+
 /// Tracks intel unit failures: (unit_name -> [(error_message, count)])
 static INTEL_FAILURE_COUNTS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 /// Whether the TUI is currently active (to suppress stderr status messages)

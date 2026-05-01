@@ -109,6 +109,12 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         result_presenter_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("result_presenter.toml"),
         )?,
+        result_presenter_concise_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("result_presenter_concise.toml"),
+        )?,
+        result_presenter_long_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("result_presenter_long.toml"),
+        )?,
         claim_checker_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("claim_checker.toml"),
         )?,

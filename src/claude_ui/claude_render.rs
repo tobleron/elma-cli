@@ -1482,7 +1482,7 @@ fn render_footer_plain(model: &FooterModel, streaming_state: Option<String>) -> 
         let bar_width = 6usize;
         let filled = (ctx.min(100) * bar_width) / 100;
         parts.push(format!(
-            "ctx {}% {}{}",
+            "[ctx {}% {}{}]",
             ctx.min(100),
             "█".repeat(filled),
             "░".repeat(bar_width.saturating_sub(filled))
@@ -1494,6 +1494,12 @@ fn render_footer_plain(model: &FooterModel, streaming_state: Option<String>) -> 
     if let Some(state) = streaming_state {
         parts.push(state);
     }
+    let mode = crate::ui_state::current_response_mode();
+    let mode_str = match mode {
+        crate::ui_state::ResponseMode::Concise => "Concise",
+        crate::ui_state::ResponseMode::Long => "Long",
+    };
+    parts.push(mode_str.to_string());
     parts.join("  ")
 }
 
@@ -1520,7 +1526,6 @@ fn render_footer_line(
     // Left section: mode label (pink+bold) or empty
     let left: String = model.mode_label.as_deref().unwrap_or("").to_string();
     let left_width = left.chars().count();
-
     let left_pad = if left.is_empty() { 0 } else { left_width + 2 };
 
     let mut spans: Vec<Span> = Vec::new();
@@ -1531,83 +1536,59 @@ fn render_footer_line(
         spans.push(Span::styled("  ", dim_style));
     }
 
-    // Center: styled context bar + metrics (with width-aware truncation)
-    let available_center = width.saturating_sub(left_pad);
+    // Build styled segments for center + right
+    let mut segments: Vec<(String, Style)> = Vec::new();
+    let mut tx_metric_idx: Option<usize> = None;
 
-    // Build plain-text parts for width calculation
-    let mut parts: Vec<String> = Vec::new();
     if let Some(ctx) = model.context_pct {
         let bar_width = 6usize;
         let filled = (ctx.min(100) * bar_width) / 100;
         let empty = bar_width.saturating_sub(filled);
-        parts.push(format!(
-            "ctx {}% {}{}",
-            ctx.min(100),
-            "█".repeat(filled),
-            "░".repeat(empty)
-        ));
-    }
-    if let Some(tx) = &model.transcript_metric {
-        parts.push(tx.clone());
-    }
-    if let Some(state) = streaming_state.as_ref() {
-        parts.push(state.clone());
-    }
 
-    let joined = parts.join("  ");
-    let joined_width = joined.chars().count();
+        segments.push(("[".to_string(), accent_style));
+        segments.push((format!("ctx {}% ", ctx.min(100)), dim_style));
+        segments.push(("█".repeat(filled), primary_fill_style));
+        segments.push(("░".repeat(empty), dim_style));
 
-    // Truncate if needed: drop transcript metric first, then char-truncate
-    let center_text = if joined_width > available_center && parts.len() >= 2 {
-        // Drop index 1 (transcript metric)
-        let mut shortened = parts.clone();
-        shortened.remove(1);
-        let s = shortened.join("  ");
-        if s.chars().count() > available_center {
-            s.chars().take(available_center).collect()
-        } else {
-            s
+        if let Some(tx) = &model.transcript_metric {
+            tx_metric_idx = Some(segments.len());
+            segments.push((format!("  {}", tx), dim_style));
         }
-    } else if joined_width > available_center {
-        joined.chars().take(available_center).collect::<String>()
-    } else {
-        joined
-    };
 
-    // Render center_text with styled spans
-    // Split on "ctx N% " prefix to apply styled blocks vs dim rest
-    if !center_text.is_empty() {
-        if let Some(ctx) = model.context_pct {
-            let prefix = format!("ctx {}% ", ctx.min(100));
-            if center_text.starts_with(&prefix) {
-                let rest = center_text[prefix.len()..].to_string();
-                let bar_width = 6usize;
-                let filled = (ctx.min(100) * bar_width) / 100;
-                let empty = bar_width.saturating_sub(filled);
-                spans.push(Span::styled(prefix, dim_style));
-                let filled_part = "█".repeat(filled);
-                let empty_part = "░".repeat(empty);
-                if rest.starts_with(&filled_part) {
-                    spans.push(Span::styled(filled_part.clone(), primary_fill_style));
-                    let after_filled = rest[filled_part.len()..].to_string();
-                    if after_filled.starts_with(&empty_part) {
-                        spans.push(Span::styled(empty_part.clone(), dim_style));
-                        let after_empty = after_filled[empty_part.len()..].to_string();
-                        if !after_empty.is_empty() {
-                            spans.push(Span::styled(after_empty, dim_style));
-                        }
-                    } else {
-                        spans.push(Span::styled(after_filled, dim_style));
-                    }
-                } else {
-                    spans.push(Span::styled(rest, dim_style));
-                }
-            } else {
-                // Context bar got truncated so much that prefix is gone
-                spans.push(Span::styled(center_text, dim_style));
-            }
+        segments.push(("]".to_string(), accent_style));
+    }
+
+    if let Some(state) = streaming_state.as_ref() {
+        segments.push((format!("  {}", state), dim_style));
+    }
+
+    // Response mode on the right
+    let mode = crate::ui_state::current_response_mode();
+    let mode_str = match mode {
+        crate::ui_state::ResponseMode::Concise => "Concise",
+        crate::ui_state::ResponseMode::Long => "Long",
+    };
+    segments.push((format!("  {}", mode_str), accent_style));
+
+    // Width-aware rendering: drop transcript metric first if needed
+    let available = width.saturating_sub(left_pad);
+    let total_width: usize = segments.iter().map(|(s, _)| s.chars().count()).sum();
+    if total_width > available {
+        // Always drop transcript metric first when we can't fit everything
+        if let Some(idx) = tx_metric_idx {
+            segments.remove(idx);
+        }
+    }
+
+    // Render whatever fits
+    let mut remaining = available;
+    for (text, style) in &segments {
+        let w = text.chars().count();
+        if w <= remaining {
+            spans.push(Span::styled(text.clone(), *style));
+            remaining -= w;
         } else {
-            spans.push(Span::styled(center_text, dim_style));
+            break;
         }
     }
 

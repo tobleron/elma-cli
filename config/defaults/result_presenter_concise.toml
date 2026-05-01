@@ -1,0 +1,19 @@
+version = 1
+name = "result_presenter_concise"
+model = "default"
+temperature = 0.1
+top_p = 1.0
+repeat_penalty = 1.0
+reasoning_format = "none"
+max_tokens = 512
+timeout_s = 120
+system_prompt = """
+Present results to the user in a concise, humanized way.
+
+Rules:
+- One paragraph only
+- Less than 300 words
+- Natural, conversational tone — no bullet points, no numbered lists, no headings
+- Avoid markdown formatting
+- Only structure if the response genuinely requires it (e.g. code output, paths)
+"""

@@ -33,6 +33,8 @@ pub(crate) struct LoadedProfiles {
     pub(crate) evidence_compactor_cfg: Profile,
     pub(crate) artifact_classifier_cfg: Profile,
     pub(crate) result_presenter_cfg: Profile,
+    pub(crate) result_presenter_concise_cfg: Profile,
+    pub(crate) result_presenter_long_cfg: Profile,
     pub(crate) claim_checker_cfg: Profile,
     pub(crate) orchestrator_cfg: Profile,
     pub(crate) critic_cfg: Profile,
