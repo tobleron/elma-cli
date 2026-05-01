@@ -48,9 +48,11 @@ These tasks remove current wrong-answer causes and give Elma a reliable view of 
 - File: `_tasks/completed/387_Rust_Native_Tool_Preference_And_Shell_Fallback_Policy_DONE.md`
 
 ### 388 Model-Driven Tool Discovery And Capability Routing
-- Let orchestration discover relevant tools by capability.
-- Cap discovered tools and rank rust-native/offline tools first.
-- File: `_tasks/pending/388_Model_Driven_Tool_Discovery_And_Capability_Routing.md`
+- [x] Create `CapabilityDiscoveryUnit` intel unit with 3-field JSON output (Task 378 compliant).
+- [x] Add `find_tools_for_capability()` with rust-native ranking via `ImplementationKind::selection_priority()`.
+- [x] Add `auto_discover_tools()` that discovers capability, searches registry, caps at 5, loads results.
+- [x] 7 tests prove discovery, ranking, rust-native preference, and cap behavior.
+- File: `_tasks/completed/388_Model_Driven_Tool_Discovery_And_Capability_Routing_DONE.md`
 
 ## Wave 2: Pyramid Orchestration And Semantic Reliability
 
