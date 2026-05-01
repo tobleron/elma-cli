@@ -817,7 +817,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Tool discovery and execution (Task 015: Autonomous Tool Discovery)
         if runtime.tool_registry.needs_discovery() {
             if let Ok(registry) = tool_discovery::discover_workspace_tools(&runtime.repo) {
+                let tool_count = registry.available_tools().len();
                 runtime.tool_registry = registry;
+                tui.push_meta_event("TOOLS", &format!("discovered {} tool(s)", tool_count));
             }
         }
 
@@ -852,6 +854,18 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 fallback
             }
         };
+
+        // Task 381: Surface route decision as transcript meta event
+        tui.push_meta_event(
+            "ROUTE",
+            &format!(
+                "{} (entropy={:.2}, margin={:.2}, source={})",
+                route_decision.route,
+                route_decision.entropy,
+                route_decision.margin,
+                route_decision.source,
+            ),
+        );
 
         // Task 380: Create continuity tracker with route alignment check
         let mut continuity_tracker = crate::continuity::ContinuityTracker::new(

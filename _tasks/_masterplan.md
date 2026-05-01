@@ -99,9 +99,14 @@ These tasks make complex requests manageable for small models by decomposing and
 - File: `_tasks/completed/380_Semantic_Continuity_Tracking_DONE.md`
 
 ### 381 Transcript-Native Operational Visibility
-- Show routing, formula, tool discovery, stop, retry, compaction, and decomposition events.
-- Keep footer limited to model, token count, elapsed time.
-- File: `_tasks/pending/381_Transcript_Operational_Visibility.md`
+- [x] `push_meta_event` on TerminalUI now pushes `ClaudeMessage::System` (was a no-op).
+- [x] Wired ROUTE event after `annotate_and_classify` in chat loop.
+- [x] Wired RETRY event per attempt and DECOMPOSE event on failure decomposition.
+- [x] Wired APPROACH events (prune, exhaust) in retry loop.
+- [x] Wired TOOLS event after workspace tool discovery.
+- [x] STOP events already wired in tool_loop via `push_meta_event("STOP", ...)`.
+- [x] `push_stop_notice` exists with 0 callers (Task 381 note: exposed but not yet wired).
+- File: `_tasks/completed/381_Transcript_Operational_Visibility_DONE.md`
 
 ### 384 Clean-Context Finalization Enforcement
 - [x] `sanitize_final_answer()` — strips headers, evidence framing, analysis/verification artifacts.

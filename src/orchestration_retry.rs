@@ -411,6 +411,20 @@ pub(crate) async fn orchestrate_with_retries(
             continue;
         }
 
+        // Task 381: Surface retry attempt as transcript meta event
+        if let Some(ref mut t) = tui {
+            t.push_meta_event(
+                "RETRY",
+                &format!(
+                    "attempt {}/{} strategy={:?} temp={:.1}",
+                    attempt + 1,
+                    max_retries,
+                    strategy,
+                    temperature
+                ),
+            );
+        }
+
         // Task 379: Detect failure class and decide whether to decompose
         if attempt > 0 {
             let last_error = attempt_history
@@ -444,6 +458,16 @@ pub(crate) async fn orchestrate_with_retries(
                         strategy_hint,
                     ),
                 );
+                if let Some(ref mut t) = tui {
+                    t.push_meta_event(
+                        "DECOMPOSE",
+                        &format!(
+                            "failure={} strategy={}",
+                            failure_class.label(),
+                            strategy_hint,
+                        ),
+                    );
+                }
                 // Rebuild program with decomposition strategy prompt
                 // (continues to next retry with updated strategy context)
             }
@@ -569,6 +593,9 @@ pub(crate) async fn orchestrate_with_retries(
                     &format!("Approach engine exhausted: {}", reason),
                 );
                 trace(args, &format!("approach_engine_exhausted reason={}", reason));
+                if let Some(ref mut t) = tui {
+                    t.push_meta_event("APPROACH", &format!("exhausted: {}", reason));
+                }
                 break;
             }
             crate::approach_engine::ApproachDecision::PruneAndRetry {
@@ -581,6 +608,12 @@ pub(crate) async fn orchestrate_with_retries(
                     &format!("Pruning approach: {} — {}", reason, strategy_hint),
                 );
                 trace(args, &format!("approach_pruned reason={}", reason));
+                if let Some(ref mut t) = tui {
+                    t.push_meta_event(
+                        "APPROACH",
+                        &format!("prune: {} — {}", reason, strategy_hint),
+                    );
+                }
                 // Continue to next retry with new approach
             }
             crate::approach_engine::ApproachDecision::Continue => {
@@ -590,6 +623,9 @@ pub(crate) async fn orchestrate_with_retries(
     }
 
     // All attempts failed - trigger meta-review
+    if let Some(ref mut t) = tui {
+        t.push_meta_event("RETRY", "all attempts failed, triggering meta-review");
+    }
     show_intel_summary(
         args.show_process,
         &format!(

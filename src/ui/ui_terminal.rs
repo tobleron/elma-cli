@@ -359,8 +359,10 @@ impl TerminalUI {
 
     // --- New push_* methods ---
 
-    pub(crate) fn push_meta_event(&mut self, _category: &str, _message: &str) {
-        // Task 190: Meta events are now handled through Claude renderer event system
+    pub(crate) fn push_meta_event(&mut self, category: &str, message: &str) {
+        self.claude.push_message(crate::claude_ui::ClaudeMessage::System {
+            content: format!("[{}] {}", category, message),
+        });
         self.pending_draw = true;
     }
 
