@@ -747,10 +747,17 @@ pub(crate) async fn run_tool_loop(
                 max_tokens: Some(max_tokens.min(runtime_llm_config().tool_loop_max_tokens_cap)),
                 repeat_penalty: Some(None),
                 reasoning_format: Some(Some("auto".to_string())),
-                tools: Some(crate::tool_calling::build_tool_definitions_for_context(
-                    &PathBuf::new(),
-                    context_hint,
-                )),
+                tools: Some(if evidence_required {
+                    // When evidence is required, use full tool set so model can
+                    // call shell/read/search to gather facts before responding.
+                    // context_hint still informs the rest of the loop behavior.
+                    crate::tool_calling::build_tool_definitions(&PathBuf::new())
+                } else {
+                    crate::tool_calling::build_tool_definitions_for_context(
+                        &PathBuf::new(),
+                        context_hint,
+                    )
+                }),
                 ..ChatRequestOptions::default()
             },
         );
