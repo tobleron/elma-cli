@@ -827,45 +827,39 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // annotate_and_classify calls infer_route_prior for speech-act, workflow,
         // and mode classification. On failure, fall back to conservative defaults
         // that ALLOW tool access (safe uncertainty).
-        let (rephrased_objective, mut route_decision) = match await_with_busy_queue(
-            &mut tui,
-            &mut queued_inputs,
-            annotate_and_classify(runtime, line),
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                tracing::trace!(error = %e, "route_classification_failed_fallback_to_safe_defaults");
-                let fallback = (
-                    line.to_string(),
-                    RouteDecision {
-                        route: "WORKFLOW".to_string(),
-                        source: "fallback_classification".to_string(),
-                        margin: 0.0,
-                        entropy: 1.0,
-                        distribution: vec![("WORKFLOW".to_string(), 0.5), ("CHAT".to_string(), 0.5)],
-                        speech_act: ProbabilityDecision::default(),
-                        workflow: ProbabilityDecision::default(),
-                        mode: ProbabilityDecision::default(),
-                        evidence_required: true,
-                    },
-                );
-                fallback
-            }
+        // Route classification is no longer needed. The model has all tools
+        // and decides what to call via the tool loop. Routing was only used
+        // to gate tool access and set execution mode — both now unnecessary.
+        let rephrased_objective = line.to_string();
+        let route_decision = RouteDecision {
+            route: "SHELL".to_string(),
+            source: "direct_tool_calling".to_string(),
+            margin: 0.0,
+            entropy: 0.0,
+            distribution: vec![("SHELL".to_string(), 1.0)],
+            speech_act: ProbabilityDecision {
+                choice: "INSTRUCT".to_string(),
+                source: "direct".to_string(),
+                distribution: vec![("INSTRUCT".to_string(), 1.0)],
+                margin: 1.0,
+                entropy: 0.0,
+            },
+            workflow: ProbabilityDecision {
+                choice: "WORKFLOW".to_string(),
+                source: "direct".to_string(),
+                distribution: vec![("WORKFLOW".to_string(), 1.0)],
+                margin: 1.0,
+                entropy: 0.0,
+            },
+            mode: ProbabilityDecision {
+                choice: "EXECUTE".to_string(),
+                source: "direct".to_string(),
+                distribution: vec![("EXECUTE".to_string(), 1.0)],
+                margin: 1.0,
+                entropy: 0.0,
+            },
+            evidence_required: false,
         };
-
-        // Task 381: Surface route decision as transcript meta event
-        tui.push_meta_event(
-            "ROUTE",
-            &format!(
-                "{} (entropy={:.2}, margin={:.2}, source={})",
-                route_decision.route,
-                route_decision.entropy,
-                route_decision.margin,
-                route_decision.source,
-            ),
-        );
 
         // Task 380: Create continuity tracker with route alignment check
         let mut continuity_tracker = crate::continuity::ContinuityTracker::new(
