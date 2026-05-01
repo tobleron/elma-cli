@@ -373,6 +373,20 @@ impl EvidenceLedger {
             .collect()
     }
 
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.claims.clear();
+        self.next_id = 1;
+    }
+
+    pub(crate) fn has_evidence_matching(&self, keywords: &[&str]) -> bool {
+        self.entries.iter().any(|entry| {
+            keywords
+                .iter()
+                .any(|kw| entry.summary.to_lowercase().contains(&kw.to_lowercase()))
+        })
+    }
+
     fn assess_quality(source: &EvidenceSource, raw_output: &str) -> EvidenceQuality {
         match source {
             EvidenceSource::Shell { exit_code, .. } => {
@@ -857,5 +871,35 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_clear_evidence_ledger() {
+        let mut ledger = test_ledger();
+        assert_eq!(ledger.entries_count(), 2);
+        ledger.clear();
+        assert_eq!(ledger.entries_count(), 0);
+        assert!(ledger.claims.is_empty());
+    }
+
+    #[test]
+    fn test_has_evidence_matching_found() {
+        let ledger = test_ledger();
+        assert!(ledger.has_evidence_matching(&["AGENTS.md"]));
+        assert!(ledger.has_evidence_matching(&["Cargo.toml", "main.rs"]));
+    }
+
+    #[test]
+    fn test_has_evidence_matching_not_found() {
+        let ledger = test_ledger();
+        assert!(!ledger.has_evidence_matching(&["nonexistent"]));
+        assert!(!ledger.has_evidence_matching(&["Python", "Django"]));
+    }
+
+    #[test]
+    fn test_has_evidence_matching_empty_ledger() {
+        let dir = PathBuf::from("/tmp/test_clear");
+        let ledger = EvidenceLedger::new("s_empty", &dir);
+        assert!(!ledger.has_evidence_matching(&["anything"]));
     }
 }

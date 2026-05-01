@@ -1072,6 +1072,42 @@ pub(crate) async fn run_tool_loop(
                     }
                 }
 
+                // Task 422: Check respond content against evidence ledger
+                if tc.function.name == "respond"
+                    && !result.content.is_empty()
+                    && !stop_policy.has_real_tool_calls_this_turn()
+                {
+                    if let Some(ledger) = crate::evidence_ledger::get_session_ledger() {
+                        if ledger.entries_count() > 0 {
+                            let verdict = crate::evidence_ledger::enforce_evidence_grounding(
+                                &result.content,
+                                &ledger,
+                            );
+                            let ungrounded = verdict.ungrounded_claims();
+                            if !ungrounded.is_empty() {
+                                let reasons: Vec<&str> = ungrounded
+                                    .iter()
+                                    .map(|c| c.statement.as_str())
+                                    .collect();
+                                let msg = format!(
+                                    "ungrounded claims without evidence: {}",
+                                    reasons.join(" | ")
+                                );
+                                trace(args, &format!("tool_loop: respond {}", msg));
+                                tui.push_meta_event("EVIDENCE", &msg);
+                                // Block hallucinated respond if no real tools were called
+                                let correction = format!(
+                                    "⚠️ Your previous response contains claims not supported by evidence. \
+                                     You must call a real tool (shell, search, read) to gather facts \
+                                     before making factual statements. Do not fabricate information."
+                                );
+                                result.content = correction;
+                                trace(args, "tool_loop: respond blocked by evidence gate");
+                            }
+                        }
+                    }
+                }
+
                 // summary tool = run final summary intel unit, then exit loop
                 // respond tool ALWAYS continues the loop (interim status, not final)
                 if tc.function.name == "summary" {

@@ -146,6 +146,9 @@ pub(crate) async fn run_tool_calling_pipeline(
 
     runtime.last_stop_outcome = result.stop_outcome.clone();
 
+    // Task 422: Clear evidence ledger at end of turn
+    crate::evidence_ledger::clear_session_ledger();
+
     // Strip leaked thinking/tool_call blocks before returning to the user
     let clean_answer = crate::text_utils::strip_thinking_blocks(&result.final_answer);
 

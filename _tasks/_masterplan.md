@@ -174,12 +174,20 @@ These tasks close high-value tool gaps while preserving local-first behavior.
 - File: `_tasks/pending/421_Native_Git_Inspection_And_Worktree_Tool.md`
 
 ### 422 Tool Result Artifact And Reference Ledger
-- Store large tool outputs and artifacts as stable evidence references.
-- File: `_tasks/pending/422_Tool_Result_Artifact_And_Reference_Ledger.md`
+- [x] Evidence verdicts now visible as `EVIDENCE` transcript rows (was hidden in trace logs).
+- [x] Evidence-based respond gate: blocks respond with ungrounded factual claims when no real tools called.
+- [x] `clear()` method on EvidenceLedger for session-end cleanup.
+- [x] `has_evidence_matching()` method for efficient evidence lookups.
+- [x] Evidence cleanup called after each turn end in `orchestration_core.rs`.
+- [x] 4 new tests for clear() and has_evidence_matching().
+- File: `_tasks/completed/422_Tool_Result_Artifact_And_Reference_Ledger_DONE.md`
 
 ### 417 Clean Room Shell Execution
-- Keep unavoidable shell fallback clean, bounded, and sanitized.
-- File: `_tasks/pending/417_Clean_Room_Shell_Execution.md`
+- [x] SHELL transcript event via `push_meta_event` on every shell tool call.
+- [x] Shell output already sanitized (ANSI/ctrl chars stripped) via `persistent_shell.rs` + `program_utils.rs`.
+- [x] Clean `/bin/sh` environment via `env_utils::get_baseline_environment()` (no login profiles).
+- [x] PTY output already sanitized and saved as `tool_{id}.out` artifact.
+- File: `_tasks/completed/417_Clean_Room_Shell_Execution_DONE.md`
 
 ## Wave 4: Execution Profiles, Jobs, And Local Code Tools
 

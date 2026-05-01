@@ -273,20 +273,19 @@ pub(crate) async fn run_autonomous_loop(
             continue;
         }
         if route_decision.route.eq_ignore_ascii_case("CHAT") {
-            // Task 287: Evidence grounding enforcement gate for CHAT route
+            // Task 287 + Task 422: Evidence grounding enforcement gate for CHAT route
             if let Some(ref reply) = final_reply {
                 if let Some(verdict) = crate::evidence_ledger::get_session_ledger().map(|ledger| {
                     crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger)
                 }) {
                     let ungrounded = verdict.ungrounded_claims();
                     if !ungrounded.is_empty() {
-                        trace(
-                            args,
-                            &format!(
-                                "evidence_grounding: {} ungrounded claims detected",
-                                ungrounded.len()
-                            ),
-                        );
+                        let reasons: Vec<&str> = ungrounded.iter().map(|c| c.statement.as_str()).collect();
+                        let msg = format!("evidence_grounding: {} ungrounded claims: {}", ungrounded.len(), reasons.join(" | "));
+                        trace(args, &msg);
+                        if let Some(ref mut t) = tui {
+                            t.push_meta_event("EVIDENCE", &msg);
+                        }
                         reasoning_clean = false;
                     }
                 }
@@ -476,20 +475,19 @@ pub(crate) async fn run_autonomous_loop(
         )
         .await?;
 
-        // Task 287: Evidence grounding enforcement gate
+        // Task 287 + Task 422: Evidence grounding enforcement gate
         if let Some(ref reply) = final_reply {
             if let Some(verdict) = crate::evidence_ledger::get_session_ledger()
                 .map(|ledger| crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger))
             {
                 let ungrounded = verdict.ungrounded_claims();
                 if !ungrounded.is_empty() {
-                    trace(
-                        args,
-                        &format!(
-                            "evidence_grounding: {} ungrounded claims detected",
-                            ungrounded.len()
-                        ),
-                    );
+                    let reasons: Vec<&str> = ungrounded.iter().map(|c| c.statement.as_str()).collect();
+                    let msg = format!("evidence_grounding: {} ungrounded claims: {}", ungrounded.len(), reasons.join(" | "));
+                    trace(args, &msg);
+                    if let Some(ref mut t) = tui {
+                        t.push_meta_event("EVIDENCE", &msg);
+                    }
                     reasoning_clean = false;
                 }
             }
@@ -504,20 +502,19 @@ pub(crate) async fn run_autonomous_loop(
         });
     }
 
-    // Task 287: Evidence grounding enforcement gate (loop exit path)
+    // Task 287 + Task 422: Evidence grounding enforcement gate (loop exit path)
     if let Some(ref reply) = final_reply {
         if let Some(verdict) = crate::evidence_ledger::get_session_ledger()
             .map(|ledger| crate::evidence_ledger::enforce_evidence_grounding(reply, &ledger))
         {
             let ungrounded = verdict.ungrounded_claims();
             if !ungrounded.is_empty() {
-                trace(
-                    args,
-                    &format!(
-                        "evidence_grounding: {} ungrounded claims detected",
-                        ungrounded.len()
-                    ),
-                );
+                let reasons: Vec<&str> = ungrounded.iter().map(|c| c.statement.as_str()).collect();
+                let msg = format!("evidence_grounding: {} ungrounded claims: {}", ungrounded.len(), reasons.join(" | "));
+                trace(args, &msg);
+                if let Some(ref mut t) = tui {
+                    t.push_meta_event("EVIDENCE", &msg);
+                }
                 reasoning_clean = false;
             }
         }

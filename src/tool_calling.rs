@@ -264,9 +264,12 @@ async fn exec_shell(
         };
     }
 
+    // Task 417: Transcript row for shell execution
+    if let Some(ref mut t) = tui {
+        t.push_meta_event("SHELL", &command);
+    }
+
     // Replace spinner with TUI update for execution.
-    // The TUI has a persistent status bar, so the spinner is no longer needed.
-    // However, I still need to update the TUI when command execution is complete.
     emit_tool_progress(&mut tui, "shell", "executing command");
 
     match run_shell_persistent(&command, workdir).await {
