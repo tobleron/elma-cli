@@ -1489,14 +1489,28 @@ fn truncate_to_width(s: &str, max_width: usize) -> String {
 fn render_footer_plain(model: &FooterModel, streaming_state: Option<String>) -> String {
     let mut parts = Vec::new();
     if let Some(ctx) = model.context_pct {
-        let bar_width = 6usize;
-        let filled = (ctx.min(100) * bar_width) / 100;
-        parts.push(format!(
-            "ctx {}% [{}{}]",
-            ctx.min(100),
-            "█".repeat(filled),
-            "░".repeat(bar_width.saturating_sub(filled))
-        ));
+        let pct = ctx.min(100) as f64 / 100.0;
+        let bar_steps = 6usize;
+        let total_sub_steps = bar_steps * 4;
+        let filled_sub = (pct * total_sub_steps as f64).round() as usize;
+        let full_blocks = filled_sub / 4;
+        let remainder = filled_sub % 4;
+        let mut bar = String::new();
+        for i in 0..bar_steps {
+            if i < full_blocks {
+                bar.push('█');
+            } else if i == full_blocks {
+                bar.push(match remainder {
+                    1 => '░',
+                    2 => '▒',
+                    3 => '▓',
+                    _ => ' ',
+                });
+            } else {
+                bar.push(' ');
+            }
+        }
+        parts.push(format!("ctx {}% [{}]", ctx.min(100), bar));
     }
     if let Some(tx) = &model.transcript_metric {
         parts.push(tx.clone());
@@ -1546,58 +1560,109 @@ fn render_footer_line(
         spans.push(Span::styled("  ", dim_style));
     }
 
-    // Build styled segments for center + right
-    let mut segments: Vec<(String, Style)> = Vec::new();
+    // ----  Build left-center segments (context bar + tx metric)  ----
+    let mut left_segments: Vec<(String, Style)> = Vec::new();
     let mut tx_metric_idx: Option<usize> = None;
 
     if let Some(ctx) = model.context_pct {
-        let bar_width = 6usize;
-        let filled = (ctx.min(100) * bar_width) / 100;
-        let empty = bar_width.saturating_sub(filled);
+        let pct = ctx.min(100) as f64 / 100.0;
+        // Higher resolution: each of the 6 bar positions has 4 sub-steps
+        let bar_steps = 6usize;
+        let total_sub_steps = bar_steps * 4;
+        let filled_sub = (pct * total_sub_steps as f64).round() as usize;
+        let full_blocks = filled_sub / 4;
+        let remainder = filled_sub % 4;
 
-        segments.push((format!("ctx {}% ", ctx.min(100)), dim_style));
-        segments.push(("[".to_string(), accent_style));
-        segments.push(("█".repeat(filled), primary_fill_style));
-        segments.push(("░".repeat(empty), dim_style));
-        segments.push(("]".to_string(), accent_style));
+        let bar_chars = {
+            let mut s = String::new();
+            for i in 0..bar_steps {
+                if i < full_blocks {
+                    s.push('█');
+                } else if i == full_blocks {
+                    s.push(match remainder {
+                        1 => '░',
+                        2 => '▒',
+                        3 => '▓',
+                        _ => ' ',
+                    });
+                } else {
+                    s.push(' ');
+                }
+            }
+            s
+        };
+
+        left_segments.push((format!("ctx {}% ", ctx.min(100)), dim_style));
+        left_segments.push(("[".to_string(), accent_style));
+        // Split bar into filled (primary) and empty (dim) segments
+        let filled_part: String = bar_chars.chars().filter(|&c| c != ' ').collect();
+        let empty_part: String = bar_chars.chars().filter(|&c| c == ' ').collect();
+        if !filled_part.is_empty() {
+            left_segments.push((filled_part, primary_fill_style));
+        }
+        if !empty_part.is_empty() {
+            left_segments.push((empty_part, dim_style));
+        }
+        left_segments.push(("]".to_string(), accent_style));
 
         if let Some(tx) = &model.transcript_metric {
-            tx_metric_idx = Some(segments.len());
-            segments.push((format!("  {}", tx), dim_style));
+            tx_metric_idx = Some(left_segments.len());
+            left_segments.push((format!("  {}", tx), dim_style));
         }
     }
 
+    // ----  Build right segments (streaming state + mode)  ----
+    let mut right_segments: Vec<(String, Style)> = Vec::new();
     if let Some(state) = streaming_state.as_ref() {
-        segments.push((format!("  {}", state), dim_style));
+        right_segments.push((state.clone(), dim_style));
     }
-
-    // Response mode on the right
     let mode = crate::ui_state::current_response_mode();
     let mode_str = match mode {
         crate::ui_state::ResponseMode::Concise => "Concise",
         crate::ui_state::ResponseMode::Long => "Long",
     };
-    segments.push((format!("  {}", mode_str), accent_style));
+    if !right_segments.is_empty() {
+        right_segments.push(("  ".to_string(), dim_style));
+    }
+    right_segments.push((mode_str.to_string(), accent_style));
 
-    // Width-aware rendering: drop transcript metric first if needed
+    // Width-aware rendering
     let available = width.saturating_sub(left_pad);
-    let total_width: usize = segments.iter().map(|(s, _)| s.chars().count()).sum();
-    if total_width > available {
-        // Always drop transcript metric first when we can't fit everything
+
+    // Drop transcript metric if both sides don't fit
+    let left_total: usize = left_segments.iter().map(|(s, _)| s.chars().count()).sum();
+    let right_total: usize = right_segments.iter().map(|(s, _)| s.chars().count()).sum();
+    if left_total + right_total > available {
         if let Some(idx) = tx_metric_idx {
-            segments.remove(idx);
+            left_segments.remove(idx);
         }
     }
+    let left_total: usize = left_segments.iter().map(|(s, _)| s.chars().count()).sum();
+    let right_total: usize = right_segments.iter().map(|(s, _)| s.chars().count()).sum();
 
-    // Render whatever fits
-    let mut remaining = available;
-    for (text, style) in &segments {
-        let w = text.chars().count();
-        if w <= remaining {
+    if left_total + right_total <= available {
+        // Both fit: push left, then pad, then right
+        for (text, style) in &left_segments {
             spans.push(Span::styled(text.clone(), *style));
-            remaining -= w;
-        } else {
-            break;
+        }
+        let pad = available.saturating_sub(left_total + right_total);
+        if pad > 0 {
+            spans.push(Span::styled(" ".repeat(pad), dim_style));
+        }
+        for (text, style) in &right_segments {
+            spans.push(Span::styled(text.clone(), *style));
+        }
+    } else {
+        // Not enough room: show only left side (truncated), right side dropped
+        let mut remaining = available;
+        for (text, style) in &left_segments {
+            let w = text.chars().count();
+            if w <= remaining {
+                spans.push(Span::styled(text.clone(), *style));
+                remaining -= w;
+            } else {
+                break;
+            }
         }
     }
 
@@ -2013,26 +2078,29 @@ mod tests {
     fn test_footer_context_bar_block_colors() {
         let theme = current_theme();
         let model = FooterModel {
-            context_pct: Some(60),
+            // 38% → filled_sub = round(0.38 * 24) = 9 → full=2, rem=1 → partial fill at position 3
+            // Bar: ██░    (2 full + 1 partial + 3 empty)
+            context_pct: Some(38),
             model_label: None,
             transcript_metric: None,
             mode_label: None,
         };
         let line = render_footer_line(&model, None, 80);
-        let mut seen_fill_primary = false;
-        let mut seen_empty_dim = false;
+        let mut seen_full_primary = false;
+        let mut seen_partial_primary = false;
         for span in &line.spans {
             let fg = span.style.fg;
             if span.content.contains('█') {
-                seen_fill_primary =
-                    seen_fill_primary || fg == Some(theme.accent_primary.to_ratatui_color());
+                seen_full_primary =
+                    seen_full_primary || fg == Some(theme.accent_primary.to_ratatui_color());
             }
             if span.content.contains('░') {
-                seen_empty_dim = seen_empty_dim || fg == Some(theme.fg_dim.to_ratatui_color());
+                seen_partial_primary =
+                    seen_partial_primary || fg == Some(theme.accent_primary.to_ratatui_color());
             }
         }
-        assert!(seen_fill_primary, "filled blocks should use accent_primary");
-        assert!(seen_empty_dim, "empty blocks should use dim");
+        assert!(seen_full_primary, "full blocks should use accent_primary");
+        assert!(seen_partial_primary, "partial blocks should use accent_primary");
     }
 
     #[test]

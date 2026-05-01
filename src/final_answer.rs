@@ -35,6 +35,8 @@ pub(crate) static BLOCKED_PATTERNS: &[&str] = &[
     "Solution",
     "Given Evidence",
     "Analysis:",
+    "Response:",
+    "Response :",
 ];
 
 /// Check if a final answer contains any blocked pattern.
@@ -69,6 +71,8 @@ pub(crate) fn sanitize_final_answer(raw: &str) -> (String, bool) {
         "**Analysis:**",
         "**Verification:**",
         "**Answer:**",
+        "**Response:**",
+        "**Response :**",
     ];
     for pattern in &header_patterns {
         while let Some(pos) = cleaned.find(pattern) {
@@ -100,6 +104,7 @@ pub(crate) fn sanitize_final_answer(raw: &str) -> (String, bool) {
         "Analysis",
         "Verification",
         "Solution",
+        "Response",
     ];
     let lines: Vec<&str> = cleaned.lines().collect();
     let filtered: Vec<&str> = lines

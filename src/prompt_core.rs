@@ -95,8 +95,14 @@ pub fn assemble_system_prompt(
         ));
     }
 
+    // Append mode-specific response instructions
+    let mode_instructions = match crate::ui_state::current_response_mode() {
+        crate::ui_state::ResponseMode::Concise => "\n\nMode: Concise\nRespond in one paragraph, less than 300 words, natural conversational tone. No bullet points, no numbered lists, no headings.",
+        crate::ui_state::ResponseMode::Long => "\n\nMode: Long\nRespond with paragraph formatting, less than 900 words. Use numbered points only if they genuinely help clarity. Keep tone natural and conversational.",
+    };
+
     if metadata.is_empty() {
-        TOOL_CALLING_SYSTEM_PROMPT.to_string()
+        format!("{}{}", TOOL_CALLING_SYSTEM_PROMPT, mode_instructions)
     } else {
         format!(
             r##"{core}
@@ -108,9 +114,11 @@ Answer only the USER_REQUEST.
 </INSTRUCTIONS>
 
 <SILENT_METADATA>{metadata}
-</SILENT_METADATA>"##,
+</SILENT_METADATA>
+{mode_instructions}"##,
             core = TOOL_CALLING_SYSTEM_PROMPT,
             metadata = metadata,
+            mode_instructions = mode_instructions,
         )
     }
 }
