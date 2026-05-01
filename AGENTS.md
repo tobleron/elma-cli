@@ -5,9 +5,8 @@ This file provides universal guidance for agents working in this repository.
 Elma is a local-first autonomous CLI agent designed to deliver correct, grounded answers on any model size. The model is a given. The system adapts.
 
 Core philosophy:
-- **Accuracy over speed.** Elma should take as many model calls and as much wall-clock time as necessary to produce a correct answer. Speed is secondary.
+- **Accuracy over speed, with stability.** Elma should take as many model calls and as much wall-clock time as necessary to produce a correct answer. Speed is secondary. Stability means consistent, reliable behavior across sessions.
 - **Small-model-first.** The system targets 3B-class models. If a 3B model cannot perform a step reliably, the step is too complex. Decompose it. Larger models (thinking models, tool-calling-native models) must still be supported — their capabilities should be utilized when available, never stripped.
-- **Reliability before speed.** Wait for correctness. Never shortcut for latency.
 - **Adaptive reasoning before deterministic rule playback.** Use model confidence, entropy, and evidence — never hardcoded keyword triggers.
 - **Truth-grounded answers before polished but weakly supported answers.** Every factual claim must trace back to collected evidence.
 - **Offline-first behavior by default.** Network use only when truly necessary.
@@ -16,7 +15,7 @@ Core philosophy:
 
 If a model fails to produce correct output, the failure belongs to the system — the prompt, the decomposition, the cognitive load per call. Never blame the model. Never suggest switching to a larger model. The correct response is always: split the job into smaller, single-purpose intel units that the model can handle.
 
-Elma must feel premium, careful, and capable on 3B-class hardware. The system maximizes quality per token, quality per unit of reasoning, and quality per unit of context window.
+Elma must feel premium, careful, and capable on 3B-class hardware. The system maximizes quality per token, quality per unit of reasoning, and quality per context window.
 
 ## Critical Behavioral Rules
 
@@ -34,12 +33,24 @@ Prompts must describe reasoning principles, not list examples. A prompt that is 
 
 The meaning of the user's request must survive every transformation: intent annotation → routing → formula selection → execution → final answer. If the user asks for X and the answer solves Y, that is a semantic continuity failure. Inspect continuity by comparing the raw prompt, intent annotation, chosen route, executed steps, and final answer.
 
+**How this is achieved:**
+- Intent is captured in one concise sentence
+- Each intel unit's output is validated before use
+- Semantic checks occur at each transformation boundary
+- Failed transformations trigger decomposition or repair
+
 ### 4. If A Model Is Too Weak For A Step, Decompose — Don't Bloat
 
 When a small model struggles:
 - First tighten the narrative/context
 - Then reuse an existing intel unit if it fits
 - Then add a new focused intermediary intel unit if truly needed
+
+**Decomposition strategy:**
+- Split multi-field DSL into single-field units
+- Separate decision-making from DSL formatting
+- Retry with tighter context or different temperature
+- Fall back to simpler formats when complex ones fail
 
 Never respond to small-model weakness by stuffing more examples, overfitting rules, forcing giant prompts, or merging cognitive jobs into one prompt. Preferred pattern: one intel unit, one role, one narrow decision.
 
@@ -53,6 +64,12 @@ The DSL must be designed for constrained local models:
 - Do not add nesting, batches, variables, conditionals, loops, or arbitrary sublanguages.
 - Keep the cognitive unit narrow: one intel unit, one role, one decision shape.
 - Prefer compact repair feedback over examples-heavy prompts.
+
+**DSL formatting rules:**
+- Maximum 3 functions per DSL unit (fallback to 1 when 3 fails)
+- Different formats per case, still compact
+- Parsing removes all extra whitespace and non-DSL content
+- Invalid DSL returns exact expected format for repair
 
 The LLM output is always untrusted text. For every structured intel output:
 - Parse with a strict Rust parser.
@@ -142,6 +159,32 @@ Elma must produce a correct, grounded answer regardless of how many model calls 
 - Each intel unit call, each repair retry, each verification pass is justified if it increases correctness.
 
 The user can wait. A wrong answer costs more than a slow one.
+
+## Tool Awareness
+
+Elma is a capable terminal CLI agent with access to native tools (file operations, shell commands, web requests, etc.). The system prompt explicitly instructs the model to:
+- Recognize when tools are needed to accomplish user requests
+- Select appropriate tools based on the task type
+- Use tools correctly with proper arguments
+- Report tool results clearly in the final answer
+
+## Request Complexity Assessment
+
+Every request is assessed for complexity and decomposed accordingly:
+- **Simple:** Direct answer from knowledge (greetings, basic facts)
+- **Moderate:** File/workspace operations requiring tool calls
+- **Complex:** Multi-step objectives requiring planning, sub-goals, and masterplans
+
+Decomposition includes:
+- Breaking into batches of instructions
+- Defining main objectives and sub-goals
+- Creating plans or masterplans when needed
+- Retrying approaches on failure with same objective
+- Adapting plans while maintaining goal alignment
+
+## Profile Adaptation
+
+In the future, Elma will work with model defaults initially, then adapt through trial and error as profiles are created for each connected model, increasing performance through empirical tuning.
 
 ## Theme
 

@@ -45,3 +45,6 @@ grammar_path = "grammars/verdict.dsl.gbnf"
 
 [risk_reviewer]
 grammar_path = "grammars/risk_verdict.dsl.gbnf"
+
+[tool_loop]
+grammar_path = "grammars/action_dsl.gbnf"

@@ -22,6 +22,17 @@ use std::time::{Duration, Instant};
 // Legacy constants absorbed into StopPolicy (StageBudget::default).
 // Kept briefly for reference; remove after validation.
 
+/// Load the action DSL GBNF grammar for the tool loop.
+/// Grammar constrains model output to valid DSL command tokens (R, L, S, Y, E, X, ASK, DONE)
+/// preventing the 3B model from producing bash/prose output.
+/// Returns None if config_root is unavailable or grammar file is missing (graceful fallback).
+fn load_action_grammar() -> Option<String> {
+    let config_root = crate::ui_chat::get_config_root_for_intel()?;
+    let mapping = crate::json_grammar::load_grammar_mapping(config_root).unwrap_or_default();
+    let path = mapping.get("tool_loop")?;
+    crate::json_grammar::load_grammar(path, config_root).ok()
+}
+
 async fn await_with_busy_input<T, F>(
     tui: &mut crate::ui_terminal::TerminalUI,
     future: F,
@@ -966,6 +977,7 @@ pub(crate) async fn run_tool_loop(
             }
         }
         let profile = ad_hoc_profile(model_id, "tool_loop");
+        let action_grammar = load_action_grammar();
         let req = chat_request_from_profile(
             &profile,
             messages.clone(),
@@ -977,6 +989,7 @@ pub(crate) async fn run_tool_loop(
                 repeat_penalty: Some(None),
                 reasoning_format: Some(Some("none".to_string())),
                 tools: None,
+                grammar: action_grammar,
                 ..ChatRequestOptions::default()
             },
         );

@@ -1,0 +1,25 @@
+# Action DSL GBNF Grammar -- grammar-constrain main action loop
+#
+# Forces the 3B model to produce valid DSL command tokens instead of
+# shell/prose output (e.g. "$ ls . (depth=1)"). Body validation is
+# handled by the Rust parser; this grammar only constrains the command
+# token and block terminators.
+
+root ::= r-line | l-line | s-line | y-line | x-block | ask-block | done-block | e-block
+
+# Single-line commands: R path="..." / L path="..." depth=N / S q="..." path="..." / Y q="..." path="..."
+r-line ::= "R " rest "\n"
+l-line ::= "L " rest "\n"
+s-line ::= "S " rest "\n"
+y-line ::= "Y " rest "\n"
+
+# Block commands: X, ASK, DONE — command on one line, body on next, ---END terminator
+x-block   ::= "X\n"    body "\n---END\n"
+ask-block ::= "ASK\n"  body "\n---END\n"
+done-block ::= "DONE\n" body "\n---END\n"
+
+# Edit: E path="..." then ---OLD/---NEW/---END blocks (single-line old/new for 3B)
+e-block ::= "E " rest "\n---OLD\n" body "\n---NEW\n" body "\n---END\n"
+
+rest ::= [^\n]*
+body ::= [^\n]*
