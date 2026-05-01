@@ -285,6 +285,17 @@ These tasks prove the system remains reliable as the tool surface grows.
 - Replace semantic keyword heuristics with confidence/metadata/intel units.
 - File: `_tasks/pending/382_Keyword_Heuristic_Decomposition_Audit.md`
 
+## Wave 8: Hallucination Prevention And Evidence Enforcement
+
+### 429 Fix Hallucinated Factual Answers And Evidence Gate Gaps
+- [x] Route override: factual time/date queries (`what time is it now?`) now force SHELL route instead of CHAT short-circuit.
+- [x] Evidence gate v2: fires even when zero evidence entries exist — detects datetime fabrication patterns in respond content.
+- [x] `has_factual_content()`: narrowly scoped to datetime patterns only (avoids blocking benign self-introductions).
+- [x] `tool_search` added to CHAT context tools so model can discover shell when needed.
+- [x] Verdict transcript rows: EVIDENCE category events now visible to user.
+- [x] SHELL transcript events: `push_meta_event("SHELL", command)` on every shell call.
+- File: `_tasks/completed/429_Fix_Hallucinated_Factual_Answers_DONE.md`
+
 ### 400 Provider Fault Injection And Error Recovery Harness
 - Test provider failures, malformed streams, context overflow, and recovery.
 - File: `_tasks/pending/400_Provider_Fault_Injection_And_Error_Recovery_Harness.md`

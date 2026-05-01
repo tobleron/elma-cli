@@ -266,6 +266,43 @@ Conversation so far (most recent last):
             margin: 1.0,
             entropy: 0.0,
         };
+        // Task 422: Detect factual queries — route to SHELL so model gets tools
+        let lower_msg = user_message.to_lowercase();
+        let is_factual_query = (lower_msg.contains("what") && lower_msg.contains("time"))
+            || (lower_msg.contains("current") && lower_msg.contains("time"))
+            || (lower_msg.contains("current") && lower_msg.contains("date"))
+            || lower_msg.contains("what time is it");
+        if is_factual_query {
+            return Ok(RouteDecision {
+                route: "SHELL".to_string(),
+                source: "chat_factual_override".to_string(),
+                distribution: vec![
+                    ("CHAT".to_string(), 0.0),
+                    ("SHELL".to_string(), 1.0),
+                    ("PLAN".to_string(), 0.0),
+                    ("MASTERPLAN".to_string(), 0.0),
+                    ("DECIDE".to_string(), 0.0),
+                ],
+                margin: 1.0,
+                entropy: speech_act.entropy,
+                speech_act,
+                workflow,
+                mode: ProbabilityDecision {
+                    choice: "EXECUTE".to_string(),
+                    source: "chat_factual_override".to_string(),
+                    distribution: vec![
+                        ("DECIDE".to_string(), 0.0),
+                        ("INSPECT".to_string(), 0.0),
+                        ("EXECUTE".to_string(), 1.0),
+                        ("PLAN".to_string(), 0.0),
+                        ("MASTERPLAN".to_string(), 0.0),
+                    ],
+                    margin: 1.0,
+                    entropy: 0.0,
+                },
+                evidence_required: true,
+            });
+        }
         return Ok(RouteDecision {
             route: "CHAT".to_string(),
             source: "speech_short_circuit".to_string(),
