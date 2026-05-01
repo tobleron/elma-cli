@@ -478,6 +478,7 @@ fn cert_concurrency_safe_tools_flagged() {
 /// Migrated intel units that must use compact DSL output format.
 /// Each entry maps (profile_name, expected_dsl_command).
 const MIGRATED_INTEL_DSL_UNITS: &[(&str, &str)] = &[
+    ("action_formatter", ""), // produces raw DSL text, not key=value records
     ("action_selector", "SELECT"),
     ("evidence_need_assessor", "ASSESS"),
     ("tools_need_assessor", "TOOLS"),

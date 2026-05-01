@@ -684,9 +684,25 @@ pub(crate) fn parse_auto_dsl(input: &str) -> DslResult<Value> {
         return parse_list_dsl(trimmed, "ITEM", "items");
     }
 
-    // Default: single-line record parser
-    let value = parse_record_dsl_to_value(trimmed)?;
+    // For single-line DSL formats (ASSESS, TOOLS, SELECT, TURN, MODE, ACT,
+    // ROUTE, GATE, STATUS, EXPERT, etc.) silently strip trailing prose.
+    // Small models frequently add explanatory text after the DSL line.
+    // We parse only the first non-empty line as the DSL record.
+    let dsl_line = extract_first_non_empty_line(trimmed);
+    let value = parse_record_dsl_to_value(dsl_line.trim())?;
     Ok(coerce_json_value(&value))
+}
+
+/// Extract the first non-empty line from a multi-line string (stripping
+/// leading/preceding blank lines). Returns only the first line of content.
+fn extract_first_non_empty_line(text: &str) -> &str {
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return trimmed;
+        }
+    }
+    text.lines().next().unwrap_or("")
 }
 
 /// Parse a pyramid block DSL (OBJECTIVE + GOAL + TASK lines) into a JSON object.

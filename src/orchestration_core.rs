@@ -342,14 +342,17 @@ async fn generate_decomposition_pyramid(
 /// Run the action selector intel unit to narrow the model's action type
 /// decision for the upcoming tool loop turn (Task 416).
 ///
-/// Falls back gracefully — when the selector fails, the original user
+/// Also runs the format specialist (Task 415) to produce a correctly
+/// formatted DSL example that the model can follow.
+///
+/// Falls back gracefully — when either unit fails, the original user
 /// message is used unchanged.
 async fn run_action_selector_hint(
     runtime: &AppRuntime,
     line: &str,
     route_decision: &RouteDecision,
 ) -> String {
-    let unit =
+    let selector_unit =
         crate::intel_units::ActionSelectorUnit::new(runtime.profiles.action_selector_cfg.clone());
     let context = IntelContext::new(
         line.to_string(),
@@ -359,13 +362,53 @@ async fn run_action_selector_hint(
         runtime.messages.clone(),
         runtime.client.clone(),
     );
-    match unit.execute_with_fallback(&context).await {
+    match selector_unit.execute_with_fallback(&context).await {
         Ok(output) => {
             let action = output.get_str("action").unwrap_or("R");
             let reason = output.get_str("reason").unwrap_or("default");
-            format!("[ACTION_HINT: prefer {action} because {reason}]\n{line}")
+
+            // Task 415: Run format specialist to produce a valid DSL example
+            let formatted_dsl = format_action_dsl(runtime, action, line).await;
+
+            if formatted_dsl.is_empty() {
+                format!("[ACTION_HINT: prefer {action} because {reason}]\n{line}")
+            } else {
+                format!("[ACTION: {action} — {reason}]\nFORMAT EXAMPLE: {formatted_dsl}\n{line}")
+            }
         }
         Err(_) => line.to_string(),
+    }
+}
+
+/// Run the action format specialist (Task 415) to format an action decision
+/// into valid DSL syntax. Returns empty string if formatting fails.
+async fn format_action_dsl(runtime: &AppRuntime, action_type: &str, target: &str) -> String {
+    let formatter =
+        crate::intel_units::ActionDslFormatter::new(runtime.profiles.action_formatter_cfg.clone());
+    let mut ctx = IntelContext::new(
+        format!("format {} {}", action_type, target),
+        RouteDecision::default(),
+        String::new(),
+        String::new(),
+        vec![],
+        runtime.client.clone(),
+    );
+    ctx.extras.insert(
+        "action_type".to_string(),
+        serde_json::Value::String(action_type.to_string()),
+    );
+    ctx.extras.insert(
+        "target".to_string(),
+        serde_json::Value::String(target.to_string()),
+    );
+    ctx.extras.insert(
+        "reason".to_string(),
+        serde_json::Value::String("selected by action selector".to_string()),
+    );
+
+    match formatter.execute_with_fallback(&ctx).await {
+        Ok(output) => output.get_str("formatted").unwrap_or("").to_string(),
+        Err(_) => String::new(),
     }
 }
 

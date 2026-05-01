@@ -82,6 +82,11 @@ pub(crate) fn run_config_healthcheck(
         "action_selector",
         &mut issues,
     );
+    validate_profile(
+        &profiles.action_formatter_cfg,
+        "action_formatter",
+        &mut issues,
+    );
     validate_profile(&profiles.formula_cfg, "formula", &mut issues);
     validate_profile(
         &profiles.workflow_planner_cfg,

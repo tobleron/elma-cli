@@ -80,6 +80,9 @@ pub(crate) fn load_profiles(model_cfg_dir: &PathBuf) -> Result<LoadedProfiles> {
         action_selector_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("action_selector.toml"),
         )?,
+        action_formatter_cfg: load_agent_config_with_fallback(
+            &model_cfg_dir.join("action_formatter.toml"),
+        )?,
         formula_cfg: load_agent_config_with_fallback(&model_cfg_dir.join("formula_selector.toml"))?,
         workflow_planner_cfg: load_agent_config_with_fallback(
             &model_cfg_dir.join("workflow_planner.toml"),
@@ -286,6 +289,13 @@ pub(crate) fn sync_and_upgrade_profiles(
         args,
         &model_cfg_dir.join("action_selector.toml"),
         &mut profiles.action_selector_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("action_formatter.toml"),
+        &mut profiles.action_formatter_cfg,
         base_url,
         model_id,
     )?;

@@ -47,6 +47,7 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
     runtime.profiles.tools_need_cfg.base_url = new_base_url.to_string();
     runtime.profiles.action_need_cfg.base_url = new_base_url.to_string();
     runtime.profiles.action_selector_cfg.base_url = new_base_url.to_string();
+    runtime.profiles.action_formatter_cfg.base_url = new_base_url.to_string();
     runtime.profiles.workflow_planner_cfg.base_url = new_base_url.to_string();
     runtime.profiles.evidence_mode_cfg.base_url = new_base_url.to_string();
     runtime.profiles.command_repair_cfg.base_url = new_base_url.to_string();
@@ -70,6 +71,7 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
         runtime.profiles.tools_need_cfg.model = model_id.to_string();
         runtime.profiles.action_need_cfg.model = model_id.to_string();
         runtime.profiles.action_selector_cfg.model = model_id.to_string();
+        runtime.profiles.action_formatter_cfg.model = model_id.to_string();
         runtime.profiles.workflow_planner_cfg.model = model_id.to_string();
         runtime.profiles.evidence_mode_cfg.model = model_id.to_string();
         runtime.profiles.command_repair_cfg.model = model_id.to_string();
