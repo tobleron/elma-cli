@@ -198,6 +198,33 @@ pub(crate) fn strategy_for_failure(class: &FailureClass) -> &'static str {
     }
 }
 
+/// Strategy hint by failure class label (string-based, used by approach engine).
+pub(crate) fn strategy_for_failure_by_label(label: &str) -> &'static str {
+    match label {
+        "json_parse_failure" | "json" | "parse_error" => {
+            "Simplify output format. Return one field at a time. Use plain text instead of JSON."
+        }
+        "stagnation" => {
+            "Force evidence collection before producing any output. Inspect the workspace first."
+        }
+        "tool_repeated_failure" => {
+            "Avoid using the failed tool. Find an alternative method or tool."
+        }
+        "empty_output" => {
+            "Reset context. Start fresh with a minimal, focused prompt."
+        }
+        "timeout" => {
+            "Reduce scope. Focus on one specific sub-problem at a time."
+        }
+        "strategy_exhaustion" => {
+            "Synthesize a completely new approach. Review all prior failures to avoid repeating mistakes."
+        }
+        "mixed_failure" | _ => {
+            "Decompose the task. Split into smaller independent sub-tasks and solve each separately."
+        }
+    }
+}
+
 /// T306/T379: Dynamic decomposition on failure.
 /// Returns true when the model is struggling and should switch strategies.
 fn decompose_on_failure(attempt: u32, error_summary: &str) -> bool {
@@ -283,6 +310,15 @@ pub(crate) async fn orchestrate_with_retries(
 
     let mut best_outcome: Option<AutonomousLoopOutcome> = None;
     let mut attempt_history: Vec<(u32, Program, String)> = Vec::new(); // (attempt, program, error)
+
+    // Task 390: Approach engine for branch-aware retry decisions
+    let user_msg = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.as_str())
+        .unwrap_or("");
+    let mut approach_engine = crate::approach_engine::ApproachEngine::new(user_msg.to_string());
 
     for attempt in 0..max_retries {
         // Task 010: Get next strategy from chain (or use temperature escalation as before)
@@ -482,8 +518,41 @@ pub(crate) async fn orchestrate_with_retries(
             .collect::<Vec<_>>()
             .join("; ");
 
-        attempt_history.push((attempt, retry_program.clone(), error_summary));
+        attempt_history.push((attempt, retry_program.clone(), error_summary.clone()));
         best_outcome = Some(outcome);
+
+        // Task 390: Record attempt in approach engine
+        let strategy_label = format!("{:?}", strategy);
+        let approach_decision = approach_engine.record_attempt(
+            &strategy_label,
+            "retry_failure",
+            &error_summary,
+        );
+        match &approach_decision {
+            crate::approach_engine::ApproachDecision::Exhausted { reason, .. } => {
+                show_intel_summary(
+                    args.show_process,
+                    &format!("Approach engine exhausted: {}", reason),
+                );
+                trace(args, &format!("approach_engine_exhausted reason={}", reason));
+                break;
+            }
+            crate::approach_engine::ApproachDecision::PruneAndRetry {
+                strategy_hint,
+                reason,
+                ..
+            } => {
+                show_intel_summary(
+                    args.show_process,
+                    &format!("Pruning approach: {} — {}", reason, strategy_hint),
+                );
+                trace(args, &format!("approach_pruned reason={}", reason));
+                // Continue to next retry with new approach
+            }
+            crate::approach_engine::ApproachDecision::Continue => {
+                // Continue normally
+            }
+        }
     }
 
     // All attempts failed - trigger meta-review

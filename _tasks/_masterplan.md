@@ -73,9 +73,12 @@ These tasks make complex requests manageable for small models by decomposing and
 - File: `_tasks/completed/379_Dynamic_Decomposition_On_Weakness_DONE.md`
 
 ### 390 Approach Branch Retry And Prune Engine
-- Stop failed approaches from continuing down the graph.
-- Retry with new approaches toward the same original objective.
-- File: `_tasks/pending/390_Approach_Branch_Retry_And_Prune_Engine.md`
+- [x] `ApproachEngine` with `ApproachAttempt` state and `ApproachDecision` enum.
+- [x] Pruning decision logic driven by FailureClass severity and configurable thresholds.
+- [x] New-approach generator with strategy hint from `strategy_for_failure_by_label()`.
+- [x] Wired into `orchestrate_with_retries()` — exhaust/continue/prune decisions per attempt.
+- [x] 9 tests covering creation, continue, prune, exhaustion by attempts/approaches, graph state.
+- File: `_tasks/completed/390_Approach_Branch_Retry_And_Prune_Engine_DONE.md`
 
 ### 391 Instruction-Level Repair And Result Recombiner
 - Repair individual instructions instead of restarting whole tasks.

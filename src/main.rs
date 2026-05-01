@@ -16,6 +16,7 @@ pub(crate) use std::sync::{Mutex, OnceLock};
 pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 mod app;
+mod approach_engine; // Task 390: Approach Branch Retry And Prune Engine
 mod app_bootstrap;
 mod app_bootstrap_core;
 mod app_bootstrap_modes;
