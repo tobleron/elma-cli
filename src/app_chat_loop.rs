@@ -812,24 +812,6 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Immediate redraw so user sees submitted message + busy state
         tui.pump_ui()?;
 
-        // Simplified: intent annotation only — no classification pipeline
-        let rephrased_objective = await_with_busy_queue(
-            &mut tui,
-            &mut queued_inputs,
-            annotate_user_intent(
-                &runtime.client,
-                &runtime.chat_url,
-                &runtime.profiles.intent_helper_cfg,
-                line,
-                &runtime.messages,
-            ),
-        )
-        .await
-        .unwrap_or_else(|e| {
-            tracing::trace!(error = %e, "intent_annotation_failed");
-            line.to_string()
-        });
-
         try_workspace_discovery(runtime, line);
 
         // Tool discovery and execution (Task 015: Autonomous Tool Discovery)
@@ -839,70 +821,85 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             }
         }
 
-        // No keyword-based routing — the Maestro pipeline handles everything.
-        // Default to CHAT+reply_only for very short inputs (likely conversational),
-        // WORKFLOW+inspect_reply for everything else. This is a conservative heuristic,
-        // not keyword matching.
-        let likely_conversational =
-            line.len() < 30 && !extract_first_path_from_user_text(line).is_some();
+        // LLM-driven route inference replaces the old line.len() < 30 heuristic.
+        // annotate_and_classify calls infer_route_prior for speech-act, workflow,
+        // and mode classification. On failure, fall back to conservative defaults
+        // that ALLOW tool access (safe uncertainty).
+        let (rephrased_objective, route_decision) = match await_with_busy_queue(
+            &mut tui,
+            &mut queued_inputs,
+            annotate_and_classify(runtime, line),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::trace!(error = %e, "route_classification_failed_fallback_to_safe_defaults");
+                let fallback = (
+                    line.to_string(),
+                    RouteDecision {
+                        route: "WORKFLOW".to_string(),
+                        source: "fallback_classification".to_string(),
+                        margin: 0.0,
+                        entropy: 1.0,
+                        distribution: vec![("WORKFLOW".to_string(), 0.5), ("CHAT".to_string(), 0.5)],
+                        speech_act: ProbabilityDecision::default(),
+                        workflow: ProbabilityDecision::default(),
+                        mode: ProbabilityDecision::default(),
+                        evidence_required: true,
+                    },
+                );
+                fallback
+            }
+        };
 
-        let route = if likely_conversational {
-            "CHAT"
-        } else {
-            "WORKFLOW"
-        };
-        let formula_primary = if likely_conversational {
-            "reply_only"
-        } else {
-            "inspect_reply"
-        };
-        let needs_evidence = !likely_conversational;
-
-        let route_decision = RouteDecision {
-            route: route.to_string(),
-            source: "maestro_pipeline".to_string(),
-            margin: 0.0,
-            entropy: 0.0,
-            distribution: vec![(route.to_string(), 1.0)],
-            speech_act: ProbabilityDecision::default(),
-            workflow: ProbabilityDecision::default(),
-            mode: ProbabilityDecision::default(),
-            evidence_required: needs_evidence,
-        };
+        let needs_tools = route_decision.evidence_required
+            || route_decision.speech_act.choice != "CHAT"
+            || route_decision.route != "CHAT";
         let complexity = ComplexityAssessment {
-            complexity: if likely_conversational {
+            complexity: if route_decision.route == "CHAT" && !needs_tools {
                 "DIRECT"
             } else {
                 "INVESTIGATE"
             }
             .to_string(),
-            needs_evidence,
-            needs_tools: !likely_conversational,
+            needs_evidence: route_decision.evidence_required,
+            needs_tools,
             needs_decision: false,
             needs_plan: false,
             risk: "LOW".to_string(),
-            suggested_pattern: formula_primary.to_string(),
+            suggested_pattern: if needs_tools {
+                "inspect_reply"
+            } else {
+                "reply_only"
+            }
+            .to_string(),
         };
         let scope = ScopePlan::default();
         let formula = FormulaSelection {
-            primary: formula_primary.to_string(),
+            primary: if needs_tools {
+                "inspect_reply"
+            } else {
+                "reply_only"
+            }
+            .to_string(),
             alternatives: Vec::new(),
-            reason: "Maestro-driven".to_string(),
+            reason: format!("LLM-route: speech_act={}", route_decision.speech_act.choice),
             memory_id: String::new(),
         };
         let ladder = ExecutionLadderAssessment::new(
-            if likely_conversational {
+            if route_decision.route == "CHAT" && !needs_tools {
                 ExecutionLevel::Action
             } else {
                 ExecutionLevel::Task
             },
-            "Maestro pipeline".to_string(),
-            false,
+            format!("LLM-driven (source={})", route_decision.source),
+            route_decision.evidence_required,
             false,
             false,
             false,
             "LOW".to_string(),
-            if likely_conversational {
+            if route_decision.route == "CHAT" && !needs_tools {
                 "DIRECT"
             } else {
                 "INVESTIGATE"

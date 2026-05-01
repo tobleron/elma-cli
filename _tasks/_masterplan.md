@@ -25,9 +25,9 @@ These tasks remove current wrong-answer causes and give Elma a reliable view of 
 - File: `_tasks/completed/386_Source_Agent_Tool_Parity_Gap_Matrix_DONE.md`
 
 ### 376 Replace Length Heuristic With LLM Route Inference
-- Remove short-prompt tool suppression.
-- Route evidence needs through model confidence and later tool discovery.
-- File: `_tasks/pending/376_Replace_Length_Heuristic_With_LLM_Route_Inference.md`
+- [x] Remove short-prompt tool suppression (replaced `line.len() < 30` with `annotate_and_classify`).
+- [x] Route evidence needs through model confidence and later tool discovery.
+- File: `_tasks/completed/376_Replace_Length_Heuristic_With_LLM_Route_Inference_DONE.md`
 
 ### 377 Remove Trivial Chat Bypass In Orchestration
 - Ensure all turns can reach retry, repair, and tool discovery.
