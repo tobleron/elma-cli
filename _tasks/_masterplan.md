@@ -54,9 +54,9 @@ These tasks remove current wrong-answer causes and give Elma a reliable view of 
 - [x] 7 tests prove discovery, ranking, rust-native preference, and cap behavior.
 - File: `_tasks/completed/388_Model_Driven_Tool_Discovery_And_Capability_Routing_DONE.md`
 
-## Wave 2: Pyramid Orchestration And Semantic Reliability
+## Wave 2: Pyramid Orchestration And Semantic Reliability ✅
 
-These tasks make complex requests manageable for small models by decomposing and repairing the smallest failing unit.
+All 9 tasks complete. 47 new tests added. 806 tests pass across full suite.
 
 ### 389 Pyramid Work Graph Complexity Assessment
 - [x] `WorkGraph` + `WorkGraphBuilder` types with 5 node kinds and approach tracking.
@@ -135,8 +135,11 @@ These tasks make complex requests manageable for small models by decomposing and
 These tasks close high-value tool gaps while preserving local-first behavior.
 
 ### 393 Observe Metadata Inspection Tool
-- Add rust-native metadata-only inspection before full reads.
-- File: `_tasks/pending/393_Observe_Metadata_Inspection_Tool.md`
+- [x] `observe` tool registered in elma-tools (RustNative, non-deferred, workspace_scoped).
+- [x] `exec_observe()` handler in tool_calling.rs — returns existence, type, size, mtime, perms, child_count, symlink_target.
+- [x] Rust-native std::fs implementation, no shell fallback.
+- [x] 11 new tests (6 exec_observe + 5 registry metadata) pass.
+- File: `_tasks/completed/393_Observe_Metadata_Inspection_Tool_DONE.md`
 
 ### 396 Workspace Policy Files Ignore And Protected Paths
 - Define ignore/protect policy for all local tools.

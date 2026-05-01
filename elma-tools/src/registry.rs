@@ -588,4 +588,62 @@ mod tests {
         let edit = registry.get("edit").unwrap();
         assert!(edit.shell_equivalents.contains(&"sed".to_string()));
     }
+
+    #[test]
+    fn test_observe_tool_is_registered() {
+        let registry = DynamicToolRegistry::new();
+        let observe = registry.get("observe").unwrap();
+        assert_eq!(observe.function.name, "observe");
+    }
+
+    #[test]
+    fn test_observe_tool_is_rust_native() {
+        let registry = DynamicToolRegistry::new();
+        let observe = registry.get("observe").unwrap();
+        assert_eq!(observe.implementation_kind, ImplementationKind::RustNative);
+    }
+
+    #[test]
+    fn test_observe_tool_is_not_deferred() {
+        let registry = DynamicToolRegistry::new();
+        let observe = registry.get("observe").unwrap();
+        assert!(!observe.deferred);
+    }
+
+    #[test]
+    fn test_observe_tool_is_workspace_scoped() {
+        let registry = DynamicToolRegistry::new();
+        let observe = registry.get("observe").unwrap();
+        assert!(observe.workspace_scoped);
+    }
+
+    #[test]
+    fn test_observe_tool_has_shell_equivalents() {
+        let registry = DynamicToolRegistry::new();
+        let observe = registry.get("observe").unwrap();
+        assert!(observe.shell_equivalents.contains(&"stat".to_string()));
+        assert!(observe.shell_equivalents.contains(&"ls -la".to_string()));
+        assert!(observe.shell_equivalents.contains(&"file".to_string()));
+    }
+
+    #[test]
+    fn test_observe_tool_has_search_hints() {
+        let registry = DynamicToolRegistry::new();
+        let observe = registry.get("observe").unwrap();
+        assert!(observe.search_hints.iter().any(|h| h.contains("metadata")));
+    }
+
+    #[test]
+    fn test_observe_tool_is_searchable() {
+        let registry = DynamicToolRegistry::new();
+        let results = registry.search("file metadata");
+        assert!(results.iter().any(|t| t.function.name == "observe"));
+    }
+
+    #[test]
+    fn test_observe_tool_search_by_hint() {
+        let registry = DynamicToolRegistry::new();
+        let results = registry.search("symlink target");
+        assert!(results.iter().any(|t| t.function.name == "observe"));
+    }
 }

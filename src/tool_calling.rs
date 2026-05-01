@@ -74,6 +74,7 @@ pub(crate) async fn execute_tool_call(
         }
     };
     match tool_name.as_str() {
+        "observe" => exec_observe(&args_value, workdir, &call_id, tui),
         "tool_search" => exec_tool_search(&args_value, &call_id, tui),
         "shell" => exec_shell(args, &args_value, workdir, session, &call_id, tui).await,
         "read" => exec_read(&args_value, workdir, &call_id, tui),
@@ -361,6 +362,130 @@ async fn exec_shell(
     }
 }
 
+fn exec_observe(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("").to_string();
+    if path.is_empty() {
+        let error_msg = "Error: empty path".to_string();
+        emit_tool_result(&mut tui, "observe", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "observe".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full = if std::path::Path::new(&path).is_relative() {
+        workdir.join(&path)
+    } else {
+        PathBuf::from(&path)
+    };
+
+    emit_tool_start(&mut tui, "observe", &path);
+
+    let md = match std::fs::symlink_metadata(&full) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let content = format!(
+                "path: {}\nexists: false",
+                full.display()
+            );
+            emit_tool_result(&mut tui, "observe", true, &content);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "observe".to_string(),
+                content,
+                ok: true,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+        Err(e) => {
+            let error_msg = format!("Error inspecting {}: {}", full.display(), e);
+            emit_tool_result(&mut tui, "observe", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "observe".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let file_type_str = if md.file_type().is_symlink() {
+        "symlink"
+    } else if md.file_type().is_dir() {
+        "directory"
+    } else if md.file_type().is_file() {
+        "file"
+    } else {
+        "other"
+    };
+
+    let mut lines: Vec<String> = Vec::new();
+    lines.push(format!("path: {}", full.display()));
+    lines.push(format!("exists: true"));
+    lines.push(format!("type: {}", file_type_str));
+    lines.push(format!("size: {}", md.len()));
+    if let Ok(mtime) = md.modified() {
+        match mtime.duration_since(std::time::UNIX_EPOCH) {
+            Ok(d) => lines.push(format!("modified: {}", d.as_secs())),
+            Err(_) => {}
+        }
+    }
+    lines.push(format!("permissions: {:o}", std::os::unix::fs::MetadataExt::mode(&md) & 0o777));
+    lines.push(format!("readonly: {}", md.permissions().readonly()));
+
+    // Symlink target
+    let mut is_symlink = false;
+    if md.file_type().is_symlink() {
+        is_symlink = true;
+        match std::fs::read_link(&full) {
+            Ok(target) => {
+                lines.push(format!("symlink_target: {}", target.display()));
+            }
+            Err(_) => {
+                lines.push("symlink_target: <unreadable>".to_string());
+            }
+        }
+    }
+
+    // Directory child count
+    if file_type_str == "directory" {
+        match std::fs::read_dir(&full) {
+            Ok(entries) => {
+                let count = entries.filter_map(|e| e.ok()).count();
+                lines.push(format!("child_count: {}", count));
+            }
+            Err(_) => {}
+        }
+    }
+
+    let content = lines.join("\n");
+    emit_tool_result(&mut tui, "observe", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "observe".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
 fn exec_read(
     av: &serde_json::Value,
     workdir: &PathBuf,
@@ -594,6 +719,7 @@ fn exec_tool_search(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn respond_accepts_content_alias() {
@@ -603,6 +729,122 @@ mod tests {
             None,
         );
         assert_eq!(result.content, "Visible");
+    }
+
+    #[test]
+    fn observe_empty_path_returns_error() {
+        let wd = PathBuf::from("/tmp");
+        let result = exec_observe(&serde_json::json!({"path": ""}), &wd, "o1", None);
+        assert!(!result.ok);
+        assert!(result.content.contains("empty path"));
+    }
+
+    #[test]
+    fn observe_nonexistent_path_returns_exists_false() {
+        let wd = PathBuf::from("/tmp");
+        let result = exec_observe(
+            &serde_json::json!({"path": "/nonexistent_path_xyzabc123"}),
+            &wd,
+            "o2",
+            None,
+        );
+        assert!(result.ok);
+        assert!(result.content.contains("exists: false"));
+    }
+
+    #[test]
+    fn observe_file_returns_metadata() {
+        let dir = std::env::temp_dir().join("observe_test_file");
+        let _ = std::fs::create_dir_all(&dir);
+        let file_path = dir.join("test.txt");
+        let mut f = std::fs::File::create(&file_path).unwrap();
+        f.write_all(b"hello world").unwrap();
+        f.flush().unwrap();
+
+        let wd = PathBuf::from("/tmp");
+        let result = exec_observe(
+            &serde_json::json!({"path": file_path.to_str().unwrap()}),
+            &wd,
+            "o3",
+            None,
+        );
+        assert!(result.ok, "result: {}", result.content);
+        assert!(result.content.contains("exists: true"));
+        assert!(result.content.contains("type: file"));
+        assert!(result.content.contains("size: 11"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn observe_directory_shows_child_count() {
+        let dir = std::env::temp_dir().join("observe_test_dir");
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        std::fs::write(dir.join("b.txt"), "b").unwrap();
+        std::fs::write(dir.join("c.txt"), "c").unwrap();
+
+        let wd = PathBuf::from("/tmp");
+        let result = exec_observe(
+            &serde_json::json!({"path": dir.to_str().unwrap()}),
+            &wd,
+            "o4",
+            None,
+        );
+        assert!(result.ok, "result: {}", result.content);
+        assert!(result.content.contains("exists: true"));
+        assert!(result.content.contains("type: directory"));
+        assert!(result.content.contains("child_count: 3"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn observe_relative_path_resolves_to_workdir() {
+        let dir = std::env::temp_dir().join("observe_test_rel");
+        let _ = std::fs::create_dir_all(&dir);
+        let file_path = dir.join("rel_file.txt");
+        std::fs::write(&file_path, "data").unwrap();
+
+        let result = exec_observe(
+            &serde_json::json!({"path": "rel_file.txt"}),
+            &dir,
+            "o5",
+            None,
+        );
+        assert!(result.ok, "result: {}", result.content);
+        assert!(result.content.contains("exists: true"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn observe_symlink_shows_target() {
+        let dir = std::env::temp_dir().join("observe_test_sym");
+        let _ = std::fs::create_dir_all(&dir);
+        let target = dir.join("target.txt");
+        let link = dir.join("link.txt");
+        std::fs::write(&target, "symlink target content").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::hard_link(&target, &link).unwrap();
+        }
+
+        let wd = PathBuf::from("/tmp");
+        let result = exec_observe(
+            &serde_json::json!({"path": link.to_str().unwrap()}),
+            &wd,
+            "o6",
+            None,
+        );
+        assert!(result.ok, "result: {}", result.content);
+        assert!(result.content.contains("type: symlink"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
