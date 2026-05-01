@@ -21,7 +21,9 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "atomic multi-file update",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::RustNative)
+        .with_shell_equivalents(vec!["patch", "diff"]),
     );
 }
 

@@ -22,6 +22,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "request resolved",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::RustNative),
     );
 }

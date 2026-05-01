@@ -22,6 +22,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "retrieve web content",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::Network)
+        .not_workspace_scoped(),
     );
 }

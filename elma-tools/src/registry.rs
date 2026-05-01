@@ -2,6 +2,40 @@ use crate::types::{ToolDefinition, ToolFunction};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock, RwLock};
 
+/// How a tool is implemented — used for native-over-shell preference ranking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ImplementationKind {
+    /// Pure Rust, no external runtime dependencies
+    RustNative,
+    /// Rust wrapper around a system binary/library
+    RustWrapper,
+    /// Executes shell commands (bash, sh, etc.)
+    Shell,
+    /// Requires network access
+    Network,
+    /// External extension (MCP, plugin, etc.)
+    External,
+}
+
+impl ImplementationKind {
+    /// Priority for tool selection (higher = preferred).
+    /// Rust-native and rust-wrapper are preferred over shell and network.
+    pub fn selection_priority(&self) -> u8 {
+        match self {
+            Self::RustNative => 100,
+            Self::RustWrapper => 90,
+            Self::Shell => 40,
+            Self::Network => 30,
+            Self::External => 20,
+        }
+    }
+
+    /// Whether this tool works offline.
+    pub fn is_offline_capable(&self) -> bool {
+        matches!(self, Self::RustNative | Self::RustWrapper | Self::Shell)
+    }
+}
+
 /// Extended tool definition with searchable capability hints and prerequisite check.
 #[derive(Clone)]
 pub struct ToolDefinitionExt {
@@ -11,6 +45,13 @@ pub struct ToolDefinitionExt {
     pub search_hints: Vec<String>,
     /// Whether this tool should be loaded by default (false for deferred tools)
     pub deferred: bool,
+    /// How this tool is implemented (for native-over-shell ranking)
+    pub implementation_kind: ImplementationKind,
+    /// Whether this tool is workspace-scoped (operates within workspace boundaries)
+    pub workspace_scoped: bool,
+    /// Shell command families this tool replaces (e.g., "ls", "cat", "grep", "find")
+    /// Used to prefer the native tool over shell for equivalent operations.
+    pub shell_equivalents: Vec<String>,
     /// Optional prerequisite check. Returns true if runtime dependencies are available.
     /// None means "always available".
     #[allow(clippy::type_complexity)]
@@ -24,6 +65,9 @@ impl std::fmt::Debug for ToolDefinitionExt {
             .field("function", &self.function)
             .field("search_hints", &self.search_hints)
             .field("deferred", &self.deferred)
+            .field("implementation_kind", &self.implementation_kind)
+            .field("workspace_scoped", &self.workspace_scoped)
+            .field("shell_equivalents", &self.shell_equivalents)
             .field("check_fn", &self.check_fn.as_ref().map(|_| "<closure>"))
             .finish()
     }
@@ -45,12 +89,33 @@ impl ToolDefinitionExt {
             },
             search_hints: hints.into_iter().map(|s| s.to_string()).collect(),
             deferred: true,
+            implementation_kind: ImplementationKind::RustNative,
+            workspace_scoped: true,
+            shell_equivalents: Vec::new(),
             check_fn: None,
         }
     }
 
     pub fn not_deferred(mut self) -> Self {
         self.deferred = false;
+        self
+    }
+
+    /// Set the implementation kind (native, shell, network, etc.)
+    pub fn with_implementation(mut self, kind: ImplementationKind) -> Self {
+        self.implementation_kind = kind;
+        self
+    }
+
+    /// Mark this tool as not workspace-scoped (e.g., fetch, network tools)
+    pub fn not_workspace_scoped(mut self) -> Self {
+        self.workspace_scoped = false;
+        self
+    }
+
+    /// Set shell command families this tool replaces.
+    pub fn with_shell_equivalents(mut self, equivalents: Vec<&str>) -> Self {
+        self.shell_equivalents = equivalents.into_iter().map(|s| s.to_string()).collect();
         self
     }
 
@@ -468,5 +533,59 @@ mod tests {
             names, sorted_names,
             "Tools must be returned in stable alphabetic order"
         );
+    }
+
+    #[test]
+    fn test_implementation_kind_priority_rust_native_highest() {
+        assert!(ImplementationKind::RustNative.selection_priority() > ImplementationKind::Shell.selection_priority());
+        assert!(ImplementationKind::RustNative.selection_priority() > ImplementationKind::Network.selection_priority());
+        assert!(ImplementationKind::RustWrapper.selection_priority() > ImplementationKind::Shell.selection_priority());
+    }
+
+    #[test]
+    fn test_offline_capable_tools() {
+        assert!(ImplementationKind::RustNative.is_offline_capable());
+        assert!(ImplementationKind::RustWrapper.is_offline_capable());
+        assert!(ImplementationKind::Shell.is_offline_capable());
+        assert!(!ImplementationKind::Network.is_offline_capable());
+        assert!(!ImplementationKind::External.is_offline_capable());
+    }
+
+    #[test]
+    fn test_tool_metadata_read_is_rust_native() {
+        let registry = DynamicToolRegistry::new();
+        let read = registry.get("read").unwrap();
+        assert_eq!(read.implementation_kind, ImplementationKind::RustNative);
+        assert!(read.shell_equivalents.contains(&"cat".to_string()));
+    }
+
+    #[test]
+    fn test_tool_metadata_shell_is_shell_kind() {
+        let registry = DynamicToolRegistry::new();
+        let shell = registry.get("shell").unwrap();
+        assert_eq!(shell.implementation_kind, ImplementationKind::Shell);
+    }
+
+    #[test]
+    fn test_tool_metadata_fetch_is_network() {
+        let registry = DynamicToolRegistry::new();
+        let fetch = registry.get("fetch").unwrap();
+        assert_eq!(fetch.implementation_kind, ImplementationKind::Network);
+        assert!(!fetch.workspace_scoped);
+    }
+
+    #[test]
+    fn test_tool_metadata_glob_equivalent_to_find() {
+        let registry = DynamicToolRegistry::new();
+        let glob = registry.get("glob").unwrap();
+        assert!(glob.shell_equivalents.contains(&"find".to_string()));
+        assert_eq!(glob.implementation_kind, ImplementationKind::RustNative);
+    }
+
+    #[test]
+    fn test_tool_metadata_edit_equivalent_to_sed() {
+        let registry = DynamicToolRegistry::new();
+        let edit = registry.get("edit").unwrap();
+        assert!(edit.shell_equivalents.contains(&"sed".to_string()));
     }
 }

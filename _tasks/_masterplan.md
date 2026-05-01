@@ -42,9 +42,10 @@ These tasks remove current wrong-answer causes and give Elma a reliable view of 
 - File: `_tasks/completed/378_JSON_Complexity_Constraint_And_Repair_DONE.md`
 
 ### 387 Rust-Native Tool Preference And Shell Fallback Policy
-- Add tool metadata for implementation kind and offline capability.
-- Prefer native tools before shell for equivalent operations.
-- File: `_tasks/pending/387_Rust_Native_Tool_Preference_And_Shell_Fallback_Policy.md`
+- [x] Add tool metadata: `ImplementationKind` enum, `shell_equivalents`, `workspace_scoped`.
+- [x] Prefer native tools before shell for equivalent operations.
+- [x] 7 new tests prove metadata correctness (priority ranking, offline capability, equivalents).
+- File: `_tasks/completed/387_Rust_Native_Tool_Preference_And_Shell_Fallback_Policy_DONE.md`
 
 ### 388 Model-Driven Tool Discovery And Capability Routing
 - Let orchestration discover relevant tools by capability.

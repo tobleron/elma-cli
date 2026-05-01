@@ -22,6 +22,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             ],
         )
         .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::Shell)
+        .with_shell_equivalents(vec!["sh", "bash", "zsh"])
         .with_check_fn(|| {
             which::which("sh").is_ok() || which::which("bash").is_ok()
         }),

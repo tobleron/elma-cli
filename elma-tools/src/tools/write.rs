@@ -22,6 +22,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "write output to file",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::RustNative)
+        .with_shell_equivalents(vec!["tee", "cp", "dd"]),
     );
 }

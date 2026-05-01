@@ -26,6 +26,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "read multiple files",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::RustNative)
+        .with_shell_equivalents(vec!["cat", "head", "tail", "less"]),
     );
 }

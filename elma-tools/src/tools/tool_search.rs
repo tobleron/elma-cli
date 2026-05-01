@@ -25,6 +25,9 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "list available tools".to_string(),
             ],
             deferred: false,
+            implementation_kind: crate::registry::ImplementationKind::RustNative,
+            workspace_scoped: true,
+            shell_equivalents: Vec::new(),
             check_fn: None,
         },
     );

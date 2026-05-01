@@ -26,6 +26,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             ],
         )
         .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::RustWrapper)
+        .with_shell_equivalents(vec!["grep", "rg", "ag", "ack"])
         .with_check_fn(|| {
             which::which("rg").is_ok() || which::which("grep").is_ok()
         }),

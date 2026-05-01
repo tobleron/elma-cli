@@ -23,6 +23,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "multi-step task tracking",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::RustNative),
     );
 }

@@ -25,6 +25,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "tree view of directory",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::RustNative)
+        .with_shell_equivalents(vec!["ls", "tree"]),
     );
 }

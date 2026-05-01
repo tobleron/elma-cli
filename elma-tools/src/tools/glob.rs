@@ -23,6 +23,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "file pattern matching",
             ],
         )
-        .not_deferred(),
+        .not_deferred()
+        .with_implementation(crate::registry::ImplementationKind::RustNative)
+        .with_shell_equivalents(vec!["find", "fd"]),
     );
 }
