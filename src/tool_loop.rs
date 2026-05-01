@@ -311,44 +311,6 @@ fn normalize_final_answer_candidate(text: &str) -> String {
         .to_string()
 }
 
-/// Check if a respond message contains datetime claims that would need evidence.
-/// Used by the evidence gate to detect date/time fabrication with no tool evidence.
-/// Narrowly scoped to datetime patterns only — not general factual claims — to
-/// avoid blocking benign self-introductions in CHAT mode.
-fn has_factual_content(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    // Year patterns — specific years mentioned
-    if lower.contains("2025") || lower.contains("2026") || lower.contains("2027") {
-        return true;
-    }
-    // Timezone + time (e.g., "PST" or "UTC" near a time)
-    let has_tz = ["pst", "est", "cst", "mst", "utc", "gmt"].iter().any(|tz| lower.contains(tz));
-    let has_time_number = lower.contains(':') && lower.chars().any(|c| c.is_ascii_digit());
-    if has_tz && has_time_number {
-        return true;
-    }
-    // Day/month + number (e.g., "December 21", "May 2") — specific date references
-    let months = ["january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december",
-                  "jan ", "feb ", "mar ", "apr ", "jun ", "jul ", "aug ", "sep ", "oct ", "nov ", "dec "];
-    for month in &months {
-        if let Some(pos) = lower.find(month) {
-            let after = &lower[pos + month.len()..].trim_start();
-            if after.starts_with(|c: char| c.is_ascii_digit()) {
-                return true;
-            }
-        }
-    }
-    // "today", "yesterday", "tomorrow" in context of date
-    if lower.contains("today") || lower.contains("yesterday") || lower.contains("tomorrow") {
-        // Only flag if near a time word
-        let time_words = ["time", "date", "clock", "hour", "minute"];
-        if time_words.iter().any(|w| lower.contains(w)) {
-            return true;
-        }
-    }
-    false
-}
-
 fn final_answer_needs_retry(text: &str) -> bool {
     let trimmed = text.trim();
     trimmed.is_empty() || is_tool_call_markup(trimmed) || is_intent_only_response(trimmed)
@@ -1111,56 +1073,37 @@ pub(crate) async fn run_tool_loop(
                 }
 
                 // Task 422: Check respond content against evidence ledger
+                // Uses model-free heuristic overlap scoring — no hardcoded keyword triggers.
                 if tc.function.name == "respond"
                     && !result.content.is_empty()
                     && !stop_policy.has_real_tool_calls_this_turn()
                 {
                     if let Some(ledger) = crate::evidence_ledger::get_session_ledger() {
-                        let has_evidence = ledger.entries_count() > 0;
-                        let has_factual_claims = has_factual_content(&result.content);
-                        let should_check = if has_evidence {
-                            // Check existing evidence for grounding
+                        if ledger.entries_count() > 0 {
                             let verdict = crate::evidence_ledger::enforce_evidence_grounding(
                                 &result.content,
                                 &ledger,
                             );
-                            !verdict.ungrounded_claims().is_empty()
-                        } else if has_factual_claims {
-                            // No evidence at all but making factual claims — fabricating
-                            true
-                        } else {
-                            false
-                        };
-                        if should_check {
-                            let msg = if has_factual_claims && !has_evidence {
-                                format!(
-                                    "respond making factual claims without any evidence: \"{}\"",
-                                    result.content.chars().take(80).collect::<String>()
-                                )
-                            } else {
-                                let verdict = crate::evidence_ledger::enforce_evidence_grounding(
-                                    &result.content,
-                                    &ledger,
-                                );
-                                let reasons: Vec<&str> = verdict
-                                    .ungrounded_claims()
+                            let ungrounded = verdict.ungrounded_claims();
+                            if !ungrounded.is_empty() {
+                                let reasons: Vec<&str> = ungrounded
                                     .iter()
                                     .map(|c| c.statement.as_str())
                                     .collect();
-                                format!(
+                                let msg = format!(
                                     "ungrounded claims without evidence: {}",
                                     reasons.join(" | ")
-                                )
-                            };
-                            trace(args, &format!("tool_loop: respond {}", msg));
-                            tui.push_meta_event("EVIDENCE", &msg);
-                            let correction = format!(
-                                "⚠️ Your previous response contains claims not supported by evidence. \
-                                 You must call a real tool (shell, search, read) to gather facts \
-                                 before making factual statements. Do not fabricate information."
-                            );
-                            result.content = correction;
-                            trace(args, "tool_loop: respond blocked by evidence gate");
+                                );
+                                trace(args, &format!("tool_loop: respond {}", msg));
+                                tui.push_meta_event("EVIDENCE", &msg);
+                                let correction = format!(
+                                    "⚠️ Your previous response contains claims not supported by evidence. \
+                                     You must call a real tool (shell, search, read) to gather facts \
+                                     before making factual statements. Do not fabricate information."
+                                );
+                                result.content = correction;
+                                trace(args, "tool_loop: respond blocked by evidence gate");
+                            }
                         }
                     }
                 }
