@@ -127,6 +127,16 @@ pub(crate) async fn run_tool_calling_pipeline(
     );
     tui.push_route_notice(&route_msg);
 
+    // Surface mode classifier fallback when DSL parse failed (Task 412)
+    if route_decision.mode.source.contains("dsl_parse_failed") {
+        let fallback_msg = format!(
+            "mode_classifier_dsl_failed speech_act={} fallback={}",
+            route_decision.speech_act.choice, route_decision.mode.choice,
+        );
+        tui.push_fallback_notice(&fallback_msg);
+        append_trace_log_line(&format!("[CLASSIFIER_FALLBACK] {}", fallback_msg));
+    }
+
     if should_use_direct_chat_path(route_decision) {
         return run_direct_chat_pipeline(runtime, line, tui).await;
     }

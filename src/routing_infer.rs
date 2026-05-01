@@ -557,6 +557,24 @@ Conversation so far (most recent last):
                 mode_code_pairs(),
                 "mode_dsl_failed_preserved_workflow",
             )
+        } else if mode_dsl_failed {
+            // Use speech-act-aware deterministic fallback when mode DSL parse
+            // fails and workflow is not WORKFLOW (Task 412).
+            let fallback_mode = match speech_act.choice.as_str() {
+                "INSTRUCT" => "EXECUTE",
+                "INQUIRE" => "INSPECT",
+                "CHAT" => "DECIDE",
+                _ => "EXECUTE",
+            };
+            append_trace_log_line(&format!(
+                "[MODE_DSL_FAILED_SPEECH_ACT_FALLBACK] speech_act={} mode_source={} fallback={}",
+                speech_act.choice, mode.source, fallback_mode
+            ));
+            fallback_probability_decision(
+                fallback_mode,
+                mode_code_pairs(),
+                "mode_dsl_parse_failed_speechact_fallback",
+            )
         } else {
             mode
         }
