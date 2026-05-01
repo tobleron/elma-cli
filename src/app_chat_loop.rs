@@ -867,64 +867,6 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             ),
         );
 
-        // Task 429: When CHAT is classified but the message may need evidence,
-        // run the EvidenceNeedsClassifierUnit (LLM-based, no keywords) to refine
-        // evidence_required. This is model decomposition per AGENTS.md Rule 4.
-        if route_decision.route == "CHAT" && !route_decision.evidence_required {
-            trace(
-                &runtime.args,
-                &format!("evidence_needs_classifier: running unit for '{}'", line),
-            );
-            let classifier_profile = runtime.profiles.evidence_need_cfg.clone();
-            let unit = crate::intel_units::EvidenceNeedsClassifierUnit::new(classifier_profile);
-            let intel_context = crate::intel_trait::IntelContext::new(
-                line.to_string(),
-                route_decision.clone(),
-                String::new(),
-                String::new(),
-                Vec::new(),
-                runtime.client.clone(),
-            );
-            match unit.execute_with_fallback(&intel_context).await {
-                Ok(output) => {
-                    trace(
-                        &runtime.args,
-                        &format!(
-                            "evidence_needs_classifier: output={:?}",
-                            output.data
-                        ),
-                    );
-                    if let Some(needs) = output.get_bool("needs_evidence") {
-                        if needs {
-                            route_decision.evidence_required = true;
-                            tui.push_meta_event(
-                                "EVIDENCE",
-                                "CHAT message classified as needing evidence by intel unit",
-                            );
-                            trace(
-                                &runtime.args,
-                                "evidence_needs_classifier: CHAT message needs evidence",
-                            );
-                        } else {
-                            trace(
-                                &runtime.args,
-                                "evidence_needs_classifier: CHAT message does NOT need evidence",
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    trace(
-                        &runtime.args,
-                        &format!("evidence_needs_classifier: failed: {}", e),
-                    );
-                }
-            }
-            // Fallback: if intel unit fails, leave evidence_required as false.
-            // The model can still call tools via tool_search and the respond abuse
-            // guard catches stagnation.
-        }
-
         // Task 380: Create continuity tracker with route alignment check
         let mut continuity_tracker = crate::continuity::ContinuityTracker::new(
             line.to_string(),
