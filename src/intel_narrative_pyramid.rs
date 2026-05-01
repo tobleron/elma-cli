@@ -10,7 +10,9 @@ use crate::{ChatMessage, RouteDecision};
 
 /// Build the narrative prompt for the decomposition intel unit.
 ///
-/// Asks the model to produce objective → goals → tasks in compact DSL.
+/// Asks the model to produce a single-line OBJECTIVE DSL. GOAL/TASK
+/// decomposition was removed (Task 419) because 3B models cannot reliably
+/// produce multi-line block DSL with quoted fields and END terminators.
 pub(crate) fn build_decomposition_narrative(
     user_message: &str,
     route_decision: &RouteDecision,
@@ -28,7 +30,7 @@ pub(crate) fn build_decomposition_narrative(
     };
 
     format!(
-        r#"Decompose the following request into one objective, bounded goals, and numbered tasks.
+        r#"Decompose the following request into one objective.
 
 USER REQUEST:
 {user_message}
@@ -38,38 +40,27 @@ ROUTE MARGIN: {margin:.2}
 ROUTE ENTROPY: {entropy:.2}
 {failure_hint}
 WORKSPACE FACTS:
-{facts}
+{workspace_facts}
 
 WORKSPACE BRIEF:
-{brief}
+{workspace_brief}
 
 CONVERSATION (most recent last):
 {conversation}
 
-Output compact DSL ONLY:
-
+Output exactly one DSL line:
 OBJECTIVE text="<one-line objective>" risk=low|medium|high
-GOAL text="<goal description>" evidence_needed=true|false
-GOAL text="<goal description>" evidence_needed=true|false
-TASK id=1 text="<task description>" status=ready
-TASK id=2 text="<task description>" status=pending
-TASK id=3 text="<task description>" status=pending
-END
 
 Rules:
-- One OBJECTIVE that captures the whole request.
-- 1-3 GOALs covering different aspects.
-- 1-6 TASKs total, each actionable. id must be a unique integer.
-- Set status=ready for the first task to do, status=pending for the rest.
-- Use evidence_needed=true only if a goal requires reading/searching/looking up facts.
-- risk=high only if the request modifies files, runs unknown commands, or has irreversible effects.
-- No prose before or after. No fenced code block. No JSON. Just the DSL block."#,
+- text: one sentence capturing what the user wants done, inside double quotes.
+- risk: low if read-only, medium if modifies files, high if it runs unknown commands.
+- No prose before or after. No fenced code block. Just the DSL line."#,
         user_message = user_message.trim(),
         route = route_decision.route,
         margin = route_decision.margin,
         entropy = route_decision.entropy,
-        facts = workspace_facts.trim(),
-        brief = workspace_brief.trim(),
+        workspace_facts = workspace_facts.trim(),
+        workspace_brief = workspace_brief.trim(),
         conversation = conversation_text,
     )
 }

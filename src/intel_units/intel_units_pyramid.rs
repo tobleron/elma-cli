@@ -62,9 +62,12 @@ impl IntelUnit for DecompositionUnit {
         let dsl_result =
             execute_intel_dsl_from_user_content(&context.client, &self.profile, narrative).await?;
 
-        // Parse the DSL result into a pyramid (field-by-field to avoid cloning issues)
+        // Task 419: Parse simplified single-line OBJECTIVE DSL.
+        // GOAL/TASK decomposition was removed because 3B models cannot
+        // reliably produce multi-line block DSL with END terminators.
         let objective = dsl_result
-            .get("objective")
+            .get("text")
+            .or_else(|| dsl_result.get("objective"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -74,53 +77,11 @@ impl IntelUnit for DecompositionUnit {
             .unwrap_or("low")
             .to_string();
 
-        let goals: Vec<PyramidGoal> = dsl_result
-            .get("goals")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .map(|g| PyramidGoal {
-                        text: g
-                            .get("text")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        evidence_needed: g
-                            .get("evidence_needed")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let tasks: Vec<PyramidTask> = dsl_result
-            .get("tasks")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .map(|t| PyramidTask {
-                        id: t.get("id").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                        text: t
-                            .get("text")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        status: t
-                            .get("status")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("pending")
-                            .to_string(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
         let pyramid = DecompositionPyramid {
             objective,
             risk,
-            goals,
-            tasks,
+            goals: vec![],
+            tasks: vec![],
             next_action: None,
         };
 

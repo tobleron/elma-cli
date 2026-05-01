@@ -657,9 +657,7 @@ pub(crate) fn parse_auto_dsl(input: &str) -> DslResult<Value> {
         "FORMULA" => {
             return parse_formula_dsl(trimmed);
         }
-        "OBJECTIVE" => {
-            return parse_pyramid_block_dsl(trimmed);
-        }
+        // OBJECTIVE is now single-line (Task 419) — falls through to record parser.
         "NEXT" => {
             return parse_next_action_dsl(trimmed);
         }
@@ -1074,11 +1072,11 @@ END";
 
     #[test]
     fn test_parse_auto_dsl_objective() {
-        let dsl = "\
-OBJECTIVE text=\"Test\" risk=low
-END";
+        // Task 419: OBJECTIVE is now single-line (text + risk fields).
+        let dsl = "OBJECTIVE text=\"Test\" risk=low";
         let result = parse_auto_dsl(dsl).unwrap();
-        assert_eq!(result["objective"], "Test");
+        assert_eq!(result["text"], "Test");
+        assert_eq!(result["risk"], "low");
     }
 
     #[test]
