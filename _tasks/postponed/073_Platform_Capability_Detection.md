@@ -1,5 +1,10 @@
 # Task 073: Platform Capability Detection
 
+## Backlog Reconciliation (2026-05-02)
+
+Fold into Task 476 portability gate when platform support becomes release-relevant.
+
+
 ## Priority
 **P3 - ADVANCED/LATER (Tier C — Postponed)**
 **Postponed until:** Tier A + Tier B phases complete

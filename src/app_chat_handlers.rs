@@ -7,6 +7,46 @@ use crate::app::AppRuntime;
 use crate::app_chat_helpers::refresh_runtime_workspace;
 use crate::*;
 
+/// Handle /provider command - interactive endpoint and model configuration
+pub(crate) async fn handle_provider_config(runtime: &mut AppRuntime) -> Result<()> {
+    use crate::ui_interact::prompt_text;
+    use std::io::IsTerminal;
+
+    if !std::io::stderr().is_terminal() {
+        eprintln!("Error: /provider requires interactive terminal");
+        return Ok(());
+    }
+
+    println!();
+    println!("=== Provider Configuration ===");
+    println!();
+    println!("Current endpoint: {}", runtime.profiles.elma_cfg.base_url);
+    println!("Current model:    {}", runtime.model_id);
+    println!();
+
+    let base_url = match prompt_text("Enter endpoint URL (or press Enter to keep current):") {
+        Some(url) if !url.is_empty() => url,
+        Some(_) => runtime.profiles.elma_cfg.base_url.clone(),
+        None => {
+            println!("(cancelled)");
+            return Ok(());
+        }
+    };
+
+    let model_id = match prompt_text("Enter model ID (or press Enter to keep current):") {
+        Some(m) if !m.is_empty() => m,
+        Some(_) => runtime.model_id.clone(),
+        None => {
+            println!("(cancelled)");
+            return Ok(());
+        }
+    };
+
+    handle_api_config(runtime, &format!("{} {}", base_url, model_id))?;
+
+    Ok(())
+}
+
 /// Handle /api command - configure endpoint and model settings
 pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<()> {
     let args_trimmed = args.trim();
@@ -76,8 +116,11 @@ pub(crate) fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<
         runtime.profiles.claim_checker_cfg.model = model_id.to_string();
     }
 
-    // Save configs to disk
-    // save_all_profiles(&runtime.model_cfg_dir, &runtime.profiles)?;  // Deprecated
+    // Save config to disk (persists for next session)
+    let elma_cfg_path = runtime.model_cfg_dir.join("_elma.config");
+    if let Err(e) = crate::storage::save_agent_config(&elma_cfg_path, &runtime.profiles.elma_cfg) {
+        eprintln!("Warning: Failed to save config: {}", e);
+    }
 
     // Update chat URL
     let base = Url::parse(new_base_url).context("Invalid base URL")?;

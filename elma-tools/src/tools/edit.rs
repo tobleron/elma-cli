@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolRisk, ExecutorState};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -28,6 +28,12 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
         )
         .not_deferred()
         .with_implementation(crate::registry::ImplementationKind::RustNative)
-        .with_shell_equivalents(vec!["sed", "awk", "perl -i"]),
+        .with_shell_equivalents(vec!["sed", "awk", "perl -i"])
+        .with_risks(vec![ToolRisk::WorkspaceWrite])
+        .with_executor_state(ExecutorState::PureRust)
+        .requires_permission(true)
+        .requires_prior_read(true)
+        .concurrency_safe(false)
+        .mutates_workspace(true),
     );
 }

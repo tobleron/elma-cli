@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolRisk, ExecutorState};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -25,6 +25,9 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             ],
         )
         .not_deferred()
-        .with_implementation(crate::registry::ImplementationKind::RustNative),
+        .with_implementation(crate::registry::ImplementationKind::RustNative)
+        .with_risks(vec![ToolRisk::ConversationState])
+        .with_executor_state(ExecutorState::PureRust)
+        .concurrency_safe(false),
     );
 }

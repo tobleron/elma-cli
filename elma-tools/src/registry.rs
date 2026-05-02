@@ -56,6 +56,8 @@ pub struct ToolDefinitionExt {
     /// None means "always available".
     #[allow(clippy::type_complexity)]
     pub check_fn: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+    /// Policy metadata for this tool.
+    pub policy: ToolPolicy,
 }
 
 impl std::fmt::Debug for ToolDefinitionExt {
@@ -69,6 +71,7 @@ impl std::fmt::Debug for ToolDefinitionExt {
             .field("workspace_scoped", &self.workspace_scoped)
             .field("shell_equivalents", &self.shell_equivalents)
             .field("check_fn", &self.check_fn.as_ref().map(|_| "<closure>"))
+            .field("policy", &self.policy)
             .finish()
     }
 }
@@ -93,11 +96,17 @@ impl ToolDefinitionExt {
             workspace_scoped: true,
             shell_equivalents: Vec::new(),
             check_fn: None,
+            policy: ToolPolicy::default(),
         }
     }
 
     pub fn not_deferred(mut self) -> Self {
         self.deferred = false;
+        self
+    }
+
+    pub fn deferred(mut self) -> Self {
+        self.deferred = true;
         self
     }
 
@@ -122,6 +131,54 @@ impl ToolDefinitionExt {
     /// Set a prerequisite check function. Returns self for builder pattern.
     pub fn with_check_fn(mut self, f: impl Fn() -> bool + Send + Sync + 'static) -> Self {
         self.check_fn = Some(Arc::new(f));
+        self
+    }
+
+    /// Set policy metadata.
+    pub fn with_policy(mut self, policy: ToolPolicy) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    /// Set risks for this tool.
+    pub fn with_risks(mut self, risks: Vec<ToolRisk>) -> Self {
+        self.policy.risks = risks;
+        self
+    }
+
+    /// Set whether this tool requires permission.
+    pub fn requires_permission(mut self, required: bool) -> Self {
+        self.policy.requires_permission = required;
+        self
+    }
+
+    /// Set whether this tool requires prior read.
+    pub fn requires_prior_read(mut self, required: bool) -> Self {
+        self.policy.requires_prior_read = required;
+        self
+    }
+
+    /// Set whether this tool is concurrency-safe.
+    pub fn concurrency_safe(mut self, safe: bool) -> Self {
+        self.policy.concurrency_safe = safe;
+        self
+    }
+
+    /// Set executor state.
+    pub fn with_executor_state(mut self, state: ExecutorState) -> Self {
+        self.policy.executor_state = state;
+        self
+    }
+
+    /// Set whether this tool mutates workspace.
+    pub fn mutates_workspace(mut self, mutates: bool) -> Self {
+        self.policy.mutates_workspace = mutates;
+        self
+    }
+
+    /// Set whether this tool creates artifacts.
+    pub fn creates_artifacts(mut self, creates: bool) -> Self {
+        self.policy.creates_artifacts = creates;
         self
     }
 
@@ -645,5 +702,105 @@ mod tests {
         let registry = DynamicToolRegistry::new();
         let results = registry.search("symlink target");
         assert!(results.iter().any(|t| t.function.name == "observe"));
+    }
+
+    #[test]
+    fn test_read_tool_has_policy() {
+        let registry = DynamicToolRegistry::new();
+        let read = registry.get("read").unwrap();
+        assert!(read.policy.risks.contains(&ToolRisk::ReadOnly));
+        assert!(read.policy.concurrency_safe);
+        assert!(!read.policy.requires_permission);
+    }
+
+    #[test]
+    fn test_shell_tool_has_policy() {
+        let registry = DynamicToolRegistry::new();
+        let shell = registry.get("shell").unwrap();
+        assert!(shell.policy.risks.contains(&ToolRisk::ExternalProcess));
+        assert!(!shell.policy.concurrency_safe);
+        assert!(shell.policy.requires_permission);
+    }
+
+    #[test]
+    fn test_edit_tool_has_policy() {
+        let registry = DynamicToolRegistry::new();
+        let edit = registry.get("edit").unwrap();
+        assert!(edit.policy.risks.contains(&ToolRisk::WorkspaceWrite));
+        assert!(edit.policy.requires_permission);
+        assert!(edit.policy.requires_prior_read);
+        assert!(edit.policy.mutates_workspace);
+    }
+}
+
+/// Risk categories for a tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ToolRisk {
+    /// Tool only reads data, does not modify anything.
+    ReadOnly,
+    /// Tool writes to workspace files.
+    WorkspaceWrite,
+    /// Tool executes external processes.
+    ExternalProcess,
+    /// Tool makes network requests.
+    Network,
+    /// Tool mutates conversation state.
+    ConversationState,
+    /// Tool has destructive potential (deletes files, kills processes, etc.).
+    DestructivePotential,
+}
+
+/// Concurrency and safety properties of a tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExecutorState {
+    /// Pure Rust, no external dependencies.
+    PureRust,
+    /// Rust but depends on system binaries.
+    RustWithSystemDependency,
+    /// Backed by shell commands.
+    ShellBacked,
+    /// Makes network requests.
+    NetworkBacked,
+    /// Runs via extension/plugin.
+    ExtensionBacked,
+}
+
+/// Default implementation for ExecutorState
+impl Default for ExecutorState {
+    fn default() -> Self {
+        ExecutorState::PureRust
+    }
+}
+
+/// Policy metadata for a tool.
+#[derive(Clone, Debug)]
+pub struct ToolPolicy {
+    /// Risk categories this tool belongs to.
+    pub risks: Vec<ToolRisk>,
+    /// How this tool is executed.
+    pub executor_state: ExecutorState,
+    /// Whether this tool requires user permission before execution.
+    pub requires_permission: bool,
+    /// Whether this tool requires reading a file before editing it.
+    pub requires_prior_read: bool,
+    /// Whether this tool is concurrency-safe (can run in parallel with other safe tools).
+    pub concurrency_safe: bool,
+    /// Whether this tool creates artifacts outside of normal workspace files.
+    pub creates_artifacts: bool,
+    /// Whether this tool mutates the workspace.
+    pub mutates_workspace: bool,
+}
+
+impl Default for ToolPolicy {
+    fn default() -> Self {
+        Self {
+            risks: Vec::new(),
+            executor_state: ExecutorState::default(),
+            requires_permission: false,
+            requires_prior_read: false,
+            concurrency_safe: true,
+            creates_artifacts: false,
+            mutates_workspace: false,
+        }
     }
 }

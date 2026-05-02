@@ -23,20 +23,69 @@ pub(crate) async fn handle_search_step(
     );
     trace(args, &format!("search query={} paths={:?}", query, paths));
 
-    let search_paths = if paths.is_empty() {
-        vec![workdir.clone()]
-    } else {
-        paths
-            .iter()
-            .map(|p| {
-                if p.starts_with('/') {
-                    PathBuf::from(p)
-                } else {
-                    workdir.join(p)
-                }
-            })
-            .collect()
-    };
+    let mut final_search_paths: Vec<PathBuf> = Vec::new();
+
+    if !paths.is_empty() {
+        for p in &paths {
+            if p.starts_with('/') && Path::new(p).is_absolute() {
+                state.step_results.push(StepResult {
+                    id: sid.clone(),
+                    kind: kind.to_string(),
+                    purpose,
+                    depends_on,
+                    success_condition,
+                    ok: false,
+                    summary: format!("absolute_path_not_allowed: {} — use workspace-relative path", p),
+                    command: None,
+                    raw_output: None,
+                    exit_code: None,
+                    output_bytes: None,
+                    truncated: false,
+                    timed_out: false,
+                    artifact_path: None,
+                    artifact_kind: None,
+                    outcome_status: None,
+                    outcome_reason: None,
+                });
+                state.halt = true;
+                return Ok(());
+            }
+            let resolved = workdir.join(p);
+            let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
+            if let Some(msg) = policy.blocked_message(&resolved, "search") {
+                state.step_results.push(StepResult {
+                    id: sid.clone(),
+                    kind: kind.to_string(),
+                    purpose: purpose.clone(),
+                    depends_on,
+                    success_condition,
+                    ok: false,
+                    summary: msg,
+                    command: None,
+                    raw_output: None,
+                    exit_code: None,
+                    output_bytes: None,
+                    truncated: false,
+                    timed_out: false,
+                    artifact_path: None,
+                    artifact_kind: None,
+                    outcome_status: None,
+                    outcome_reason: None,
+                });
+                state.halt = true;
+                return Ok(());
+            }
+            if policy.is_ignored(&resolved) {
+                trace(args, &format!("search skipped_ignored: {}", p));
+                continue;
+            }
+            final_search_paths.push(resolved);
+        }
+    }
+
+    if final_search_paths.is_empty() {
+        final_search_paths.push(workdir.clone());
+    }
 
     let mut cmd = std::process::Command::new("rg");
     cmd.arg("--line-number")
@@ -46,7 +95,7 @@ pub(crate) async fn handle_search_step(
         .arg("100")
         .arg(query);
 
-    for path in &search_paths {
+    for path in &final_search_paths {
         if path.exists() {
             cmd.arg(path);
         }

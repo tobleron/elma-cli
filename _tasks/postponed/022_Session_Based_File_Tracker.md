@@ -1,5 +1,10 @@
 # Task 158: Session-based File Tracker
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 456 file context tracking and Task 469 session-state ownership.
+
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.

@@ -242,6 +242,7 @@ async fn handle_chat_command(
                  SLASH COMMANDS:\n\
                  /help      Show this help\n\
                  /models    Switch model/provider\n\
+                 /provider  Configure endpoint (IP/port)\n\
                  /usage     Token and cost stats\n\
                  /expand-thinking Expand all thinking\n\
                  /approve   Tool approval policy\n\
@@ -279,6 +280,11 @@ async fn handle_chat_command(
             tui.set_modal(ModalState::Settings {
                 content: settings_content,
             });
+            handled!()
+        }
+        "/provider" => {
+            // Task 438: Interactive provider endpoint configuration
+            crate::app_chat_handlers::handle_provider_config(runtime).await?;
             handled!()
         }
         "/usage" => {

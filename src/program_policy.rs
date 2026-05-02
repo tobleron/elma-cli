@@ -165,6 +165,57 @@ pub(crate) fn command_is_readonly(cmd: &str) -> bool {
     false
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DerivedRisk {
+    Safe,
+    ReadOnly,
+    Caution,
+    Dangerous,
+}
+
+impl DerivedRisk {
+    pub fn is_destructive(self) -> bool {
+        matches!(self, DerivedRisk::Caution | DerivedRisk::Dangerous)
+    }
+
+    pub fn is_read_only(self) -> bool {
+        matches!(self, DerivedRisk::Safe | DerivedRisk::ReadOnly)
+    }
+}
+
+pub(crate) fn derive_risk_from_step(step: &Step) -> DerivedRisk {
+    match step {
+        Step::Read { .. } => DerivedRisk::ReadOnly,
+        Step::Search { .. } => DerivedRisk::ReadOnly,
+        Step::Explore { .. } => DerivedRisk::ReadOnly,
+        Step::Edit { .. } => DerivedRisk::Dangerous,
+        Step::Write { .. } | Step::Delete { .. } => DerivedRisk::Dangerous,
+        Step::Shell { cmd, common, .. } => {
+            use crate::shell_preflight::classify_command;
+            match classify_command(cmd) {
+                crate::shell_preflight::RiskLevel::Safe => DerivedRisk::Safe,
+                crate::shell_preflight::RiskLevel::Caution => DerivedRisk::Caution,
+                crate::shell_preflight::RiskLevel::Dangerous(_) => DerivedRisk::Dangerous,
+            }
+        }
+        Step::Summarize { .. } => DerivedRisk::ReadOnly,
+        Step::Reply { .. } => DerivedRisk::ReadOnly,
+        Step::Respond { .. } => DerivedRisk::ReadOnly,
+        Step::Select { .. } => DerivedRisk::ReadOnly,
+        Step::Plan { .. } | Step::MasterPlan { .. } | Step::Decide { .. } => DerivedRisk::ReadOnly,
+    }
+}
+
+pub(crate) fn derive_risk_from_common(common: &StepCommon) -> DerivedRisk {
+    if common.is_read_only {
+        DerivedRisk::ReadOnly
+    } else if common.is_destructive {
+        DerivedRisk::Dangerous
+    } else {
+        DerivedRisk::Safe
+    }
+}
+
 pub(crate) fn request_requires_workspace_evidence(
     route_decision: &RouteDecision,
     complexity: &ComplexityAssessment,

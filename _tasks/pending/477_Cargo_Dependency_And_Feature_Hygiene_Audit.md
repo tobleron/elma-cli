@@ -1,9 +1,9 @@
-# Task 449: Cargo Dependency And Feature Hygiene Audit
+# Task 477: Cargo Dependency And Feature Hygiene Audit
 
 **Status:** pending
 **Priority:** MEDIUM
 **Source:** 2026-05-02 full codebase audit
-**Related:** pending Task 414
+**Related:** pending Task 475
 
 ## Summary
 
@@ -31,7 +31,7 @@ Ask the user which dependency policy they prefer:
 2. Map each suspicious dependency to an active/pending task.
 3. Ask the user before removing or feature-gating dependencies tied to future work.
 4. Clean obvious manifest formatting.
-5. Add dependency audit notes to Task 414 release gate if approved.
+5. Add dependency audit notes to Task 475 release gate if approved.
 
 ## Success Criteria
 

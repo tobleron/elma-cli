@@ -91,6 +91,29 @@ pub(crate) fn handle_edit_step(
     };
 
     let path = resolve_workspace_edit_path(workdir, &spec.path)?;
+    let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
+    if let Some(msg) = policy.blocked_message(&path, "edit") {
+        state.step_results.push(StepResult {
+            id: sid.clone(),
+            kind: kind.clone(),
+            purpose: purpose.clone(),
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: msg,
+            command: None,
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return Ok(());
+    }
     let parent = path
         .parent()
         .context("edit target has no parent directory")?;

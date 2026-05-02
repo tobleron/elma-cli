@@ -883,7 +883,7 @@ mod tests {
     #[test]
     fn test_unscoped_find_without_maxdepth() {
         let result = detect_unscoped("find . -name '*.sh'", &PathBuf::from("."));
-        assert!(result.is_unscoped || result.estimated_count >= 0);
+        assert!(result.is_unscoped || result.estimated_count < UNSCOPED_WARN_THRESHOLD);
     }
 
     #[test]
@@ -895,7 +895,7 @@ mod tests {
     #[test]
     fn test_glob_unscoped_warning() {
         let result = detect_unscoped("mv * dest/", &PathBuf::from("/tmp"));
-        assert!(result.estimated_count >= 0);
+        assert!(result.is_unscoped || result.estimated_count < UNSCOPED_WARN_THRESHOLD);
     }
 
     // Protected dirs/files no longer block mutations — only risk classification applies.

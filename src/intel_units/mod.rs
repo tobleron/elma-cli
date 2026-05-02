@@ -9,6 +9,7 @@ mod intel_units_advanced;
 mod intel_units_capability;
 mod intel_units_claim_mapper;
 mod intel_units_classifier;
+mod intel_units_clarification; // Task 452: Clarification and completion tools
 mod intel_units_continuity;
 mod intel_units_core;
 mod intel_units_evidence_quality;
@@ -22,6 +23,7 @@ mod intel_units_intent;
 pub(crate) mod intel_units_maestro;
 mod intel_units_repair;
 mod intel_units_responder;
+pub(crate) mod intel_units_task_management; // Task 494: Task creation intel unit
 mod intel_units_turn_summary;
 
 // Re-export maestro types for external use
@@ -32,6 +34,7 @@ pub(crate) use intel_units_advanced::*;
 pub(crate) use intel_units_capability::*;
 pub(crate) use intel_units_claim_mapper::*;
 pub(crate) use intel_units_classifier::*;
+pub(crate) use intel_units_clarification::*; // Task 452
 pub(crate) use intel_units_continuity::*;
 pub(crate) use intel_units_core::*;
 pub(crate) use intel_units_evidence_quality::*;
@@ -540,6 +543,44 @@ mod tests {
         };
         let unit = EvidenceNeedsClassifierUnit::new(profile);
         assert_eq!(unit.name(), "evidence_needs_classifier");
+    }
+
+    #[test]
+    fn test_clarification_needed_unit_creation() {
+        let profile = Profile {
+            version: 1,
+            name: "test".to_string(),
+            base_url: "http://localhost".to_string(),
+            model: "test".to_string(),
+            temperature: 0.0,
+            top_p: 1.0,
+            repeat_penalty: 1.0,
+            reasoning_format: "none".to_string(),
+            max_tokens: 256,
+            timeout_s: 120,
+            system_prompt: "test".to_string(),
+        };
+        let unit = ClarificationNeededUnit::new(profile);
+        assert_eq!(unit.name(), "clarification_needed");
+    }
+
+    #[test]
+    fn test_completion_check_unit_creation() {
+        let profile = Profile {
+            version: 1,
+            name: "test".to_string(),
+            base_url: "http://localhost".to_string(),
+            model: "test".to_string(),
+            temperature: 0.0,
+            top_p: 1.0,
+            repeat_penalty: 1.0,
+            reasoning_format: "none".to_string(),
+            max_tokens: 256,
+            timeout_s: 120,
+            system_prompt: "test".to_string(),
+        };
+        let unit = CompletionCheckUnit::new(profile);
+        assert_eq!(unit.name(), "completion_check");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolRisk, ExecutorState};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -26,6 +26,11 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
         .with_shell_equivalents(vec!["sh", "bash", "zsh"])
         .with_check_fn(|| {
             which::which("sh").is_ok() || which::which("bash").is_ok()
-        }),
+        })
+        .with_risks(vec![ToolRisk::ExternalProcess])
+        .with_executor_state(ExecutorState::ShellBacked)
+        .requires_permission(true)
+        .concurrency_safe(false)
+        .mutates_workspace(true),
     );
 }

@@ -92,6 +92,26 @@ impl ApproachEngine {
         }
     }
 
+    /// Create with complexity-gated graph depth.
+    /// Uses WorkGraphBuilder::from_complexity to cap pyramid depth.
+    pub fn with_complexity(objective: String, complexity: &str) -> Self {
+        let mut builder = WorkGraphBuilder::from_complexity(objective, complexity);
+        let approach_id = builder.approach_id().clone();
+
+        if !builder.skip_graph() {
+            builder.add_goal("approach_root", "Primary approach", "Initial approach branch");
+        }
+
+        let graph = builder.into_graph();
+        Self {
+            graph,
+            config: ApproachConfig::default(),
+            attempts: Vec::new(),
+            current_approach_id: approach_id,
+            total_attempts: 0,
+        }
+    }
+
     /// Create with custom config.
     pub fn with_config(objective: String, config: ApproachConfig) -> Self {
         let mut engine = Self::new(objective);
@@ -221,6 +241,39 @@ impl ApproachEngine {
             .approaches
             .values()
             .any(|s| *s == ApproachStatus::Active)
+    }
+
+    /// Fork a new sibling approach branch from the same objective.
+    /// Marks the current approach as `Superseded` and creates a new active branch.
+    pub fn fork_new_approach(&mut self, reason: &str) -> ApproachId {
+        if self.total_approach_count() >= self.config.max_total_approaches as usize {
+            return self.current_approach_id.clone();
+        }
+
+        self.graph
+            .approaches
+            .insert(self.current_approach_id.0.clone(), ApproachStatus::Superseded);
+
+        let new_id = ApproachId::new();
+        self.graph
+            .approaches
+            .insert(new_id.0.clone(), ApproachStatus::Active);
+        self.current_approach_id = new_id.clone();
+
+        // Add a new root goal for the new approach
+        self.graph.add_node(WorkNode {
+            id: format!("{}_root", new_id.0),
+            kind: NodeKind::Goal,
+            label: format!("Forked approach: {}", reason),
+            description: reason.to_string(),
+            approach_id: new_id.clone(),
+            objective: self.graph.root_objective.clone(),
+            status: NodeStatus::Pending,
+            parent_id: None,
+            depth: 0,
+        });
+
+        new_id
     }
 }
 

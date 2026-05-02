@@ -1,5 +1,10 @@
 # Task 075: Offline-First Network Policy And Web Fallbacks
 
+## Backlog Reconciliation (2026-05-02)
+
+Split across Task 485 fetch, Task 486 offline/web search policy, Task 488 browser observation, and Task 490 MCP gateway. Offline-first remains the default.
+
+
 ## Priority
 **P3 - ADVANCED/LATER (Tier C — Postponed)**
 **Postponed until:** Tier A + Tier B phases complete

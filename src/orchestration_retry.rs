@@ -704,9 +704,8 @@ async fn build_program_with_retry(
     formula: &FormulaSelection,
     attempt_history: &[(u32, Program, String)],
 ) -> Result<Program> {
-    // Get tool registry for this workspace
-    let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let tool_registry = crate::tools::ToolRegistry::new(&workspace_path);
+    // Get cached tool registry (avoids repeated instantiation)
+    let tool_registry = crate::tool_registry::get_registry();
 
     // Select optimal formula for retry (slightly higher efficiency priority on retries)
     let formula_selection = crate::formulas::select_optimal_formula(
@@ -730,7 +729,6 @@ async fn build_program_with_retry(
         ws,
         ws_brief,
         messages,
-        &tool_registry,
         &formula_selection,
     );
 
@@ -780,9 +778,8 @@ async fn build_program_with_strategy(
     attempt_history: &[(u32, Program, String)],
     tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<Program> {
-    // Get tool registry for this workspace
-    let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let tool_registry = crate::tools::ToolRegistry::new(&workspace_path);
+    // Get cached tool registry (avoids repeated instantiation)
+    let tool_registry = crate::tool_registry::get_registry();
 
     // Select optimal formula for this strategy
     let formula_selection = crate::formulas::select_optimal_formula(
@@ -806,7 +803,6 @@ async fn build_program_with_strategy(
         ws,
         ws_brief,
         messages,
-        &tool_registry,
         &formula_selection,
     );
 

@@ -1,5 +1,10 @@
 # 253 - FB2 And DjVu Structure-Aware Adapters
 
+## Backlog Reconciliation (2026-05-02)
+
+Resume under Task 466 and Task 467 so format support claims, extraction cost, and cache behavior stay truthful.
+
+
 Status: Pending
 Priority: P1
 Depends on: 249

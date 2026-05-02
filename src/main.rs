@@ -74,6 +74,7 @@ mod file_scout; // Task 198: Read-only whole-system file scout
 mod final_answer; // Task 384: Clean-Context Finalization Enforcement
 mod format;
 mod formulas;
+pub mod recipes; // Task 451: Recipe And Subrecipe Workflow System
 mod fs_intel; // Task 072: Specialized Filesystem Intel
 mod goal_seeding; // T305: Goal seeding from multi-step requests
 mod guardrails; // State-aware guardrails for context drift (Task 011)
@@ -98,6 +99,7 @@ mod json_repair; // Deterministic JSON repair pipeline (Task 378)
 mod json_tuning; // JSON temperature tuning
 mod llm_config;
 mod llm_provider; // Task 278: Native Rust LLM API Client
+mod model_capabilities; // Task 448: Model Capability Registry And Token Budgeting
 mod logging;
 mod markdown_ansi; // Markdown-to-ANSI terminal rendering
 mod metrics;
@@ -161,6 +163,7 @@ mod strategy; // Multi-strategy planning with fallback chains (Task 010)
 mod streaming_tool_executor; // Task 115: Streaming Token Execution
 mod system_monitor; // Right-side panel system resource monitor
 mod task_steward; // Task 202: Project task steward skill
+mod task_persistence; // Task 494: Session task persistence & _elma-tasks/
 mod temp;
 mod text_utils;
 mod thinking_content;
@@ -189,7 +192,9 @@ mod ui_status_thread; // Task 311: Persistent Status Thread
 mod verification;
 mod verification_evidence;
 mod work_graph; // Task 389: Pyramid Work Graph
+mod work_graph_bridge; // Task 494: Bridge graph → tasks → steps
 mod workspace;
+mod workspace_policy; // Task 441: Workspace ignore/protect policy
 mod workspace_tree; // Task 169: Claude Code-style Terminal UI
 
 pub(crate) use decomposition::*; // Task 023
@@ -242,6 +247,7 @@ pub(crate) use types::*;
 pub(crate) use ui::*;
 pub(crate) use verification::*;
 pub(crate) use workspace::*;
+pub(crate) use workspace_policy::*; // Task 441: Workspace ignore/protect policy
 
 #[tokio::main]
 async fn main() {

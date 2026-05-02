@@ -19,25 +19,33 @@ The system must adapt to the model — the model must never be asked to adapt to
 ## What Success Looks Like
 
 A user types anything. Elma:
-1. Understands intent (one intel call, one sentence)
-2. Classifies the speech act (one intel call, one label)
-3. Decides the route (one intel call)
-4. Assesses evidence needs (one intel call per field)
-5. Executes tools or answers directly
-6. Produces a truth-grounded answer backed by collected evidence
+1. Assesses complexity (one intel call, DIRECT/INVESTIGATE/MULTISTEP/OPEN_ENDED) — MAIN GATE
+2. Understands intent (one intel call, one sentence)
+3. Classifies the speech act (one intel call, one label)
+4. Decides the route (one intel call)
+5. Selects the formula (one intel call, matches complexity + intent)
+6. Builds the work graph: Objective → Goal → SubGoal → Plan → Instruction (depth gated by complexity)
+7. Creates approach branches (sibling forks for retry, not continuation down failed branches)
+8. Generates persisted tasks: `NNN_{auto|user}_{slug}_{uid}.md` in `_elma-tasks/`
+9. Executes steps (shell, read, edit, reply, etc.) mapped from Instruction nodes
+10. Updates task status from step results (pending → in_progress → completed|failed)
+11. Produces a truth-grounded answer backed by collected evidence
 
-No step ever fails because "the model is too small." If a step fails, it is split into smaller steps, or the approach is adjusted.
+No step ever fails because "the model is too small." If a step fails, it is split into smaller steps, or the approach is adjusted. Failed approaches fork new siblings — they never continue down a broken branch.
 
 ## Current Focus
 
-**Make the basic workflow reliable on 3B models:** intent -> classify -> route -> assess -> execute -> answer.
+**Make the full hierarchy reliable on 3B models:** complexity → intent → classify → route → formula → graph → approach → instruction → step → answer.
 
 ## How We Get There
 
-1. **Split multi-field intel units** (e.g., `evidence_need_assessor` into `needs_evidence` + `needs_tools`)
-2. **Clean-context finalization** -- final answers never leak internal state, stop reasons, or error messages
-3. **Transcript visibility** -- every routing decision, stop reason, and hidden process visible in transcript rows
-4. **Re-apply non-DSL improvements** (routing collapse fix, hard max iterations, stagnation detection, dedup, CHAT bypass)
+1. **Complexity-gated decomposition** — complexity assessment decides maximum graph depth before work begins
+2. **Split multi-field intel units** (e.g., `evidence_need_assessor` into `needs_evidence` + `needs_tools`)
+3. **Clean-context finalization** — final answers never leak internal state, stop reasons, or error messages
+4. **Transcript visibility** — every routing decision, graph creation, approach fork, task status change visible in transcript rows
+5. **Approach branching** — failures fork new approaches from the objective root, never continue down broken branches
+6. **Task persistence** — tasks survive session close via `sessions/<id>/runtime_tasks/tasks.json` and `_elma-tasks/` files
+7. **Re-apply non-DSL improvements** (routing collapse fix, hard max iterations, stagnation detection, dedup, CHAT bypass)
 
 ## Non-Goals
 

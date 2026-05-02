@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolRisk, ExecutorState};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -22,8 +22,12 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "retrieve web content",
             ],
         )
-        .not_deferred()
+        .deferred()
         .with_implementation(crate::registry::ImplementationKind::Network)
-        .not_workspace_scoped(),
+        .not_workspace_scoped()
+        .with_risks(vec![ToolRisk::Network])
+        .with_executor_state(ExecutorState::NetworkBacked)
+        .requires_permission(true)
+        .concurrency_safe(false),
     );
 }

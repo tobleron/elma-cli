@@ -78,6 +78,10 @@ pub(crate) async fn execute_tool_call(
         "tool_search" => exec_tool_search(&args_value, &call_id, tui),
         "shell" => exec_shell(args, &args_value, workdir, session, &call_id, tui).await,
         "read" => exec_read(&args_value, workdir, &call_id, tui),
+        "glob" => exec_glob(&args_value, workdir, &call_id, tui),
+        "patch" => exec_patch(&args_value, workdir, &call_id, tui),
+        "edit" => exec_edit(&args_value, workdir, &call_id, tui),
+        "write" => exec_write(&args_value, workdir, &call_id, tui),
         "search" => exec_search(&args_value, workdir, &call_id, tui).await,
         "respond" => exec_respond(&args_value, &call_id, tui),
         "summary" => exec_summary(&args_value, &call_id, tui),
@@ -166,7 +170,7 @@ async fn exec_shell(
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
             tool_name: "shell".to_string(),
-            content: error_msg,
+            content: error_msg.to_string(),
             ok: false,
             exit_code: None,
             timed_out: false,
@@ -350,7 +354,7 @@ async fn exec_shell(
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
                 tool_name: "shell".to_string(),
-                content: error_msg,
+                content: error_msg.to_string(),
                 ok: false,
                 exit_code: None,
                 timed_out: is_timeout,
@@ -373,7 +377,7 @@ fn exec_observe(
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
             tool_name: "observe".to_string(),
-            content: error_msg,
+            content: error_msg.to_string(),
             ok: false,
             exit_code: None,
             timed_out: false,
@@ -383,8 +387,20 @@ fn exec_observe(
 
     let full = if std::path::Path::new(&path).is_relative() {
         workdir.join(&path)
+    } else if std::path::Path::new(&path).is_absolute() {
+        let error_msg = format!("absolute_path_not_allowed: {} — use workspace-relative path", path);
+        emit_tool_result(&mut tui, "observe", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "observe".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
     } else {
-        PathBuf::from(&path)
+        workdir.join(&path)
     };
 
     emit_tool_start(&mut tui, "observe", &path);
@@ -413,7 +429,7 @@ fn exec_observe(
             return ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
                 tool_name: "observe".to_string(),
-                content: error_msg,
+                content: error_msg.to_string(),
                 ok: false,
                 exit_code: None,
                 timed_out: false,
@@ -497,7 +513,7 @@ fn exec_read(
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
             tool_name: "read".to_string(),
-            content: error_msg,
+            content: error_msg.to_string(),
             ok: false,
             exit_code: None,
             timed_out: false,
@@ -506,8 +522,20 @@ fn exec_read(
     }
     let full = if std::path::Path::new(&path).is_relative() {
         workdir.join(&path)
+    } else if std::path::Path::new(&path).is_absolute() {
+        let error_msg = format!("absolute_path_not_allowed: {} — use workspace-relative path", path);
+        emit_tool_result(&mut tui, "read", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "read".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
     } else {
-        PathBuf::from(&path)
+        workdir.join(&path)
     };
 
     emit_tool_start(&mut tui, "read", &path);
@@ -533,7 +561,397 @@ fn exec_read(
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
                 tool_name: "read".to_string(),
-                content: error_msg,
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+    }
+}
+
+fn exec_glob(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let pattern = av["pattern"].as_str().unwrap_or("*").to_string();
+    let search_path = av["path"].as_str().map(PathBuf::from);
+
+    emit_tool_start(&mut tui, "glob", &pattern);
+
+    let base = match search_path {
+        Some(p) if p.is_absolute() => {
+            let error_msg = "absolute_path_not_allowed";
+            emit_tool_result(&mut tui, "glob", false, error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "glob".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+        Some(p) => workdir.join(p),
+        None => workdir.clone(),
+    };
+
+    let walker = glob::glob_with(
+        &pattern,
+        glob::MatchOptions {
+            case_sensitive: false,
+            require_literal_separator: false,
+            require_literal_leading_dot: false,
+        },
+    );
+
+    let mut results = Vec::new();
+    let mut count = 0;
+    let max_results = 100;
+
+    if let Ok(walker) = walker {
+        for entry in walker.filter_map(|e| e.ok()) {
+            if count >= max_results {
+                break;
+            }
+            let relative = entry
+                .strip_prefix(workdir)
+                .unwrap_or(&entry)
+                .display()
+                .to_string();
+            results.push(relative);
+            count += 1;
+        }
+    }
+
+    let output = if results.is_empty() {
+        "No files found matching pattern".to_string()
+    } else {
+        results.join("\n")
+    };
+
+    emit_tool_result(&mut tui, "glob", !results.is_empty(), &output);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "glob".to_string(),
+        content: output,
+        ok: !results.is_empty(),
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_patch(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let patch_content = av["patch"].as_str().unwrap_or("").to_string();
+    if patch_content.is_empty() {
+        let error_msg = "Error: patch content is empty";
+        emit_tool_result(&mut tui, "patch", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "patch".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "patch", "(multi-file patch)");
+
+    use elma_tools::{parse_patch, PatchOperation};
+
+    match parse_patch(&patch_content) {
+        Ok(parsed) => {
+            let mut results = Vec::new();
+            let mut all_ok = true;
+
+            for op in &parsed.operations {
+                let (path, result_msg) = match op {
+                    PatchOperation::AddFile { path, content } => {
+                        let full = workdir.join(path);
+                        match std::fs::create_dir_all(full.parent().unwrap_or(&full)) {
+                            Ok(_) => match std::fs::write(&full, content) {
+                                Ok(_) => (path.clone(), "added".to_string()),
+                                Err(e) => {
+                                    all_ok = false;
+                                    (path.clone(), format!("write failed: {}", e))
+                                }
+                            },
+                            Err(e) => {
+                                all_ok = false;
+                                (path.clone(), format!("dir create failed: {}", e))
+                            }
+                        }
+                    }
+                    PatchOperation::DeleteFile { path } => {
+                        let full = workdir.join(path);
+                        match std::fs::remove_file(&full) {
+                            Ok(_) => (path.clone(), "deleted".to_string()),
+                            Err(e) => {
+                                all_ok = false;
+                                (path.clone(), format!("delete failed: {}", e))
+                            }
+                        }
+                    }
+                    PatchOperation::UpdateFile { path, old_string, new_string } => {
+                        let full = workdir.join(path);
+                        match std::fs::read_to_string(&full) {
+                            Ok(original) => {
+                                if let Some(pos) = original.find(old_string) {
+                                    let mut updated = original.clone();
+                                    updated.replace_range(pos..pos + old_string.len(), new_string);
+                                    match std::fs::write(&full, &updated) {
+                                        Ok(_) => (path.clone(), "updated".to_string()),
+                                        Err(e) => {
+                                            all_ok = false;
+                                            (path.clone(), format!("write failed: {}", e))
+                                        }
+                                    }
+                                } else {
+                                    all_ok = false;
+                                    (path.clone(), "old_string not found".to_string())
+                                }
+                            }
+                            Err(e) => {
+                                all_ok = false;
+                                (path.clone(), format!("read failed: {}", e))
+                            }
+                        }
+                    }
+                };
+                results.push(format!("{}: {}", path, result_msg));
+            }
+
+            let output = results.join("\n");
+            emit_tool_result(&mut tui, "patch", all_ok, &output);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "patch".to_string(),
+                content: output,
+                ok: all_ok,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Error parsing patch: {}", e);
+            emit_tool_result(&mut tui, "patch", false, &error_msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "patch".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+    }
+}
+
+fn exec_edit(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("").to_string();
+    let old_string = av["old_string"].as_str().unwrap_or("").to_string();
+    let new_string = av["new_string"].as_str().unwrap_or("").to_string();
+
+    if path.is_empty() {
+        let error_msg = "Error: path is required".to_string();
+        emit_tool_result(&mut tui, "edit", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "edit".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full = workdir.join(&path);
+
+    if full.is_absolute() {
+        let error_msg = "absolute_path_not_allowed";
+        emit_tool_result(&mut tui, "edit", false, error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "edit".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "edit", &path);
+
+    let content = match std::fs::read_to_string(&full) {
+        Ok(c) => c,
+        Err(e) => {
+            let error_msg = format!("Error reading file: {}", e);
+            emit_tool_result(&mut tui, "edit", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "edit".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    if !old_string.is_empty() {
+        if let Some(pos) = content.find(&old_string) {
+            let mut updated = content.clone();
+            updated.replace_range(pos..pos + old_string.len(), &new_string);
+            if let Err(e) = std::fs::write(&full, &updated) {
+                let error_msg = format!("Error writing file: {}", e);
+                emit_tool_result(&mut tui, "edit", false, &error_msg);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "edit".to_string(),
+                    content: error_msg.to_string(),
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    signal_killed: None,
+                };
+            }
+            emit_tool_result(&mut tui, "edit", true, "edited");
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "edit".to_string(),
+                content: "edited".to_string(),
+                ok: true,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        } else {
+            let error_msg = "old_string not found in file".to_string();
+            emit_tool_result(&mut tui, "edit", false, &error_msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "edit".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+    } else {
+        let error_msg = "old_string is required".to_string();
+        emit_tool_result(&mut tui, "edit", false, &error_msg);
+        ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "edit".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        }
+    }
+}
+
+fn exec_write(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("").to_string();
+    let content = av["content"].as_str().unwrap_or("").to_string();
+
+    if path.is_empty() {
+        let error_msg = "Error: path is required".to_string();
+        emit_tool_result(&mut tui, "write", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "write".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full = workdir.join(&path);
+
+    if full.is_absolute() {
+        let error_msg = "absolute_path_not_allowed";
+        emit_tool_result(&mut tui, "write", false, error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "write".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "write", &path);
+
+    if let Some(parent) = full.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            let error_msg = format!("Error creating directory: {}", e);
+            emit_tool_result(&mut tui, "write", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "write".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    }
+
+    match std::fs::write(&full, &content) {
+        Ok(_) => {
+            emit_tool_result(&mut tui, "write", true, "written");
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "write".to_string(),
+                content: "written".to_string(),
+                ok: true,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Error writing file: {}", e);
+            emit_tool_result(&mut tui, "write", false, &error_msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "write".to_string(),
+                content: error_msg.to_string(),
                 ok: false,
                 exit_code: None,
                 timed_out: false,
@@ -557,37 +975,63 @@ async fn exec_search(
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
             tool_name: "search".to_string(),
-            content: error_msg,
+            content: error_msg.to_string(),
             ok: false,
             exit_code: None,
             timed_out: false,
             signal_killed: None,
         };
     }
-    let cmd = if let Some(p) = &sp {
-        format!(
-            "rg -i --line-number --no-heading --color=never '{}' '{}'",
-            pattern, p
-        )
-    } else {
-        format!(
-            "rg -i --line-number --no-heading --color=never '{}'",
-            pattern
-        )
-    };
 
-    emit_tool_start(&mut tui, "search", &cmd);
+    if let Some(ref p) = sp {
+        if std::path::Path::new(p).is_absolute() {
+            let error_msg = format!("absolute_path_not_allowed: {} — use workspace-relative path", p);
+            emit_tool_result(&mut tui, "search", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "search".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    }
+
+    let mut cmd = std::process::Command::new("rg");
+    cmd.arg("-i")
+        .arg("--line-number")
+        .arg("--no-heading")
+        .arg("--color=never")
+        .arg(&pattern);
+
+    if let Some(p) = &sp {
+        let search_path = workdir.join(p);
+        if search_path.exists() {
+            cmd.arg(&search_path);
+        }
+    } else {
+        cmd.arg(workdir);
+    }
+
+    emit_tool_start(&mut tui, "search", &format!("rg pattern={}", pattern));
     emit_tool_progress(&mut tui, "search", "running ripgrep");
 
-    match run_shell_one_liner(&cmd, workdir, None).await {
-        Ok(er) => {
-            let success = er.exit_code == 0 || er.exit_code == 1; // ripgrep returns 1 for no matches, which is still a 'success' for the search
-            let content = if er.exit_code == 0 {
-                er.inline_text
-            } else if er.exit_code == 1 {
+    match cmd.output() {
+        Ok(output) => {
+            let exit_code = output.status.code().unwrap_or(0);
+            let success = exit_code == 0 || exit_code == 1;
+            let content = if exit_code == 0 {
+                String::from_utf8_lossy(&output.stdout).to_string()
+            } else if exit_code == 1 {
                 format!("No matches found for: {}", pattern)
             } else {
-                format!("Search failed (exit {}):\n{}", er.exit_code, er.inline_text)
+                format!(
+                    "Search failed (exit {}):\n{}",
+                    exit_code,
+                    String::from_utf8_lossy(&output.stderr)
+                )
             };
 
             emit_tool_result(&mut tui, "search", success, &content);
@@ -607,7 +1051,7 @@ async fn exec_search(
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
                 tool_name: "search".to_string(),
-                content: error_msg,
+                content: error_msg.to_string(),
                 ok: false,
                 exit_code: None,
                 timed_out: false,

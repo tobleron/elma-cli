@@ -1,0 +1,57 @@
+# Test Recipe - Code Edit Pattern
+
+[recipe]
+id = "code_edit"
+version = "1.0"
+name = "Code Edit Workflow"
+description = "Standard read, edit, verify workflow for code modifications"
+
+objective = "Read current content, apply modifications, verify correctness, report outcome"
+
+preconditions = [
+    "User has specified target file",
+    "User intent is understood",
+]
+
+# Example stages matching inspect_edit_verify_reply formula
+[[recipe.stages]]
+id = "read"
+name = "Read Current State"
+objective = "Inspect file content and understand current implementation"
+tools = ["Glob", "Grep", "Read"]
+outputs = ["file_content"]
+verification = ["file was read successfully"]
+
+[[recipe.stages]]
+id = "edit"
+name = "Apply Modification"
+objective = "Apply requested changes to the file"
+tools = ["Edit", "Write"]
+outputs = ["modified_file"]
+verification = ["edit was applied"]
+
+[[recipe.stages]]
+id = "verify"
+name = "Verify Changes"
+objective = "Verify the modification is correct"
+tools = ["Glob", "Grep", "Shell"]
+outputs = ["verification_results"]
+verification = ["changes verified"]
+
+[[recipe.stages]]
+id = "reply"
+name = "Report Results"
+objective = "Present results to the user"
+tools = []
+outputs = ["user_response"]
+verification = ["response delivered"]
+
+[recipe.outputs]
+- "modified file"
+- "verification results"
+- "user response"
+
+[recipe.verification]
+- "edit was applied correctly"
+- "changes are syntactically valid"
+- "user was informed of results"

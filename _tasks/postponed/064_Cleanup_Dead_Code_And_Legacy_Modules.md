@@ -1,5 +1,10 @@
 # Task 064: Cleanup Dead Code And Legacy Modules
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 484. Do not delete legacy code before the earlier ownership tasks in the 437-483 sequence settle tool, UI, document, and session architecture.
+
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.

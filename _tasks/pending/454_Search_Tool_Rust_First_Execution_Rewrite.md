@@ -3,7 +3,7 @@
 **Status:** pending
 **Priority:** HIGH
 **Source:** 2026-05-02 full codebase audit
-**Related:** completed Task 324, completed Task 340, pending Task 425
+**Related:** completed Task 324, completed Task 340, pending Task 457
 
 ## Summary
 
@@ -28,7 +28,7 @@ Ask the user whether search should:
 
 1. Implement argv-safe `rg` search or Rust-native search per user choice.
 2. Honor `literal_text` and `include` schema fields.
-3. Apply workspace/path policy from Task 439.
+3. Apply workspace/path policy from Task 442.
 4. Preserve no-match behavior as successful empty evidence.
 5. Add injection, include-glob, literal, regex, and path-scope tests.
 

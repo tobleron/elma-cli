@@ -1,5 +1,10 @@
 # 254 - Text RTF DOCX And Legacy DOC Adapters
 
+## Backlog Reconciliation (2026-05-02)
+
+Resume under Task 466 and Task 467 so format support claims, extraction cost, and cache behavior stay truthful.
+
+
 Status: Pending
 Priority: P1
 Depends on: 249

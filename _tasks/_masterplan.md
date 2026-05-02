@@ -1,418 +1,286 @@
 # Master Plan
 
-Last updated: 2026-05-02 (expanded with full-codebase audit backlog: dead code, coherence, duplication, hardening, security, and performance)
+Last updated: 2026-05-02 (added Task 494, marked 444-450 complete, registered new module architecture)
 
-This is the execution index for all current pending tasks. Use it to choose work in dependency order, not as a replacement for each task file. Each task file remains the implementation detail, verification commands, and done criteria.
+This is the execution index for current pending tasks. Use it to choose work in dependency order, not as a replacement for each task file. Each task file remains the implementation detail, verification commands, and done criteria.
+
+## New Architecture (Task 494)
+
+The pyramid hierarchy is now wired end-to-end:
+
+```
+ComplexityAssessment → RouteDecision → FormulaSelection → WorkGraph (pyramid)
+    → Goal → SubGoal → Plan → Instruction → PersistedTask → Step
+```
+
+Key modules:
+- `src/work_graph.rs` — Pyramid types + builder with `from_complexity()` gating
+- `src/approach_engine.rs` — Approach branching with `fork_new_approach()` and `with_complexity()`
+- `src/task_persistence.rs` — Session task persistence + `_elma-tasks/NNN_{auto|user}_{slug}_{uid}.md`
+
+File naming:
+- Auto-generated (workflow): `001_auto_Read_Cargo_toml_instr_001.md`
+- User-initiated: `001_user_Add_dark_mode_usr_001.md`
 
 ## Operating Rules
 
 - Move a task from `_tasks/pending/` to `_tasks/active/` before implementation.
 - Do not mark a task complete until its own verification section passes.
-- Do not modify `src/prompt_core.rs` or `TOOL_CALLING_SYSTEM_PROMPT` unless a task explicitly has user approval for that change.
+- Do not modify `src/prompt_core.rs` or `TOOL_CALLING_SYSTEM_PROMPT` unless a task explicitly records user approval for that change.
 - Prefer rust-native/offline tools over shell and network tools.
 - Keep intel-unit JSON simple: one nested object level maximum, three required fields by default, five total fields absolute maximum.
 - Surface routing, tool discovery, retries, compaction, stop reasons, and decomposition as transcript rows.
 - Failed approaches do not continue down the objective hierarchy; retry with a new approach toward the same original objective.
 
-## Wave 0: Full-Codebase Audit Backlog
+## Sequencing Principles
 
-These tasks came from the 2026-05-02 repository audit. They are intentionally interactive: each task starts by asking the user which code paths to deprecate, keep, harden, or migrate so cleanup stays aligned with Elma's goals and pending feature work.
+- Stability and truthfulness gates come first, especially anything that can make builds fail, providers fail, or tool declarations lie.
+- Policy and ownership decisions come before broad implementation, so later tasks do not duplicate architecture.
+- Low-effort, high-gain cleanup is early when it unblocks safer work; cosmetic cleanup and deletion happen after regression coverage.
+- Optional network, browser, MCP, delegation, and watcher features stay late and disabled/offline-gated by default.
+- Deferred and postponed tasks keep their historical numbers, but overlapping tasks now include reconciliation notes pointing to the current pending successor tasks.
 
-### 437 Dead Code And Deprecation Decision Audit
-- Audit orphaned, legacy, unused, and misleading code paths before removal.
-- File: `_tasks/pending/437_Dead_Code_And_Deprecation_Decision_Audit.md`
+## Phase 1: Stabilization And Architecture Decisions
 
-### 438 Tool Declaration And Executor Parity Reconciliation
-- Ensure every model-visible tool schema has an executor or is explicitly hidden/deferred.
-- File: `_tasks/pending/438_Tool_Declaration_Executor_Parity_Reconciliation.md`
+These tasks reduce immediate failure risk and settle the policy contracts that later work depends on.
 
-### 439 Core Tool Path Boundary And Argument Hardening
-- Harden read/search/observe/write/delete path handling and shell argument construction.
-- File: `_tasks/pending/439_Core_Tool_Path_Boundary_And_Argument_Hardening.md`
+### 437 Clippy Lint Gate Baseline Cleanup
+- Make the current lint baseline green and decide enforcement policy.
+- File: `_tasks/pending/437_Clippy_Lint_Gate_Baseline_Cleanup.md`
 
-### 440 Document Capability Truth And Adapter Reconciliation
-- Align document capability reports, docs, completed claims, and actual adapter code.
-- File: `_tasks/pending/440_Document_Capability_Truth_And_Adapter_Reconciliation.md`
-
-### 441 Request Pattern Builder Decomposition And Recipe Migration
-- Migrate brittle request-shape keyword builders into recipes, tests, or focused intel units.
-- File: `_tasks/pending/441_Request_Pattern_Builder_Decomposition_And_Recipe_Migration.md`
-
-### 442 Tool Registry Ownership Consolidation
-- Define one canonical owner for tool schemas, discovery, and policy metadata.
-- File: `_tasks/pending/442_Tool_Registry_Ownership_Consolidation.md`
-
-### 443 UI Renderer And Module Deprecation Decision
-- Decide canonical UI renderer ownership and deprecate stale UI modules safely.
-- File: `_tasks/pending/443_UI_Renderer_And_Module_Deprecation_Decision.md`
-
-### 444 Provider Connectivity And Endpoint Hardening
+### 438 Provider Connectivity And Endpoint Hardening
 - Fix duplicated endpoint construction and unify provider-aware connectivity checks.
-- File: `_tasks/pending/444_Provider_Connectivity_And_Endpoint_Hardening.md`
+- File: `_tasks/pending/438_Provider_Connectivity_And_Endpoint_Hardening.md`
 
-### 445 Clippy Lint Gate Baseline Cleanup
-- Make the current Clippy baseline green and decide verification policy.
-- File: `_tasks/pending/445_Clippy_Lint_Gate_Baseline_Cleanup.md`
-
-### 446 Execution Metadata Truth And Risk Source Unification
-- Unify read-only/destructive/risk metadata across tools, steps, preflight, and policy.
-- File: `_tasks/pending/446_Execution_Metadata_Truth_And_Risk_Source_Unification.md`
-
-### 447 Document Extraction Resource Bounds And Cache Followthrough
-- Bound document sniffing/extraction and make document cache behavior real or explicit.
-- File: `_tasks/pending/447_Document_Extraction_Resource_Bounds_And_Cache_Followthrough.md`
-
-### 448 Task Ledger Drift And Completed Claim Reconciliation
+### 439 Task Ledger Drift And Completed Claim Reconciliation
 - Reconcile duplicate lifecycle entries and completed task claims that no longer match source.
-- File: `_tasks/pending/448_Task_Ledger_Drift_And_Completed_Claim_Reconciliation.md`
+- File: `_tasks/pending/439_Task_Ledger_Drift_And_Completed_Claim_Reconciliation.md`
 
-### 449 Cargo Dependency And Feature Hygiene Audit
-- Audit dependencies, optional features, deprecated dev deps, and manifest hygiene.
-- File: `_tasks/pending/449_Cargo_Dependency_And_Feature_Hygiene_Audit.md`
+### 440 Absolute Path Whole-System Access User Policy Decision
+- Make a product-level decision on absolute paths and whole-system file access.
+- File: `_tasks/pending/440_Absolute_Path_Whole_System_Access_User_Policy_Decision.md`
 
-### 450 Startup Performance And Repeated Scan Reduction
-- Reduce redundant startup/per-turn scans without sacrificing grounding.
-- File: `_tasks/pending/450_Startup_Performance_And_Repeated_Scan_Reduction.md`
+### 441 Workspace Policy Files Ignore And Protected Paths
+- Define ignore/protect policy for all local tools.
+- File: `_tasks/pending/441_Workspace_Policy_Files_Ignore_Protected.md`
 
-### 451 Prompt Contract Principle-First Audit Non-Core
-- Audit non-core managed prompts without modifying protected `src/prompt_core.rs`.
-- File: `_tasks/pending/451_Prompt_Contract_Principle_First_Audit_Non_Core.md`
+### 442 Core Tool Path Boundary And Argument Hardening
+- Harden read/search/observe/write/delete path handling and shell argument construction.
+- File: `_tasks/pending/442_Core_Tool_Path_Boundary_And_Argument_Hardening.md`
 
-### 452 Cross Platform Portability Gate
-- Add a portability audit for Unix-only APIs, temp paths, shell assumptions, and PATH scans.
-- File: `_tasks/pending/452_Cross_Platform_Portability_Gate.md`
+### 443 Execution Metadata Truth And Risk Source Unification
+- Unify read-only/destructive/risk metadata across tools, steps, preflight, and policy.
+- File: `_tasks/pending/443_Execution_Metadata_Truth_And_Risk_Source_Unification.md`
 
-### 453 Shell Mutation Snapshot And Rollback Coverage Revisit
-- Decide rollback coverage for shell-driven file mutations.
-- File: `_tasks/pending/453_Shell_Mutation_Snapshot_And_Rollback_Coverage_Revisit.md`
+### 444 Tool Registry Ownership Consolidation ✓ (completed 2026-05-01)
+### 445 Tool Declaration And Executor Parity Reconciliation ✓ (completed 2026-05-01)
+### 446 Tool Policy Metadata Unification For Tool Calling ✓ (completed 2026-05-01)
+### 447 Tool Arsenal Context Budget Adapter ✓ (completed 2026-05-02)
+### 448 Model Capability Registry And Token Budgeting ✓ (completed 2026-05-02)
+### 449 Startup Performance And Repeated Scan Reduction ✓ (completed 2026-05-02)
+### 450 Prompt Contract Principle-First Audit Non-Core ✓ (completed 2026-05-02)
+
+### 451 Recipe And Subrecipe Workflow System
+- Add versioned external recipe files (TOML) that fill pyramid graph layers.
+- Recipes define which formula → which graph layer → which step types.
+- File: `_tasks/pending/451_Recipe_And_Subrecipe_Workflow_System.md`
+
+### 494 Full Hierarchy Integration Task Persistence Workflow (IN PROGRESS)
+- Wire Complexity → Graph depth, approaches as siblings, task persistence, _elma-tasks/ auto-gen.
+- File: `_tasks/pending/494_Full_Hierarchy_Integration_Task_Persistence_Workflow.md`
+
+### 452 User Clarification And Completion Tools
+- Ask concise follow-up questions when required information is missing.
+- File: `_tasks/pending/452_User_Clarification_And_Completion_Tools.md`
+
+### 453 Request Pattern Builder Decomposition And Recipe Migration
+- Migrate brittle request-shape keyword builders into recipes, tests, or focused intel units.
+- File: `_tasks/pending/453_Request_Pattern_Builder_Decomposition_And_Recipe_Migration.md`
+
+## Phase 2: Core Local Execution And File Tools
+
+These tasks build safer rust-first local capabilities on top of the policy foundation.
 
 ### 454 Search Tool Rust-First Execution Rewrite
 - Rewrite model-facing search to avoid shell-string construction and honor schema fields.
 - File: `_tasks/pending/454_Search_Tool_Rust_First_Execution_Rewrite.md`
 
-### 455 Session Runtime State Ownership Audit
-- Define canonical ownership for transcript, artifacts, summaries, event log, index, and store.
-- File: `_tasks/pending/455_Session_Runtime_State_Ownership_Audit.md`
-
-### 456 Absolute Path Whole-System Access User Policy Decision
-- Make a product-level decision on absolute paths and whole-system file access.
-- File: `_tasks/pending/456_Absolute_Path_Whole_System_Access_User_Policy_Decision.md`
-
-## Wave 1: Highest-Gain Reliability And Tool Awareness
-
-These tasks remove current wrong-answer causes and give Elma a reliable view of its tool arsenal.
-
-### 386 Source-Agent Tool Parity Gap Matrix
-- [x] Inventory all tool families under `_knowledge_base/_source_code_agents/`.
-- [x] Map each source-agent tool family to an Elma equivalent or pending task.
-- [x] Mark preferred implementation mode: rust-native, shell fallback, network optional, or extension.
-- File: `_tasks/completed/386_Source_Agent_Tool_Parity_Gap_Matrix_DONE.md`
-
-### 376 Replace Length Heuristic With LLM Route Inference
-- [x] Remove short-prompt tool suppression (replaced `line.len() < 30` with `annotate_and_classify`).
-- [x] Route evidence needs through model confidence and later tool discovery.
-- File: `_tasks/completed/376_Replace_Length_Heuristic_With_LLM_Route_Inference_DONE.md`
-
-### 377 Remove Trivial Chat Bypass In Orchestration
-- [x] Ensure all turns can reach retry, repair, and tool discovery.
-- [x] Stop direct hallucinated `reply_only` answers from bypassing orchestration.
-- File: `_tasks/completed/377_Remove_Trivial_Chat_Bypass_In_Orchestration_DONE.md`
-
-### 378 JSON Complexity Constraint And Repair
-- [x] Add `validate_schema_complexity()` with tests for all constraint rules.
-- [x] Create `src/json_repair.rs` with 4-stage deterministic repair pipeline.
-- [x] Wire new module into crate; 700 tests pass.
-- [ ] Split complex schemas (workflow, complexity, scope) into focused units.
-- File: `_tasks/completed/378_JSON_Complexity_Constraint_And_Repair_DONE.md`
-
-### 387 Rust-Native Tool Preference And Shell Fallback Policy
-- [x] Add tool metadata: `ImplementationKind` enum, `shell_equivalents`, `workspace_scoped`.
-- [x] Prefer native tools before shell for equivalent operations.
-- [x] 7 new tests prove metadata correctness (priority ranking, offline capability, equivalents).
-- File: `_tasks/completed/387_Rust_Native_Tool_Preference_And_Shell_Fallback_Policy_DONE.md`
-
-### 388 Model-Driven Tool Discovery And Capability Routing
-- [x] Create `CapabilityDiscoveryUnit` intel unit with 3-field JSON output (Task 378 compliant).
-- [x] Add `find_tools_for_capability()` with rust-native ranking via `ImplementationKind::selection_priority()`.
-- [x] Add `auto_discover_tools()` that discovers capability, searches registry, caps at 5, loads results.
-- [x] 7 tests prove discovery, ranking, rust-native preference, and cap behavior.
-- File: `_tasks/completed/388_Model_Driven_Tool_Discovery_And_Capability_Routing_DONE.md`
-
-## Wave 2: Pyramid Orchestration And Semantic Reliability ✅
-
-All 9 tasks complete. 47 new tests added. 806 tests pass across full suite.
-
-### 389 Pyramid Work Graph Complexity Assessment
-- [x] `WorkGraph` + `WorkGraphBuilder` types with 5 node kinds and approach tracking.
-- [x] `GraphComplexityUnit` intel unit (3-field JSON compliant with Task 378).
-- [x] 13 tests for graph construction, depth, children, kind filtering, topological order.
-- File: `_tasks/completed/389_Pyramid_Work_Graph_Complexity_Assessment_DONE.md`
-
-### 379 Dynamic Decomposition On Weakness
-- [x] `FailureClass` enum with 7 variants and detection from error context.
-- [x] `decompose_on_failure()` now returns true for stale/parse/multi-failure signals.
-- [x] `strategy_for_failure()` maps each class to decomposition guidance.
-- [x] Wired into retry loop: failure class detection on every retry after first.
-- [x] 18 tests (11 new) for detection, labeling, strategies, and decomposition gating.
-- File: `_tasks/completed/379_Dynamic_Decomposition_On_Weakness_DONE.md`
-
-### 390 Approach Branch Retry And Prune Engine
-- [x] `ApproachEngine` with `ApproachAttempt` state and `ApproachDecision` enum.
-- [x] Pruning decision logic driven by FailureClass severity and configurable thresholds.
-- [x] New-approach generator with strategy hint from `strategy_for_failure_by_label()`.
-- [x] Wired into `orchestrate_with_retries()` — exhaust/continue/prune decisions per attempt.
-- [x] 9 tests covering creation, continue, prune, exhaustion by attempts/approaches, graph state.
-- File: `_tasks/completed/390_Approach_Branch_Retry_And_Prune_Engine_DONE.md`
-
-### 391 Instruction-Level Repair And Result Recombiner
-- [x] `InstructionOutcome`, `InstructionStatus`, `RepairAction` (3-field, Task 378 compliant).
-- [x] `select_repair_action()` — non-keyword mapping: tool→native, parse→tighten, missing→evidence, timeout→split.
-- [x] `try_repair()` / `create_repair_outcome()` — produce Running or Abandoned outcomes.
-- [x] `recombine()` — merge successful sibling outcomes, fail-closed on missing evidence.
-- [x] Wired into `orchestrate_with_retries()` — repair events logged per failed step.
-- [x] 18 tests covering all repair actions, abandon logic, recombination, evidence gating.
-- File: `_tasks/completed/391_Instruction_Level_Repair_And_Result_Recombiner_DONE.md`
-
-### 380 Semantic Continuity Tracking
-- [x] `ContinuityTracker` struct with `ContinuityCheckpoint`, `ContinuityVerdict` (Aligned/Drifted/Mismatch).
-- [x] `check_route_alignment()` — flags simple queries with complex routes, high-entropy decisions.
-- [x] `check_final_answer()` — detects empty, evidence-lacking, or too-short answers.
-- [x] `AnswerContinuityUnit` intel unit (3-field JSON: aligned, confidence, reason).
-- [x] Wired into chat loop: route check after classification, final check after resolve_final_text.
-- [x] 19 tests covering creation, scoring, route alignment, final answer checks, fallback.
-- File: `_tasks/completed/380_Semantic_Continuity_Tracking_DONE.md`
-
-### 381 Transcript-Native Operational Visibility
-- [x] `push_meta_event` on TerminalUI now pushes `ClaudeMessage::System` (was a no-op).
-- [x] Wired ROUTE event after `annotate_and_classify` in chat loop.
-- [x] Wired RETRY event per attempt and DECOMPOSE event on failure decomposition.
-- [x] Wired APPROACH events (prune, exhaust) in retry loop.
-- [x] Wired TOOLS event after workspace tool discovery.
-- [x] STOP events already wired in tool_loop via `push_meta_event("STOP", ...)`.
-- [x] `push_stop_notice` exists with 0 callers (Task 381 note: exposed but not yet wired).
-- File: `_tasks/completed/381_Transcript_Operational_Visibility_DONE.md`
-
-### 384 Clean-Context Finalization Enforcement
-- [x] `sanitize_final_answer()` — strips headers, evidence framing, analysis/verification artifacts.
-- [x] `contains_blocked_pattern()` — blocklist of 24 patterns that must never appear in answers.
-- [x] `FinalCleanerUnit` intel unit (3-field JSON: cleaned_text, cleaned_aspects, confidence).
-- [x] Wired into app_chat_loop after resolve_final_text — automatic sanitize + blocked-pattern check.
-- [x] 16 tests for sanitization, blocklist, multi-frame removal, legitimate text preservation.
-- File: `_tasks/completed/384_Clean_Context_Finalization_Enforcement_DONE.md`
-
-### 392 Plaintext Default And Markdown Output Tool
-- [x] `strip_markdown()` — removes bold, italic, code, fenced blocks, headers, links, images.
-- [x] `process_final_answer_display()` — sanitize + strip markdown for terminal output.
-- [x] Wired into app_chat_loop: `display_text` used for `tui.add_message()`, markdown preserved for messages/artifacts.
-- [x] 9 tests for bold, inline code, fenced blocks, headers, links, images, mixed, empty, plain pass-through.
-- File: `_tasks/completed/392_Plaintext_Default_And_Markdown_Output_Tool_DONE.md`
-
-### 385 Persist Finalized Summaries As Markdown
-- [x] `write_summary_markdown()` in `session_write.rs` — writes frontmatter + narrative to `summaries/*.md`.
-- [x] Error handling: creates dir if missing, logs warnings on failure, no session interruption.
-- [x] Wired into turn summary path in `app_chat_loop.rs` — called after `save_turn_summary()`.
-- [x] Markdown artifact format: frontmatter (timestamp, session, model, turn, status, tools, errors) + narrative.
-- File: `_tasks/completed/385_Persist_Finalized_Summaries_As_Markdown_DONE.md`
-
-## Wave 3: Offline Rust-Native Tool Equivalence
-
-These tasks close high-value tool gaps while preserving local-first behavior.
-
-### 393 Observe Metadata Inspection Tool
-- [x] `observe` tool registered in elma-tools (RustNative, non-deferred, workspace_scoped).
-- [x] `exec_observe()` handler in tool_calling.rs — returns existence, type, size, mtime, perms, child_count, symlink_target.
-- [x] Rust-native std::fs implementation, no shell fallback.
-- [x] 11 new tests (6 exec_observe + 5 registry metadata) pass.
-- File: `_tasks/completed/393_Observe_Metadata_Inspection_Tool_DONE.md`
-
-### 396 Workspace Policy Files Ignore And Protected Paths
-- Define ignore/protect policy for all local tools.
-- File: `_tasks/pending/396_Workspace_Policy_Files_Ignore_Protected.md`
-
-### 395 File Context Tracker And Stale Read Gate
-- Track reads, edits, external modifications, and stale write risk.
-- File: `_tasks/pending/395_File_Context_Tracker_And_Stale_Read_Gate.md`
-
-### 425 Rust-First File Operation Tool Completeness
-- Add native stat/copy/move/mkdir/trash/touch/path tools.
-- File: `_tasks/pending/425_Rust_First_File_Operation_Tool_Completeness.md`
-
-### 394 Patch Tool Multi-File Atomic Changes
+### 455 Patch Tool Multi-File Atomic Changes
 - Make the patch tool executable, transactional, and rollback-aware.
-- File: `_tasks/pending/394_Patch_Tool_Multi_File_Atomic.md`
+- File: `_tasks/pending/455_Patch_Tool_Multi_File_Atomic.md`
 
-### 397 Symbol-Aware Repo Map And Tag Cache
-- Add token-budgeted symbol map slices and cache invalidation.
-- File: `_tasks/pending/397_Symbol_Aware_Repo_Map_And_Tag_Cache.md`
+### 456 File Context Tracker And Stale Read Gate
+- Track reads, edits, external modifications, and stale write risk.
+- File: `_tasks/pending/456_File_Context_Tracker_And_Stale_Read_Gate.md`
 
-### 398 LSP Diagnostics And Code Intelligence Tool
-- Add optional local diagnostics/code-intelligence tool.
-- File: `_tasks/pending/398_LSP_Diagnostics_And_Code_Intelligence_Tool.md`
+### 457 Rust-First File Operation Tool Completeness
+- Add native stat/copy/move/mkdir/trash/touch/path tools.
+- File: `_tasks/pending/457_Rust_First_File_Operation_Tool_Completeness.md`
 
-### 399 Auto Lint/Test And Verification Planner
-- Detect focused verification commands from manifests and changed files.
-- File: `_tasks/pending/399_Auto_Lint_Test_And_Verification_Planner.md`
+### 458 Shell Mutation Snapshot And Rollback Coverage Revisit
+- Decide rollback coverage for shell-driven file mutations.
+- File: `_tasks/pending/458_Shell_Mutation_Snapshot_And_Rollback_Coverage_Revisit.md`
 
-### 421 Native Git Inspection And Worktree Tool
-- Add rust-first git status/diff/log inspection.
-- File: `_tasks/pending/421_Native_Git_Inspection_And_Worktree_Tool.md`
-
-### 422 Tool Result Artifact And Reference Ledger
-- [x] Evidence verdicts now visible as `EVIDENCE` transcript rows (was hidden in trace logs).
-- [x] Evidence-based respond gate: blocks respond with ungrounded factual claims when no real tools called.
-- [x] `clear()` method on EvidenceLedger for session-end cleanup.
-- [x] `has_evidence_matching()` method for efficient evidence lookups.
-- [x] Evidence cleanup called after each turn end in `orchestration_core.rs`.
-- [x] 4 new tests for clear() and has_evidence_matching().
-- File: `_tasks/completed/422_Tool_Result_Artifact_And_Reference_Ledger_DONE.md`
-
-### 417 Clean Room Shell Execution
-- [x] SHELL transcript event via `push_meta_event` on every shell tool call.
-- [x] Shell output already sanitized (ANSI/ctrl chars stripped) via `persistent_shell.rs` + `program_utils.rs`.
-- [x] Clean `/bin/sh` environment via `env_utils::get_baseline_environment()` (no login profiles).
-- [x] PTY output already sanitized and saved as `tool_{id}.out` artifact.
-- File: `_tasks/completed/417_Clean_Room_Shell_Execution_DONE.md`
-
-## Wave 4: Execution Profiles, Jobs, And Local Code Tools
-
-These tasks make Elma act like a practical local agent without relying on brittle shell prompts.
-
-### 406 Sandboxed Execution Profile System
+### 459 Sandboxed Execution Profile System
 - Define local/restricted/container execution profiles.
-- File: `_tasks/pending/406_Sandboxed_Execution_Profile_System.md`
+- File: `_tasks/pending/459_Sandboxed_Execution_Profile_System.md`
 
-### 418 Background Job Tool And Notify-On-Complete
+### 460 Background Job Tool And Notify-On-Complete
 - Add start/status/output/stop tools for long-running jobs.
-- File: `_tasks/pending/418_Background_Job_Tool_And_Notify_On_Complete.md`
+- File: `_tasks/pending/460_Background_Job_Tool_And_Notify_On_Complete.md`
 
-### 420 Local Code Interpreter Tool Wrappers
+### 461 Local Code Interpreter Tool Wrappers
 - Add structured Python/Node interpreter wrappers through process APIs.
-- File: `_tasks/pending/420_Local_Code_Interpreter_Tool_Wrappers.md`
+- File: `_tasks/pending/461_Local_Code_Interpreter_Tool_Wrappers.md`
 
-### 419 Native Download And Attachment Tool
-- Add controlled artifact export/download with network disabled by default.
-- File: `_tasks/pending/419_Native_Download_And_Attachment_Tool.md`
+### 462 Native Git Inspection And Worktree Tool
+- Add rust-first git status/diff/log inspection.
+- File: `_tasks/pending/462_Native_Git_Inspection_And_Worktree_Tool.md`
 
-### 413 Session Rewind And Checkpoint Restore UX
-- Add event/snapshot-backed checkpoint inspect and restore.
-- File: `_tasks/pending/413_Session_Rewind_And_Checkpoint_Restore_UX.md`
+### 463 Symbol-Aware Repo Map And Tag Cache
+- Add token-budgeted symbol map slices and cache invalidation.
+- File: `_tasks/pending/463_Symbol_Aware_Repo_Map_And_Tag_Cache.md`
 
-## Wave 5: Optional Network And Extension Tools
+### 464 LSP Diagnostics And Code Intelligence Tool
+- Add optional local diagnostics/code-intelligence tool.
+- File: `_tasks/pending/464_LSP_Diagnostics_And_Code_Intelligence_Tool.md`
 
-These remain offline-disabled by default but give Elma equivalents for source agents that support fetch, browser, MCP, and external tools.
+## Phase 3: Memory, Documents, Sessions, And Events
 
-### 403 Web Fetch Tool Security-Gated HTTP
-- Implement disabled-by-default HTTP text retrieval with SSRF protections.
-- File: `_tasks/pending/403_Web_Fetch_Tool_Security_Gated_HTTP.md`
+These tasks improve grounded continuity and long-running session reliability.
 
-### 404 Optional Browser Observation Tool
-- Add disabled-by-default browser observation using the fetch/network policy.
-- File: `_tasks/pending/404_Optional_Browser_Observation_Tool.md`
-
-### 405 MCP Extension Gateway With Offline Gates
-- Add disabled-by-default MCP tools through unified metadata and permissions.
-- File: `_tasks/pending/405_MCP_Extension_Gateway_With_Offline_Gates.md`
-
-### 408 Versioned Extension State For Sessions
-- Add namespaced, versioned extension state storage and migrations.
-- File: `_tasks/pending/408_Versioned_Extension_State_For_Sessions.md`
-
-### 426 Offline Search Provider And Web Search Policy
-- Prefer local workspace/memory/docs search before optional web search.
-- File: `_tasks/pending/426_Offline_Search_Provider_And_Web_Search_Policy.md`
-
-## Wave 6: Workflows, Memory, Modes, And Delegation
-
-These build higher-level agent behavior on top of the reliability and tool layers.
-
-### 407 Recipe And Subrecipe Workflow System
-- Add versioned external recipes without prompt bloat.
-- File: `_tasks/pending/407_Recipe_And_Subrecipe_Workflow_System.md`
-
-### 409 Headless Event API And SDK Harness
-- Add a headless runner with deterministic event output.
-- File: `_tasks/pending/409_Headless_Event_API_And_SDK_Harness.md`
-
-### 410 Bounded Subagent Delegation Framework
-- Add bounded read-only explorer delegation before write delegation.
-- File: `_tasks/pending/410_Bounded_Subagent_Delegation_Framework.md`
-
-### 411 Persistent Project Memory And RAG Index
+### 465 Persistent Project Memory And RAG Index
 - Add grounded project memory with provenance and staleness.
-- File: `_tasks/pending/411_Persistent_Project_Memory_And_RAG_Index.md`
+- File: `_tasks/pending/465_Persistent_Project_Memory_And_RAG_Index.md`
 
-### 412 Data Analysis Mode
+### 466 Document Capability Truth And Adapter Reconciliation
+- Align document capability reports, docs, completed claims, and actual adapter code.
+- File: `_tasks/pending/466_Document_Capability_Truth_And_Adapter_Reconciliation.md`
+
+### 467 Document Extraction Resource Bounds And Cache Followthrough
+- Bound document sniffing/extraction and make document cache behavior real or explicit.
+- File: `_tasks/pending/467_Document_Extraction_Resource_Bounds_And_Cache_Followthrough.md`
+
+### 468 Data Analysis Mode
 - Add document/data analysis mode using local extraction and evidence.
-- File: `_tasks/pending/412_Data_Analysis_Mode.md`
+- File: `_tasks/pending/468_Data_Analysis_Mode.md`
 
-### 423 Source-Agent Command And Slash Action Parity
-- Map high-value source-agent commands to Elma equivalents.
-- File: `_tasks/pending/423_Source_Agent_Command_And_Slash_Action_Parity.md`
+### 469 Session Runtime State Ownership Audit
+- Define canonical ownership for transcript, artifacts, summaries, event log, index, and store.
+- File: `_tasks/pending/469_Session_Runtime_State_Ownership_Audit.md`
 
-### 428 User Clarification And Completion Tools
-- Ask concise follow-up questions when required information is missing.
-- File: `_tasks/pending/428_User_Clarification_And_Completion_Tools.md`
+### 470 Action Observation Event Log For Tool Calling
+- Add a typed runtime timeline for current tool-calling sessions.
+- File: `_tasks/pending/470_Action_Observation_Event_Log_For_Tool_Calling.md`
 
-### 427 Tool Arsenal Context Budget Adapter
-- Keep tool declarations small and relevant for constrained models.
-- File: `_tasks/pending/427_Tool_Arsenal_Context_Budget_Adapter.md`
+### 471 Tool Calling Certification Suites For Current Architecture
+- Certify current tool-calling behavior without reviving DSL-specific tests.
+- File: `_tasks/pending/471_Tool_Calling_Certification_Suites_Current_Architecture.md`
 
-### 383 Lightweight Local Auxiliary LLM Helper
-- Optional local helper for summarization/classification/compression.
-- File: `_tasks/pending/383_Lightweight_Local_Auxiliary_LLM_Helper.md`
+### 472 Session Rewind And Checkpoint Restore UX
+- Add event/snapshot-backed checkpoint inspect and restore.
+- File: `_tasks/pending/472_Session_Rewind_And_Checkpoint_Restore_UX.md`
 
-## Wave 7: Diagnostics, Certification, And Regression Gates
+## Phase 4: Diagnostics, Release Gates, And Cleanup Safety
 
-These tasks prove the system remains reliable as the tool surface grows.
+These tasks make regressions visible before cosmetic cleanup or deletion begins.
 
-### 382 Keyword Heuristic Decomposition Audit
-- Replace semantic keyword heuristics with confidence/metadata/intel units.
-- File: `_tasks/pending/382_Keyword_Heuristic_Decomposition_Audit.md`
-
-## Wave 8: Hallucination Prevention And Evidence Enforcement
-
-### 429 Fix Hallucinated Factual Answers And Evidence Gate Gaps
-- [x] Route override: factual time/date queries (`what time is it now?`) now force SHELL route instead of CHAT short-circuit.
-- [x] Evidence gate v2: fires even when zero evidence entries exist — detects datetime fabrication patterns in respond content.
-- [x] `has_factual_content()`: narrowly scoped to datetime patterns only (avoids blocking benign self-introductions).
-- [x] `tool_search` added to CHAT context tools so model can discover shell when needed.
-- [x] Verdict transcript rows: EVIDENCE category events now visible to user.
-- [x] SHELL transcript events: `push_meta_event("SHELL", command)` on every shell call.
-- File: `_tasks/completed/429_Fix_Hallucinated_Factual_Answers_DONE.md`
-
-### 400 Provider Fault Injection And Error Recovery Harness
+### 473 Provider Fault Injection And Error Recovery Harness
 - Test provider failures, malformed streams, context overflow, and recovery.
-- File: `_tasks/pending/400_Provider_Fault_Injection_And_Error_Recovery_Harness.md`
+- File: `_tasks/pending/473_Provider_Fault_Injection_And_Error_Recovery_Harness.md`
 
-### 401 Diagnostics Bundle And Doctor Command
+### 474 Diagnostics Bundle And Doctor Command
 - Add local doctor checks, redaction, and session diagnostic bundles.
-- File: `_tasks/pending/401_Diagnostics_Bundle_And_Doctor_Command.md`
+- File: `_tasks/pending/474_Diagnostics_Bundle_And_Doctor_Command.md`
 
-### 402 Terminal UI Regression Capture Harness
-- Add deterministic terminal snapshots for operational rows and footer rules.
-- File: `_tasks/pending/402_Terminal_UI_Regression_Capture_Harness.md`
-
-### 414 Release Risk And Security Audit Gate
+### 475 Release Risk And Security Audit Gate
 - Add local release risk scanner for sensitive modules and hidden characters.
-- File: `_tasks/pending/414_Release_Risk_And_Security_Audit_Gate.md`
+- File: `_tasks/pending/475_Release_Risk_And_Security_Audit_Gate.md`
 
-### 424 Tool Equivalent Certification Scenarios From Knowledge Base
+### 476 Cross Platform Portability Gate
+- Audit Unix-only APIs, temp paths, shell assumptions, and PATH scans.
+- File: `_tasks/pending/476_Cross_Platform_Portability_Gate.md`
+
+### 477 Cargo Dependency And Feature Hygiene Audit
+- Audit dependencies, optional features, deprecated dev deps, and manifest hygiene.
+- File: `_tasks/pending/477_Cargo_Dependency_And_Feature_Hygiene_Audit.md`
+
+### 478 Headless Event API And SDK Harness
+- Add a headless runner with deterministic event output.
+- File: `_tasks/pending/478_Headless_Event_API_And_SDK_Harness.md`
+
+### 479 Auto Lint/Test And Verification Planner
+- Detect focused verification commands from manifests and changed files.
+- File: `_tasks/pending/479_Auto_Lint_Test_And_Verification_Planner.md`
+
+### 480 Tool Equivalent Certification Scenarios From Knowledge Base
 - Add offline certification prompts for each source-agent tool family.
-- File: `_tasks/pending/424_Tool_Equivalent_Certification_Scenarios_From_Knowledge_Base.md`
+- File: `_tasks/pending/480_Tool_Equivalent_Certification_Scenarios_From_Knowledge_Base.md`
 
-### 415 Benchmark Leaderboard And Eval Dashboard
+### 481 Benchmark Leaderboard And Eval Dashboard
 - Normalize benchmark scenarios and reliability scoring.
-- File: `_tasks/pending/415_Benchmark_Leaderboard_And_Eval_Dashboard.md`
+- File: `_tasks/pending/481_Benchmark_Leaderboard_And_Eval_Dashboard.md`
 
-### 416 File Watcher And AI Comment Workflow
+### 482 Terminal UI Regression Capture Harness
+- Add deterministic terminal snapshots for operational rows and footer rules.
+- File: `_tasks/pending/482_Terminal_UI_Regression_Capture_Harness.md`
+
+### 483 UI Renderer And Module Deprecation Decision
+- Decide canonical UI renderer ownership and deprecate stale UI modules safely.
+- File: `_tasks/pending/483_UI_Renderer_And_Module_Deprecation_Decision.md`
+
+### 484 Dead Code And Deprecation Decision Audit
+- Audit orphaned, legacy, unused, and misleading code paths before removal.
+- File: `_tasks/pending/484_Dead_Code_And_Deprecation_Decision_Audit.md`
+
+## Phase 5: Optional Network, Extension, And Workflow Expansion
+
+These tasks stay late because they broaden the execution surface. They must remain offline-disabled or permission-gated by default.
+
+### 485 Web Fetch Tool Security-Gated HTTP
+- Implement disabled-by-default HTTP text retrieval with SSRF protections.
+- File: `_tasks/pending/485_Web_Fetch_Tool_Security_Gated_HTTP.md`
+
+### 486 Offline Search Provider And Web Search Policy
+- Prefer local workspace/memory/docs search before optional web search.
+- File: `_tasks/pending/486_Offline_Search_Provider_And_Web_Search_Policy.md`
+
+### 487 Native Download And Attachment Tool
+- Add controlled artifact export/download with network disabled by default.
+- File: `_tasks/pending/487_Native_Download_And_Attachment_Tool.md`
+
+### 488 Optional Browser Observation Tool
+- Add disabled-by-default browser observation using the fetch/network policy.
+- File: `_tasks/pending/488_Optional_Browser_Observation_Tool.md`
+
+### 489 Versioned Extension State For Sessions
+- Add namespaced, versioned extension state storage and migrations.
+- File: `_tasks/pending/489_Versioned_Extension_State_For_Sessions.md`
+
+### 490 MCP Extension Gateway With Offline Gates
+- Add disabled-by-default MCP tools through unified metadata and permissions.
+- File: `_tasks/pending/490_MCP_Extension_Gateway_With_Offline_Gates.md`
+
+### 491 Source-Agent Command And Slash Action Parity
+- Map high-value source-agent commands to Elma equivalents.
+- File: `_tasks/pending/491_Source_Agent_Command_And_Slash_Action_Parity.md`
+
+### 492 Bounded Subagent Delegation Framework
+- Add bounded read-only explorer delegation before write delegation.
+- File: `_tasks/pending/492_Bounded_Subagent_Delegation_Framework.md`
+
+### 493 File Watcher And AI Comment Workflow
 - Add scoped workspace watcher integrated with stale context tracking.
-- File: `_tasks/pending/416_File_Watcher_And_AI_Comment_Workflow.md`
+- File: `_tasks/pending/493_File_Watcher_And_AI_Comment_Workflow.md`
 
-## Final Sequencing Notes
+## Deferred And Postponed Policy
 
-- Start with Task 386, then Tasks 376-378. This gives the backlog truth and fixes the most direct wrong-answer causes.
-- Do Tasks 387-388 before adding more tools. Tool discovery and rust-first policy decide how all future tools are exposed.
-- Do Tasks 389-391 before broad workflow expansion. Pyramid orchestration is the core decomposition mechanism.
-- Keep network/browser/MCP tools disabled by default and lower priority than offline equivalents.
-- Any new intel unit added by later tasks must obey Task 378 JSON limits.
-- Protect `src/prompt_core.rs` unless explicit user approval is recorded in the task.
+- Deferred and postponed task numbers are historical and are not part of the pending execution sequence.
+- When a deferred/postponed task overlaps the current architecture, its file now carries a `Backlog Reconciliation (2026-05-02)` note pointing to the pending successor task.
+- If a deferred/postponed task is revived, first compare it against the successor task and either merge the missing details or explicitly supersede the older task.
+
+## Current First Picks
+
+Tasks 437-443 remain first pick for stabilization. Tasks 444-450 are complete. Task 494 is actively in progress (Phase 1-2 done, Phase 3-6 remaining). Task 451 (recipes) is next logical successor once 494's hierarchy is fully wired.
+
+Do not start UI deprecation, dead-code deletion, network tools, MCP, browser tools, subagents, or file watching until the relevant earlier policy and regression-gate tasks are complete.

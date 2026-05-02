@@ -1,4 +1,4 @@
-# Task 440: Document Capability Truth And Adapter Reconciliation
+# Task 466: Document Capability Truth And Adapter Reconciliation
 
 **Status:** pending
 **Priority:** HIGH

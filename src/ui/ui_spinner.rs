@@ -168,6 +168,6 @@ mod tests {
     fn test_spinner_quick_finish() {
         let spinner = Spinner::start(SpinnerVerb::Thinking, "quick");
         let elapsed = spinner.finish(true);
-        assert!(elapsed.as_micros() >= 0);
+        assert!(elapsed.as_secs() == 0);
     }
 }

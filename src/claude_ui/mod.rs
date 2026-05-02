@@ -78,4 +78,16 @@ pub enum UiEvent {
         rows: usize,
     },
     ExitRequested,
+    RecipeLoaded {
+        recipe_id: String,
+        stages: Vec<String>,
+    },
+    RecipeStageStarted {
+        recipe_id: String,
+        stage_id: String,
+    },
+    RecipeStageComplete {
+        recipe_id: String,
+        stage_id: String,
+    },
 }

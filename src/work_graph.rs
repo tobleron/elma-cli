@@ -176,6 +176,7 @@ impl WorkGraph {
 pub(crate) struct WorkGraphBuilder {
     graph: WorkGraph,
     current_approach: ApproachId,
+    max_depth: u8,
 }
 
 impl WorkGraphBuilder {
@@ -188,7 +189,44 @@ impl WorkGraphBuilder {
         Self {
             graph,
             current_approach: approach_id,
+            max_depth: 4, // default: full pyramid
         }
+    }
+
+    /// Build a graph with depth capped by complexity assessment.
+    /// Complexity → max graph depth:
+    ///   DIRECT → 0 (no graph, skip to instruction)
+    ///   INVESTIGATE → 2 (Goal → Instruction)
+    ///   MULTISTEP → 3 (Goal → SubGoal → Plan → Instruction)
+    ///   OPEN_ENDED → 4+ (full pyramid, parallel approaches)
+    pub fn from_complexity(objective: String, complexity: &str) -> Self {
+        let approach_id = ApproachId::new();
+        let max_depth = match complexity {
+            "DIRECT" => 0,
+            "INVESTIGATE" => 2,
+            "MULTISTEP" => 3,
+            "OPEN_ENDED" => 4,
+            _ => 3, // conservative default
+        };
+        let mut graph = WorkGraph::new(objective);
+        graph
+            .approaches
+            .insert(approach_id.0.clone(), ApproachStatus::Active);
+        Self {
+            graph,
+            current_approach: approach_id,
+            max_depth,
+        }
+    }
+
+    /// Maximum allowed depth for this graph (set by complexity).
+    pub fn max_allowed_depth(&self) -> u8 {
+        self.max_depth
+    }
+
+    /// Whether the graph should be used at all (DIRECT complexity = no graph).
+    pub fn skip_graph(&self) -> bool {
+        self.max_depth == 0
     }
 
     pub fn graph(&self) -> &WorkGraph {

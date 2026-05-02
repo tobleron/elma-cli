@@ -1,5 +1,10 @@
 # 255 - Comic And Apple Book Package Adapters CBZ CBR IBA
 
+## Backlog Reconciliation (2026-05-02)
+
+Resume under Task 466 and Task 467 so format support claims, extraction cost, and cache behavior stay truthful.
+
+
 Status: Pending
 Priority: P2
 Depends on: 248, 249, 251

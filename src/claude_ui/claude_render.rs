@@ -1694,15 +1694,22 @@ fn render_footer_line(
     if let Some(state) = streaming_state.as_ref() {
         right_segments.push((state.clone(), dim_style));
     }
-    let mode = crate::ui_state::current_response_mode();
-    let mode_str = match mode {
+    let response_mode = crate::ui_state::current_response_mode();
+    let response_str = match response_mode {
         crate::ui_state::ResponseMode::Concise => "Concise",
         crate::ui_state::ResponseMode::Long => "Long",
+    };
+    let access_mode = crate::ui_state::current_access_mode();
+    let access_str = match access_mode {
+        crate::ui_state::AccessMode::Review => "Review",
+        crate::ui_state::AccessMode::Full => "Full",
     };
     if !right_segments.is_empty() {
         right_segments.push(("  ".to_string(), dim_style));
     }
-    right_segments.push((mode_str.to_string(), accent_style));
+    right_segments.push((response_str.to_string(), accent_style));
+    right_segments.push((" | ".to_string(), dim_style));
+    right_segments.push((access_str.to_string(), accent_style));
 
     // Width-aware rendering
     let available = width.saturating_sub(left_pad);

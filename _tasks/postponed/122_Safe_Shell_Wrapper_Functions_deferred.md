@@ -1,5 +1,10 @@
 # Task 122: Safe Shell Wrapper Functions
 
+## Backlog Reconciliation (2026-05-02)
+
+Resume through Task 442 path/argument hardening, Task 458 shell mutation rollback, and Task 459 execution profiles.
+
+
 ## Priority
 **P1 — Safety**
 **Created:** 2026-04-05

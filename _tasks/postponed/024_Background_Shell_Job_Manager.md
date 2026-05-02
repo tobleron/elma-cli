@@ -1,5 +1,10 @@
 # Task 160: Background Shell Job Manager
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 460 background job tooling and Task 459 sandboxed execution profiles.
+
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.

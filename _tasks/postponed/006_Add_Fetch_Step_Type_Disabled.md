@@ -1,5 +1,10 @@
 # Task 048: Add FETCH Step Type (DISABLED for Security)
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 485 for current tool-calling architecture. Do not reintroduce a DSL FETCH step; preserve disabled-by-default, security-gated behavior.
+
+
 ## Priority
 **P3 - LOW** (Future capability, must be disabled)
 

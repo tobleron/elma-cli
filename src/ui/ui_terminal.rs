@@ -1987,6 +1987,25 @@ impl TerminalUI {
                         );
                         self.pending_draw = true;
                     }
+                    'a' => {
+                        // Toggle access mode (Review <-> Full)
+                        use crate::ui_state::AccessMode;
+                        let new_mode = match crate::ui_state::current_access_mode() {
+                            AccessMode::Review => AccessMode::Full,
+                            AccessMode::Full => AccessMode::Review,
+                        };
+                        crate::ui_state::set_access_mode(new_mode.clone());
+                        let label = match new_mode {
+                            AccessMode::Review => "Review",
+                            AccessMode::Full => "Full",
+                        };
+                        self.push_notice(
+                            crate::claude_ui::UiNoticeKind::InputHint,
+                            crate::claude_ui::NoticePersistence::EphemeralPromptHint,
+                            &format!("Access mode: {}", label),
+                        );
+                        self.pending_draw = true;
+                    }
                     _ => {}
                 },
                 KeyCode::Char(c) => {

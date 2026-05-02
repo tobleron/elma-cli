@@ -57,4 +57,30 @@ mod tests {
         let names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
         assert!(names.contains(&"respond".to_string()));
     }
+
+    #[test]
+    fn test_tool_executor_parity() {
+        let tools = crate::tool_registry::build_current_tools();
+        let executor_handles = vec![
+            "observe",
+            "tool_search",
+            "shell",
+            "read",
+            "glob",
+            "patch",
+            "search",
+            "respond",
+            "summary",
+            "update_todo_list",
+            "edit",
+            "write",
+        ];
+        for name in executor_handles {
+            assert!(
+                tools.iter().any(|t| t.function.name == name),
+                "tool {} is handled by executor but not in registry",
+                name
+            );
+        }
+    }
 }

@@ -1,5 +1,10 @@
 # Task 162: Delegate Tool (Subagent Architecture)
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 492. Do not add delegation before recipe workflow Task 451 and headless event API Task 478 are done.
+
+
 ## Summary
 
 Implement delegated subagent execution - spawn child agent instances with isolated context, restricted toolsets, and their own terminal sessions. Supports single-task and parallel batch modes.

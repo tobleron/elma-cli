@@ -366,7 +366,6 @@ pub(crate) fn build_orchestrator_user_content(
     ws: &str,
     ws_brief: &str,
     messages: &[ChatMessage],
-    tool_registry: &crate::tools::ToolRegistry,
     formula_selection: &crate::formulas::FormulaSelectionResult,
 ) -> String {
     let features = ClassificationFeatures::from(route_decision);

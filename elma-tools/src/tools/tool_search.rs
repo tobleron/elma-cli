@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolPolicy, ToolRisk, ExecutorState};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -29,6 +29,15 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             workspace_scoped: true,
             shell_equivalents: Vec::new(),
             check_fn: None,
+            policy: ToolPolicy {
+                risks: vec![ToolRisk::ReadOnly],
+                executor_state: ExecutorState::PureRust,
+                requires_permission: false,
+                requires_prior_read: false,
+                concurrency_safe: true,
+                creates_artifacts: false,
+                mutates_workspace: false,
+            },
         },
     );
 }

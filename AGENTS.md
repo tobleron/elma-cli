@@ -29,7 +29,7 @@ Prompts must describe reasoning principles, not list examples. A prompt that is 
 
 ### 3. Maintain Semantic Continuity From User Intent To Final Answer
 
-The meaning of the user's request must survive every transformation: intent annotation → routing → formula selection → execution → final answer. If the user asks for X and the answer solves Y, that is a semantic continuity failure. Inspect continuity by comparing the raw prompt, intent annotation, chosen route, executed steps, and final answer.
+The meaning of the user's request must survive every transformation: intent annotation → classification → routing → complexity assessment → formula selection → work graph decomposition (Goal → SubGoal → Plan → Instruction) → approach execution → step execution → final answer. If the user asks for X and the answer solves Y, that is a semantic continuity failure. Inspect continuity by comparing the raw prompt, intent annotation, chosen route, graph nodes, executed steps, and final answer.
 
 ### 4. If A Model Is Too Weak For A Step, Decompose — Don't Bloat
 
@@ -39,6 +39,23 @@ When a small model struggles:
 - Then add a new focused intermediary intel unit if truly needed
 
 Never respond to small-model weakness by stuffing more examples, overfitting rules, forcing giant prompts, or merging cognitive jobs into one prompt. Preferred pattern: one intel unit, one role, one narrow decision.
+
+### 4a. Complexity Is The Main Gate
+
+Complexity assessment determines the maximum depth of the work graph before any work begins:
+
+| Complexity | Max Depth | Graph Layers |
+|------------|-----------|--------------|
+| DIRECT | 0 | Skip graph, go straight to instruction |
+| INVESTIGATE | 2 | Goal → Instruction |
+| MULTISTEP | 3 | Goal → SubGoal → Plan → Instruction |
+| OPEN_ENDED | 4+ | Full pyramid, parallel approaches |
+
+Never bypass complexity assessment. If a task exceeds its assessed depth, re-assess before adding layers.
+
+### 4b. Approaches Are Sibling Branches
+
+When an approach fails, the system forks a new sibling approach from the same objective — it does not continue down a failing branch. Each approach is a separate branch in the work graph with its own Goal → SubGoal → Plan → Instruction chain. The approach engine tracks failures, prunes exhausted branches, and spawns alternatives. Tasks are scoped to individual approaches.
 
 ### 5. Keep The Bottom Status Bar Limited To Core Runtime Metrics Only
 
@@ -76,6 +93,18 @@ If you believe the prompt needs adjustment:
 4. Only then update the prompt and its build-time hash
 
 This rule applies to all agents, including Elma itself, external coding assistants, and automated refactoring tools.
+
+### 9. Tasks Must Be Persisted, Not Memory-Only
+
+Todo tasks created during a session must persist to disk:
+- Per-session: `sessions/<id>/runtime_tasks/tasks.json` for session resume
+- Per-workspace: `_elma-tasks/NNN_{auto|user}_{slug}_{uid}.md` for cross-session traceability
+
+Two task types exist:
+- **auto**: Generated automatically when a work graph Instruction node resolves to a Step
+- **user**: Initiated by direct user request
+
+Task status flows: `pending → in_progress → completed|failed`. Never store tasks only in UI memory.
 
 ## Theme
 

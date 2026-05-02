@@ -1,5 +1,10 @@
 # Task 097: Tool Arsenal Refinement & Expansion
 
+## Backlog Reconciliation (2026-05-02)
+
+Split across Task 445 declaration/executor parity, Task 447 tool-context budgeting, and Task 457 rust-first file operations.
+
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.

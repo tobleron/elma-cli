@@ -1,9 +1,9 @@
-# Task 455: Session Runtime State Ownership Audit
+# Task 469: Session Runtime State Ownership Audit
 
 **Status:** pending
 **Priority:** MEDIUM
 **Source:** 2026-05-02 full codebase audit
-**Related:** pending Task 436, pending Task 434, completed Task 430, completed Task 285
+**Related:** completed Task 436, Task 470, completed Task 430, completed Task 285
 
 ## Summary
 
@@ -13,8 +13,8 @@ Audit session state writers and readers so runtime state, transcript, artifacts,
 
 - Session code spans `session_paths`, `session_write`, `session_flush`, `session_display`, `session_store`, `session_index`, `session_gc`, `session_hierarchy`, and `session_error`.
 - Completed Task 430 introduced slim session layout, while legacy files and folders remain as fallback paths.
-- pending Task 436 wants resume based on `session.json` and `session.md` without creating legacy duplicate folders/files.
-- pending Task 434 wants an action-observation event log without duplicating full transcript content.
+- completed Task 436 added resume behavior based on `session.json` and `session.md`; this audit should verify the implementation did not reintroduce duplicate legacy storage.
+- Task 470 wants an action-observation event log without duplicating full transcript content.
 
 ## User Decision Gate
 
@@ -31,7 +31,7 @@ Also ask when legacy folders should stop being read.
 1. Inventory every session writer and reader.
 2. Define canonical ownership for transcript, tool artifacts, summaries, event log, index, and errors.
 3. Present migration/compatibility choices to the user.
-4. Update Task 436 and Task 434 assumptions if needed.
+4. Update Task 470 assumptions and create a follow-up for completed Task 436 behavior if the audit finds drift.
 5. Add tests that normal operation does not create duplicate legacy state.
 
 ## Success Criteria

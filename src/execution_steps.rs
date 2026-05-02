@@ -542,11 +542,52 @@ fn handle_write_step(
     content: String,
     state: &mut ExecutionState,
 ) {
-    let full_path = if std::path::Path::new(&path).is_relative() {
-        workdir.join(&path)
-    } else {
-        path.clone().into()
-    };
+    if std::path::Path::new(&path).is_absolute() {
+        state.step_results.push(StepResult {
+            id: sid.to_string(),
+            kind: kind.to_string(),
+            purpose,
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: format!("absolute_path_not_allowed: {} — use workspace-relative path", path),
+            command: None,
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return;
+    }
+    let full_path = workdir.join(&path);
+    let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
+    if let Some(msg) = policy.blocked_message(&full_path, "write") {
+        state.step_results.push(StepResult {
+            id: sid.to_string(),
+            kind: kind.to_string(),
+            purpose: purpose.clone(),
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: msg,
+            command: None,
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return;
+    }
     let ok = std::fs::create_dir_all(full_path.parent().unwrap_or(workdir)).is_ok()
         && std::fs::write(&full_path, &content).is_ok();
     trace(args, &format!("write_step path={} ok={}", path, ok));
@@ -572,11 +613,52 @@ fn handle_delete_step(
     path: String,
     state: &mut ExecutionState,
 ) {
-    let full_path = if std::path::Path::new(&path).is_relative() {
-        workdir.join(&path)
-    } else {
-        path.clone().into()
-    };
+    if std::path::Path::new(&path).is_absolute() {
+        state.step_results.push(StepResult {
+            id: sid.to_string(),
+            kind: kind.to_string(),
+            purpose,
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: format!("absolute_path_not_allowed: {} — use workspace-relative path", path),
+            command: None,
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return;
+    }
+    let full_path = workdir.join(&path);
+    let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
+    if let Some(msg) = policy.blocked_message(&full_path, "delete") {
+        state.step_results.push(StepResult {
+            id: sid.to_string(),
+            kind: kind.to_string(),
+            purpose: purpose.clone(),
+            depends_on,
+            success_condition,
+            ok: false,
+            summary: msg,
+            command: None,
+            raw_output: None,
+            exit_code: None,
+            output_bytes: None,
+            truncated: false,
+            timed_out: false,
+            artifact_path: None,
+            artifact_kind: None,
+            outcome_status: None,
+            outcome_reason: None,
+        });
+        return;
+    }
     let ok =
         std::fs::remove_file(&full_path).is_ok() || std::fs::remove_dir_all(&full_path).is_ok();
     trace(args, &format!("delete_step path={} ok={}", path, ok));

@@ -57,10 +57,59 @@ pub(crate) async fn handle_read_step(
         );
         trace(args, &format!("read path={}", tp));
 
-        let full_path = if tp.starts_with('/') {
-            PathBuf::from(tp)
+        let full_path = if tp.starts_with('/') && Path::new(tp).is_absolute() {
+            state.step_results.push(StepResult {
+                id: sid.clone(),
+                kind: kind.to_string(),
+                purpose,
+                depends_on,
+                success_condition,
+                ok: false,
+                summary: format!("absolute_path_not_allowed: {} — use workspace-relative path", tp),
+                command: None,
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
+            });
+            state.halt = true;
+            return Ok(());
         } else {
-            workdir.join(tp)
+            let resolved = workdir.join(tp);
+            let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
+            if let Some(msg) = policy.blocked_message(&resolved, "read") {
+                state.step_results.push(StepResult {
+                    id: sid.clone(),
+                    kind: kind.to_string(),
+                    purpose: purpose.clone(),
+                    depends_on,
+                    success_condition,
+                    ok: false,
+                    summary: msg,
+                    command: None,
+                    raw_output: None,
+                    exit_code: None,
+                    output_bytes: None,
+                    truncated: false,
+                    timed_out: false,
+                    artifact_path: None,
+                    artifact_kind: None,
+                    outcome_status: None,
+                    outcome_reason: None,
+                });
+                state.halt = true;
+                return Ok(());
+            }
+            if policy.is_ignored(&resolved) {
+                trace(args, &format!("read skipped_ignored: {}", tp));
+                return Ok(());
+            }
+            resolved
         };
 
         if !full_path.exists() {

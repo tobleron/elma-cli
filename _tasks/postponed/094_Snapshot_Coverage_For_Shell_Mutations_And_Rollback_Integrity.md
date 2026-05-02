@@ -1,5 +1,10 @@
 # Task 094: Snapshot Coverage For Shell Mutations And Rollback Integrity
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 458. Use this file as historical acceptance criteria for shell mutation rollback coverage.
+
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.

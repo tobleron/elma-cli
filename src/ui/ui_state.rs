@@ -18,9 +18,22 @@ pub(crate) enum ResponseMode {
     Long,
 }
 
+/// Access mode: Review (default, with policy enforcement) or Full (bypass all restrictions).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum AccessMode {
+    Review,
+    Full,
+}
+
 impl Default for ResponseMode {
     fn default() -> Self {
         Self::Concise
+    }
+}
+
+impl Default for AccessMode {
+    fn default() -> Self {
+        Self::Review
     }
 }
 
@@ -41,6 +54,30 @@ pub(crate) fn current_response_mode() -> ResponseMode {
         .ok()
         .map(|guard| guard.clone())
         .unwrap_or(ResponseMode::Concise)
+}
+
+static ACCESS_MODE: OnceLock<Mutex<AccessMode>> = OnceLock::new();
+
+/// Set the current access mode.
+pub(crate) fn set_access_mode(mode: AccessMode) {
+    if let Ok(mut slot) = ACCESS_MODE.get_or_init(|| Mutex::new(AccessMode::Review)).lock() {
+        *slot = mode;
+    }
+}
+
+/// Get the current access mode.
+pub(crate) fn current_access_mode() -> AccessMode {
+    ACCESS_MODE
+        .get_or_init(|| Mutex::new(AccessMode::Review))
+        .lock()
+        .ok()
+        .map(|guard| guard.clone())
+        .unwrap_or(AccessMode::Review)
+}
+
+/// Check if full access mode is active (bypasses workspace policy).
+pub(crate) fn is_full_access() -> bool {
+    current_access_mode() == AccessMode::Full
 }
 
 /// Tracks intel unit failures: (unit_name -> [(error_message, count)])

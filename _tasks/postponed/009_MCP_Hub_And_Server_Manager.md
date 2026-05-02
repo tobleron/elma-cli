@@ -1,5 +1,10 @@
 # 142 MCP Hub And Server Manager
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 490 for the current extension gateway. Use this only as historical MCP design context.
+
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.

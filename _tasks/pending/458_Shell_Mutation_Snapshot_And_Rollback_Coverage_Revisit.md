@@ -1,9 +1,9 @@
-# Task 453: Shell Mutation Snapshot And Rollback Coverage Revisit
+# Task 458: Shell Mutation Snapshot And Rollback Coverage Revisit
 
 **Status:** pending
 **Priority:** HIGH
 **Source:** 2026-05-02 full codebase audit
-**Related:** postponed Task 094, pending Task 425, pending Task 406, completed Task 242, completed Task 325
+**Related:** postponed Task 094, pending Task 457, pending Task 459, completed Task 242, completed Task 325
 
 ## Summary
 
@@ -14,7 +14,7 @@ Close the recovery gap for shell-driven file mutations by deciding whether risky
 - Structured `Edit` steps create pre-edit snapshots.
 - Shell execution can still mutate files through `mv`, `cp`, redirection, scripts, or generated commands.
 - Shell preflight and permission gates classify risk, but rollback coverage is not guaranteed for shell mutations.
-- Task 425 plans native file operations, but raw shell remains available.
+- Task 457 plans native file operations, but raw shell remains available.
 
 ## User Decision Gate
 

@@ -1,9 +1,9 @@
-# Task 452: Cross Platform Portability Gate
+# Task 476: Cross Platform Portability Gate
 
 **Status:** pending
 **Priority:** MEDIUM
 **Source:** 2026-05-02 full codebase audit
-**Related:** postponed Task 073, pending Task 414
+**Related:** postponed Task 073, pending Task 475
 
 ## Summary
 
@@ -32,7 +32,7 @@ Scope the portability gate to that answer.
 1. Inventory platform-specific APIs and paths.
 2. Add cfg-gated abstractions for metadata, temp dirs, shell syntax, and PATH scans.
 3. Replace `/tmp` tests with `tempfile`.
-4. Add a no-network portability check to Task 414 release gate.
+4. Add a no-network portability check to Task 475 release gate.
 5. Document unsupported platforms clearly if the user chooses macOS-only.
 
 ## Success Criteria

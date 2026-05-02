@@ -181,7 +181,6 @@ pub(crate) async fn orchestrate_instruction_once(
     step_counter: &mut u32,
 ) -> Result<Vec<Step>> {
     let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let _tool_registry = ToolRegistry::new(&workspace_path);
 
     // Build capabilities list in plain English
     let capabilities = "Available capabilities:\n\
@@ -517,9 +516,8 @@ pub(crate) async fn orchestrate_program_once(
     ws_brief: &str,
     messages: &[ChatMessage],
 ) -> Result<(Program, String)> {
-    // Get tool registry for this workspace
-    let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let tool_registry = ToolRegistry::new(&workspace_path);
+    // Get cached tool registry (avoids repeated instantiation)
+    let tool_registry = crate::tool_registry::get_registry();
 
     // Select optimal formula based on complexity and efficiency
     let formula_selection = select_optimal_formula(
@@ -539,7 +537,6 @@ pub(crate) async fn orchestrate_program_once(
         ws,
         ws_brief,
         messages,
-        &tool_registry,
         &formula_selection,
     );
 

@@ -1,5 +1,10 @@
 # Task 083: Document Architecture Abstractions
 
+## Backlog Reconciliation (2026-05-02)
+
+Resume only after Task 466 establishes truthful document capabilities and Task 467 sets resource bounds/cache behavior.
+
+
 **Status:** POSTPONED until P0-1, P0-2, P0-3, P0-4 complete
 
 **Reason:** Per REPRIORITIZED_ROADMAP.md, these advanced features are blocked until the 4 foundational pillars are stable:

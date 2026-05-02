@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt};
+use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolRisk, ExecutorState};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
@@ -30,6 +30,9 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
         .with_shell_equivalents(vec!["grep", "rg", "ag", "ack"])
         .with_check_fn(|| {
             which::which("rg").is_ok() || which::which("grep").is_ok()
-        }),
+        })
+        .with_risks(vec![ToolRisk::ReadOnly])
+        .with_executor_state(ExecutorState::RustWithSystemDependency)
+        .concurrency_safe(true),
     );
 }

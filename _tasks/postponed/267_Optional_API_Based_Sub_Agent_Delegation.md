@@ -1,5 +1,10 @@
 # Task 267: Optional API-Based Sub-Agent Delegation (POSTPONED)
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 492. Keep delegation bounded, optional, and dependent on local/headless infrastructure first.
+
+
 ## Status: POSTPONED (Optional Feature - Disabled by Default)
 
 ## Priority: LOW

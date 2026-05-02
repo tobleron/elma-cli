@@ -1,5 +1,10 @@
 # Task 164: Enhanced Checkpoint Manager (Shadow Git)
 
+## Backlog Reconciliation (2026-05-02)
+
+Superseded by Task 472 session rewind/checkpoint UX and Task 458 shell mutation rollback coverage.
+
+
 ## Continuation Checklist
 - [ ] Re-read this task and all linked source/task references before editing.
 - [ ] Confirm the task is still valid against current `_tasks/TASKS.md`, `AGENTS.md`, and active master plans.
