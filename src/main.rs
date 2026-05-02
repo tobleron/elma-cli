@@ -118,6 +118,7 @@ mod orchestration_planning; // Planning Prior and Hierarchical Decomposition Mod
 mod orchestration_retry; // Retry orchestration and meta-review
 mod paths;
 mod permission_gate; // Task 117: Permission Gate for Destructive Commands
+mod patch_executor; // Task 455: Patch Tool Multi-File Atomic
 mod persistent_shell; // Task 288: Persistent Guarded Shell
 mod profile_sets;
 mod program;
