@@ -1003,8 +1003,20 @@ async fn exec_search(
     cmd.arg("-i")
         .arg("--line-number")
         .arg("--no-heading")
-        .arg("--color=never")
-        .arg(&pattern);
+        .arg("--color=never");
+
+    // Task 454: Honor literal_text and include schema fields
+    let literal_text = av["literal_text"].as_bool().unwrap_or(false);
+    if literal_text {
+        cmd.arg("-F"); // Fixed string (literal) search
+    }
+    cmd.arg(&pattern);
+
+    if let Some(include) = av["include"].as_str() {
+        if !include.is_empty() {
+            cmd.arg("--glob").arg(include);
+        }
+    }
 
     if let Some(p) = &sp {
         let search_path = workdir.join(p);
