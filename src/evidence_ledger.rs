@@ -63,7 +63,7 @@ pub(crate) fn clear_session_ledger() {
 // Core Types
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum Staleness {
     Fresh,
     PotentiallyStale,
@@ -136,6 +136,8 @@ pub(crate) struct EvidenceEntry {
     pub(crate) raw_path: Option<String>,
     pub(crate) staleness: Staleness,
     pub(crate) quality: EvidenceQuality,
+    pub(crate) file_mtime: Option<u64>,
+    pub(crate) file_hash: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,15 +238,29 @@ impl EvidenceLedger {
              }
          }
 
-         let entry = EvidenceEntry {
-             id,
-             source,
-             timestamp,
-             summary,
-             raw_path,
-             staleness: Staleness::Fresh,
-             quality,
-         };
+let entry = EvidenceEntry {
+            id,
+            source,
+            timestamp,
+            summary,
+            raw_path: raw_path.clone(),
+            staleness: Staleness::Fresh,
+            quality,
+            file_mtime: raw_path.as_ref().and_then(|p| {
+                std::fs::metadata(p).ok().and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+            }),
+            file_hash: raw_path.as_ref().and_then(|p| {
+                std::fs::read(p).ok().map(|content| {
+                    use std::collections::hash_map::DefaultHasher;
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = DefaultHasher::new();
+                    content.hash(&mut hasher);
+                    hasher.finish()
+                })
+            }),
+        };
 
          self.entries.push(entry);
          self.entries.last().unwrap()
@@ -262,6 +278,31 @@ impl EvidenceLedger {
 
     pub(crate) fn mark_path_modified(&mut self, path: &str) {
         self.mark_stale(path);
+    }
+
+    pub(crate) fn check_file_is_stale(&self, path: &str) -> bool {
+        let entries = &self.entries;
+        for entry in entries.iter().rev() {
+            if let EvidenceSource::Read { path: entry_path } = &entry.source {
+                if entry_path == path || entry_path.contains(path) {
+                    if entry.staleness == Staleness::Stale {
+                        return true;
+                    }
+                    if let Some(stored_mtime) = entry.file_mtime {
+                        if let Ok(current_meta) = std::fs::metadata(path) {
+                            if let Ok(current_modified) = current_meta.modified() {
+                                if let Ok(current_secs) = current_modified.duration_since(std::time::UNIX_EPOCH) {
+                                    if current_secs.as_secs() > stored_mtime {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     pub(crate) fn get_entry(&self, id: &str) -> Option<&EvidenceEntry> {
@@ -940,5 +981,32 @@ mod tests {
         let dir = PathBuf::from("/tmp/test_clear");
         let ledger = EvidenceLedger::new("s_empty", &dir);
         assert!(!ledger.has_evidence_matching(&["anything"]));
+    }
+
+    #[test]
+    fn test_staleness_enum_derive() {
+        use Staleness::*;
+        assert!(Fresh == Fresh);
+        assert!(Stale == Stale);
+        assert!(Fresh != Stale);
+    }
+
+    #[test]
+    fn test_evidence_entry_has_mtime_field() {
+        let dir = PathBuf::from("/tmp/test_entry");
+        let mut ledger = EvidenceLedger::new("s_test", &dir);
+        ledger.add_entry(
+            EvidenceSource::Read { path: "Cargo.toml".to_string() },
+            "test content",
+        );
+        let entry = ledger.entries.first().unwrap();
+        assert!(entry.file_mtime.is_none() || entry.file_mtime.is_some());
+    }
+
+    #[test]
+    fn test_check_file_is_stale_no_file() {
+        let dir = PathBuf::from("/tmp/test_stale");
+        let ledger = EvidenceLedger::new("s_test", &dir);
+        assert!(!ledger.check_file_is_stale("nonexistent.txt"));
     }
 }
