@@ -86,6 +86,14 @@ pub(crate) async fn execute_tool_call(
         "respond" => exec_respond(&args_value, &call_id, tui),
         "summary" => exec_summary(&args_value, &call_id, tui),
         "update_todo_list" => exec_update_todo_list(&args_value, &call_id, tui),
+        "stat" => exec_stat(&args_value, workdir, &call_id, tui),
+        "copy" => exec_copy(&args_value, workdir, &call_id, tui),
+        "move" => exec_move(&args_value, workdir, &call_id, tui),
+        "mkdir" => exec_mkdir(&args_value, workdir, &call_id, tui),
+        "trash" => exec_trash(&args_value, workdir, &call_id, tui),
+        "touch" => exec_touch(&args_value, workdir, &call_id, tui),
+        "file_size" => exec_file_size(&args_value, workdir, &call_id, tui),
+        "exists" => exec_exists(&args_value, workdir, &call_id, tui),
         unknown => ToolExecutionResult {
             tool_call_id: call_id,
             tool_name: tool_name.clone(),
@@ -1402,6 +1410,509 @@ fn exec_update_todo_list(
         tool_name: "update_todo_list".to_string(),
         ok: !content.starts_with("Error:"),
         content,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_stat(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "stat", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "stat".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+    if !full_path.exists() {
+        let error_msg = format!("Error: path not found: {}", path);
+        emit_tool_result(&mut tui, "stat", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "stat".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let metadata = match std::fs::metadata(&full_path) {
+        Ok(m) => m,
+        Err(e) => {
+            let error_msg = format!("Error: {}", e);
+            emit_tool_result(&mut tui, "stat", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "stat".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let file_type = if metadata.is_dir() { "directory" } else if metadata.is_file() { "file" } else { "other" };
+    let size = metadata.len();
+    let modified = metadata.modified()
+        .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).ok())
+        .ok()
+        .flatten();
+
+    let content = format!(
+        "Type: {}\nSize: {} bytes\nModified: {}",
+        file_type,
+        size,
+        modified.map(|s| s.to_string()).unwrap_or_else(|| "unknown".to_string())
+    );
+
+    emit_tool_result(&mut tui, "stat", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "stat".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_copy(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let source = av["source"].as_str().unwrap_or("");
+    let destination = av["destination"].as_str().unwrap_or("");
+
+    if source.is_empty() || destination.is_empty() {
+        let error_msg = "Error: source and destination required".to_string();
+        emit_tool_result(&mut tui, "copy", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "copy".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let src = workdir.join(source);
+    let dst = workdir.join(destination);
+
+    if !src.exists() {
+        let error_msg = format!("Error: source not found: {}", source);
+        emit_tool_result(&mut tui, "copy", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "copy".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "copy", &format!("{} -> {}", source, destination));
+
+    fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            let ty = entry.file_type()?;
+            let dest_path = dst.join(entry.file_name());
+            if ty.is_dir() {
+                copy_dir_recursive(&entry.path(), &dest_path)?;
+            } else {
+                std::fs::copy(entry.path(), dest_path)?;
+            }
+        }
+        Ok(())
+    }
+
+    let result = if src.is_dir() {
+        copy_dir_recursive(&src, &dst)
+    } else {
+        std::fs::copy(&src, &dst).map(|_| ())
+    };
+
+    let content = match &result {
+        Ok(_) => format!("Copied {} to {}", source, destination),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "copy", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "copy".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_move(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let source = av["source"].as_str().unwrap_or("");
+    let destination = av["destination"].as_str().unwrap_or("");
+
+    if source.is_empty() || destination.is_empty() {
+        let error_msg = "Error: source and destination required".to_string();
+        emit_tool_result(&mut tui, "move", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "move".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let src = workdir.join(source);
+    let dst = workdir.join(destination);
+
+    if !src.exists() {
+        let error_msg = format!("Error: source not found: {}", source);
+        emit_tool_result(&mut tui, "move", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "move".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "move", &format!("{} -> {}", source, destination));
+
+    let result = std::fs::rename(&src, &dst);
+    let content = match &result {
+        Ok(_) => format!("Moved {} to {}", source, destination),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "move", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "move".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_mkdir(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+    let parents = av["parents"].as_bool().unwrap_or(true);
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "mkdir", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "mkdir".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+    emit_tool_start(&mut tui, "mkdir", path);
+
+    let result = if parents {
+        std::fs::create_dir_all(&full_path)
+    } else {
+        std::fs::create_dir(&full_path)
+    };
+
+    let content = match &result {
+        Ok(_) => format!("Created directory: {}", path),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "mkdir", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "mkdir".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_trash(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "trash", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "trash".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+
+    if !full_path.exists() {
+        let error_msg = format!("Error: path not found: {}", path);
+        emit_tool_result(&mut tui, "trash", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "trash".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "trash", path);
+
+    let trash_dir = workdir.join(".trash");
+    let _ = std::fs::create_dir_all(&trash_dir);
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let trash_path = trash_dir.join(format!("{}_{}", timestamp, path.replace("/", "_")));
+
+    let result = std::fs::rename(&full_path, &trash_path);
+    let content = match &result {
+        Ok(_) => format!("Moved to trash: {}", path),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "trash", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "trash".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_touch(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "touch", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "touch".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+    emit_tool_start(&mut tui, "touch", path);
+
+    let result = std::fs::write(&full_path, "");
+    let content = match &result {
+        Ok(_) => format!("Touched: {}", path),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "touch", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "touch".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_file_size(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "file_size", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "file_size".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+
+    if !full_path.exists() {
+        let error_msg = format!("Error: path not found: {}", path);
+        emit_tool_result(&mut tui, "file_size", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "file_size".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    fn dir_size(p: &std::path::Path) -> u64 {
+        let mut size = 0u64;
+        if let Ok(entries) = std::fs::read_dir(p) {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    if meta.is_file() {
+                        size += meta.len();
+                    } else if meta.is_dir() {
+                        size += dir_size(&entry.path());
+                    }
+                }
+            }
+        }
+        size
+    }
+
+    let size = if full_path.is_dir() {
+        dir_size(&full_path)
+    } else {
+        std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0)
+    };
+
+    let content = format!("Size: {} bytes", size);
+    emit_tool_result(&mut tui, "file_size", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "file_size".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+fn exec_exists(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+    let check_type = av["type"].as_str().unwrap_or("any");
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "exists", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "exists".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+    let exists = full_path.exists();
+
+    let content = if !exists {
+        "exists: false".to_string()
+    } else {
+        let actual_type = if full_path.is_dir() { "dir" } else if full_path.is_file() { "file" } else { "other" };
+        let wanted_type = check_type;
+        let matches = wanted_type == "any" || wanted_type == actual_type;
+        format!("exists: true, type: {}, matches: {}", actual_type, matches)
+    };
+
+    emit_tool_result(&mut tui, "exists", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "exists".to_string(),
+        content,
+        ok: true,
         exit_code: None,
         timed_out: false,
         signal_killed: None,

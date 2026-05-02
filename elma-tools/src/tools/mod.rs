@@ -1,31 +1,47 @@
+mod copy;
 mod edit;
+mod exists;
 mod fetch;
+mod file_size;
 mod glob;
 mod ls;
+mod mkdir;
+pub(crate) mod r#move;
 mod observe;
 pub(crate) mod patch;
 mod read;
 mod respond;
 mod search;
 mod shell;
+mod stat;
 mod summary;
 mod todo;
 mod tool_search;
+mod touch;
+mod trash;
 mod write;
 
 pub(crate) fn register_all(builder: &mut crate::registry::RegistryBuilder) {
+    copy::register(builder);
     edit::register(builder);
+    exists::register(builder);
     fetch::register(builder);
+    file_size::register(builder);
     glob::register(builder);
     ls::register(builder);
+    mkdir::register(builder);
+    r#move::register(builder);
     observe::register(builder);
     patch::register(builder);
     read::register(builder);
     respond::register(builder);
     search::register(builder);
     shell::register(builder);
+    stat::register(builder);
     summary::register(builder);
     todo::register(builder);
     tool_search::register(builder);
+    touch::register(builder);
+    trash::register(builder);
     write::register(builder);
 }
