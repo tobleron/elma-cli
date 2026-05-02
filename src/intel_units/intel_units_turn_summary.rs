@@ -131,9 +131,19 @@ Output contract:
         let tools_used: Vec<String> = context
             .extra("tools_used")
             .and_then(|v| v.as_str())
-            .map(|s| s.split(',').map(|t| t.trim().to_string()).collect())
+            .map(|s| {
+                s.split(',')
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| !t.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
-        let tool_call_count: usize = tools_used.len();
+
+        let tool_call_count: usize = context
+            .extra("tool_call_count")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(tools_used.len());
 
         let final_excerpt = context
             .extra("final_text")
