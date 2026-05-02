@@ -1216,6 +1216,138 @@ fn exec_tool_search(
     }
 }
 
+// --- Interpreter Tools (Task 461) ---
+
+async fn exec_run_python(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let code = av["code"].as_str().unwrap_or("").to_string();
+    if code.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "run_python".to_string(),
+            content: "Error: empty code".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let timeout_seconds = av["timeout_seconds"].as_u64().unwrap_or(30);
+
+    emit_tool_start(&mut tui, "run_python", &code[..code.len().min(50)]);
+
+    match interpreter_tools::execute_code("python", &code, workdir, timeout_seconds, 1000).await {
+        Ok((stdout, stderr, exit_code)) => {
+            let mut output = String::new();
+            if !stdout.is_empty() {
+                output.push_str("--- stdout ---\n");
+                output.push_str(&stdout);
+            }
+            if !stderr.is_empty() {
+                if !output.is_empty() {
+                    output.push('\n');
+                }
+                output.push_str("--- stderr ---\n");
+                output.push_str(&stderr);
+            }
+            let ok = exit_code == 0;
+            emit_tool_result(&mut tui, "run_python", ok, &output);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "run_python".to_string(),
+                content: output,
+                ok,
+                exit_code: Some(exit_code),
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+        Err(e) => {
+            let msg = format!("Python execution error: {}", e);
+            emit_tool_result(&mut tui, "run_python", false, &msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "run_python".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+    }
+}
+
+async fn exec_run_node(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let code = av["code"].as_str().unwrap_or("").to_string();
+    if code.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "run_node".to_string(),
+            content: "Error: empty code".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let timeout_seconds = av["timeout_seconds"].as_u64().unwrap_or(30);
+
+    emit_tool_start(&mut tui, "run_node", &code[..code.len().min(50)]);
+
+    match interpreter_tools::execute_code("node", &code, workdir, timeout_seconds, 1000).await {
+        Ok((stdout, stderr, exit_code)) => {
+            let mut output = String::new();
+            if !stdout.is_empty() {
+                output.push_str("--- stdout ---\n");
+                output.push_str(&stdout);
+            }
+            if !stderr.is_empty() {
+                if !output.is_empty() {
+                    output.push('\n');
+                }
+                output.push_str("--- stderr ---\n");
+                output.push_str(&stderr);
+            }
+            let ok = exit_code == 0;
+            emit_tool_result(&mut tui, "run_node", ok, &output);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "run_node".to_string(),
+                content: output,
+                ok,
+                exit_code: Some(exit_code),
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+        Err(e) => {
+            let msg = format!("Node execution error: {}", e);
+            emit_tool_result(&mut tui, "run_node", false, &msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "run_node".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
+    }
+}
+
 // --- Background Job Tools (Task 460) ---
 
 async fn exec_job_start(
