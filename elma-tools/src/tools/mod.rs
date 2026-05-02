@@ -15,6 +15,7 @@ pub(crate) mod r#move;
 mod observe;
 pub(crate) mod patch;
 mod read;
+mod repo_map;
 mod respond;
 mod run_node;
 mod run_python;
@@ -46,6 +47,7 @@ pub(crate) fn register_all(builder: &mut crate::registry::RegistryBuilder) {
     observe::register(builder);
     patch::register(builder);
     read::register(builder);
+    repo_map::register(builder);
     respond::register(builder);
     run_node::register(builder);
     run_python::register(builder);

@@ -1216,6 +1216,38 @@ fn exec_tool_search(
     }
 }
 
+// --- Repo Map Tool (Task 463) ---
+
+async fn exec_repo_map(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let token_budget = av["token_budget"].as_u64().unwrap_or(2000) as usize;
+    let max_files = av["max_files"].as_u64().unwrap_or(50) as usize;
+
+    emit_tool_start(&mut tui, "repo_map", "building repo map");
+
+    let (output, tokens_used) = repo_map::build_repo_map(workdir, token_budget, max_files);
+
+    let content = format!(
+        "{}",
+        output
+    );
+
+    emit_tool_result(&mut tui, "repo_map", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "repo_map".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
 // --- Git Inspection Tool (Task 462) ---
 
 async fn exec_git_inspect(

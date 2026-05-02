@@ -71,6 +71,7 @@ mod execution_steps_shell;
 mod execution_steps_shell_exec;
 mod execution_steps_shell_preflight;
 mod execution_profiles; // Task 459: Sandboxed Execution Profile System
+mod repo_map; // Task 463: Symbol Aware Repo Map And Tag Cache
 mod interpreter_tools; // Task 461: Local Code Interpreter Tool Wrappers
 mod file_scout; // Task 198: Read-only whole-system file scout
 mod final_answer; // Task 384: Clean-Context Finalization Enforcement
