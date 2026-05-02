@@ -232,6 +232,66 @@ pub(crate) struct StepResult {
     pub(crate) outcome_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) enum ItemKind {
+    FilePath(String),
+    ShellOutput { command_hash: String, offset_bytes: u64, length_bytes: u64 },
+    SearchPage { query: String, file: String, start_line: u32, match_count: usize },
+    TextBlock { source_label: String },
+}
+
+impl ItemKind {
+    pub(crate) fn to_uri(&self) -> String {
+        match self {
+            ItemKind::FilePath(p) => p.clone(),
+            ItemKind::ShellOutput { command_hash, offset_bytes, length_bytes } => {
+                format!("shell://{command_hash}/offset={offset_bytes}/len={length_bytes}")
+            }
+            ItemKind::SearchPage { query, file, start_line, .. } => {
+                format!("search://{query}@{file}:{start_line}")
+            }
+            ItemKind::TextBlock { source_label } => {
+                format!("text://{source_label}")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct BatchableItem {
+    pub(crate) source_kind: ItemKind,
+    pub(crate) estimated_tokens: usize,
+    pub(crate) description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct BatchPlannerInput {
+    pub(crate) objective: String,
+    pub(crate) items: Vec<BatchableItem>,
+    pub(crate) available_budget_per_batch: usize,
+    pub(crate) response_buffer_tokens: usize,
+    pub(crate) max_items_per_batch: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct BatchGroup {
+    pub(crate) batch_number: usize,
+    pub(crate) item_uris: Vec<String>,
+    pub(crate) item_kinds: Vec<ItemKind>,
+    pub(crate) estimated_tokens: usize,
+    pub(crate) summary_prompt: String,
+    pub(crate) depends_on_previous: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct BatchPlan {
+    pub(crate) batches: Vec<BatchGroup>,
+    pub(crate) total_items: usize,
+    pub(crate) total_estimated_tokens: usize,
+    pub(crate) batch_count: usize,
+    pub(crate) estimated_total_cost_tokens: usize,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct ComplexityAssessment {
     #[serde(default)]

@@ -302,9 +302,9 @@ mod tests {
     #[test]
     fn test_token_count_estimator() {
         let caps = ModelCapabilities::default();
-        // "hello world" = 11 chars, / 3.5 ≈ 3 tokens
+        // "hello world" = 2 tokens in cl100k
         let count = token_count("hello world", &caps);
-        assert!(count >= 3 && count <= 4);
+        assert_eq!(count, 2);
     }
 
     #[test]
@@ -324,23 +324,8 @@ mod tests {
     }
 }
 
-const CHARS_PER_TOKEN_ESTIMATOR: f64 = 3.5;
-
 pub(crate) fn token_count(text: &str, capabilities: &ModelCapabilities) -> usize {
-    match capabilities.tokenizer {
-        TokenizerKind::Tiktoken | TokenizerKind::Cl100kBase => {
-            (text.len() as f64 / CHARS_PER_TOKEN_ESTIMATOR) as usize
-        }
-        TokenizerKind::Anthropic => {
-            (text.len() as f64 / CHARS_PER_TOKEN_ESTIMATOR) as usize
-        }
-        TokenizerKind::HuggingFace => {
-            (text.len() as f64 / CHARS_PER_TOKEN_ESTIMATOR) as usize
-        }
-        TokenizerKind::Estimator | TokenizerKind::None => {
-            (text.len() as f64 / CHARS_PER_TOKEN_ESTIMATOR) as usize
-        }
-    }
+    crate::token_counter::count_tokens_for_model(text, capabilities.tokenizer)
 }
 
 pub(crate) fn context_window_tokens(capabilities: &ModelCapabilities) -> usize {

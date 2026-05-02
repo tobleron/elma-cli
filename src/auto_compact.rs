@@ -10,9 +10,7 @@
 
 use crate::*;
 
-/// Approximate tokens per character for English text.
-/// Conservative estimate: 1 token ≈ 3.5 chars.
-const CHARS_PER_TOKEN: f64 = 3.5;
+/// Token counting uses tiktoken-rs cl100k_base encoding (Task 499).
 
 /// Default buffer tokens to keep free for model response + tool calls.
 /// 3000 tokens ≈ 10K chars, enough for a moderate response.
@@ -52,9 +50,9 @@ impl CompactTracker {
         }
     }
 
-    /// Estimate tokens from a string.
+    /// Count tokens using tiktoken-rs cl100k_base encoding.
     pub(crate) fn estimate_tokens(text: &str) -> usize {
-        (text.len() as f64 / CHARS_PER_TOKEN) as usize
+        crate::token_counter::count_tokens(text)
     }
 
     /// Update token count from current messages.
@@ -238,7 +236,8 @@ mod tests {
         let text = "Hello, world!";
         let tokens = CompactTracker::estimate_tokens(text);
         assert!(tokens > 0);
-        assert!(tokens < 10); // 13 chars / 3.5 ≈ 3-4 tokens
+        assert!(tokens < 10); // "Hello, world!" = 4 tokens in cl100k
+        assert_eq!(tokens, 4);
     }
 
     #[test]

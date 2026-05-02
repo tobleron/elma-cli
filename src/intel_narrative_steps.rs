@@ -93,6 +93,7 @@ pub(crate) fn step_kind(step: &Step) -> &'static str {
         Step::Explore { .. } => "explore",
         Step::Write { .. } => "write",
         Step::Delete { .. } => "delete",
+        Step::Batch { .. } => "batch",
     }
 }
 
@@ -139,6 +140,11 @@ pub(crate) fn step_detail(step: &Step) -> String {
         Step::Explore { objective, .. } => format!("Explore: \"{}\"", objective.trim()),
         Step::Write { path, .. } => format!("Write to \"{}\"", path.trim()),
         Step::Delete { path, .. } => format!("Delete \"{}\"", path.trim()),
+        Step::Batch { batches, .. } => {
+            format!("Batch process {} items in {} batches", 
+                batches.iter().map(|b| b.item_uris.len()).sum::<usize>(),
+                batches.len())
+        }
     }
 }
 
@@ -158,7 +164,8 @@ pub(crate) fn step_purpose(step: &Step) -> String {
         | Step::Respond { common, .. }
         | Step::Explore { common, .. }
         | Step::Write { common, .. }
-        | Step::Delete { common, .. } => common,
+        | Step::Delete { common, .. }
+        | Step::Batch { common, .. } => common,
     };
 
     if !common.purpose.trim().is_empty() {
@@ -254,7 +261,8 @@ pub(crate) fn step_id(step: &Step) -> &str {
         | Step::Respond { id, .. }
         | Step::Explore { id, .. }
         | Step::Write { id, .. }
-        | Step::Delete { id, .. } => id,
+        | Step::Delete { id, .. }
+        | Step::Batch { id, .. } => id,
     }
 }
 

@@ -22,10 +22,6 @@ use crate::*;
 /// and is protected from modification by CODEOWNERS, AGENTS.md Rule 8,
 /// and build-time hash verification.
 fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String {
-    let workspace_facts = runtime.ws.trim();
-
-    let workspace_brief = runtime.ws_brief.trim();
-
     let turn_summaries: Vec<String> = runtime
         .messages
         .iter()
@@ -56,14 +52,9 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
 
     let skill_context = build_skill_context(runtime);
 
-    let project_guidance = runtime.guidance.render_for_system_prompt();
-
     crate::prompt_core::assemble_system_prompt(
-        workspace_facts,
-        workspace_brief,
         &conversation,
         &skill_context,
-        &project_guidance,
     )
 }
 

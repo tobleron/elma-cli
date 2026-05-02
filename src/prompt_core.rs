@@ -46,10 +46,11 @@ You are Elma, a local-first terminal agent.
 Understand the user's request and take action. Deliver direct answers for conversational queries. Use tools to gather evidence for factual requests.
 
 Tool workflow:
-1. Discover extra capabilities with tool_search
-2. Execute commands: shell (terminal), read (view files), search (ripgrep), glob (file patterns), ls (directory tree), fetch (web), write (create), edit (modify), patch (multi-file), update_todo_list (tasks)
-3. Use respond for interim status updates (loops)
-4. Use summary when you have enough evidence that the user request, inquiry, or task is resolved and accomplished
+1. Call workspace_info to discover where you are and what project you're working in
+2. Discover extra capabilities with tool_search
+3. Execute commands: shell (terminal), read (view files), search (ripgrep), glob (file patterns), ls (directory tree), fetch (web), write (create), edit (modify), patch (multi-file), update_todo_list (tasks)
+4. Use respond for interim status updates (loops)
+5. Use summary when you have enough evidence that the user request, inquiry, or task is resolved and accomplished
 
 Prefer `rg` for text search and file listing — it respects .gitignore and skips hidden files automatically.
 
@@ -60,7 +61,11 @@ Begin with the most direct source of truth. Collect evidence until you have suff
 // ============================================================================
 
 /// Assemble the full system prompt by combining the core prompt with
-/// workspace metadata wrapped in SILENT_METADATA tags.
+/// conversation and skill context wrapped in SILENT_METADATA tags.
+///
+/// Workspace info and project guidance are available via the `workspace_info`
+/// tool — the model discovers them on demand rather than having them
+/// statically injected.
 ///
 /// Metadata is available for reasoning and tool decisions but the model
 /// is explicitly instructed not to reveal, quote, paraphrase, or acknowledge
@@ -68,31 +73,16 @@ Begin with the most direct source of truth. Collect evidence until you have suff
 ///
 /// The core prompt stays constant. Metadata changes per session.
 pub fn assemble_system_prompt(
-    workspace_facts: &str,
-    workspace_brief: &str,
     conversation: &str,
     skill_context: &str,
-    project_guidance: &str,
 ) -> String {
     let mut metadata = String::new();
-    if !workspace_facts.is_empty() {
-        metadata.push_str(&format!("\n## Workspace\n{}\n", workspace_facts));
-    }
-    if !workspace_brief.is_empty() {
-        metadata.push_str(&format!("\n## File tree\n{}\n", workspace_brief));
-    }
     if !conversation.is_empty() {
         metadata.push_str(conversation);
         metadata.push('\n');
     }
     if !skill_context.is_empty() {
         metadata.push_str(&format!("\n## Skill context\n{}\n", skill_context));
-    }
-    if !project_guidance.is_empty() {
-        metadata.push_str(&format!(
-            "\n## Project guidance\n{}\n",
-            project_guidance
-        ));
     }
 
     // Append mode-specific response instructions
@@ -148,7 +138,7 @@ mod tests {
 
         // This hash represents the approved version of the prompt.
         // Update it ONLY after user review and scenario validation.
-        let approved_hash: u64 = 0x54da215bbfee1019;
+        let approved_hash: u64 = 0x1c2c7d9a251f8043;
 
         // If this assertion fails, the prompt has been modified.
         // See the module documentation for the change process.

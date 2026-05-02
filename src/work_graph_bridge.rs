@@ -38,6 +38,10 @@ pub(crate) fn step_to_persisted_task(
         Step::Explore { id, objective, .. } => ("explore", objective.clone(), id.clone()),
         Step::Write { id, path, .. } => ("write", path.clone(), id.clone()),
         Step::Delete { id, path, .. } => ("delete", path.clone(), id.clone()),
+        Step::Batch { id, batches, .. } => {
+            let desc = format!("batch {} items", batches.iter().map(|b| b.item_uris.len()).sum::<usize>());
+            ("batch", desc, id.clone())
+        }
     };
 
     let description = if step_desc.len() > 200 {

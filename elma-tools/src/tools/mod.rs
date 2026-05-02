@@ -27,6 +27,7 @@ mod todo;
 mod tool_search;
 mod touch;
 mod trash;
+mod workspace_info;
 mod write;
 
 pub(crate) fn register_all(builder: &mut crate::registry::RegistryBuilder) {
@@ -59,5 +60,6 @@ pub(crate) fn register_all(builder: &mut crate::registry::RegistryBuilder) {
     tool_search::register(builder);
     touch::register(builder);
     trash::register(builder);
+    workspace_info::register(builder);
     write::register(builder);
 }

@@ -138,6 +138,71 @@ pub(crate) async fn run_autonomous_loop(
         max_steps: 8,
         recovery_failures: 0,
     };
+
+    // Task 501-502: Context-budget batch planner integration
+    // If the program has Read steps and complexity requires evidence, check if
+    // batch planning is needed to avoid context overflow.
+    if !matches!(complexity.complexity.as_str(), "DIRECT") && complexity.needs_evidence {
+        let has_read_steps = plan.current_program.steps.iter().any(|s| matches!(s, Step::Read { .. }));
+        if has_read_steps {
+            let read_paths: Vec<String> = plan.current_program.steps.iter()
+                .filter_map(|s| {
+                    if let Step::Read { path, paths, .. } = s {
+                        if let Some(p) = path { return Some(vec![p.clone()]); }
+                        if let Some(ps) = paths { return Some(ps.clone()); }
+                    }
+                    None
+                })
+                .flatten()
+                .collect();
+
+            if !read_paths.is_empty() && read_paths.len() > 3 {
+                let candidates: Vec<ScoutCandidate> = read_paths.iter().map(|p| {
+                    ScoutCandidate {
+                        path: p.clone(),
+                        reason: "explicitly requested".to_string(),
+                    }
+                }).collect();
+
+                let context_window = crate::auto_compact::DEFAULT_CONTEXT_WINDOW_TOKENS;
+                let conversation_tokens: usize = messages.iter()
+                    .map(|m| crate::token_counter::count_tokens(&m.content))
+                    .sum();
+
+                match crate::orchestration_planning::plan_batches_if_needed(
+                    client, &user_message, &candidates, context_window, conversation_tokens,
+                ).await {
+                    Ok(Some(batch_plan)) => {
+                        let batch_step = crate::orchestration_planning::batch_plan_to_step(
+                            &batch_plan, &user_message
+                        );
+                        let mut new_program = plan.current_program.clone();
+                        new_program.steps = vec![batch_step];
+                        plan.current_program = new_program;
+
+                        if let Some(ref mut t) = tui {
+                            t.push_meta_event(
+                                "BATCH_PLAN",
+                                &format!(
+                                    "{} items split into {} batches ({} estimated tokens total)",
+                                    batch_plan.total_items,
+                                    batch_plan.batch_count,
+                                    batch_plan.estimated_total_cost_tokens,
+                                ),
+                            );
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        if let Some(ref mut t) = tui {
+                            t.push_meta_event("BATCH_PLAN", &format!("error: {}", e));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut step_results = Vec::new();
     let mut final_reply = None;
     let mut reasoning_clean = true;

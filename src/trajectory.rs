@@ -179,10 +179,9 @@ pub(crate) struct TrajectoryCompressionResult {
 // Trajectory Compression Engine
 // ============================================================================
 
-/// Estimate tokens from text (same as auto_compact)
+/// Estimate tokens using tiktoken-rs cl100k_base encoding.
 fn estimate_tokens(text: &str) -> usize {
-    const CHARS_PER_TOKEN: f64 = 3.5;
-    (text.len() as f64 / CHARS_PER_TOKEN) as usize
+    crate::token_counter::count_tokens(text)
 }
 
 /// Compress a trajectory record into segments while preserving critical steps

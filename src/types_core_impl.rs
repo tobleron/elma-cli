@@ -216,7 +216,8 @@ impl Step {
             | Step::Respond { id, .. }
             | Step::Explore { id, .. }
             | Step::Write { id, .. }
-            | Step::Delete { id, .. } => id,
+            | Step::Delete { id, .. }
+            | Step::Batch { id, .. } => id,
         }
     }
 
@@ -236,6 +237,7 @@ impl Step {
             Step::Explore { .. } => "explore",
             Step::Write { .. } => "write",
             Step::Delete { .. } => "delete",
+            Step::Batch { .. } => "batch",
         }
     }
 
@@ -254,7 +256,8 @@ impl Step {
             | Step::Respond { common, .. }
             | Step::Explore { common, .. }
             | Step::Write { common, .. }
-            | Step::Delete { common, .. } => &common.purpose,
+            | Step::Delete { common, .. }
+            | Step::Batch { common, .. } => &common.purpose,
         }
     }
 }

@@ -94,6 +94,7 @@ fn step_risk_level(step: &Step) -> ProgramRisk {
         Step::Write { .. } => ProgramRisk::Medium,
         Step::Edit { .. } => ProgramRisk::High,
         Step::Delete { .. } => ProgramRisk::High,
+        Step::Batch { .. } => ProgramRisk::Low,
     }
 }
 
@@ -203,6 +204,7 @@ pub(crate) fn derive_risk_from_step(step: &Step) -> DerivedRisk {
         Step::Respond { .. } => DerivedRisk::ReadOnly,
         Step::Select { .. } => DerivedRisk::ReadOnly,
         Step::Plan { .. } | Step::MasterPlan { .. } | Step::Decide { .. } => DerivedRisk::ReadOnly,
+        Step::Batch { .. } => DerivedRisk::ReadOnly,
     }
 }
 
@@ -302,6 +304,9 @@ pub(crate) fn program_signature(program: &Program) -> String {
             Step::Explore { .. } => "explore".to_string(),
             Step::Write { path, .. } => format!("write:{}", path.trim()),
             Step::Delete { path, .. } => format!("delete:{}", path.trim()),
+            Step::Batch { batches, .. } => {
+                format!("batch:{} batches", batches.len())
+            }
         })
         .collect::<Vec<_>>()
         .join(" | ")
@@ -387,6 +392,7 @@ pub(crate) fn evaluate_program_for_scenario(
                     shape_errors.push(format!("step {sid} missing delete path"));
                 }
             }
+            Step::Batch { .. } => {}
         }
     }
 

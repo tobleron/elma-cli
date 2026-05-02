@@ -888,6 +888,92 @@ pub async fn try_hierarchical_decomposition_with_ladder(
     Ok(Some(masterplan))
 }
 
+pub async fn plan_batches_if_needed(
+    client: &reqwest::Client,
+    objective: &str,
+    candidate_paths: &[ScoutCandidate],
+    context_window_tokens: usize,
+    conversation_tokens: usize,
+) -> Result<Option<BatchPlan>> {
+    if candidate_paths.len() <= 1 {
+        return Ok(None);
+    }
+
+    let mut items: Vec<BatchableItem> = Vec::new();
+    let mut total_item_tokens: usize = 0;
+
+    for candidate in candidate_paths {
+        let full_path = std::path::Path::new(&candidate.path);
+        let content = match std::fs::read_to_string(full_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let estimated = crate::token_counter::count_tokens(&content);
+        total_item_tokens += estimated;
+        items.push(BatchableItem {
+            source_kind: ItemKind::FilePath(candidate.path.clone()),
+            estimated_tokens: estimated,
+            description: candidate.reason.clone(),
+        });
+    }
+
+    let overhead = 2000 + conversation_tokens;
+    let available = context_window_tokens.saturating_sub(overhead);
+    if total_item_tokens <= available {
+        return Ok(None);
+    }
+
+    let input = BatchPlannerInput {
+        objective: objective.to_string(),
+        items,
+        available_budget_per_batch: available,
+        response_buffer_tokens: 1500,
+        max_items_per_batch: 20,
+    };
+
+    let context = IntelContext::new(
+        objective.to_string(),
+        RouteDecision::default(),
+        String::new(),
+        String::new(),
+        vec![],
+        client.clone(),
+    );
+    let context = context.with_extra("input", serde_json::to_value(&input).unwrap_or_default())?;
+
+    let unit = BatchPlannerUnit;
+    let output = unit.execute_with_fallback(&context).await?;
+    let plan: BatchPlan = serde_json::from_value(output.data)
+        .map_err(|e| anyhow::anyhow!("batch plan parse: {}", e))?;
+
+    Ok(Some(plan))
+}
+
+pub fn batch_plan_to_step(plan: &BatchPlan, objective: &str) -> Step {
+    let batch_groups: Vec<BatchGroup> = plan.batches.iter().map(|b| {
+        BatchGroup {
+            batch_number: b.batch_number,
+            item_uris: b.item_uris.clone(),
+            item_kinds: b.item_kinds.clone(),
+            estimated_tokens: b.estimated_tokens,
+            summary_prompt: b.summary_prompt.clone(),
+            depends_on_previous: b.depends_on_previous,
+        }
+    }).collect();
+
+    Step::Batch {
+        id: format!("batch_{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() & 0xFFFF_FFFF),
+        batches: batch_groups,
+        common: StepCommon {
+            purpose: format!("Process {} items in {} batches to investigate: {}",
+                plan.total_items, plan.batch_count, objective),
+            depends_on: vec![],
+            success_condition: "All batches summarized, aggregated findings available".to_string(),
+            ..Default::default()
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

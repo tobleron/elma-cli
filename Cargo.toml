@@ -74,6 +74,7 @@ regex = "1.10"
 portable-pty = "0.6"
 markdown-to-ansi = "0.2"
 
+tiktoken-rs = "0.11"
 strip-ansi-escapes = "0.1"
 chrono = "0.4"
 rayon = "1.10"

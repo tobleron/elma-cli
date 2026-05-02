@@ -2,6 +2,7 @@
 //!
 //! Types - Core Types and Step Definitions
 
+use crate::types_api::BatchGroup;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -774,6 +775,14 @@ pub(crate) enum Step {
     Delete {
         id: String,
         path: String,
+        #[serde(flatten)]
+        common: StepCommon,
+    },
+    /// Process items in batches that each fit within one context window.
+    #[serde(rename = "batch")]
+    Batch {
+        id: String,
+        batches: Vec<BatchGroup>,
         #[serde(flatten)]
         common: StepCommon,
     },

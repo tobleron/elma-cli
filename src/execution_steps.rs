@@ -674,6 +674,227 @@ fn handle_delete_step(
 }
 
 #[allow(clippy::too_many_arguments)]
+async fn summarize_batch_content(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    batch_content: &str,
+    summary_prompt: &str,
+    objective: &str,
+) -> Result<String> {
+    let system_prompt = format!(
+        "You are a structured analysis summarizer. Your task: read the following content \
+         from multiple sources and produce a detailed summary focused on the objective: \"{}\". \n\
+         Include: key information found, relationships between items, and relevance to \
+         the objective. Be thorough — this summary may be the only representation of \
+         these items for later analysis. \n\
+         Output format: plain text paragraphs, no markdown headings.",
+        objective
+    );
+    let user_message = format!(
+        "{}\n\n## Item contents\n{}",
+        summary_prompt, batch_content
+    );
+    let req = mk_chat_req(cfg, system_prompt, user_message);
+    let sum_text = chat_once_get_text(client, chat_url, &req).await?;
+    Ok(sum_text)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_batch_step(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    session: &SessionPaths,
+    workdir: &PathBuf,
+    summarizer_cfg: &Profile,
+    batches: &[BatchGroup],
+    objective: &str,
+    state: &mut ExecutionState,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> Result<()> {
+    let mut batch_summaries: Vec<String> = Vec::new();
+    let mut total_items_processed: usize = 0;
+    let mut failures: Vec<String> = Vec::new();
+
+    for batch in batches {
+        if let Some(ref mut t) = tui {
+            t.set_coordinator_status(
+                format!("Batch {}/{}: processing {} items...",
+                    batch.batch_number, batches.len(), batch.item_uris.len()),
+                true,
+            );
+            let _ = t.pump_ui();
+        }
+
+        let mut batch_content = String::new();
+        for (i, kind) in batch.item_kinds.iter().enumerate() {
+            let item_uri = &batch.item_uris[i];
+
+            let content_result = match kind {
+                ItemKind::FilePath(path) => {
+                    let full_path = if path.starts_with('/') {
+                        std::path::PathBuf::from(path)
+                    } else {
+                        workdir.join(path)
+                    };
+                    match std::fs::read_to_string(&full_path) {
+                        Ok(c) => {
+                            let tokens = crate::token_counter::count_tokens(&c);
+                            Ok(format!("\n=== ITEM: {} ({} tokens, source=file) ===\n{}\n",
+                                path, tokens, c))
+                        }
+                        Err(e) => Err(format!("File read error: {} — {}", path, e)),
+                    }
+                }
+                ItemKind::ShellOutput { command_hash, offset_bytes, length_bytes } => {
+                    let artifact_key = format!("shell_output_{}", command_hash);
+                    if let Some(output) = state.artifacts.get(&artifact_key) {
+                        let start = *offset_bytes as usize;
+                        let end = (*offset_bytes + *length_bytes) as usize;
+                        let segment = output.get(start..end.min(output.len())).unwrap_or("");
+                        Ok(format!("\n=== ITEM: shell://{} (bytes {}-{}) ===\n{}\n",
+                            command_hash, offset_bytes, offset_bytes + length_bytes, segment))
+                    } else {
+                        Err(format!("Shell output artifact not found: {}", command_hash))
+                    }
+                }
+                ItemKind::SearchPage { query, file, start_line: _, match_count } => {
+                    let search_cmd = std::process::Command::new("rg")
+                        .args(["-n", "-C", "2", query, file])
+                        .output();
+                    match search_cmd {
+                        Ok(out) => {
+                            let text = String::from_utf8_lossy(&out.stdout);
+                            Ok(format!("\n=== ITEM: search://{}@{} ({} matches) ===\n{}\n",
+                                query, file, match_count, text))
+                        }
+                        Err(e) => Err(format!("Search error: {}@{} — {}", query, file, e)),
+                    }
+                }
+                ItemKind::TextBlock { source_label } => {
+                    let artifact_key = format!("text_block_{}", source_label);
+                    if let Some(text) = state.artifacts.get(&artifact_key) {
+                        Ok(format!("\n=== ITEM: text://{} ===\n{}\n", source_label, text))
+                    } else {
+                        Err(format!("Text block artifact not found: {}", source_label))
+                    }
+                }
+            };
+
+            match content_result {
+                Ok(content) => {
+                    batch_content.push_str(&content);
+                    total_items_processed += 1;
+                }
+                Err(err_msg) => {
+                    failures.push(format!("{} [{}]", err_msg, item_uri));
+                    batch_content.push_str(&format!("\n=== ITEM: {} (ERROR: {}) ===\n", item_uri, err_msg));
+                }
+            }
+        }
+
+        let mut summary_prompt = batch.summary_prompt.clone();
+
+        if batch.depends_on_previous && !batch_summaries.is_empty() {
+            summary_prompt.push_str(&format!(
+                "\n\nThis is batch {}/{}.\n", batch.batch_number, batches.len()
+            ));
+            summary_prompt.push_str("\n## Previous batch findings (for context, do not repeat)\n");
+            for (i, prior) in batch_summaries.iter().enumerate() {
+                let token_count = crate::token_counter::count_tokens(prior);
+                let display = if token_count > 500 {
+                    let cutoff = prior.char_indices()
+                        .nth(prior.len() / 4 * 3)
+                        .map(|(i, _)| i)
+                        .unwrap_or(prior.len());
+                    format!("{}... (truncated, {} total tokens)", &prior[..cutoff], token_count)
+                } else {
+                    prior.clone()
+                };
+                summary_prompt.push_str(&format!(
+                    "### Batch {} summary ({})\n{}\n\n", i + 1, token_count, display
+                ));
+            }
+            summary_prompt.push_str(
+                "Use the above context to avoid repeating findings. \
+                 Focus on new information and connections across batches. \
+                 Build cumulative understanding toward the objective."
+            );
+        }
+
+        let summary = summarize_batch_content(
+            client, chat_url, summarizer_cfg,
+            &batch_content, &summary_prompt, objective,
+        ).await?;
+
+        batch_summaries.push(summary.clone());
+
+        let artifact_key = format!("batch_summary_{}", batch.batch_number);
+        state.artifacts.insert(artifact_key, summary);
+
+        if let Some(ref mut t) = tui {
+            t.push_meta_event(
+                "BATCH",
+                &format!(
+                    "batch {}/{} complete: {} items processed, {} failures",
+                    batch.batch_number, batches.len(),
+                    batch.item_uris.len(), failures.len()
+                ),
+            );
+            let _ = t.pump_ui();
+        }
+    }
+
+    let mut aggregated = String::new();
+    aggregated.push_str(&format!(
+        "## Batch Processing Results: {} items across {} batches\n\n",
+        total_items_processed, batches.len()
+    ));
+
+    if !failures.is_empty() {
+        aggregated.push_str("### Warnings\n");
+        for f in &failures {
+            aggregated.push_str(&format!("- {}\n", f));
+        }
+        aggregated.push('\n');
+    }
+
+    for (i, summary) in batch_summaries.iter().enumerate() {
+        aggregated.push_str(&format!("### Batch {}\n{}\n\n", i + 1, summary));
+    }
+
+    state.artifacts.insert("aggregated_summary".to_string(), aggregated.clone());
+
+    let success = failures.is_empty() || failures.len() < batches.iter().map(|b| b.item_uris.len()).sum::<usize>() / 2;
+
+    state.step_results.push(StepResult {
+        id: format!("batch_{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() & 0xFFFF_FFFF),
+        kind: "batch".to_string(),
+        purpose: format!("Process {} items in {} batches", total_items_processed, batches.len()),
+        depends_on: vec![],
+        success_condition: "All batches completed with usable summaries".to_string(),
+        ok: success,
+        summary: aggregated,
+        command: None,
+        raw_output: None,
+        exit_code: None,
+        output_bytes: None,
+        truncated: false,
+        timed_out: false,
+        artifact_path: None,
+        artifact_kind: None,
+        outcome_status: Some(if success { "completed" } else { "partial" }.to_string()),
+        outcome_reason: if !failures.is_empty() {
+            Some(format!("{} item acquisition failures", failures.len()))
+        } else {
+            None
+        },
+    });
+
+    Ok(())
+}
+
 pub(crate) async fn handle_program_step(
     args: &Args,
     client: &reqwest::Client,
@@ -954,6 +1175,20 @@ pub(crate) async fn handle_program_step(
             path.clone(),
             state,
         ),
+        Step::Batch { ref batches, .. } => {
+            handle_batch_step(
+                args,
+                client,
+                chat_url,
+                session,
+                workdir,
+                summarizer_cfg,
+                batches,
+                objective,
+                state,
+                tui.as_deref_mut(),
+            ).await?
+        }
     }
 
     // Task 287: Add evidence ledger entry for legacy execution path

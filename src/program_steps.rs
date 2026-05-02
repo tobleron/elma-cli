@@ -20,6 +20,7 @@ pub(crate) fn step_kind(s: &Step) -> &'static str {
         Step::Explore { .. } => "explore",
         Step::Write { .. } => "write",
         Step::Delete { .. } => "delete",
+        Step::Batch { .. } => "batch",
     }
 }
 
@@ -36,7 +37,8 @@ pub(crate) fn step_id(s: &Step) -> &str {
         Step::Respond { id, .. }
         | Step::Explore { id, .. }
         | Step::Write { id, .. }
-        | Step::Delete { id, .. } => id,
+        | Step::Delete { id, .. }
+        | Step::Batch { id, .. } => id,
     }
 }
 
@@ -55,7 +57,8 @@ pub(crate) fn step_common(s: &Step) -> &StepCommon {
         Step::Respond { common, .. }
         | Step::Explore { common, .. }
         | Step::Write { common, .. }
-        | Step::Delete { common, .. } => common,
+        | Step::Delete { common, .. }
+        | Step::Batch { common, .. } => common,
     }
 }
 
@@ -79,6 +82,7 @@ pub(crate) fn step_purpose(s: &Step) -> String {
         Step::Explore { .. } => "explore".to_string(),
         Step::Write { .. } => "write".to_string(),
         Step::Delete { .. } => "delete".to_string(),
+        Step::Batch { .. } => "batch".to_string(),
     }
 }
 
@@ -191,6 +195,13 @@ pub(crate) fn program_step_json(step: &Step) -> serde_json::Value {
         }
         Step::Delete { path, .. } => {
             obj.insert("path".to_string(), serde_json::json!(path.trim()));
+        }
+        Step::Batch { batches, .. } => {
+            obj.insert("batch_count".to_string(), serde_json::json!(batches.len()));
+            obj.insert(
+                "item_count".to_string(),
+                serde_json::json!(batches.iter().map(|b| b.item_uris.len()).sum::<usize>()),
+            );
         }
     }
     serde_json::Value::Object(obj)

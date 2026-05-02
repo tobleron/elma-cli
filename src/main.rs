@@ -104,6 +104,7 @@ mod json_tuning; // JSON temperature tuning
 mod llm_config;
 mod llm_provider; // Task 278: Native Rust LLM API Client
 mod model_capabilities; // Task 448: Model Capability Registry And Token Budgeting
+mod token_counter; // Task 499: tiktoken-rs integration
 mod logging;
 mod markdown_ansi; // Markdown-to-ANSI terminal rendering
 mod metrics;

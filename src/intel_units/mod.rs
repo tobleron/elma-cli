@@ -24,6 +24,7 @@ pub(crate) mod intel_units_maestro;
 mod intel_units_repair;
 mod intel_units_responder;
 pub(crate) mod intel_units_task_management; // Task 494: Task creation intel unit
+mod intel_units_batch_planner; // Task 501: Context-budget batch planner
 mod intel_units_turn_summary;
 
 // Re-export maestro types for external use
@@ -48,6 +49,7 @@ pub(crate) use intel_units_intent::*;
 pub(crate) use intel_units_repair::*;
 pub(crate) use intel_units_responder::*;
 pub(crate) use intel_units_turn_summary::*;
+pub(crate) use intel_units_batch_planner::*; // Task 501
 
 use crate::intel_trait::*;
 use crate::*;

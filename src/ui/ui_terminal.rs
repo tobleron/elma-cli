@@ -734,10 +734,10 @@ impl TerminalUI {
         self.queued_submissions.drain(..).collect()
     }
 
-    /// Estimate tokens from text (rough: ~4 chars per token).
+    /// Count tokens using tiktoken-rs cl100k_base encoding.
     #[allow(dead_code)]
     pub(crate) fn estimate_tokens(text: &str) -> u64 {
-        text.len() as u64 / 4
+        crate::token_counter::count_tokens(text) as u64
     }
 
     /// Handle a mouse click in the transcript area to toggle tool trace collapse.
