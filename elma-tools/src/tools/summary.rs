@@ -4,7 +4,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "summary",
-            "Provide a final short summary when the task is COMPLETE. Use this only when you have fully answered the question or completed the request. Keep it brief and concise. This stops the tool loop.",
+            "Provide a short final summary when a MULTI-STEP task is COMPLETE. Use this only when you have gathered evidence, executed tools, and fully resolved the request. Do NOT use for simple greetings or conversational exchanges — use respond instead for those. This stops the tool loop.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
