@@ -153,6 +153,40 @@ pub(crate) async fn handle_shell_step(
         return Ok(());
     }
 
+    // Task 459: Check execution profile for command restrictions
+    if let Some(profile) = execution_profiles::get_execution_profile() {
+        if !execution_profiles::is_command_allowed(profile, &cmd) {
+            let msg = format!(
+                "Command blocked by execution profile '{}': command not allowed",
+                profile.name
+            );
+            trace(
+                args,
+                &format!("step_denied_profile id={sid} cmd={}", cmd.replace('\n', " ")),
+            );
+            state.step_results.push(StepResult {
+                id: sid.clone(),
+                kind: kind.clone(),
+                purpose: purpose.clone(),
+                depends_on: depends_on.clone(),
+                success_condition: success_condition.clone(),
+                ok: false,
+                summary: "denied_by_profile".to_string(),
+                command: Some(cmd.clone()),
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
+            });
+            return Ok(());
+        }
+    }
+
     // Display status message before execution
     let status_unit = StatusMessageUnit::new(status_message_cfg.clone());
     if let Ok(context) = IntelContext::new(

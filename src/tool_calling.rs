@@ -186,6 +186,27 @@ async fn exec_shell(
         };
     }
 
+    // Task 459: Check execution profile for command restrictions
+    if let Some(profile) = execution_profiles::get_execution_profile() {
+        if !execution_profiles::is_command_allowed(profile, &command) {
+            let msg = format!(
+                "Command blocked by execution profile '{}': command not allowed",
+                profile.name
+            );
+            trace(args, &format!("tool_call: shell PROFILE BLOCKED: {}", msg));
+            emit_tool_result(&mut tui, "shell", false, &msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "shell".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    }
+
     // Task 118: Log unscoped warnings to trace (warning is in error_guidance)
     if let Some(warning) = &preflight.error_guidance {
         trace(

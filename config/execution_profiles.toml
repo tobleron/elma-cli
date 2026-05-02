@@ -1,0 +1,29 @@
+# Execution Profiles for Elma CLI
+# Task 459: Sandboxed Execution Profile System
+#
+# Available profiles: local (default), restricted
+# Future: docker, e2b, remote
+
+[[profiles]]
+version = 1
+name = "local"
+backend = "local"
+workdir_root = ""
+network_policy = "allowed"
+writable_paths = []
+readonly_paths = []
+allowed_commands = []
+denied_commands = []
+env_passthrough = ["PATH", "HOME", "USER"]
+
+[[profiles]]
+version = 1
+name = "restricted"
+backend = "local"
+workdir_root = ""
+network_policy = "localhost_only"
+writable_paths = []
+readonly_paths = []
+allowed_commands = []
+denied_commands = ["rm", "rmdir", "dd", "mkfs"]
+env_passthrough = ["PATH"]

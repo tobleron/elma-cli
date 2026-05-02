@@ -259,6 +259,26 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         );
     }
 
+    // Task 459: Load execution profile
+    let execution_profile = execution_profiles::load_execution_profile(
+        cfg_root.to_str().unwrap_or_default(),
+        "local",
+    )
+    .unwrap_or_else(|e| {
+        trace(&args, &format!("execution_profile_load_failed: {}", e));
+        execution_profiles::default_local_profile()
+    });
+
+    // Initialize global execution profile
+    execution_profiles::init_execution_profile(execution_profile.clone());
+    trace(
+        &args,
+        &format!(
+            "execution_profile_loaded name={} backend={}",
+            execution_profile.name, execution_profile.backend
+        ),
+    );
+
     emit_startup_banner(
         &args,
         &chat_url,
@@ -290,7 +310,8 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         verbose: false,
         retry_attempt: 0,
         tool_registry: tool_discovery::ToolRegistry::new(),
-}))
+        execution_profile,
+    }))
 
 }
 

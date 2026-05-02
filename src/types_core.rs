@@ -192,6 +192,22 @@ pub(crate) struct ModelBehaviorProfile {
     pub(crate) preferred_reasoning_format: String,
 }
 
+/// Execution profile for shell and code-running tools.
+/// Defines the execution environment: local, restricted, containerized, or remote.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct ExecutionProfile {
+    pub(crate) version: u32,
+    pub(crate) name: String,
+    pub(crate) backend: String, // "local", "docker", "e2b", etc.
+    pub(crate) workdir_root: String,
+    pub(crate) network_policy: String, // "allowed", "localhost_only", "blocked"
+    pub(crate) writable_paths: Vec<String>,
+    pub(crate) readonly_paths: Vec<String>,
+    pub(crate) allowed_commands: Vec<String>,
+    pub(crate) denied_commands: Vec<String>,
+    pub(crate) env_passthrough: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct RuntimeGenerationDefaults {
     #[serde(default)]

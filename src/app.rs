@@ -72,6 +72,7 @@ pub(crate) struct AppRuntime {
     pub(crate) verbose: bool,
     pub(crate) retry_attempt: u32,
     pub(crate) tool_registry: tool_discovery::ToolRegistry,
+    pub(crate) execution_profile: ExecutionProfile,
 }
 
 pub(crate) async fn run(args: Args) -> Result<()> {
