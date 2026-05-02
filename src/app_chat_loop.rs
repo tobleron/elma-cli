@@ -146,46 +146,8 @@ async fn handle_chat_command(
             });
             handled!()
         }
-        "/resume" => {
-            let sessions_root = runtime
-                .session
-                .root
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| runtime.session.root.clone());
-            let current = runtime
-                .session
-                .root
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "current".to_string());
-            let mut options: Vec<String> = std::fs::read_dir(&sessions_root)
-                .ok()
-                .into_iter()
-                .flat_map(|it| it.filter_map(|e| e.ok()))
-                .filter_map(|e| {
-                    let path = e.path();
-                    if !path.is_dir() {
-                        return None;
-                    }
-                    let name = path.file_name()?.to_string_lossy().to_string();
-                    if !name.starts_with("s_") {
-                        return None;
-                    }
-                    let marker = if name == current { " (current)" } else { "" };
-                    Some(format!("{}{}", name, marker))
-                })
-                .collect();
-            options.sort();
-            options.reverse();
-            if options.is_empty() {
-                options.push("No sessions found".to_string());
-            }
-            options.push("Esc — Back to chat".to_string());
-            tui.set_modal(crate::ui_state::ModalState::Select {
-                title: "Resume Session".to_string(),
-                options,
-            });
+        "/sessions" | "/resume" => {
+            open_session_picker(runtime, tui);
             handled!()
         }
         "/tasks" => {
@@ -377,6 +339,28 @@ async fn handle_chat_command(
             Ok(true)
         }
     }
+}
+
+/// Open the session picker modal with current session list.
+fn open_session_picker(runtime: &mut AppRuntime, tui: &mut TerminalUI) {
+    let sessions_root = runtime
+        .session
+        .root
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| runtime.session.root.clone());
+    let current_id = runtime
+        .session
+        .root
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string());
+    let entries = crate::session_browser::load_session_picker_entries(&sessions_root, current_id.as_deref());
+    tui.set_modal(crate::ui_state::ModalState::SessionPicker {
+        entries,
+        selected: 0,
+        filter: String::new(),
+        error: None,
+    });
 }
 
 // --- Helpers extracted from run_chat_loop ---

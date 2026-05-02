@@ -1077,6 +1077,13 @@ impl TerminalUI {
                                 self.state.clear_modal();
                                 self.pending_draw = true;
                             }
+                            // For session picker, store selection and close (chat loop will handle resume)
+                            if let Some(ModalState::SessionPicker { selected, .. }) =
+                                &self.state.modal
+                            {
+                                self.state.clear_modal();
+                                self.pending_draw = true;
+                            }
                             continue;
                         }
                         KeyCode::Char('d') | KeyCode::Char('D') => {
@@ -1120,6 +1127,27 @@ impl TerminalUI {
                                 self.state.clear_modal();
                                 self.pending_draw = true;
                             }
+                            // N starts new session in session picker.
+                            if let Some(ModalState::SessionPicker { .. }) = &self.state.modal {
+                                // Clear modal and queue "new session" action
+                                self.state.clear_modal();
+                                self.input.set_content("/new-session");
+                                self.pending_draw = true;
+                            }
+                        }
+                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                            // R refreshes (placeholder — user can Esc and reopen with /sessions)
+                            if self.state.modal.is_some() {
+                                self.pending_draw = true;
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if let Some(ModalState::SessionPicker { filter, .. }) =
+                                &mut self.state.modal
+                            {
+                                filter.pop();
+                                self.pending_draw = true;
+                            }
                         }
                         KeyCode::Left => {
                             if let Some(ModalState::ToolApproval { selected, .. }) =
@@ -1154,10 +1182,26 @@ impl TerminalUI {
                             }
                         }
                         KeyCode::Char(c) => {
+                            // Session picker: use chars for filter
+                            if let Some(ModalState::SessionPicker { filter, .. }) =
+                                &mut self.state.modal
+                            {
+                                filter.push(c);
+                                self.pending_draw = true;
+                                continue;
+                            }
                             self.input.insert_char(c);
                             self.pending_draw = true;
                         }
                         KeyCode::Backspace => {
+                            // Session picker: backspace clears filter
+                            if let Some(ModalState::SessionPicker { filter, .. }) =
+                                &mut self.state.modal
+                            {
+                                filter.pop();
+                                self.pending_draw = true;
+                                continue;
+                            }
                             self.input.backspace();
                             self.pending_draw = true;
                         }

@@ -46,6 +46,12 @@ pub(crate) fn render_modal(
             render_notification(message, level, screen_width)
         }
         ModalState::Splash { content } => render_splash(content, screen_width),
+        ModalState::SessionPicker {
+            entries,
+            selected,
+            filter,
+            error,
+        } => render_session_picker(entries, *selected, filter, error, screen_width),
     };
 
     // Center vertically: calculate padding
@@ -477,5 +483,152 @@ mod tests {
         let line = wrap_in_borders("hello", 20);
         assert!(line.contains("│"));
         assert!(line.contains("hello"));
+    }
+
+    #[test]
+    fn test_render_session_picker_empty() {
+        use crate::session_browser::SessionPickerEntry;
+        let lines = render_session_picker(&[], 0, &"".to_string(), &None, 80);
+        assert!(lines.iter().any(|l| l.contains("no sessions")));
+    }
+
+    #[test]
+    fn test_render_session_picker_shows_entries() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        use crate::session_browser::SessionPickerEntry;
+        let entries = vec![SessionPickerEntry {
+            id: "s_10000_123456789".to_string(),
+            path: std::path::PathBuf::from("/tmp"),
+            status: "active".to_string(),
+            created_at_unix: now - 3600,
+            last_modified_unix: now - 60,
+            artifact_count: 0,
+            model: Some("test-model".to_string()),
+            workspace_root: None,
+            preview: "Hello world".to_string(),
+            is_current: false,
+            resumable: true,
+            warning: None,
+        }];
+        let lines = render_session_picker(&entries, 0, &"".to_string(), &None, 80);
+        let joined = lines.join("\n");
+        assert!(joined.contains("s_10000_123456789"));
+        assert!(joined.contains("Hello world"));
+        assert!(joined.contains("●")); // active status icon
+    }
+}
+
+// ── session picker render ─────────────────────────────────────────────
+
+fn render_session_picker(
+    entries: &[crate::session_browser::SessionPickerEntry],
+    selected: usize,
+    filter: &str,
+    error: &Option<String>,
+    _screen_width: usize,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+
+    lines.push("─ Sessions ─────────────────────────────────".to_string());
+    lines.push(" Enter=resume  N=new  R=refresh  Esc=close".to_string());
+    lines.push(String::new());
+
+    if let Some(err) = error {
+        lines.push(format!("⚠ {}", err));
+        lines.push(String::new());
+    }
+
+    if !filter.is_empty() {
+        lines.push(format!("  filter: {}", filter));
+        lines.push(String::new());
+    }
+
+    if entries.is_empty() {
+        if filter.is_empty() {
+            lines.push("  (no sessions)".to_string());
+            lines.push("  N — Start new session".to_string());
+        } else {
+            lines.push("  (no matching sessions)".to_string());
+            lines.push("  Clear filter with Backspace".to_string());
+        }
+        lines.push("  Esc — Back to chat".to_string());
+        return lines;
+    }
+
+    let max_visible = 12usize.min(entries.len());
+    let scroll_offset = if selected >= max_visible {
+        selected.saturating_sub(max_visible.saturating_sub(1))
+    } else {
+        0
+    };
+
+    for i in scroll_offset..(scroll_offset + max_visible).min(entries.len()) {
+        let entry = &entries[i];
+        let marker = if i == selected { "▸" } else { " " };
+        let curr = if entry.is_current { " ←" } else { "" };
+        let warn = entry
+            .warning
+            .as_ref()
+            .map(|w| format!(" [{}]", w))
+            .unwrap_or_default();
+
+        let status_icon = match entry.status.as_str() {
+            "completed" => "✓",
+            "error" => "✗",
+            "interrupted" => "⊘",
+            _ => "●",
+        };
+
+        let age = format_relative_age(entry.last_modified_unix);
+        let id_short = &entry.id[..entry.id.len().min(20)];
+        let model_str = entry
+            .model
+            .as_ref()
+            .map(|m| format!(" {}", m))
+            .unwrap_or_default();
+        let preview_str = if entry.preview.is_empty() {
+            String::new()
+        } else {
+            format!(" — {}", entry.preview)
+        };
+
+        let line = format!(
+            "{}{} {} {}{}{}{}{}",
+            marker, status_icon, id_short, age, model_str, curr, warn, preview_str,
+        );
+        lines.push(line);
+    }
+
+    if entries.len() > max_visible {
+        lines.push(format!(
+            "  … {} more (PgUp/PgDn)",
+            entries.len() - max_visible
+        ));
+    }
+
+    lines
+}
+
+fn format_relative_age(unix_s: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let diff = now.saturating_sub(unix_s);
+    if diff < 60 {
+        " just now".to_string()
+    } else if diff < 3600 {
+        format!(" {}m", diff / 60)
+    } else if diff < 86400 {
+        format!(" {}h", diff / 3600)
+    } else if diff < 604800 {
+        format!(" {}d", diff / 86400)
+    } else if diff < 2592000 {
+        format!(" {}w", diff / 604800)
+    } else {
+        format!(" {}mo", diff / 2592000)
     }
 }

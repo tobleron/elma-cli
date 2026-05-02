@@ -1,6 +1,6 @@
 # Master Plan
 
-Last updated: 2026-05-01 (expanded for source-agent tool parity, rust-first tools, pyramid orchestration, and plain-text terminal output)
+Last updated: 2026-05-02 (expanded with full-codebase audit backlog: dead code, coherence, duplication, hardening, security, and performance)
 
 This is the execution index for all current pending tasks. Use it to choose work in dependency order, not as a replacement for each task file. Each task file remains the implementation detail, verification commands, and done criteria.
 
@@ -13,6 +13,90 @@ This is the execution index for all current pending tasks. Use it to choose work
 - Keep intel-unit JSON simple: one nested object level maximum, three required fields by default, five total fields absolute maximum.
 - Surface routing, tool discovery, retries, compaction, stop reasons, and decomposition as transcript rows.
 - Failed approaches do not continue down the objective hierarchy; retry with a new approach toward the same original objective.
+
+## Wave 0: Full-Codebase Audit Backlog
+
+These tasks came from the 2026-05-02 repository audit. They are intentionally interactive: each task starts by asking the user which code paths to deprecate, keep, harden, or migrate so cleanup stays aligned with Elma's goals and pending feature work.
+
+### 437 Dead Code And Deprecation Decision Audit
+- Audit orphaned, legacy, unused, and misleading code paths before removal.
+- File: `_tasks/pending/437_Dead_Code_And_Deprecation_Decision_Audit.md`
+
+### 438 Tool Declaration And Executor Parity Reconciliation
+- Ensure every model-visible tool schema has an executor or is explicitly hidden/deferred.
+- File: `_tasks/pending/438_Tool_Declaration_Executor_Parity_Reconciliation.md`
+
+### 439 Core Tool Path Boundary And Argument Hardening
+- Harden read/search/observe/write/delete path handling and shell argument construction.
+- File: `_tasks/pending/439_Core_Tool_Path_Boundary_And_Argument_Hardening.md`
+
+### 440 Document Capability Truth And Adapter Reconciliation
+- Align document capability reports, docs, completed claims, and actual adapter code.
+- File: `_tasks/pending/440_Document_Capability_Truth_And_Adapter_Reconciliation.md`
+
+### 441 Request Pattern Builder Decomposition And Recipe Migration
+- Migrate brittle request-shape keyword builders into recipes, tests, or focused intel units.
+- File: `_tasks/pending/441_Request_Pattern_Builder_Decomposition_And_Recipe_Migration.md`
+
+### 442 Tool Registry Ownership Consolidation
+- Define one canonical owner for tool schemas, discovery, and policy metadata.
+- File: `_tasks/pending/442_Tool_Registry_Ownership_Consolidation.md`
+
+### 443 UI Renderer And Module Deprecation Decision
+- Decide canonical UI renderer ownership and deprecate stale UI modules safely.
+- File: `_tasks/pending/443_UI_Renderer_And_Module_Deprecation_Decision.md`
+
+### 444 Provider Connectivity And Endpoint Hardening
+- Fix duplicated endpoint construction and unify provider-aware connectivity checks.
+- File: `_tasks/pending/444_Provider_Connectivity_And_Endpoint_Hardening.md`
+
+### 445 Clippy Lint Gate Baseline Cleanup
+- Make the current Clippy baseline green and decide verification policy.
+- File: `_tasks/pending/445_Clippy_Lint_Gate_Baseline_Cleanup.md`
+
+### 446 Execution Metadata Truth And Risk Source Unification
+- Unify read-only/destructive/risk metadata across tools, steps, preflight, and policy.
+- File: `_tasks/pending/446_Execution_Metadata_Truth_And_Risk_Source_Unification.md`
+
+### 447 Document Extraction Resource Bounds And Cache Followthrough
+- Bound document sniffing/extraction and make document cache behavior real or explicit.
+- File: `_tasks/pending/447_Document_Extraction_Resource_Bounds_And_Cache_Followthrough.md`
+
+### 448 Task Ledger Drift And Completed Claim Reconciliation
+- Reconcile duplicate lifecycle entries and completed task claims that no longer match source.
+- File: `_tasks/pending/448_Task_Ledger_Drift_And_Completed_Claim_Reconciliation.md`
+
+### 449 Cargo Dependency And Feature Hygiene Audit
+- Audit dependencies, optional features, deprecated dev deps, and manifest hygiene.
+- File: `_tasks/pending/449_Cargo_Dependency_And_Feature_Hygiene_Audit.md`
+
+### 450 Startup Performance And Repeated Scan Reduction
+- Reduce redundant startup/per-turn scans without sacrificing grounding.
+- File: `_tasks/pending/450_Startup_Performance_And_Repeated_Scan_Reduction.md`
+
+### 451 Prompt Contract Principle-First Audit Non-Core
+- Audit non-core managed prompts without modifying protected `src/prompt_core.rs`.
+- File: `_tasks/pending/451_Prompt_Contract_Principle_First_Audit_Non_Core.md`
+
+### 452 Cross Platform Portability Gate
+- Add a portability audit for Unix-only APIs, temp paths, shell assumptions, and PATH scans.
+- File: `_tasks/pending/452_Cross_Platform_Portability_Gate.md`
+
+### 453 Shell Mutation Snapshot And Rollback Coverage Revisit
+- Decide rollback coverage for shell-driven file mutations.
+- File: `_tasks/pending/453_Shell_Mutation_Snapshot_And_Rollback_Coverage_Revisit.md`
+
+### 454 Search Tool Rust-First Execution Rewrite
+- Rewrite model-facing search to avoid shell-string construction and honor schema fields.
+- File: `_tasks/pending/454_Search_Tool_Rust_First_Execution_Rewrite.md`
+
+### 455 Session Runtime State Ownership Audit
+- Define canonical ownership for transcript, artifacts, summaries, event log, index, and store.
+- File: `_tasks/pending/455_Session_Runtime_State_Ownership_Audit.md`
+
+### 456 Absolute Path Whole-System Access User Policy Decision
+- Make a product-level decision on absolute paths and whole-system file access.
+- File: `_tasks/pending/456_Absolute_Path_Whole_System_Access_User_Policy_Decision.md`
 
 ## Wave 1: Highest-Gain Reliability And Tool Awareness
 
@@ -332,4 +416,3 @@ These tasks prove the system remains reliable as the tool surface grows.
 - Keep network/browser/MCP tools disabled by default and lower priority than offline equivalents.
 - Any new intel unit added by later tasks must obey Task 378 JSON limits.
 - Protect `src/prompt_core.rs` unless explicit user approval is recorded in the task.
-

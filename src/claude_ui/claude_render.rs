@@ -664,6 +664,80 @@ impl ClaudeRenderer {
             crate::ui_state::ModalState::Splash { content } => {
                 ("Elma".to_string(), content.clone())
             }
+            crate::ui_state::ModalState::SessionPicker {
+                entries,
+                selected,
+                filter,
+                error,
+            } => {
+                let mut text = String::new();
+                if let Some(err) = error {
+                    text.push_str(&format!("⚠ {}\n\n", err));
+                }
+                if !filter.is_empty() {
+                    text.push_str(&format!("filter: {}\n\n", filter));
+                }
+                if entries.is_empty() {
+                    text.push_str("(no sessions)\n");
+                    if !filter.is_empty() {
+                        text.push_str("Clear filter with Backspace.\n");
+                    }
+                    text.push_str("N — New session  Esc — Back");
+                } else {
+                    let max_visible = (modal_height as usize).saturating_sub(4).min(entries.len());
+                    let scroll_offset = if *selected >= max_visible {
+                        selected.saturating_sub(max_visible.saturating_sub(1))
+                    } else {
+                        0
+                    };
+                    for i in scroll_offset..(scroll_offset + max_visible).min(entries.len()) {
+                        let entry = &entries[i];
+                        let marker = if i == *selected { "▸ " } else { "  " };
+                        let curr = if entry.is_current { " ← current" } else { "" };
+                        let warn = entry
+                            .warning
+                            .as_ref()
+                            .map(|w| format!(" [{}]", w))
+                            .unwrap_or_default();
+                        let status_icon = match entry.status.as_str() {
+                            "completed" => "✓",
+                            "error" => "✗",
+                            "interrupted" => "⊘",
+                            _ => "●",
+                        };
+                        let age = format_relative_age(entry.last_modified_unix);
+                        let model_suffix = entry
+                            .model
+                            .as_ref()
+                            .map(|m| format!(" {}", m))
+                            .unwrap_or_default();
+                        let preview = if entry.preview.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" — {}", entry.preview)
+                        };
+                        text.push_str(&format!(
+                            "{}{} {} {}{}{}{}{}\n",
+                            marker,
+                            status_icon,
+                            &entry.id[..entry.id.len().min(20)],
+                            age,
+                            model_suffix,
+                            curr,
+                            warn,
+                            preview
+                        ));
+                    }
+                    if entries.len() > max_visible {
+                        text.push_str(&format!(
+                            "  … {} more (scroll with PgUp/PgDn)\n",
+                            entries.len() - max_visible
+                        ));
+                    }
+                    text.push_str("\nEnter resume  N new  R refresh  Esc");
+                }
+                ("Sessions".to_string(), text)
+            }
         };
 
         let block = ratatui::widgets::Block::default()
@@ -2126,5 +2200,27 @@ mod tests {
 
     fn fragments_contain(line: &ratatui::text::Line, needle: &str) -> bool {
         line.spans.iter().any(|s| s.content.contains(needle))
+    }
+}
+
+/// Format a unix timestamp as a short relative age string.
+fn format_relative_age(unix_s: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let diff = now.saturating_sub(unix_s);
+    if diff < 60 {
+        " just now".to_string()
+    } else if diff < 3600 {
+        format!(" {}m", diff / 60)
+    } else if diff < 86400 {
+        format!(" {}h", diff / 3600)
+    } else if diff < 604800 {
+        format!(" {}d", diff / 86400)
+    } else if diff < 2592000 {
+        format!(" {}w", diff / 604800)
+    } else {
+        format!(" {}mo", diff / 2592000)
     }
 }

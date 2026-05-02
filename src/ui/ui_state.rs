@@ -262,6 +262,13 @@ pub(crate) enum ModalState {
     Help { content: String },
     /// Selection list (delegates to inquire for actual prompting).
     Select { title: String, options: Vec<String> },
+    /// Session picker dialog (Task 436).
+    SessionPicker {
+        entries: Vec<crate::session_browser::SessionPickerEntry>,
+        selected: usize,
+        filter: String,
+        error: Option<String>,
+    },
     /// Settings display: provider, model, approval policy, paths.
     Settings { content: String },
     /// Usage/stats dialog: token count + cost.

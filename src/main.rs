@@ -17,6 +17,7 @@ pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 mod app;
 mod config_cmd;
+mod session_browser;
 mod approach_engine; // Task 390: Approach Branch Retry And Prune Engine
 mod app_bootstrap;
 mod app_bootstrap_core;
