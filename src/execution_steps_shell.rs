@@ -200,6 +200,24 @@ pub(crate) async fn handle_shell_step(
         return Ok(());
     }
 
+    // Task 458: Snapshot before risky shell commands
+    let risk = shell_preflight::classify_command(&cmd);
+    if matches!(risk, shell_preflight::RiskLevel::Caution | shell_preflight::RiskLevel::Dangerous(_)) {
+        match crate::snapshot::create_workspace_snapshot(
+            session,
+            workdir,
+            &format!("pre-shell snapshot before: {}", cmd),
+            true,
+        ) {
+            Ok(snapshot) => {
+                trace(args, &format!("snapshot_saved id={} for risky shell command", snapshot.snapshot_id));
+            }
+            Err(e) => {
+                trace(args, &format!("snapshot_failed: {}", e));
+            }
+        }
+    }
+
     execute_and_process_shell(
         args,
         client,

@@ -279,6 +279,23 @@ async fn exec_shell(
     // Replace spinner with TUI update for execution.
     emit_tool_progress(&mut tui, "shell", "executing command");
 
+    // Task 458: Snapshot before risky shell commands
+    if matches!(preflight.risk, shell_preflight::RiskLevel::Caution | shell_preflight::RiskLevel::Dangerous(_)) {
+        match crate::snapshot::create_workspace_snapshot(
+            session,
+            workdir,
+            &format!("pre-shell snapshot before: {}", command),
+            true,
+        ) {
+            Ok(snapshot) => {
+                trace(args, &format!("snapshot_saved id={} for risky shell command", snapshot.snapshot_id));
+            }
+            Err(e) => {
+                trace(args, &format!("snapshot_failed: {}", e));
+            }
+        }
+    }
+
     match run_shell_persistent(&command, workdir).await {
         Ok(er) => {
             let success = er.exit_code == 0;
