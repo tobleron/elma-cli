@@ -1225,19 +1225,24 @@ pub(crate) async fn run_tool_loop(
                             "tool_loop: summary returned empty answer; continuing loop",
                         );
                     } else {
-                        // Run FinalSummaryUnit to generate concise summary using original request
-                        let final_summary = run_final_summary_intel(
-                            args,
-                            client,
-                            summarizer_cfg,
-                            &original_user_request,
-                            &raw_content,
-                        )
-                        .await;
-                        let final_answer = if let Some(summary) = final_summary {
-                            summary
-                        } else {
+                        // For simple turns (few iterations, few tool calls), use
+                        // the model's own summary content directly. The intel
+                        // summarizer can produce structured output that replaces
+                        // natural responses for simple conversational exchanges.
+                        let is_simple_turn = stop_policy.total_tool_calls() <= 2
+                            && stop_policy.iteration() <= 2;
+                        let final_answer = if is_simple_turn {
                             raw_content
+                        } else {
+                            let final_summary = run_final_summary_intel(
+                                args,
+                                client,
+                                summarizer_cfg,
+                                &original_user_request,
+                                &raw_content,
+                            )
+                            .await;
+                            final_summary.unwrap_or(raw_content)
                         };
 
                         return Ok(ToolLoopResult {
