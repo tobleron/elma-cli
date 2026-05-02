@@ -10,10 +10,23 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{broadcast, Mutex, RwLock};
+
+static TASK_MANAGER: OnceLock<Arc<TaskManager>> = OnceLock::new();
+
+/// Initialize the global task manager.
+pub(crate) fn init_task_manager(config: BackgroundTaskConfig) {
+    let _ = TASK_MANAGER.set(Arc::new(TaskManager::new(config)));
+}
+
+/// Get the global task manager.
+pub(crate) fn get_task_manager() -> Option<&'static Arc<TaskManager>> {
+    TASK_MANAGER.get()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BackgroundTaskStatus {
@@ -314,6 +327,7 @@ impl TaskManager {
                         task.status = BackgroundTaskStatus::Failed;
                         task.exit_code = Some(-1);
                         task.stderr_buffer.push("Task timed out".to_string());
+                        tracing::info!(task_id = %task_id, timeout_s = %timeout.as_secs(), "job_timeout");
                         break;
                     }
 
@@ -329,6 +343,7 @@ impl TaskManager {
                             "Memory limit exceeded: {}MB > {}MB",
                             current_mem, limit_mem
                         ));
+                        tracing::info!(task_id = %task_id, memory_mb = %current_mem, limit_mb = %limit_mem, "job_oom");
                         break;
                     }
 
@@ -347,10 +362,12 @@ impl TaskManager {
                             } else {
                                 BackgroundTaskStatus::Failed
                             };
+                            tracing::info!(task_id = %task_id, status = %task.status, exit_code = ?task.exit_code, "job_finished");
                         }
                         Err(e) => {
                             task.status = BackgroundTaskStatus::Failed;
                             task.stderr_buffer.push(format!("Process error: {}", e));
+                            tracing::info!(task_id = %task_id, error = %e, "job_error");
                         }
                     }
                     break;
@@ -361,6 +378,7 @@ impl TaskManager {
                         let mut task = task_arc.lock().await;
                         let _ = child.kill().await;
                         task.status = BackgroundTaskStatus::Cancelled;
+                        tracing::info!(task_id = %task_id, "job_cancelled");
                         break;
                     }
                 }

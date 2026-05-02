@@ -1216,6 +1216,334 @@ fn exec_tool_search(
     }
 }
 
+// --- Background Job Tools (Task 460) ---
+
+async fn exec_job_start(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let command = av["command"].as_str().unwrap_or("").to_string();
+    if command.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "job_start".to_string(),
+            content: "Error: empty command".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    // Task 460: Check execution profile for command restrictions
+    if let Some(profile) = execution_profiles::get_execution_profile() {
+        if !execution_profiles::is_command_allowed(profile, &command) {
+            let msg = format!(
+                "Job start blocked by execution profile '{}': command not allowed",
+                profile.name
+            );
+            emit_tool_result(&mut tui, "job_start", false, &msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "job_start".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    }
+
+    let name = av["name"].as_str().unwrap_or("").to_string();
+    let memory_limit_mb = av["memory_limit_mb"].as_u64();
+    let timeout_seconds = av["timeout_seconds"].as_u64();
+
+    let task_manager = match background_task::get_task_manager() {
+        Some(tm) => tm.clone(),
+        None => {
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "job_start".to_string(),
+                content: "Error: TaskManager not initialized".to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    emit_tool_start(&mut tui, "job_start", &command);
+
+    let id = match task_manager.create_task(
+        if name.is_empty() { "background_job".to_string() } else { name },
+        command.clone(),
+        workdir.clone(),
+        memory_limit_mb,
+        timeout_seconds,
+    ).await {
+        Ok(id) => id,
+        Err(e) => {
+            let msg = format!("Failed to create task: {}", e);
+            emit_tool_result(&mut tui, "job_start", false, &msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "job_start".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    if let Err(e) = task_manager.start_task(&id).await {
+        let msg = format!("Failed to start task: {}", e);
+        emit_tool_result(&mut tui, "job_start", false, &msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "job_start".to_string(),
+            content: msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let content = format!("Job started with ID: {}", id);
+    emit_tool_result(&mut tui, "job_start", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "job_start".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+async fn exec_job_status(
+    av: &serde_json::Value,
+    _workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let job_id = av["job_id"].as_str().unwrap_or("").to_string();
+    if job_id.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "job_status".to_string(),
+            content: "Error: empty job_id".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let task_manager = match background_task::get_task_manager() {
+        Some(tm) => tm.clone(),
+        None => {
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "job_status".to_string(),
+                content: "Error: TaskManager not initialized".to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    emit_tool_start(&mut tui, "job_status", &job_id);
+
+    let task = match task_manager.get_task(&job_id).await {
+        Some(t) => t,
+        None => {
+            let msg = format!("Job not found: {}", job_id);
+            emit_tool_result(&mut tui, "job_status", false, &msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "job_status".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let runtime = task.runtime_seconds().unwrap_or(0);
+    let content = format!(
+        "Job ID: {}\nName: {}\nStatus: {}\nExit code: {}\nRuntime: {}s\nMemory: {}MB",
+        task.id,
+        task.name,
+        task.status,
+        task.exit_code.map_or("N/A".to_string(), |c| c.to_string()),
+        runtime,
+        task.memory_usage_mb
+    );
+
+    emit_tool_result(&mut tui, "job_status", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "job_status".to_string(),
+        content,
+        ok: true,
+        exit_code: task.exit_code,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+async fn exec_job_output(
+    av: &serde_json::Value,
+    _workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let job_id = av["job_id"].as_str().unwrap_or("").to_string();
+    if job_id.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "job_output".to_string(),
+            content: "Error: empty job_id".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let task_manager = match background_task::get_task_manager() {
+        Some(tm) => tm.clone(),
+        None => {
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "job_output".to_string(),
+                content: "Error: TaskManager not initialized".to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    emit_tool_start(&mut tui, "job_output", &job_id);
+
+    let task = match task_manager.get_task(&job_id).await {
+        Some(t) => t,
+        None => {
+            let msg = format!("Job not found: {}", job_id);
+            emit_tool_result(&mut tui, "job_output", false, &msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "job_output".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let mut output = String::new();
+    output.push_str("--- stdout ---\n");
+    for line in &task.stdout_buffer {
+        output.push_str(line);
+        output.push('\n');
+    }
+    output.push_str("\n--- stderr ---\n");
+    for line in &task.stderr_buffer {
+        output.push_str(line);
+        output.push('\n');
+    }
+
+    emit_tool_result(&mut tui, "job_output", true, &output);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "job_output".to_string(),
+        content: output,
+        ok: true,
+        exit_code: task.exit_code,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+async fn exec_job_stop(
+    av: &serde_json::Value,
+    _workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let job_id = av["job_id"].as_str().unwrap_or("").to_string();
+    if job_id.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "job_stop".to_string(),
+            content: "Error: empty job_id".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let task_manager = match background_task::get_task_manager() {
+        Some(tm) => tm.clone(),
+        None => {
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "job_stop".to_string(),
+                content: "Error: TaskManager not initialized".to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    emit_tool_start(&mut tui, "job_stop", &job_id);
+
+    if let Err(e) = task_manager.cancel_task(&job_id).await {
+        let msg = format!("Failed to stop job: {}", e);
+        emit_tool_result(&mut tui, "job_stop", false, &msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "job_stop".to_string(),
+            content: msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let content = format!("Job {} stopped", job_id);
+    emit_tool_result(&mut tui, "job_stop", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "job_stop".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
