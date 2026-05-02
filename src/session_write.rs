@@ -162,8 +162,7 @@ pub(crate) fn write_thinking_log(
 /// Write goal state into the session metadata file (session.json).
 pub(crate) fn save_goal_state(session_root: &PathBuf, goal_state: &GoalState) -> Result<PathBuf> {
     mutate_session_doc(session_root, |doc| {
-        doc["goal_state"] = serde_json::to_value(goal_state)
-            .expect("serialize goal state");
+        doc["goal_state"] = serde_json::to_value(goal_state).expect("serialize goal state");
     })
 }
 
@@ -190,7 +189,11 @@ pub(crate) fn write_summary_markdown(
 ) {
     let summaries_dir = session_root.join("summaries");
     if let Err(e) = std::fs::create_dir_all(&summaries_dir) {
-        tracing::warn!("Failed to create summaries dir '{}': {}", summaries_dir.display(), e);
+        tracing::warn!(
+            "Failed to create summaries dir '{}': {}",
+            summaries_dir.display(),
+            e
+        );
         return;
     }
 
@@ -297,13 +300,33 @@ pub(crate) fn mark_summary_applied(session_root: &Path, turn_number: usize) -> R
 
 /// Entry kinds for the session markdown transcript.
 pub(crate) enum MdEntry {
-    User { content: String },
-    Assistant { content: String },
-    Thinking { content: String },
-    ToolStart { name: String, input: String },
-    ToolProgress { name: String, message: String },
-    ToolResult { name: String, success: bool, output: String, duration_ms: Option<u64> },
-    Meta { label: String, detail: String },
+    User {
+        content: String,
+    },
+    Assistant {
+        content: String,
+    },
+    Thinking {
+        content: String,
+    },
+    ToolStart {
+        name: String,
+        input: String,
+    },
+    ToolProgress {
+        name: String,
+        message: String,
+    },
+    ToolResult {
+        name: String,
+        success: bool,
+        output: String,
+        duration_ms: Option<u64>,
+    },
+    Meta {
+        label: String,
+        detail: String,
+    },
 }
 
 /// Append a formatted entry to `session.md` under the session root.
@@ -333,7 +356,12 @@ pub(crate) fn append_session_markdown(session_root: &Path, entry: &MdEntry) {
         MdEntry::ToolProgress { name, message } => {
             line = format!("> `{name}` {message}\n");
         }
-        MdEntry::ToolResult { name, success, output, duration_ms } => {
+        MdEntry::ToolResult {
+            name,
+            success,
+            output,
+            duration_ms,
+        } => {
             let status = if *success { "✓" } else { "✗" };
             let preview: String = output.chars().take(200).collect();
             let suffix = if output.len() > 200 { "…" } else { "" };
@@ -354,6 +382,45 @@ pub(crate) fn append_session_markdown(session_root: &Path, entry: &MdEntry) {
         .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()))
     {
         tracing::warn!("Failed to append to session.md: {}", e);
+    }
+}
+
+// ── terminal_transcript.txt append ────────────────────────────────────
+
+/// Append a line to `terminal_transcript.txt` under the session root.
+/// Creates the file with a header if it does not exist.
+pub(crate) fn append_terminal_transcript(session_root: &Path, line: &str) {
+    let path = session_root.join("terminal_transcript.txt");
+    // Ensure parent directory exists (should already exist from bootstrap, but guard against edge cases)
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            tracing::warn!("Failed to create terminal transcript parent dir: {}", e);
+            return;
+        }
+    }
+    let is_new = !path.exists();
+    let mut file = match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::warn!("Failed to open terminal_transcript.txt: {}", e);
+            return;
+        }
+    };
+    if is_new {
+        let header = format!(
+            "=== Terminal Transcript ({}) ===\n\n",
+            chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%:z")
+        );
+        if let Err(e) = std::io::Write::write_all(&mut file, header.as_bytes()) {
+            tracing::warn!("Failed to write terminal transcript header: {}", e);
+        }
+    }
+    if let Err(e) = std::io::Write::write_all(&mut file, line.as_bytes()) {
+        tracing::warn!("Failed to append to terminal_transcript.txt: {}", e);
     }
 }
 

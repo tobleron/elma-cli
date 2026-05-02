@@ -339,7 +339,8 @@ fn open_session_picker(runtime: &mut AppRuntime, tui: &mut TerminalUI) {
         .root
         .file_name()
         .map(|s| s.to_string_lossy().to_string());
-    let entries = crate::session_browser::load_session_picker_entries(&sessions_root, current_id.as_deref());
+    let entries =
+        crate::session_browser::load_session_picker_entries(&sessions_root, current_id.as_deref());
     tui.set_modal(crate::ui_state::ModalState::SessionPicker {
         entries,
         selected: 0,
@@ -610,7 +611,8 @@ async fn run_reflection_loop(
 }
 
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
-    let mut tui = TerminalUI::new().context("Failed to initialize Terminal UI")?;
+    let mut tui = TerminalUI::new(Some(runtime.session.root.clone()))
+        .context("Failed to initialize Terminal UI")?;
 
     // Initialize safe mode from CLI flag / env var
     if runtime.args.disable_guards {
@@ -695,6 +697,8 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         // Clear previous turn's status thread (respects min-visible window)
         tui.clear_status();
+
+        runtime.turn_count += 1;
 
         tui.add_message(MessageRole::User, line.to_string());
         runtime
@@ -982,8 +986,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         };
 
         // Task 380: Post-execution continuity check
-        let has_evidence = !step_results.is_empty()
-            && step_results.iter().any(|r| r.ok);
+        let has_evidence = !step_results.is_empty() && step_results.iter().any(|r| r.ok);
         continuity_tracker.check_final_answer(&final_text, has_evidence);
         trace(
             &runtime.args,
@@ -991,44 +994,55 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 "continuity_score={:.2} needs_fallback={} last_stage={}",
                 continuity_tracker.alignment_score,
                 continuity_tracker.needs_fallback(),
-                continuity_tracker.checkpoints.last().map(|c| c.stage.as_str()).unwrap_or("none"),
+                continuity_tracker
+                    .checkpoints
+                    .last()
+                    .map(|c| c.stage.as_str())
+                    .unwrap_or("none"),
             ),
         );
 
-        // Task 498: Continuity guard — if score < 0.85, re-prompt once
+        // Task 498: Continuity guard — if score < 0.85, re-prompt once.
+        // This is a recoverable quality pass, not a reason to close the TUI.
         let already_retried = runtime
             .messages
             .last()
             .map(|m| m.content.contains("[continuity_retry]"))
             .unwrap_or(false);
-        if continuity_tracker.alignment_score < 0.85
-            && !already_retried
-        {
+        let mut final_text = final_text;
+        if continuity_tracker.alignment_score < 0.85 && !already_retried {
             let gap_reason = continuity_tracker.gap();
             let continuity_prompt = format!(
                 "[continuity_retry]\nThe previous answer may not fully address your request.\nOriginal request: {}\nIssue detected: {}\n\nPlease provide a more complete answer focused on what was asked.",
                 line, gap_reason
             );
             let context_hint = route_decision.route.as_str();
-            let (retry_text, _, _, _) = crate::orchestration_core::run_tool_calling_pipeline(
+            match crate::orchestration_core::run_tool_calling_pipeline(
                 runtime,
                 &continuity_prompt,
                 &mut tui,
                 context_hint,
                 route_decision.evidence_required,
             )
-            .await?;
-            let final_text = crate::final_answer::process_final_answer(&retry_text);
-            let display_text = crate::final_answer::process_final_answer_display(&final_text);
-            if !final_text.is_empty() {
-                tui.add_message(MessageRole::Assistant, display_text);
-                runtime
-                    .messages
-                    .push(ChatMessage::simple("assistant", &final_text));
-                let _ = save_final_answer_display(&runtime.session, &final_text);
+            .await
+            {
+                Ok((retry_text, _, _, _)) => {
+                    let retry_text = crate::final_answer::process_final_answer(&retry_text);
+                    if !retry_text.trim().is_empty() {
+                        final_text = retry_text;
+                    }
+                }
+                Err(e) => {
+                    trace(
+                        &runtime.args,
+                        &format!("continuity_retry_failed_nonfatal error={}", e),
+                    );
+                    tui.push_meta_event(
+                        "RECOVERY",
+                        "Continuity retry failed; keeping the best answer already prepared.",
+                    );
+                }
             }
-            tui.clear_activity();
-            return Ok(());
         }
 
         // Task 384: Clean-Context Finalization — strip internal framing
@@ -1128,7 +1142,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             let formula_clone = formula.clone();
             let user_message_clone = line.to_string();
             let model_id = runtime.model_id.clone();
-            let session_id = runtime.session.root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "unknown".to_string());
+            let session_id = runtime
+                .session
+                .root
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
             tokio::spawn(async move {
                 let unit = crate::intel_units::TurnSummaryUnit::new(summarizer_cfg);
                 let context = crate::intel_trait::IntelContext::new(

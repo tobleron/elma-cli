@@ -382,6 +382,16 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
         self.seen_signals.insert(signal)
     }
 
+    /// Reset all signal history for a new user turn.
+    /// Prevents signals from a previous turn or fallback loop poisoning the next.
+    pub(crate) fn reset_signals(&mut self) {
+        self.seen_signals.clear();
+        self.stagnation_runs = 0;
+        self.consecutive_respond_calls = 0;
+        self.consecutive_respond_only_turns = 0;
+        self.last_failed_tool_name = None;
+    }
+
     // ── T333: Respond abuse guard ──
 
     /// Increment the consecutive respond counter. Called each time `respond` is executed.
@@ -1193,8 +1203,12 @@ mod tests {
         assert!(!policy.is_struggling());
 
         // Add repeated failures
-        policy.tool_failures.push(("cmd".to_string(), "error".to_string()));
-        policy.tool_failures.push(("cmd".to_string(), "error".to_string()));
+        policy
+            .tool_failures
+            .push(("cmd".to_string(), "error".to_string()));
+        policy
+            .tool_failures
+            .push(("cmd".to_string(), "error".to_string()));
         assert!(policy.is_struggling());
 
         // Reset and test stagnation

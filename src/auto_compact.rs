@@ -129,14 +129,15 @@ pub(crate) struct CompactResult {
     pub(crate) tokens_freed: usize,
 }
 
-/// Generate an inline summary of old messages.
-/// This is a self-summary — Elma summarizes its own conversation
-/// without needing a forked agent (preferred for 3B models).
+/// Generate a compact summary of old tool-call messages.
+/// Always preserves messages[0] (system prompt, which now includes turn summaries)
+/// and messages[1] (user message). Only counts and summarizes tool call pairs.
 pub(crate) fn generate_inline_summary(
     messages: &[ChatMessage],
     keep_recent_turns: usize,
 ) -> CompactResult {
-    if messages.len() <= keep_recent_turns * 2 {
+    let total_pairs = messages.len().saturating_sub(2) / 2;
+    if total_pairs <= keep_recent_turns || messages.len() <= 2 + keep_recent_turns * 2 {
         return CompactResult {
             summary: String::new(),
             ok: false,
@@ -144,80 +145,35 @@ pub(crate) fn generate_inline_summary(
         };
     }
 
-    // Identify messages to summarize (everything except the last N turns)
-    let cutoff = messages.len().saturating_sub(keep_recent_turns * 2);
-    let old_messages = &messages[..cutoff];
-    let recent_messages = &messages[cutoff..];
+    let compact_pairs = total_pairs - keep_recent_turns;
+    let compact_msgs = compact_pairs * 2;
+    let cutoff = 2 + compact_msgs;
+    let old_tool_msgs = &messages[2..cutoff];
 
-    if old_messages.is_empty() {
-        return CompactResult {
-            summary: String::new(),
-            ok: false,
-            tokens_freed: 0,
-        };
-    }
+    let tool_count = old_tool_msgs.iter().filter(|m| m.role == "tool").count();
 
-    // Build a summary of old messages
-    let mut exchanges: Vec<String> = Vec::new();
-    let mut current_user = String::new();
-    let mut current_assistant = String::new();
-
-    for msg in old_messages {
-        match msg.role.as_str() {
-            "user" => {
-                if !current_user.is_empty() && !current_assistant.is_empty() {
-                    exchanges.push(format!(
-                        "User: {}\nElma: {}",
-                        current_user, current_assistant
-                    ));
-                }
-                current_user = msg.content.chars().take(200).collect();
-                current_assistant = String::new();
-            }
-            "assistant" | "tool" => {
-                current_assistant = msg.content.chars().take(200).collect();
-            }
-            _ => {}
-        }
-    }
-    // Flush last exchange
-    if !current_user.is_empty() && !current_assistant.is_empty() {
-        exchanges.push(format!(
-            "User: {}\nElma: {}",
-            current_user, current_assistant
-        ));
-    }
-
-    let summary = if exchanges.is_empty() {
-        "[Earlier conversation: technical tool usage]".to_string()
-    } else {
-        let total = exchanges.len();
-        let first = exchanges
-            .first()
-            .map(|s| s.chars().take(100).collect::<String>())
-            .unwrap_or_default();
-        let last = exchanges
-            .last()
-            .map(|s| s.chars().take(100).collect::<String>())
-            .unwrap_or_default();
+    let summary = if tool_count > 0 {
         format!(
-            "[Earlier conversation summary: {} exchanges total.\n\
-             First: {}\n\
-             Last: {}\n\
-             Details omitted to preserve context window.]",
-            total, first, last
+            "[Earlier: {} tool call(s) made in this turn. See artifacts/ for full output.]",
+            tool_count
         )
+    } else {
+        "[Earlier in this turn]".to_string()
     };
 
-    let old_tokens: usize = old_messages
+    let new_estimate = CompactTracker::estimate_tokens(&messages[0].content)
+        + CompactTracker::estimate_tokens(&messages[1].content)
+        + CompactTracker::estimate_tokens(&summary)
+        + messages[cutoff..]
+            .iter()
+            .map(|m| CompactTracker::estimate_tokens(&m.content))
+            .sum::<usize>();
+    let old_tokens_total: usize = messages
         .iter()
         .map(|m| CompactTracker::estimate_tokens(&m.content))
         .sum();
-    let summary_tokens = CompactTracker::estimate_tokens(&summary);
-    let freed = old_tokens.saturating_sub(summary_tokens);
+    let freed = old_tokens_total.saturating_sub(new_estimate);
 
-    // Build new messages: summary + recent
-    // Note: caller must replace messages with this
     CompactResult {
         summary,
         ok: true,
@@ -225,8 +181,8 @@ pub(crate) fn generate_inline_summary(
     }
 }
 
-/// Apply compact: replace old messages with summary, keep recent intact.
-/// Returns the new message list.
+/// Apply compact: keep system prompt [0] and user message [1] intact,
+/// replace old tool-call pairs with a count-based placeholder.
 pub(crate) fn apply_compact(
     messages: &[ChatMessage],
     keep_recent_turns: usize,
@@ -236,8 +192,17 @@ pub(crate) fn apply_compact(
         return (messages.to_vec(), result);
     }
 
-    let cutoff = messages.len().saturating_sub(keep_recent_turns * 2);
-    let mut new_messages = vec![ChatMessage::simple("system", &result.summary)];
+    let total_pairs = messages.len().saturating_sub(2) / 2;
+    let keep_pairs = keep_recent_turns.min(total_pairs);
+    let compact_pairs = total_pairs - keep_pairs;
+    let compact_msgs = compact_pairs * 2;
+    let cutoff = 2 + compact_msgs;
+
+    let mut new_messages = vec![
+        messages[0].clone(),
+        messages[1].clone(),
+        ChatMessage::simple("system", &result.summary),
+    ];
     new_messages.extend_from_slice(&messages[cutoff..]);
 
     (new_messages, result)
@@ -283,6 +248,43 @@ mod tests {
         tracker.total_tokens = 10_000; // Way over threshold
         let (should, _, _) = tracker.should_compact(None, None);
         assert!(!should); // Too few turns
+    }
+
+    #[test]
+    fn test_apply_compact_preserves_system_and_user() {
+        use crate::types_api::ChatMessage;
+        let messages = vec![
+            ChatMessage::simple("system", "System prompt with turn summaries"),
+            ChatMessage::simple("user", "User request"),
+            ChatMessage::simple("assistant", "First tool call"),
+            ChatMessage::simple("tool", "First tool result"),
+            ChatMessage::simple("assistant", "Second tool call"),
+            ChatMessage::simple("tool", "Second tool result"),
+            ChatMessage::simple("assistant", "Third tool call"),
+            ChatMessage::simple("tool", "Third tool result"),
+            ChatMessage::simple("assistant", "Fourth tool call"),
+            ChatMessage::simple("tool", "Fourth tool result"),
+        ];
+        let (new_msgs, result) = apply_compact(&messages, 3);
+        assert!(result.ok);
+        assert_eq!(new_msgs[0].content, "System prompt with turn summaries");
+        assert_eq!(new_msgs[1].content, "User request");
+        assert!(new_msgs[2].content.contains("tool call"));
+        assert_eq!(new_msgs.len(), 3 + 6); // system + user + placeholder + 3 recent pairs
+    }
+
+    #[test]
+    fn test_apply_compact_not_enough_messages() {
+        use crate::types_api::ChatMessage;
+        let messages = vec![
+            ChatMessage::simple("system", "prompt"),
+            ChatMessage::simple("user", "hello"),
+            ChatMessage::simple("assistant", "reply"),
+            ChatMessage::simple("tool", "result"),
+        ];
+        let (new_msgs, result) = apply_compact(&messages, 3);
+        assert!(!result.ok);
+        assert_eq!(new_msgs.len(), 4);
     }
 
     #[test]

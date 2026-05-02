@@ -26,9 +26,15 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
 
     let workspace_brief = runtime.ws_brief.trim();
 
-    let conversation = if runtime.messages.is_empty() {
-        String::new()
-    } else {
+    let turn_summaries: Vec<String> = runtime
+        .messages
+        .iter()
+        .filter(|m| m.name.as_deref() == Some("turn_summary"))
+        .map(|m| m.content.clone())
+        .collect();
+    let conversation = if !turn_summaries.is_empty() {
+        format!("\n## Previous turns\n{}", turn_summaries.join("\n---\n"))
+    } else if !runtime.messages.is_empty() {
         let last_msgs: Vec<String> = runtime
             .messages
             .iter()
@@ -44,6 +50,8 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
             })
             .collect();
         format!("\n## Recent conversation\n{}", last_msgs.join("\n"))
+    } else {
+        String::new()
     };
 
     let skill_context = build_skill_context(runtime);
@@ -283,12 +291,8 @@ Output ONLY valid JSON object with a "steps" array, like:
             (ChatRequestOptions::deterministic(max_toks), retry_prefix)
         };
 
-        let orch_req = chat_request_system_user(
-            orchestrator_cfg,
-            system_prompt,
-            &user_prompt,
-            options,
-        );
+        let orch_req =
+            chat_request_system_user(orchestrator_cfg, system_prompt, &user_prompt, options);
 
         match crate::ui_chat::chat_json_with_repair_timeout::<Program>(
             client,
@@ -309,10 +313,7 @@ Output ONLY valid JSON object with a "steps" array, like:
     }
 
     Err(last_error.unwrap_or_else(|| {
-        anyhow::anyhow!(
-            "Orchestrator failed after {} attempts",
-            MAX_RETRIES + 1
-        )
+        anyhow::anyhow!("Orchestrator failed after {} attempts", MAX_RETRIES + 1)
     }))
 }
 

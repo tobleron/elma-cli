@@ -141,10 +141,10 @@ fn read_session_preview(session_dir: &PathBuf) -> String {
             String::new()
         }
     } else {
-        // Legacy fallback
-        let legacy = session_dir.join("display").join("terminal_transcript.txt");
-        if legacy.exists() {
-            if let Ok(mut f) = std::fs::File::open(&legacy) {
+        // Current location: terminal_transcript.txt at session root
+        let current = session_dir.join("terminal_transcript.txt");
+        if current.exists() {
+            if let Ok(mut f) = std::fs::File::open(&current) {
                 let mut buf = [0u8; 200];
                 match f.read(&mut buf) {
                     Ok(n) if n > 0 => {
@@ -162,12 +162,40 @@ fn read_session_preview(session_dir: &PathBuf) -> String {
                 String::new()
             }
         } else {
-            String::new()
+            // Legacy fallback
+            let legacy = session_dir.join("display").join("terminal_transcript.txt");
+            if legacy.exists() {
+                if let Ok(mut f) = std::fs::File::open(&legacy) {
+                    let mut buf = [0u8; 200];
+                    match f.read(&mut buf) {
+                        Ok(n) if n > 0 => {
+                            let s = String::from_utf8_lossy(&buf[..n]).to_string();
+                            let line = s.lines().next().unwrap_or("").to_string();
+                            if line.len() > 80 {
+                                format!("{}…", &line[..80])
+                            } else {
+                                line
+                            }
+                        }
+                        _ => String::new(),
+                    }
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
         }
     }
 }
 
 fn has_legacy_transcript(session_dir: &PathBuf) -> bool {
+    // Current location: terminal_transcript.txt at session root
+    let current = session_dir.join("terminal_transcript.txt");
+    if current.exists() {
+        return true;
+    }
+    // Legacy location: under display/ subdirectory
     session_dir
         .join("display")
         .join("terminal_transcript.txt")

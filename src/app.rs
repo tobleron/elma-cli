@@ -73,6 +73,7 @@ pub(crate) struct AppRuntime {
     pub(crate) retry_attempt: u32,
     pub(crate) tool_registry: tool_discovery::ToolRegistry,
     pub(crate) execution_profile: ExecutionProfile,
+    pub(crate) turn_count: u32,
 }
 
 pub(crate) async fn run(args: Args) -> Result<()> {
@@ -98,11 +99,22 @@ pub(crate) async fn run(args: Args) -> Result<()> {
     let session_root = runtime.session.root.clone();
     match &result {
         Ok(()) => {
-            let _ = crate::write_session_status(&session_root, "completed", 0, None, None);
+            let _ = crate::write_session_status(
+                &session_root,
+                "completed",
+                runtime.turn_count,
+                None,
+                None,
+            );
         }
         Err(e) => {
-            let _ =
-                crate::write_session_status(&session_root, "error", 0, None, Some(&e.to_string()));
+            let _ = crate::write_session_status(
+                &session_root,
+                "error",
+                runtime.turn_count,
+                None,
+                Some(&e.to_string()),
+            );
         }
     }
     result

@@ -69,6 +69,8 @@ pub(crate) struct TerminalUI {
     event_rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
     // Incremental token counter for transcript
     transcript_token_estimate: u64,
+    // Session root directory for persisting transcript/history inside the session folder
+    session_root: Option<PathBuf>,
 }
 
 #[cfg(unix)]
@@ -88,7 +90,7 @@ fn is_stdout_tty() -> bool {
 impl TerminalUI {
     /// Initialize the terminal UI: enter raw mode, alternate screen, hide cursor.
     /// Falls back to non-interactive mode if stdin is not a terminal.
-    pub(crate) fn new() -> io::Result<Self> {
+    pub(crate) fn new(session_root: Option<PathBuf>) -> io::Result<Self> {
         let is_interactive = is_stdin_tty() && is_stdout_tty();
         let (cols, rows) = if is_interactive {
             let _ = terminal::enable_raw_mode();
@@ -152,6 +154,7 @@ impl TerminalUI {
             background_tasks_visible: false,
             selected_background_task: None,
             mouse_capture_enabled: false,
+            session_root,
         })
     }
 
@@ -368,9 +371,10 @@ impl TerminalUI {
     // --- New push_* methods ---
 
     pub(crate) fn push_meta_event(&mut self, category: &str, message: &str) {
-        self.claude.push_message(crate::claude_ui::ClaudeMessage::System {
-            content: format!("[{}] {}", category, message),
-        });
+        self.claude
+            .push_message(crate::claude_ui::ClaudeMessage::System {
+                content: format!("[{}] {}", category, message),
+            });
         self.pending_draw = true;
     }
 
@@ -603,18 +607,20 @@ impl TerminalUI {
         use ratatui::prelude::*;
         use ratatui::widgets::*;
 
-         let mut lines = Vec::new();
-         let theme = current_theme();
+        let mut lines = Vec::new();
+        let theme = current_theme();
 
-         if tasks.is_empty() {
-             lines.push(Line::from(" No background tasks ".fg(theme.fg_dim.to_ratatui_color())));
-             return lines;
-         }
+        if tasks.is_empty() {
+            lines.push(Line::from(
+                " No background tasks ".fg(theme.fg_dim.to_ratatui_color()),
+            ));
+            return lines;
+        }
 
-         let header = Line::from(vec![
-             " Background Tasks ".bold(),
-             format!(" ({}) ", tasks.len()).fg(theme.fg_dim.to_ratatui_color()),
-         ]);
+        let header = Line::from(vec![
+            " Background Tasks ".bold(),
+            format!(" ({}) ", tasks.len()).fg(theme.fg_dim.to_ratatui_color()),
+        ]);
         lines.push(header);
 
         for task in tasks {
@@ -626,14 +632,26 @@ impl TerminalUI {
 
             let prefix = if is_selected { "▸ " } else { "  " };
 
-             let status_color = match task.status {
-                 crate::background_task::BackgroundTaskStatus::Pending => theme.warning.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::Running => theme.accent_secondary.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::Completed => theme.success.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::Failed => theme.error.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::Cancelled => theme.fg_dim.to_ratatui_color(),
-                 crate::background_task::BackgroundTaskStatus::OOMKilled => theme.error.to_ratatui_color(), // Using error for OOMKilled as it's a failure state
-             };
+            let status_color = match task.status {
+                crate::background_task::BackgroundTaskStatus::Pending => {
+                    theme.warning.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::Running => {
+                    theme.accent_secondary.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::Completed => {
+                    theme.success.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::Failed => {
+                    theme.error.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::Cancelled => {
+                    theme.fg_dim.to_ratatui_color()
+                }
+                crate::background_task::BackgroundTaskStatus::OOMKilled => {
+                    theme.error.to_ratatui_color()
+                } // Using error for OOMKilled as it's a failure state
+            };
 
             let runtime = task
                 .runtime_seconds()
@@ -649,11 +667,14 @@ impl TerminalUI {
                 runtime
             );
 
-             let line = if is_selected {
-                 Line::from(row.fg(theme.fg.to_ratatui_color()).bg(theme.bg.to_ratatui_color()))
-             } else {
-                 Line::from(row.fg(theme.fg_dim.to_ratatui_color()))
-             };
+            let line = if is_selected {
+                Line::from(
+                    row.fg(theme.fg.to_ratatui_color())
+                        .bg(theme.bg.to_ratatui_color()),
+                )
+            } else {
+                Line::from(row.fg(theme.fg_dim.to_ratatui_color()))
+            };
             lines.push(line);
         }
 
@@ -2221,113 +2242,42 @@ impl TerminalUI {
     pub(crate) fn cleanup(&mut self) -> io::Result<()> {
         if self.raw_mode {
             // Save input history before exiting.
-            let history_path = std::env::current_dir()
-                .ok()
-                .map(|d| d.join("sessions").join("history.txt"));
+            let history_path = self
+                .session_root
+                .as_ref()
+                .map(|r| r.join("history.txt"))
+                .or_else(|| {
+                    std::env::current_dir()
+                        .ok()
+                        .map(|d| d.join("sessions").join("history.txt"))
+                });
             if let Some(ref path) = history_path {
                 self.save_history(path);
             }
             // Persist visible transcript (plain-text) so terminal output is saved
-            // under sessions/ for debugging and replay.
-            let transcript_path = std::env::current_dir()
-                .ok()
-                .map(|d| d.join("sessions").join("terminal_transcript.txt"));
+            // under sessions/<id>/ for debugging and replay.
+            // Messages are now written incrementally via append_terminal_transcript()
+            // in claude_render.rs, so cleanup only ensures the header exists.
+            let transcript_path = self
+                .session_root
+                .as_ref()
+                .map(|r| r.join("terminal_transcript.txt"))
+                .or_else(|| {
+                    std::env::current_dir()
+                        .ok()
+                        .map(|d| d.join("sessions").join("terminal_transcript.txt"))
+                });
             if let Some(ref tpath) = transcript_path {
                 if let Some(parent) = tpath.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                let mut out = String::new();
-                out.push_str(&format!(
-                    "=== Terminal Transcript ({}) ===\n\n",
-                    chrono::Local::now().to_rfc3339()
-                ));
-                for msg in &self.claude.transcript.messages {
-                    use crate::claude_ui::claude_state::ClaudeMessage;
-                    match msg {
-                        ClaudeMessage::User { content } => {
-                            out.push_str(&format!("> {}\n\n", content));
-                        }
-                        ClaudeMessage::Assistant { content } => {
-                            out.push_str(&format!("● {}\n\n", content.raw_markdown));
-                        }
-                        ClaudeMessage::Thinking { content, .. } => {
-                            out.push_str(&format!("∴ Thinking: {}\n\n", content));
-                        }
-                        ClaudeMessage::ToolStart { name, input } => {
-                            out.push_str(&format!("▸ Tool start: {}\n", name));
-                            if let Some(i) = input {
-                                out.push_str(&format!("input: {}\n", i));
-                            }
-                            out.push_str("\n");
-                        }
-                        ClaudeMessage::ToolProgress { name, message } => {
-                            out.push_str(&format!("▸ Tool progress ({}): {}\n\n", name, message));
-                        }
-                        ClaudeMessage::ToolResult {
-                            name,
-                            success,
-                            output,
-                            duration_ms,
-                        } => {
-                            out.push_str(&format!(
-                                "✓ Tool result ({}): success={} duration_ms={:?}\n{}\n\n",
-                                name, success, duration_ms, output
-                            ));
-                        }
-                        ClaudeMessage::ToolTrace {
-                            name,
-                            command,
-                            status,
-                            ..
-                        } => {
-                            out.push_str(&format!("▸ Tool trace ({}): {}\n", name, command));
-                            match status {
-                                crate::claude_ui::claude_state::ToolTraceStatus::Running => {
-                                    out.push_str("status: running\n\n");
-                                }
-                                crate::claude_ui::claude_state::ToolTraceStatus::Completed {
-                                    success,
-                                    output,
-                                    duration_ms,
-                                } => {
-                                    out.push_str(&format!(
-                                        "status: completed success={} duration_ms={:?}\n{}\n\n",
-                                        success, duration_ms, output
-                                    ));
-                                }
-                            }
-                        }
-                        ClaudeMessage::PermissionRequest { command, reason } => {
-                            out.push_str(&format!(
-                                "? Permission requested: {} reason={:?}\n\n",
-                                command, reason
-                            ));
-                        }
-                        ClaudeMessage::CompactBoundary => {
-                            out.push_str("✻ Conversation compacted\n\n");
-                        }
-                        ClaudeMessage::CompactSummary {
-                            message_count,
-                            context_preview,
-                        } => {
-                            out.push_str(&format!(
-                                "✻ Compact summary: {} messages\n{}\n\n",
-                                message_count,
-                                context_preview.as_deref().unwrap_or("")
-                            ));
-                        }
-                        ClaudeMessage::System { content } => {
-                            out.push_str(&format!("system: {}\n\n", content));
-                        }
-                        ClaudeMessage::Notice(notice) => {
-                            out.push_str(&format!(
-                                "◦ NOTICE ({:?}): {}\n\n",
-                                notice.kind, notice.content
-                            ));
-                        }
-                    }
+                if !tpath.exists() {
+                    let header = format!(
+                        "=== Terminal Transcript ({}) ===\n\n",
+                        chrono::Local::now().to_rfc3339()
+                    );
+                    let _ = std::fs::write(tpath, &header);
                 }
-                let _ = std::fs::write(tpath, out);
             }
             execute!(
                 io::stdout(),
@@ -2382,7 +2332,7 @@ mod tests {
 
     #[test]
     fn test_transcript_budget_divergence() {
-        let mut tui = TerminalUI::new().unwrap();
+        let mut tui = TerminalUI::new(None).unwrap();
         // Model context budget is small (e.g. 100 tokens from prompt)
         tui.update_context_tokens(100);
 
@@ -2393,8 +2343,9 @@ mod tests {
 
         let transcript_tokens = tui.estimate_transcript_tokens();
         assert!(
-            transcript_tokens >= 10000,
-            "Transcript tokens should include the massive tool output"
+            transcript_tokens < 500,
+            "Transcript tokens should be truncated (was {})",
+            transcript_tokens
         );
 
         let streaming_tokens =

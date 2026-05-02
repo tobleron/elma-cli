@@ -260,14 +260,12 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     }
 
     // Task 459: Load execution profile
-    let execution_profile = execution_profiles::load_execution_profile(
-        cfg_root.to_str().unwrap_or_default(),
-        "local",
-    )
-    .unwrap_or_else(|e| {
-        trace(&args, &format!("execution_profile_load_failed: {}", e));
-        execution_profiles::default_local_profile()
-    });
+    let execution_profile =
+        execution_profiles::load_execution_profile(cfg_root.to_str().unwrap_or_default(), "local")
+            .unwrap_or_else(|e| {
+                trace(&args, &format!("execution_profile_load_failed: {}", e));
+                execution_profiles::default_local_profile()
+            });
 
     // Initialize global execution profile
     execution_profiles::init_execution_profile(execution_profile.clone());
@@ -314,8 +312,8 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         retry_attempt: 0,
         tool_registry: tool_discovery::ToolRegistry::new(),
         execution_profile,
+        turn_count: 0,
     }))
-
 }
 
 /// Check endpoint connectivity on-demand (for /provider check command)

@@ -348,6 +348,76 @@ fn build_fallback_from_recent_tool_evidence(messages: &[ChatMessage]) -> String 
     }
 }
 
+const FINAL_EVIDENCE_MAX_ITEMS: usize = 12;
+const FINAL_EVIDENCE_ITEM_MAX_CHARS: usize = 3_000;
+const FINAL_EVIDENCE_TOTAL_MAX_CHARS: usize = 24_000;
+
+fn truncate_chars(input: &str, max_chars: usize) -> String {
+    let mut chars = input.chars();
+    let truncated: String = chars.by_ref().take(max_chars).collect();
+    let omitted = chars.count();
+    if omitted == 0 {
+        input.to_string()
+    } else {
+        format!("{truncated}\n[... {omitted} chars omitted from finalization evidence ...]")
+    }
+}
+
+fn build_bounded_final_evidence(messages: &[ChatMessage]) -> String {
+    let mut chunks_rev = Vec::new();
+    let mut seen = HashSet::new();
+    let mut total_chars = 0usize;
+
+    for msg in messages.iter().rev() {
+        if msg.role != "tool" {
+            continue;
+        }
+        let content = msg.content.trim();
+        if content.is_empty() {
+            continue;
+        }
+
+        let dedupe_key = format!(
+            "{}:{}",
+            msg.name.as_deref().unwrap_or("tool"),
+            content.chars().take(512).collect::<String>()
+        );
+        if !seen.insert(dedupe_key) {
+            continue;
+        }
+
+        let tool_name = msg.name.as_deref().unwrap_or("tool");
+        let body = truncate_chars(content, FINAL_EVIDENCE_ITEM_MAX_CHARS);
+        let chunk = format!("Tool result ({tool_name}):\n{body}");
+        let chunk_chars = chunk.chars().count();
+        let remaining = FINAL_EVIDENCE_TOTAL_MAX_CHARS.saturating_sub(total_chars);
+        if remaining == 0 {
+            break;
+        }
+
+        if chunk_chars > remaining {
+            if remaining > 200 {
+                chunks_rev.push(truncate_chars(&chunk, remaining));
+            }
+            break;
+        }
+
+        total_chars += chunk_chars;
+        chunks_rev.push(chunk);
+
+        if chunks_rev.len() >= FINAL_EVIDENCE_MAX_ITEMS {
+            break;
+        }
+    }
+
+    chunks_rev.reverse();
+    if chunks_rev.is_empty() {
+        "(no tool results)".to_string()
+    } else {
+        chunks_rev.join("\n\n")
+    }
+}
+
 /// Build a clean finalization context that discards tool-call history and
 /// presents only the user's request + compact evidence summary. Small models
 /// get stuck in tool-calling mode when conversation history is saturated with
@@ -361,29 +431,7 @@ async fn request_final_answer_from_evidence(
     messages: &[ChatMessage],
     max_tokens: u32,
 ) -> Result<String> {
-    // Collect all tool results as compact evidence
-    let mut evidence_lines: Vec<String> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for msg in messages.iter().rev() {
-        if msg.role != "tool" {
-            continue;
-        }
-        let content = msg.content.trim();
-        if content.is_empty() || !seen.insert(content.to_string()) {
-            continue;
-        }
-        evidence_lines.push(content.to_string());
-    }
-    evidence_lines.reverse();
-
-    let evidence_block = if evidence_lines.is_empty() {
-        "(no tool results)".to_string()
-    } else if evidence_lines.len() <= 3 {
-        evidence_lines.join("\n")
-    } else {
-        // Include all gathered evidence without artificial truncation.
-        evidence_lines.join("\n")
-    };
+    let evidence_block = build_bounded_final_evidence(messages);
 
     let clean_messages = vec![
         ChatMessage::simple(
@@ -424,6 +472,57 @@ async fn request_final_answer_from_evidence(
             .map(|c| c.message.content.clone().unwrap_or_default())
             .unwrap_or_default(),
     ))
+}
+
+async fn finalize_from_evidence_or_fallback(
+    args: &Args,
+    tui: &mut crate::ui_terminal::TerminalUI,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    model_id: &str,
+    original_user_request: &str,
+    messages: &[ChatMessage],
+    max_tokens: u32,
+) -> String {
+    let mut final_content = match request_final_answer_from_evidence(
+        tui,
+        client,
+        chat_url,
+        model_id,
+        original_user_request,
+        messages,
+        max_tokens,
+    )
+    .await
+    {
+        Ok(content) => content,
+        Err(e) => {
+            trace(
+                args,
+                &format!("finalization_failed_nonfatal stage=evidence error={}", e),
+            );
+            build_fallback_from_recent_tool_evidence(messages)
+        }
+    };
+
+    if final_answer_needs_retry(&final_content) {
+        final_content = match request_final_answer_without_tools(
+            tui, client, chat_url, model_id, messages, max_tokens, true,
+        )
+        .await
+        {
+            Ok(content) => content,
+            Err(e) => {
+                trace(
+                    args,
+                    &format!("finalization_failed_nonfatal stage=plain_retry error={}", e),
+                );
+                build_fallback_from_recent_tool_evidence(messages)
+            }
+        };
+    }
+
+    final_content
 }
 
 async fn request_final_answer_without_tools(
@@ -673,16 +772,17 @@ pub(crate) async fn run_tool_loop(
                 "user",
                 "You've reached the maximum number of tool calls. Please provide your final answer.",
             ));
-            let mut final_content = request_final_answer_without_tools(
-                tui, client, chat_url, model_id, &messages, max_tokens, false,
+            let final_content = finalize_from_evidence_or_fallback(
+                args,
+                tui,
+                client,
+                chat_url,
+                model_id,
+                &original_user_request,
+                &messages,
+                max_tokens,
             )
-            .await?;
-            if final_answer_needs_retry(&final_content) {
-                final_content = request_final_answer_without_tools(
-                    tui, client, chat_url, model_id, &messages, max_tokens, true,
-                )
-                .await?;
-            }
+            .await;
             let final_trimmed = normalize_final_answer_candidate(&final_content);
             // Record finalization events (stop policy and final answer)
             crate::event_log::record_finalization(
@@ -789,9 +889,7 @@ pub(crate) async fn run_tool_loop(
                 max_tokens: Some(max_tokens.min(runtime_llm_config().tool_loop_max_tokens_cap)),
                 repeat_penalty: Some(None),
                 reasoning_format: Some(Some("auto".to_string())),
-                tools: Some(crate::tool_calling::build_tool_definitions(
-                    &PathBuf::new(),
-                )),
+                tools: Some(crate::tool_calling::build_tool_definitions(&PathBuf::new())),
                 ..ChatRequestOptions::default()
             },
         );
@@ -878,7 +976,8 @@ pub(crate) async fn run_tool_loop(
                     args,
                     &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
                 );
-                let mut final_content = request_final_answer_from_evidence(
+                let final_content = finalize_from_evidence_or_fallback(
+                    args,
                     tui,
                     client,
                     chat_url,
@@ -887,13 +986,7 @@ pub(crate) async fn run_tool_loop(
                     &messages,
                     max_tokens,
                 )
-                .await?;
-                if final_answer_needs_retry(&final_content) {
-                    final_content = request_final_answer_without_tools(
-                        tui, client, chat_url, model_id, &messages, max_tokens, true,
-                    )
-                    .await?;
-                }
+                .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
@@ -938,7 +1031,8 @@ pub(crate) async fn run_tool_loop(
                     args,
                     "tool_loop: stagnation threshold reached; forcing finalization",
                 );
-                let mut final_content = request_final_answer_from_evidence(
+                let final_content = finalize_from_evidence_or_fallback(
+                    args,
                     tui,
                     client,
                     chat_url,
@@ -947,13 +1041,7 @@ pub(crate) async fn run_tool_loop(
                     &messages,
                     max_tokens,
                 )
-                .await?;
-                if final_answer_needs_retry(&final_content) {
-                    final_content = request_final_answer_without_tools(
-                        tui, client, chat_url, model_id, &messages, max_tokens, true,
-                    )
-                    .await?;
-                }
+                .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
@@ -1119,17 +1207,23 @@ pub(crate) async fn run_tool_loop(
                             input: tc.function.arguments.chars().take(100).collect(),
                         },
                     };
-                     crate::evidence_ledger::with_session_ledger(|ledger| {
-                         // Strip ANSI escape sequences from result content
-                         let clean_content = match strip_ansi_escapes::strip(result.content.as_bytes()) {
-                             Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
-                             Err(_) => result.content.clone(), // Fallback: return raw if stripping fails
-                         };
-                         let entry = ledger.add_entry(source, &clean_content);
-                         // Task 470: Record EvidenceEvent for the new ledger entry
-                         let source_artifact = entry.raw_path.as_deref().unwrap_or(&tc.function.name);
-                         crate::event_log::record_evidence_event(&turn_id, &entry.summary, source_artifact);
-                     });
+                    crate::evidence_ledger::with_session_ledger(|ledger| {
+                        // Strip ANSI escape sequences from result content
+                        let clean_content =
+                            match strip_ansi_escapes::strip(result.content.as_bytes()) {
+                                Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+                                Err(_) => result.content.clone(), // Fallback: return raw if stripping fails
+                            };
+                        let entry = ledger.add_entry(source, &clean_content);
+                        // Task 470: Record EvidenceEvent for the new ledger entry
+                        let source_artifact =
+                            entry.raw_path.as_deref().unwrap_or(&tc.function.name);
+                        crate::event_log::record_evidence_event(
+                            &turn_id,
+                            &entry.summary,
+                            source_artifact,
+                        );
+                    });
                 }
 
                 stop_policy.record_tool_result(tc, &result);
@@ -1193,10 +1287,8 @@ pub(crate) async fn run_tool_loop(
                             );
                             let ungrounded = verdict.ungrounded_claims();
                             if !ungrounded.is_empty() {
-                                let reasons: Vec<&str> = ungrounded
-                                    .iter()
-                                    .map(|c| c.statement.as_str())
-                                    .collect();
+                                let reasons: Vec<&str> =
+                                    ungrounded.iter().map(|c| c.statement.as_str()).collect();
                                 let msg = format!(
                                     "ungrounded claims without evidence: {}",
                                     reasons.join(" | ")
@@ -1229,8 +1321,8 @@ pub(crate) async fn run_tool_loop(
                         // the model's own summary content directly. The intel
                         // summarizer can produce structured output that replaces
                         // natural responses for simple conversational exchanges.
-                        let is_simple_turn = stop_policy.total_tool_calls() <= 2
-                            && stop_policy.iteration() <= 2;
+                        let is_simple_turn =
+                            stop_policy.total_tool_calls() <= 2 && stop_policy.iteration() <= 2;
                         let final_answer = if is_simple_turn {
                             raw_content
                         } else {
@@ -1356,7 +1448,8 @@ pub(crate) async fn run_tool_loop(
                     "user",
                     "You've had 5+ consecutive shell failures. Stop trying shell commands and provide your final answer based on the evidence you already have. If you cannot answer reliably, explain what you found and what additional information would be needed."
                 ));
-                let mut final_content = request_final_answer_from_evidence(
+                let final_content = finalize_from_evidence_or_fallback(
+                    args,
                     tui,
                     client,
                     chat_url,
@@ -1365,13 +1458,7 @@ pub(crate) async fn run_tool_loop(
                     &messages,
                     max_tokens,
                 )
-                .await?;
-                if final_answer_needs_retry(&final_content) {
-                    final_content = request_final_answer_without_tools(
-                        tui, client, chat_url, model_id, &messages, max_tokens, true,
-                    )
-                    .await?;
-                }
+                .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
@@ -1405,8 +1492,16 @@ pub(crate) async fn run_tool_loop(
                     args,
                     &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
                 );
-                tui.push_meta_event("STOP", &format!("Stopping: {} - {}", outcome.reason.as_str(), outcome.summary));
-                let mut final_content = request_final_answer_from_evidence(
+                tui.push_meta_event(
+                    "STOP",
+                    &format!(
+                        "Stopping: {} - {}",
+                        outcome.reason.as_str(),
+                        outcome.summary
+                    ),
+                );
+                let final_content = finalize_from_evidence_or_fallback(
+                    args,
                     tui,
                     client,
                     chat_url,
@@ -1415,13 +1510,7 @@ pub(crate) async fn run_tool_loop(
                     &messages,
                     max_tokens,
                 )
-                .await?;
-                if final_answer_needs_retry(&final_content) {
-                    final_content = request_final_answer_without_tools(
-                        tui, client, chat_url, model_id, &messages, max_tokens, true,
-                    )
-                    .await?;
-                }
+                .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
@@ -1450,7 +1539,8 @@ pub(crate) async fn run_tool_loop(
                         "You've called 'respond' 5+ times without using any real tools (search, read, shell). \
                          Provide your final answer now based on what you know, even if incomplete.",
                     ));
-                    let mut final_content = request_final_answer_from_evidence(
+                    let final_content = finalize_from_evidence_or_fallback(
+                        args,
                         tui,
                         client,
                         chat_url,
@@ -1459,33 +1549,27 @@ pub(crate) async fn run_tool_loop(
                         &messages,
                         max_tokens,
                     )
-                    .await?;
-                    if final_answer_needs_retry(&final_content) {
-                        final_content = request_final_answer_without_tools(
-                            tui, client, chat_url, model_id, &messages, max_tokens, true,
-                        )
-                        .await?;
-                    }
-                let trimmed = normalize_final_answer_candidate(&final_content);
-                // Record finalization events
-                crate::event_log::record_finalization(
-                    crate::event_log::FinalizationEventType::FinalAnswerPrepared,
-                    &turn_id,
-                    outcome.reason.as_str(),
-                );
-                crate::event_log::record_finalization(
-                    crate::event_log::FinalizationEventType::StopPolicyTriggered,
-                    &turn_id,
-                    outcome.reason.as_str(),
-                );
-                // Finalize turn lifecycle and persist
-                crate::event_log::record_lifecycle(
-                    crate::event_log::LifecycleEventType::TurnFinished,
-                    Some(&turn_id),
-                );
-                crate::event_log::clear_current_turn();
-                let _ = crate::event_log::persist(&sess.root);
-                return Ok(ToolLoopResult {
+                    .await;
+                    let trimmed = normalize_final_answer_candidate(&final_content);
+                    // Record finalization events
+                    crate::event_log::record_finalization(
+                        crate::event_log::FinalizationEventType::FinalAnswerPrepared,
+                        &turn_id,
+                        outcome.reason.as_str(),
+                    );
+                    crate::event_log::record_finalization(
+                        crate::event_log::FinalizationEventType::StopPolicyTriggered,
+                        &turn_id,
+                        outcome.reason.as_str(),
+                    );
+                    // Finalize turn lifecycle and persist
+                    crate::event_log::record_lifecycle(
+                        crate::event_log::LifecycleEventType::TurnFinished,
+                        Some(&turn_id),
+                    );
+                    crate::event_log::clear_current_turn();
+                    let _ = crate::event_log::persist(&sess.root);
+                    return Ok(ToolLoopResult {
                         final_answer: if final_answer_needs_retry(&trimmed) {
                             build_fallback_from_recent_tool_evidence(&messages)
                         } else {
@@ -1597,21 +1681,31 @@ fn build_recent_tool_summary(messages: &[ChatMessage], count: usize) -> String {
                         format!("shell: {}", short)
                     }
                     "read" => {
-                        let path = serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
-                            .ok()
-                            .and_then(|v| v["path"].as_str().map(|s| s.to_string()))
-                            .unwrap_or_else(|| tc.function.arguments.chars().take(60).collect());
+                        let path =
+                            serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+                                .ok()
+                                .and_then(|v| v["path"].as_str().map(|s| s.to_string()))
+                                .unwrap_or_else(|| {
+                                    tc.function.arguments.chars().take(60).collect()
+                                });
                         format!("read: {}", path)
                     }
                     "search" => {
-                        let pattern = serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
-                            .ok()
-                            .and_then(|v| v["pattern"].as_str().map(|s| s.to_string()))
-                            .unwrap_or_else(|| tc.function.arguments.chars().take(60).collect());
+                        let pattern =
+                            serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+                                .ok()
+                                .and_then(|v| v["pattern"].as_str().map(|s| s.to_string()))
+                                .unwrap_or_else(|| {
+                                    tc.function.arguments.chars().take(60).collect()
+                                });
                         format!("search: {}", pattern)
                     }
                     other => {
-                        format!("{}: {}", other, tc.function.arguments.chars().take(60).collect::<String>())
+                        format!(
+                            "{}: {}",
+                            other,
+                            tc.function.arguments.chars().take(60).collect::<String>()
+                        )
                     }
                 };
                 lines.push(preview);
@@ -1694,6 +1788,36 @@ mod tests {
         ];
         let out = build_fallback_from_recent_tool_evidence(&msgs);
         assert!(out.contains("line one"));
+    }
+
+    #[test]
+    fn finalization_evidence_is_bounded_and_recent() {
+        let old = "old evidence ".repeat(500);
+        let recent = "recent evidence ".repeat(500);
+        let mut msgs = vec![ChatMessage::simple("user", "summarize")];
+        msgs.push(ChatMessage {
+            role: "tool".to_string(),
+            content: old,
+            name: Some("read".to_string()),
+            tool_calls: None,
+            tool_call_id: Some("old".to_string()),
+            reasoning_content: None,
+            summarized: false,
+        });
+        msgs.push(ChatMessage {
+            role: "tool".to_string(),
+            content: recent,
+            name: Some("read".to_string()),
+            tool_calls: None,
+            tool_call_id: Some("recent".to_string()),
+            reasoning_content: None,
+            summarized: false,
+        });
+
+        let block = build_bounded_final_evidence(&msgs);
+        assert!(block.contains("recent evidence"));
+        assert!(block.chars().count() <= FINAL_EVIDENCE_TOTAL_MAX_CHARS + 120);
+        assert!(block.contains("omitted from finalization evidence"));
     }
 
     #[test]

@@ -123,40 +123,44 @@ impl ClaudeRenderer {
         let m = msg.clone();
         self.transcript.push(msg);
 
-        // Append to session.md if we can derive the session root
+        // Append to session.md and terminal_transcript.txt if we can derive the session root
         if let Ok(guard) = trace_log_state().lock() {
             if let Some(ref trace_path) = *guard {
                 if let Some(session_root) = trace_path.parent() {
-                    use crate::session_write::{append_session_markdown, MdEntry};
+                    // Generate transcript line before m is consumed by the match
+                    let transcript_line = claude_message_to_transcript_line(&m);
+                    use crate::session_write::{
+                        append_session_markdown, append_terminal_transcript, MdEntry,
+                    };
                     let entry = match &m {
-                        ClaudeMessage::User { content } => {
-                            MdEntry::User { content: content.clone() }
-                        }
-                        ClaudeMessage::Assistant { content } => {
-                            MdEntry::Assistant { content: content.raw_markdown.clone() }
-                        }
-                        ClaudeMessage::Thinking { content, .. } => {
-                            MdEntry::Thinking { content: content.clone() }
-                        }
-                        ClaudeMessage::ToolStart { name, input } => {
-                            MdEntry::ToolStart { name: name.clone(), input: format!("{:?}", input) }
-                        }
-                        ClaudeMessage::ToolProgress { name, message } => {
-                            MdEntry::ToolProgress { name: name.clone(), message: message.clone() }
-                        }
+                        ClaudeMessage::User { content } => MdEntry::User {
+                            content: content.clone(),
+                        },
+                        ClaudeMessage::Assistant { content } => MdEntry::Assistant {
+                            content: content.raw_markdown.clone(),
+                        },
+                        ClaudeMessage::Thinking { content, .. } => MdEntry::Thinking {
+                            content: content.clone(),
+                        },
+                        ClaudeMessage::ToolStart { name, input } => MdEntry::ToolStart {
+                            name: name.clone(),
+                            input: format!("{:?}", input),
+                        },
+                        ClaudeMessage::ToolProgress { name, message } => MdEntry::ToolProgress {
+                            name: name.clone(),
+                            message: message.clone(),
+                        },
                         ClaudeMessage::ToolResult {
                             name,
                             success,
                             output,
                             duration_ms,
-                        } => {
-                            MdEntry::ToolResult {
-                                name: name.clone(),
-                                success: *success,
-                                output: output.clone(),
-                                duration_ms: *duration_ms,
-                            }
-                        }
+                        } => MdEntry::ToolResult {
+                            name: name.clone(),
+                            success: *success,
+                            output: output.clone(),
+                            duration_ms: *duration_ms,
+                        },
                         ClaudeMessage::ToolTrace {
                             name,
                             command,
@@ -173,47 +177,42 @@ impl ClaudeRenderer {
                                 success,
                                 output,
                                 ..
-                            } => {
-                                MdEntry::ToolResult {
-                                    name: name.clone(),
-                                    success: *success,
-                                    output: output.clone(),
-                                    duration_ms: None,
-                                }
-                            }
+                            } => MdEntry::ToolResult {
+                                name: name.clone(),
+                                success: *success,
+                                output: output.clone(),
+                                duration_ms: None,
+                            },
                         },
-                        ClaudeMessage::PermissionRequest { command, reason } => {
-                            MdEntry::Meta {
-                                label: "permission".into(),
-                                detail: format!("{} reason={:?}", command, reason),
-                            }
-                        }
-                        ClaudeMessage::CompactBoundary => {
-                            MdEntry::Meta {
-                                label: "compact".into(),
-                                detail: String::new(),
-                            }
-                        }
-                        ClaudeMessage::CompactSummary { message_count, context_preview } => {
-                            MdEntry::Meta {
-                                label: "compact".into(),
-                                detail: format!("{} messages, preview={:?}", message_count, context_preview),
-                            }
-                        }
-                        ClaudeMessage::System { content } => {
-                            MdEntry::Meta {
-                                label: "system".into(),
-                                detail: content.clone(),
-                            }
-                        }
-                        ClaudeMessage::Notice(notice) => {
-                            MdEntry::Meta {
-                                label: "notice".into(),
-                                detail: format!("{:?} {}", notice.kind, notice.content),
-                            }
-                        }
+                        ClaudeMessage::PermissionRequest { command, reason } => MdEntry::Meta {
+                            label: "permission".into(),
+                            detail: format!("{} reason={:?}", command, reason),
+                        },
+                        ClaudeMessage::CompactBoundary => MdEntry::Meta {
+                            label: "compact".into(),
+                            detail: String::new(),
+                        },
+                        ClaudeMessage::CompactSummary {
+                            message_count,
+                            context_preview,
+                        } => MdEntry::Meta {
+                            label: "compact".into(),
+                            detail: format!(
+                                "{} messages, preview={:?}",
+                                message_count, context_preview
+                            ),
+                        },
+                        ClaudeMessage::System { content } => MdEntry::Meta {
+                            label: "system".into(),
+                            detail: content.clone(),
+                        },
+                        ClaudeMessage::Notice(notice) => MdEntry::Meta {
+                            label: "notice".into(),
+                            detail: format!("{:?} {}", notice.kind, notice.content),
+                        },
                     };
                     append_session_markdown(session_root, &entry);
+                    append_terminal_transcript(session_root, &transcript_line);
                 }
             }
         }
@@ -503,14 +502,37 @@ impl ClaudeRenderer {
                 success,
                 output,
             } => {
+                let truncated = terminal_tool_output_preview(&output);
                 self.transcript.update_last_tool_trace(
                     &name,
                     crate::claude_ui::claude_state::ToolTraceStatus::Completed {
                         success,
-                        output,
+                        output: truncated,
                         duration_ms: None,
                     },
                 );
+                // Append completed trace to terminal transcript
+                if let Ok(guard) = trace_log_state().lock() {
+                    if let Some(ref trace_path) = *guard {
+                        if let Some(session_root) = trace_path.parent() {
+                            let completed_msg = ClaudeMessage::ToolTrace {
+                                name,
+                                command: String::new(),
+                                status:
+                                    crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                                        success,
+                                        output,
+                                        duration_ms: None,
+                                    },
+                                collapsed: true,
+                            };
+                            crate::session_write::append_terminal_transcript(
+                                session_root,
+                                &claude_message_to_transcript_line(&completed_msg),
+                            );
+                        }
+                    }
+                }
             }
             UiEvent::PermissionRequested { command } => {
                 self.push_message(ClaudeMessage::PermissionRequest {
@@ -1460,7 +1482,11 @@ fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterMod
   `Y8bod8P' o888o o888o o888o o888o `Y888""8o 
 "#;
     let logo_lines: Vec<&str> = logo.lines().collect();
-    let logo_width = logo_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let logo_width = logo_lines
+        .iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0);
     for logo_line in &logo_lines {
         lines.push(Line::from(vec![Span::styled(*logo_line, logo_color)]));
     }
@@ -2185,7 +2211,10 @@ mod tests {
             }
         }
         assert!(seen_full_primary, "full blocks should use accent_primary");
-        assert!(seen_partial_primary, "partial blocks should use accent_primary");
+        assert!(
+            seen_partial_primary,
+            "partial blocks should use accent_primary"
+        );
     }
 
     #[test]
@@ -2229,5 +2258,107 @@ fn format_relative_age(unix_s: u64) -> String {
         format!(" {}w", diff / 604800)
     } else {
         format!(" {}mo", diff / 2592000)
+    }
+}
+
+/// Format a ClaudeMessage into a terminal transcript line (same format as cleanup()).
+pub(crate) fn claude_message_to_transcript_line(msg: &ClaudeMessage) -> String {
+    match msg {
+        ClaudeMessage::User { content } => {
+            format!("> {}\n\n", content)
+        }
+        ClaudeMessage::Assistant { content } => {
+            format!("● {}\n\n", content.raw_markdown)
+        }
+        ClaudeMessage::Thinking { content, .. } => {
+            format!("∴ Thinking: {}\n\n", content)
+        }
+        ClaudeMessage::ToolStart { name, input } => {
+            let mut out = format!("▸ Tool start: {}\n", name);
+            if let Some(i) = input {
+                out.push_str(&format!("input: {}\n", i));
+            }
+            out.push('\n');
+            out
+        }
+        ClaudeMessage::ToolProgress { name, message } => {
+            format!("▸ Tool progress ({}): {}\n\n", name, message)
+        }
+        ClaudeMessage::ToolResult {
+            name,
+            success,
+            output,
+            duration_ms,
+        } => {
+            // Truncated output — full tool results live in artifacts/
+            let truncated = terminal_tool_output_preview(output);
+            format!(
+                "✓ Tool result ({}): success={} duration_ms={:?}\n{}\n\n",
+                name, success, duration_ms, truncated
+            )
+        }
+        ClaudeMessage::ToolTrace {
+            name,
+            command,
+            status,
+            ..
+        } => {
+            let mut out = format!("▸ Tool trace ({}): {}\n", name, command);
+            match status {
+                super::claude_state::ToolTraceStatus::Running => {
+                    out.push_str("status: running\n\n");
+                }
+                super::claude_state::ToolTraceStatus::Completed {
+                    success,
+                    output,
+                    duration_ms,
+                } => {
+                    let truncated = terminal_tool_output_preview(output);
+                    out.push_str(&format!(
+                        "status: completed success={} duration_ms={:?}\n{}\n\n",
+                        success, duration_ms, truncated
+                    ));
+                }
+            }
+            out
+        }
+        ClaudeMessage::PermissionRequest { command, reason } => {
+            format!(
+                "? Permission requested: {} reason={:?}\n\n",
+                command, reason
+            )
+        }
+        ClaudeMessage::CompactBoundary => "✻ Conversation compacted\n\n".to_string(),
+        ClaudeMessage::CompactSummary {
+            message_count,
+            context_preview,
+        } => {
+            format!(
+                "✻ Compact summary: {} messages\n{}\n\n",
+                message_count,
+                context_preview.as_deref().unwrap_or("")
+            )
+        }
+        ClaudeMessage::System { content } => {
+            format!("system: {}\n\n", content)
+        }
+        ClaudeMessage::Notice(notice) => {
+            format!("◦ NOTICE ({:?}): {}\n\n", notice.kind, notice.content)
+        }
+    }
+}
+
+const TRANSCRIPT_OUTPUT_LIMIT: usize = 1024;
+
+/// Truncate tool output for terminal transcript to prevent memory spikes.
+fn terminal_tool_output_preview(output: &str) -> String {
+    let preview: String = output.chars().take(TRANSCRIPT_OUTPUT_LIMIT).collect();
+    if output.len() > TRANSCRIPT_OUTPUT_LIMIT {
+        format!(
+            "{preview}… [+{} characters truncated]",
+            output.len().saturating_sub(TRANSCRIPT_OUTPUT_LIMIT)
+        )
+    } else {
+        preview
     }
 }
