@@ -89,6 +89,11 @@ pub(crate) enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Config commands (Task 435): inspect and manage configuration
+    Config {
+        #[clap(subcommand)]
+        action: ConfigAction,
+    },
     /// Session garbage collection: list/delete/compress old sessions (Task 282)
     SessionGc {
         /// Consider sessions older than N days
@@ -107,6 +112,28 @@ pub(crate) enum Commands {
         #[arg(long)]
         archive_dir: Option<String>,
     },
+}
+
+#[derive(clap::Subcommand, Debug, Clone)]
+pub(crate) enum ConfigAction {
+    /// Print the OS-native global config path
+    Path,
+    /// Show current global config values
+    Show,
+    /// Set a config value: provider.base_url, provider.model, etc.
+    Set {
+        /// Config key path (e.g. "provider.base_url")
+        key: String,
+        /// Config value
+        value: String,
+    },
+    /// Print effective merged profile for an intel unit
+    EffectiveProfile {
+        /// Profile name (e.g. "orchestrator", "gate")
+        profile_name: String,
+    },
+    /// Check config health, report legacy files and invalid values
+    Doctor,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

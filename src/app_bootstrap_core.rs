@@ -31,7 +31,7 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     let (base_url, base_url_source) =
         resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref())?;
 
-    // Persist to elma.toml (primary config) and global.toml (legacy)
+    // Persist to OS-native elma.toml (canonical global config)
     if base_url_source == "cli_or_env" {
         let elma_path = elma_config_path()?;
         let elma_cfg = ElmaProjectConfig {
@@ -42,13 +42,16 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         std::fs::write(&elma_path, s.as_bytes()).context("Failed to write elma.toml")?;
     }
 
-    save_global_config(
-        &global_config_path(&cfg_root),
-        &GlobalConfig {
-            version: 1,
-            base_url: base_url.clone(),
-        },
-    )?;
+    // Legacy: write global.toml for backward compatibility
+    if cfg_root.join("global.toml").exists() || base_url_source == "cli_or_env" {
+        let _ = save_global_config(
+            &global_config_path(&cfg_root),
+            &GlobalConfig {
+                version: 1,
+                base_url: base_url.clone(),
+            },
+        );
+    }
 
     let base = Url::parse(&base_url).context("Invalid --base-url")?;
     let chat_url = base

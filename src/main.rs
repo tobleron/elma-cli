@@ -16,6 +16,7 @@ pub(crate) use std::sync::{Mutex, OnceLock};
 pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 mod app;
+mod config_cmd;
 mod approach_engine; // Task 390: Approach Branch Retry And Prune Engine
 mod app_bootstrap;
 mod app_bootstrap_core;
@@ -253,6 +254,10 @@ async fn main() {
                 use clap::CommandFactory;
                 let mut cmd = crate::types::Args::command();
                 clap_complete::generate(*shell, &mut cmd, "elma-cli", &mut std::io::stdout());
+                return;
+            }
+            crate::types::Commands::Config { action } => {
+                config_cmd::handle_config_command(action);
                 return;
             }
             crate::types::Commands::SessionGc {

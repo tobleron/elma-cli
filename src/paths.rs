@@ -26,7 +26,18 @@ pub(crate) fn global_config_path(config_root: &Path) -> PathBuf {
     config_root.join("global.toml")
 }
 
+/// OS-native global config path (canonical).
 pub(crate) fn elma_config_path() -> Result<PathBuf> {
+    if let Some(paths) = ElmaPaths::new() {
+        let path = paths.config_dir().join("elma.toml");
+        let _ = std::fs::create_dir_all(paths.config_dir());
+        return Ok(path);
+    }
+    anyhow::bail!("Could not determine OS config directory");
+}
+
+/// Repo-local project override config path.
+pub(crate) fn project_elma_config_path() -> Result<PathBuf> {
     Ok(repo_root()?.join("elma.toml"))
 }
 
@@ -41,10 +52,10 @@ pub(crate) fn discover_saved_base_url(
     config_root: &Path,
     model_hint: Option<&str>,
 ) -> Result<Option<String>> {
-    // 1. Check elma.toml first (single config file)
-    if let Ok(elma_path) = elma_config_path() {
-        if elma_path.exists() {
-            if let Ok(cfg) = load_elma_config(&elma_path) {
+    // 1. Check OS-native elma.toml first (canonical)
+    if let Ok(os_path) = elma_config_path() {
+        if os_path.exists() {
+            if let Ok(cfg) = load_elma_config(&os_path) {
                 let url = cfg.base_url.trim();
                 if !url.is_empty() {
                     return Ok(Some(url.to_string()));
@@ -53,15 +64,30 @@ pub(crate) fn discover_saved_base_url(
         }
     }
 
-    // 2. Fall back to global.toml
-    let global_path = global_config_path(config_root);
-    if global_path.exists() {
-        let cfg = load_global_config(&global_path)?;
-        let url = cfg.base_url.trim();
-        if !url.is_empty() {
-            return Ok(Some(url.to_string()));
+    // 2. Check repo-local elma.toml (project override)
+    if let Ok(proj_path) = project_elma_config_path() {
+        if proj_path.exists() {
+            if let Ok(cfg) = load_elma_config(&proj_path) {
+                let url = cfg.base_url.trim();
+                if !url.is_empty() {
+                    return Ok(Some(url.to_string()));
+                }
+            }
         }
     }
+
+    // 3. Fall back to global.toml (legacy)
+    let global_path = global_config_path(config_root);
+    if global_path.exists() {
+        if let Ok(cfg) = load_global_config(&global_path) {
+            let url = cfg.base_url.trim();
+            if !url.is_empty() {
+                return Ok(Some(url.to_string()));
+            }
+        }
+    }
+
+    // 4. Search model config subdirectories for _elma.config or router_calibration.toml (legacy)
 
     let mut candidates: Vec<PathBuf> = Vec::new();
 
