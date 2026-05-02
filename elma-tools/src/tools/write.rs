@@ -8,7 +8,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Path to the file (relative to workspace or absolute)"},
+                    "file_path": {"type": "string", "description": "Workspace-relative path to the file"},
                     "content": {"type": "string", "description": "The content to write to the file"}
                 },
                 "required": ["file_path", "content"]

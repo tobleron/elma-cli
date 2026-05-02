@@ -1,0 +1,13 @@
+{
+  "profile": "openai",
+  "env": {
+    "OPENAI_BASE_URL": "http://192.168.1.186:8080/v1",
+    "OPENAI_MODEL": "qwen3.5_4b",
+    "OPENAI_API_FORMAT": "responses",
+    "OPENAI_AUTH_HEADER": "None",
+    "OPENAI_AUTH_SCHEME": "raw",
+    "OPENAI_AUTH_HEADER_VALUE": "None",
+    "OPENAI_API_KEY": "None"
+  },
+  "createdAt": "2026-05-02T14:04:56.648Z"
+}

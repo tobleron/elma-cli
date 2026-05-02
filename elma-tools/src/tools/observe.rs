@@ -8,7 +8,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path to inspect (relative to workspace root or absolute)"}
+                    "path": {"type": "string", "description": "Workspace-relative path to inspect"}
                 },
                 "required": ["path"]
             }),

@@ -8,6 +8,24 @@ use crate::*;
 use std::collections::HashSet;
 use std::time::Instant;
 
+/// Truncate a tool call's arguments for inclusion in stagnation trace output.
+fn truncate_tool_args(call: &ToolCall) -> String {
+    let args_str = &call.function.arguments;
+    if args_str.len() <= 80 {
+        args_str.to_string()
+    } else {
+        format!("{}...", &args_str[..77])
+    }
+}
+
+/// Compute a short hash of tool arguments for change-detection.
+fn args_hash(args: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    args.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum StopReason {
     StageBudgetExceeded,
@@ -79,6 +97,12 @@ pub(crate) struct StopPolicy {
     start_time: Instant,
     seen_signals: HashSet<String>,
     tool_failures: Vec<(String, String)>,
+    /// Track last failed tool name for argument-change detection.
+    last_failed_tool_name: Option<String>,
+    /// Hash of last failed tool's arguments (for change detection).
+    last_failed_args_hash: Option<u64>,
+    /// Stubborn attempts count: retries with same tool name but different args.
+    stubborn_attempts: usize,
     recent_commands: Vec<String>,
     stage_index: usize,
     stage_skill: String,
@@ -106,6 +130,9 @@ impl StopPolicy {
             start_time: Instant::now(),
             seen_signals: HashSet::new(),
             tool_failures: Vec::new(),
+            last_failed_tool_name: None,
+            last_failed_args_hash: None,
+            stubborn_attempts: 0,
             recent_commands: Vec::new(),
             stage_index: 0,
             stage_skill: "general".to_string(),
@@ -209,11 +236,44 @@ impl StopPolicy {
             }
             self.tool_failures
                 .push((call.function.name.clone(), error_class));
+
+            // Track argument-level changes for non-shell failures only.
+            // Shell failures have their own strategy-based tracking via record_shell_failure.
+            if call.function.name != "shell" {
+                let current_args_hash = args_hash(&call.function.arguments);
+                match &self.last_failed_tool_name {
+                    Some(last_name) if *last_name == call.function.name => {
+                        if self.last_failed_args_hash != Some(current_args_hash) {
+                            // Arguments changed — use stubborn counter, remove recent failure to buy time
+                            self.stubborn_attempts += 1;
+                            if self.stubborn_attempts <= self.budget.max_repeated_failures {
+                                self.tool_failures.pop();
+                            }
+                        } else {
+                            self.stubborn_attempts = 0;
+                        }
+                    }
+                    _ => {
+                        self.stubborn_attempts = 0;
+                    }
+                }
+                self.last_failed_tool_name = Some(call.function.name.clone());
+                self.last_failed_args_hash = Some(current_args_hash);
+            }
         } else if call.function.name == "shell" {
             // Reset consecutive failure count on success
             self.consecutive_shell_failures = 0;
             self.last_shell_strategy = None;
             self.last_shell_scope = None;
+        }
+    }
+
+    /// Get the name of the last failed tool (for stagnation trace).
+    pub(crate) fn last_failed_tool_signal(&self) -> String {
+        if let Some((tool, _)) = self.tool_failures.last() {
+            tool.clone()
+        } else {
+            String::new()
         }
     }
 
@@ -300,6 +360,16 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
             ));
         }
         None
+    }
+
+    /// Trace info about stagnation for debugging (tool + args).
+    pub(crate) fn stagnation_trace_info(&self) -> String {
+        let tool = self.last_failed_tool_signal();
+        if tool.is_empty() {
+            format!("stagnation run {} (tool: unknown)", self.stagnation_runs)
+        } else {
+            format!("stagnation run {} (tool: {})", self.stagnation_runs, tool)
+        }
     }
 
     /// Call when new tool signals *were* seen this iteration.
@@ -485,7 +555,7 @@ fn next_step_hint(reason: &StopReason) -> String {
             "Break the task into independent sub-tasks and run them one at a time.".to_string()
         }
         StopReason::RepeatedToolFailure => {
-            "Verify the command or path manually, then retry with corrected input.".to_string()
+            "The same tool failed multiple times. Consider switching to an alternative tool: use 'shell' with cat/head for file reading, or 'search' with grep for finding content, or 'glob' for filename matching.".to_string()
         }
         StopReason::RepeatedNoNewEvidence => {
             "Ask a more specific question or provide a file path to inspect directly.".to_string()
@@ -779,7 +849,7 @@ mod tests {
             "Should not stop on first failure"
         );
 
-        // Strategy 2 fails (different strategy class)
+        // Strategy 2 fails (different strategy class, same args)
         let call2 = ToolCall {
             id: "c2".to_string(),
             call_type: "function".to_string(),
@@ -792,16 +862,16 @@ mod tests {
         policy.record_tool_result(&call2, &fail_result);
         assert!(
             policy.check_should_stop().is_none(),
-            "Should not stop, strategy changed"
+            "Should not stop on first failure of strategy 2"
         );
 
-        // Strategy 2 fails again (same strategy class)
+        // Strategy 2 fails again (same strategy class, same args)
         let call3 = ToolCall {
             id: "c3".to_string(),
             call_type: "function".to_string(),
             function: ToolFunctionCall {
                 name: "shell".to_string(),
-                arguments: r#"{"command":"du -sh src"}"#.to_string(),
+                arguments: r#"{"command":"du -sh ."}"#.to_string(),
             },
         };
         fail_result.tool_call_id = "c3".to_string();

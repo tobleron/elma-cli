@@ -995,6 +995,42 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             ),
         );
 
+        // Task 498: Continuity guard — if score < 0.85, re-prompt once
+        let already_retried = runtime
+            .messages
+            .last()
+            .map(|m| m.content.contains("[continuity_retry]"))
+            .unwrap_or(false);
+        if continuity_tracker.alignment_score < 0.85
+            && !already_retried
+        {
+            let gap_reason = continuity_tracker.gap();
+            let continuity_prompt = format!(
+                "[continuity_retry]\nThe previous answer may not fully address your request.\nOriginal request: {}\nIssue detected: {}\n\nPlease provide a more complete answer focused on what was asked.",
+                line, gap_reason
+            );
+            let context_hint = route_decision.route.as_str();
+            let (retry_text, _, _, _) = crate::orchestration_core::run_tool_calling_pipeline(
+                runtime,
+                &continuity_prompt,
+                &mut tui,
+                context_hint,
+                route_decision.evidence_required,
+            )
+            .await?;
+            let final_text = crate::final_answer::process_final_answer(&retry_text);
+            let display_text = crate::final_answer::process_final_answer_display(&final_text);
+            if !final_text.is_empty() {
+                tui.add_message(MessageRole::Assistant, display_text);
+                runtime
+                    .messages
+                    .push(ChatMessage::simple("assistant", &final_text));
+                let _ = save_final_answer_display(&runtime.session, &final_text);
+            }
+            tui.clear_activity();
+            return Ok(());
+        }
+
         // Task 384: Clean-Context Finalization — strip internal framing
         let final_text = crate::final_answer::process_final_answer(&final_text);
 

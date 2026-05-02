@@ -8,8 +8,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Absolute or workspace-relative path to the file to read"},
-                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Multiple file paths to read in one call, preserving order with per-file headers"}
+                    "path": {"type": "string", "description": "Workspace-relative path to the file to read"},
+                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Multiple workspace-relative paths to read in one call, preserving order with per-file headers"}
                 },
                 "oneOf": [
                     {"required": ["path"]},

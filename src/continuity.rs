@@ -120,7 +120,7 @@ impl ContinuityTracker {
 
     /// True if alignment is critically low (requires intervention).
     pub fn needs_fallback(&self) -> bool {
-        self.alignment_score < 0.5
+        self.alignment_score < 0.80
     }
 
     /// True if the most recent checkpoint is fully aligned (not drifted or mismatched).
@@ -258,6 +258,14 @@ impl ContinuityTracker {
             ContinuityVerdict::Drifted("Fallback triggered: low alignment score".into()),
             &format!("alignment_score={:.2}", self.alignment_score),
         );
+    }
+
+    /// Get a human-readable gap description from the last checkpoint.
+    pub fn gap(&self) -> String {
+        self.checkpoints
+            .last()
+            .map(|c| c.reason.clone())
+            .unwrap_or_default()
     }
 }
 

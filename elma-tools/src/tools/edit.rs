@@ -8,7 +8,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Absolute path to the file to modify"},
+                    "file_path": {"type": "string", "description": "Workspace-relative path to the file to modify"},
                     "old_string": {"type": "string", "description": "The exact text to replace — must include all whitespace, indentation, and surrounding context"},
                     "new_string": {"type": "string", "description": "The text to replace it with"},
                     "replace_all": {"type": "boolean", "description": "Replace all occurrences of old_string (default false)"}

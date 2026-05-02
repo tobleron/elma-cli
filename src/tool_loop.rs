@@ -972,8 +972,8 @@ pub(crate) async fn run_tool_loop(
                 trace(
                     args,
                     &format!(
-                        "tool_loop: stagnation run {} (no new tool signal)",
-                        stop_policy.stagnation_runs()
+                        "tool_loop: {} (no new tool signal)",
+                        stop_policy.stagnation_trace_info()
                     ),
                 );
             }

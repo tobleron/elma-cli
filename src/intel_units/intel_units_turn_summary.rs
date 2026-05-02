@@ -122,24 +122,61 @@ Output contract:
     fn fallback(&self, context: &IntelContext, error: &str) -> Result<IntelOutput> {
         trace_fallback(self.name(), error);
 
-        let user_msg = context.user_message.chars().take(120).collect::<String>();
-        let tools = context
-            .extra("tools_used")
-            .and_then(|v| v.as_str())
-            .unwrap_or("none");
+        let user_msg = context.user_message.chars().take(200).collect::<String>();
         let formula = context
             .extra("formula")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
 
+        let tools_used: Vec<String> = context
+            .extra("tools_used")
+            .and_then(|v| v.as_str())
+            .map(|s| s.split(',').map(|t| t.trim().to_string()).collect())
+            .unwrap_or_default();
+        let tool_call_count: usize = tools_used.len();
+
+        let final_excerpt = context
+            .extra("final_text")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.chars().take(300).collect::<String>())
+            .unwrap_or_default();
+
+        let step_summary = context
+            .extra("step_results")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                let total = a.len();
+                let succeeded = a.iter().filter(|r| r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false)).count();
+                format!("{}/{} steps succeeded", succeeded, total)
+            })
+            .unwrap_or_default();
+
+        let narrative = if !final_excerpt.is_empty() {
+            format!(
+                "User asked: \"{user_msg}\". Elma used {tool_call_count} tool(s): [{}]. Outcome: {final_excerpt}",
+                tools_used.join(", "),
+            )
+        } else if !step_summary.is_empty() {
+            format!(
+                "User asked: \"{user_msg}\". Elma used {tool_call_count} tool(s): [{}]. {step_summary}.",
+                tools_used.join(", "),
+            )
+        } else {
+            format!(
+                "User asked: \"{user_msg}\". Elma used {tool_call_count} tool(s): [{}] (formula: {formula}). Summary generation failed: {error}",
+                tools_used.join(", "),
+            )
+        };
+
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
-                "summary_narrative": format!("User asked: \"{user_msg}\". Elma responded (formula: {formula}, tools: {tools}) but the summary generation failed."),
+                "summary_narrative": narrative,
                 "status_category": "partial",
                 "noteworthy": false,
-                "tools_used": [],
-                "tool_call_count": 0,
+                "tools_used": tools_used,
+                "tool_call_count": tool_call_count,
                 "errors": [error.to_string()],
                 "artifacts_created": [],
             }),
