@@ -1,0 +1,44 @@
+[recipe]
+id = "file_edit"
+version = "1.0"
+name = "File Edit Workflow"
+description = "Standard workflow for adding, appending, inserting, or updating content in files"
+
+objective = "Add, append, insert, or update content in files while maintaining structure"
+
+preconditions = [
+    "Target file is identified",
+    "Content to add is specified",
+]
+
+[[recipe.stages]]
+id = "read"
+name = "Read Current File"
+objective = "Inspect current file content and structure"
+tools = ["Read", "Glob"]
+outputs = ["file_content"]
+verification = ["file was read successfully"]
+
+[[recipe.stages]]
+id = "edit"
+name = "Apply Edit"
+objective = "Add, append, insert, or update content at specified location"
+tools = ["Edit", "Write"]
+outputs = ["modified_file"]
+verification = ["edit was applied"]
+
+[[recipe.stages]]
+id = "reply"
+name = "Report Results"
+objective = "Confirm changes to user"
+tools = []
+outputs = ["user_response"]
+verification = ["response delivered"]
+
+[recipe.outputs]
+- "modified file"
+- "user response"
+
+[recipe.verification]
+- "edit was applied correctly"
+- "user was informed"

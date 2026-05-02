@@ -1,0 +1,43 @@
+[recipe]
+id = "find_call_sites"
+version = "1.0"
+name = "Find Call Sites"
+description = "Find all call sites or invocations of a specific function"
+
+objective = "Locate all places where a function is called or invoked"
+
+preconditions = [
+    "Function name is identified",
+]
+
+[[recipe.stages]]
+id = "search"
+name = "Search for Function"
+objective = "Find all references to the function"
+tools = ["Grep", "Glob"]
+outputs = ["search_results"]
+verification = ["search completed"]
+
+[[recipe.stages]]
+id = "analyze"
+name = "Analyze Call Sites"
+objective = "Identify actual call sites vs definitions"
+tools = ["Read"]
+outputs = ["call_site_list"]
+verification = ["analysis completed"]
+
+[[recipe.stages]]
+id = "reply"
+name = "Report Results"
+objective = "Present call site locations to user"
+tools = []
+outputs = ["user_response"]
+verification = ["response delivered"]
+
+[recipe.outputs]
+- "call site locations"
+- "user response"
+
+[recipe.verification]
+- "all call sites were found"
+- "user was informed"

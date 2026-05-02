@@ -1,0 +1,54 @@
+[recipe]
+id = "rename_refactor"
+version = "1.0"
+name = "Rename Refactor"
+description = "Rename a function/variable and update all call sites"
+
+objective = "Rename a symbol and update all references"
+
+preconditions = [
+    "Old name is identified",
+    "New name is specified",
+]
+
+[[recipe.stages]]
+id = "find"
+name = "Find All References"
+objective = "Locate old name in all files"
+tools = ["Grep", "Glob"]
+outputs = ["references"]
+verification = ["all references found"]
+
+[[recipe.stages]]
+id = "replace"
+name = "Rename All References"
+objective = "Replace old name with new name"
+tools = ["Edit", "Write"]
+outputs = ["modified_files"]
+verification = ["renames applied"]
+
+[[recipe.stages]]
+id = "verify"
+name = "Verify Rename"
+objective = "Verify old name no longer appears"
+tools = ["Grep"]
+outputs = ["verification_results"]
+verification = ["old name not found"]
+
+[[recipe.stages]]
+id = "reply"
+name = "Report Results"
+objective = "Confirm rename completed"
+tools = []
+outputs = ["user_response"]
+verification = ["response delivered"]
+
+[recipe.outputs]
+- "modified files"
+- "verification results"
+- "user response"
+
+[recipe.verification]
+- "all references updated"
+- "old name not found"
+- "user informed"

@@ -87,6 +87,13 @@ mod tests;
 /// Returns None if no matching recipe, Some(recipe_id) otherwise
 pub fn formula_to_recipe_id(formula_name: &str) -> Option<String> {
     match formula_name {
+        // Task 453 Category 2 migration: recipe-worthy patterns
+        "file_edit" => Some("file_edit".to_string()),
+        "summarize" => Some("summarize".to_string()),
+        "rename_refactor" => Some("rename_refactor".to_string()),
+        "find_call_sites" => Some("find_call_sites".to_string()),
+        "dir_size_analysis" => Some("dir_size_analysis".to_string()),
+        // Task 451: formula-to-recipe bridge
         "inspect_edit_verify_reply" => Some("code_edit".to_string()),
         "inspect_summarize_reply" => Some("project_summary".to_string()),
         "inspect_decide_reply" => Some("code_review".to_string()),

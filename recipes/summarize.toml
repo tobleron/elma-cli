@@ -1,0 +1,43 @@
+[recipe]
+id = "summarize"
+version = "1.0"
+name = "Summary Workflow"
+description = "Summarize content in bullet points or executive summary format"
+
+objective = "Present information in concise summary format"
+
+preconditions = [
+    "Content to summarize is identified",
+]
+
+[[recipe.stages]]
+id = "inspect"
+name = "Inspect Content"
+objective = "Gather content to summarize"
+tools = ["Read", "Glob", "Grep"]
+outputs = ["source_content"]
+verification = ["content was gathered"]
+
+[[recipe.stages]]
+id = "summarize"
+name = "Create Summary"
+objective = "Create bullet points or executive summary"
+tools = []
+outputs = ["summary"]
+verification = ["summary was created"]
+
+[[recipe.stages]]
+id = "reply"
+name = "Deliver Summary"
+objective = "Present summary to user"
+tools = []
+outputs = ["user_response"]
+verification = ["response delivered"]
+
+[recipe.outputs]
+- "summary"
+- "user response"
+
+[recipe.verification]
+- "content was summarized"
+- "user received summary"

@@ -1,0 +1,51 @@
+[recipe]
+id = "dir_size_analysis"
+version = "1.0"
+name = "Directory Size Analysis"
+description = "Analyze directory structure and find largest files by line count"
+
+objective = "Identify largest directories and files by line count"
+
+preconditions = [
+    "Target directory is identified",
+]
+
+[[recipe.stages]]
+id = "list"
+name = "List Directory"
+objective = "List all files in directory"
+tools = ["Glob", "Shell"]
+outputs = ["file_list"]
+verification = ["directory listed"]
+
+[[recipe.stages]]
+id = "analyze"
+name = "Analyze Sizes"
+objective = "Compute line counts for each file"
+tools = ["Shell"]
+outputs = ["size_data"]
+verification = ["sizes computed"]
+
+[[recipe.stages]]
+id = "rank"
+name = "Rank by Size"
+objective = "Sort files by line count"
+tools = []
+outputs = ["ranked_list"]
+verification = ["ranking complete"]
+
+[[recipe.stages]]
+id = "reply"
+name = "Report Results"
+objective = "Present largest files to user"
+tools = []
+outputs = ["user_response"]
+verification = ["response delivered"]
+
+[recipe.outputs]
+- "ranked file list"
+- "user response"
+
+[recipe.verification]
+- "files were ranked"
+- "user informed"
