@@ -315,19 +315,58 @@ impl EvidenceLedger {
     }
 
     pub(crate) fn persist(&self) -> Result<()> {
-        let evidence_dir = PathBuf::from(&self.base_dir)
-            .join("evidence")
-            .join(&self.session_id);
+        // Primary: store compact evidence in session.json.evidence
+        let session_root = PathBuf::from(&self.base_dir);
+        let _ = crate::session_write::mutate_session_doc(&session_root, |doc| {
+            let compact = serde_json::json!({
+                "entries": serde_json::to_value(&self.entries).unwrap_or_default(),
+                "claims": serde_json::to_value(&self.claims).unwrap_or_default(),
+            });
+            doc["evidence"] = compact;
+        });
+
+        // Legacy: also write to evidence/ dir
+        let evidence_dir = session_root.join("evidence").join(&self.session_id);
         std::fs::create_dir_all(&evidence_dir)
             .with_context(|| format!("mkdir {}", evidence_dir.display()))?;
-
         let ledger_path = evidence_dir.join("ledger.json");
         let json = serde_json::to_string_pretty(self).context("Failed to serialize ledger")?;
         std::fs::write(&ledger_path, json)
             .with_context(|| format!("write {}", ledger_path.display()))
     }
 
+    /// Attempt to load evidence from session.json (new canonical path).
+    fn try_load_from_session_json(session_id: &str, session_root: &PathBuf) -> Option<Self> {
+        use crate::session_write::load_session_doc;
+        let doc = load_session_doc(session_root);
+        let evidence = doc.get("evidence")?;
+        let entries: Vec<EvidenceEntry> =
+            serde_json::from_value(evidence.get("entries")?.clone()).ok()?;
+        let claims: Vec<Claim> =
+            serde_json::from_value(evidence.get("claims")?.clone()).ok()?;
+        let max_id = entries
+            .iter()
+            .filter_map(|e| e.id.strip_prefix("e_"))
+            .filter_map(|n| n.parse::<usize>().ok())
+            .max()
+            .unwrap_or(0);
+        Some(Self {
+            session_id: session_id.to_string(),
+            entries,
+            claims,
+            base_dir: session_root.to_string_lossy().to_string(),
+            next_id: max_id + 1,
+        })
+    }
+
     pub(crate) fn load(session_id: &str, base_dir: &PathBuf) -> Result<Self> {
+        // Try session.json evidence first (new path)
+        let session_root = base_dir;
+        if let Some(ledger) = Self::try_load_from_session_json(session_id, session_root) {
+            return Ok(ledger);
+        }
+
+        // Legacy fallback: evidence/<session_id>/ledger.json
         let evidence_dir = base_dir.join("evidence").join(session_id);
         let ledger_path = evidence_dir.join("ledger.json");
 

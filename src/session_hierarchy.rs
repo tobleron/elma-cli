@@ -37,13 +37,28 @@ pub(crate) fn save_hierarchy(
     tasks: &[Task],
     methods: &[Method],
 ) -> Result<PathBuf> {
-    let hierarchy_dir = ensure_hierarchy_dir(session_root)?;
+    // Primary: store compact hierarchy in session.json.hierarchy
+    use crate::session_write::mutate_session_doc;
+    let _ = mutate_session_doc(session_root, |doc| {
+        let hierarchy = serde_json::json!({
+            "created_unix_s": SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            "goal": serde_json::to_value(goal).expect("serialize goal"),
+            "subgoals": serde_json::to_value(subgoals).expect("serialize subgoals"),
+            "tasks": serde_json::to_value(tasks).expect("serialize tasks"),
+            "methods": serde_json::to_value(methods).expect("serialize methods"),
+        });
+        doc["hierarchy"] = hierarchy;
+    });
 
+    // Legacy: also write to hierarchy/ dir
+    let hierarchy_dir = ensure_hierarchy_dir(session_root)?;
     save_json(&hierarchy_dir.join("goal.json"), goal)?;
     save_json(&hierarchy_dir.join("subgoals.json"), subgoals)?;
     save_json(&hierarchy_dir.join("tasks.json"), tasks)?;
     save_json(&hierarchy_dir.join("methods.json"), methods)?;
-
     let manifest = serde_json::json!({
         "created_unix_s": SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -65,42 +80,107 @@ pub(crate) fn save_hierarchy_progress(
     session_root: &PathBuf,
     progress: &HierarchyProgress,
 ) -> Result<()> {
+    use crate::session_write::mutate_session_doc;
+    let _ = mutate_session_doc(session_root, |doc| {
+        if doc.get("hierarchy").is_none() {
+            doc["hierarchy"] = serde_json::json!({});
+        }
+        doc["hierarchy"]["progress"] = serde_json::to_value(progress).expect("serialize progress");
+    });
+
+    // Legacy
     let hierarchy_dir = ensure_hierarchy_dir(session_root)?;
     save_json(&hierarchy_dir.join("progress.json"), progress)
 }
 
 /// Load hierarchy progress for resumption
 pub(crate) fn load_hierarchy_progress(session_root: &PathBuf) -> Option<HierarchyProgress> {
+    // Try session.json first
+    use crate::session_write::load_session_doc;
+    let doc = load_session_doc(session_root);
+    if let Some(progress) = doc
+        .get("hierarchy")
+        .and_then(|h| h.get("progress"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
+        return Some(progress);
+    }
+    // Legacy fallback
     let path = session_root.join("hierarchy").join("progress.json");
     load_json(&path)
 }
 
 /// Load goal from session
 pub(crate) fn load_hierarchy_goal(session_root: &PathBuf) -> Option<Goal> {
+    // Try session.json first
+    use crate::session_write::load_session_doc;
+    let doc = load_session_doc(session_root);
+    if let Some(goal) = doc
+        .get("hierarchy")
+        .and_then(|h| h.get("goal"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
+        return Some(goal);
+    }
+    // Legacy fallback
     let path = session_root.join("hierarchy").join("goal.json");
     load_json(&path)
 }
 
 /// Load subgoals from session
 pub(crate) fn load_hierarchy_subgoals(session_root: &PathBuf) -> Option<Vec<Subgoal>> {
+    use crate::session_write::load_session_doc;
+    let doc = load_session_doc(session_root);
+    if let Some(subgoals) = doc
+        .get("hierarchy")
+        .and_then(|h| h.get("subgoals"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
+        return Some(subgoals);
+    }
     let path = session_root.join("hierarchy").join("subgoals.json");
     load_json(&path)
 }
 
 /// Load tasks from session
 pub(crate) fn load_hierarchy_tasks(session_root: &PathBuf) -> Option<Vec<Task>> {
+    use crate::session_write::load_session_doc;
+    let doc = load_session_doc(session_root);
+    if let Some(tasks) = doc
+        .get("hierarchy")
+        .and_then(|h| h.get("tasks"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
+        return Some(tasks);
+    }
     let path = session_root.join("hierarchy").join("tasks.json");
     load_json(&path)
 }
 
 /// Load methods from session
 pub(crate) fn load_hierarchy_methods(session_root: &PathBuf) -> Option<Vec<Method>> {
+    use crate::session_write::load_session_doc;
+    let doc = load_session_doc(session_root);
+    if let Some(methods) = doc
+        .get("hierarchy")
+        .and_then(|h| h.get("methods"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+    {
+        return Some(methods);
+    }
     let path = session_root.join("hierarchy").join("methods.json");
     load_json(&path)
 }
 
 /// Check if hierarchy exists for this session
 pub(crate) fn has_hierarchy(session_root: &PathBuf) -> bool {
+    // Check session.json first
+    use crate::session_write::load_session_doc;
+    let doc = load_session_doc(session_root);
+    if doc.get("hierarchy").and_then(|h| h.get("goal")).is_some() {
+        return true;
+    }
+    // Legacy fallback
     session_root.join("hierarchy").join("goal.json").exists()
 }
 

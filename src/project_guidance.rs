@@ -81,8 +81,19 @@ pub(crate) fn persist_guidance_snapshot(
     if rendered.is_empty() {
         return Ok(());
     }
+
+    // Primary: store in session.json.runtime.guidance_snapshot
+    use crate::session_write::mutate_session_doc;
+    let _ = mutate_session_doc(&session.root, |doc| {
+        if doc.get("runtime").is_none() {
+            doc["runtime"] = serde_json::json!({});
+        }
+        doc["runtime"]["guidance_snapshot"] = serde_json::json!(&rendered);
+    });
+
+    // Legacy: also write project_guidance.txt
     let path = session.root.join("project_guidance.txt");
-    std::fs::write(&path, rendered).with_context(|| format!("write {}", path.display()))?;
+    let _ = std::fs::write(&path, &rendered);
     trace(args, &format!("project_guidance_saved={}", path.display()));
     Ok(())
 }

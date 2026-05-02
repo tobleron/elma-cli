@@ -5,6 +5,7 @@
 //! Also handles session index updates on status changes (Task 282)
 
 use crate::session_index::{self, build_index_entry};
+use crate::session_write::mutate_session_doc;
 use crate::*;
 
 /// Session error types for structured error reporting
@@ -90,6 +91,15 @@ impl SessionError {
 
 /// Write error.json to session directory for crash reporting
 pub(crate) fn write_session_error(session_root: &PathBuf, error: &SessionError) -> Result<PathBuf> {
+    // Primary: store in session.json.status.error
+    let _ = mutate_session_doc(session_root, |doc| {
+        if doc.get("status").is_none() {
+            doc["status"] = serde_json::json!({});
+        }
+        doc["status"]["error"] = serde_json::to_value(error).expect("serialize error");
+    });
+
+    // Legacy: also write error.json for crash survivability
     let path = session_root.join("error.json");
     let json = serde_json::to_string_pretty(error).context("serialize session error")?;
     std::fs::write(&path, json)
@@ -105,11 +115,32 @@ pub(crate) fn write_session_status(
     last_turn: Option<&str>,
     error_summary: Option<&str>,
 ) -> Result<PathBuf> {
-    let path = session_root.join("session_status.json");
     let ended_unix_s = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+
+    // Primary: store in session.json.status
+    let _ = mutate_session_doc(session_root, |doc| {
+        let state = serde_json::json!({
+            "state": status,
+            "turns_completed": turns_completed,
+            "last_turn": last_turn,
+            "error_summary": error_summary,
+            "ended_unix_s": ended_unix_s,
+        });
+        if doc.get("status").is_none() {
+            doc["status"] = serde_json::json!({});
+        }
+        doc["status"]["state"] = serde_json::json!(status);
+        doc["status"]["turns_completed"] = serde_json::json!(turns_completed);
+        doc["status"]["last_turn"] = serde_json::json!(last_turn);
+        doc["status"]["error_summary"] = serde_json::json!(error_summary);
+        doc["status"]["ended_unix_s"] = serde_json::json!(ended_unix_s);
+    });
+
+    // Legacy: also write session_status.json
+    let path = session_root.join("session_status.json");
     let status_obj = serde_json::json!({
         "status": status,
         "turns_completed": turns_completed,

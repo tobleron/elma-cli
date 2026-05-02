@@ -35,7 +35,7 @@ pub(crate) struct BudgetedResult {
 
 /// Directory for persisted tool results within a session.
 fn tool_results_dir(session: &SessionPaths) -> PathBuf {
-    session.root.join("tool-results")
+    session.artifacts_dir.join("tool-results")
 }
 
 /// Ensure the tool-results directory exists.

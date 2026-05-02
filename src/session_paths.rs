@@ -58,26 +58,27 @@ mod tests {
             "artifacts/ should be a directory"
         );
 
-        // Verify no old-style directories are created
-        let shell_dir = session.root.join("shell");
-        let display_dir = session.root.join("display");
-        let snapshots_dir = session.root.join("snapshots");
-        let plans_dir = session.root.join("plans");
-        let decisions_dir = session.root.join("decisions");
-        let tune_dir = session.root.join("tune");
-
-        assert!(!shell_dir.exists(), "old shell/ dir should not exist");
-        assert!(!display_dir.exists(), "old display/ dir should not exist");
-        assert!(
-            !snapshots_dir.exists(),
-            "old snapshots/ dir should not exist"
-        );
-        assert!(!plans_dir.exists(), "old plans/ dir should not exist");
-        assert!(
-            !decisions_dir.exists(),
-            "old decisions/ dir should not exist"
-        );
-        assert!(!tune_dir.exists(), "old tune/ dir should not exist");
+        // Verify no old-style directories or root files are created
+        let old_paths = [
+            ("shell", false),
+            ("display", false),
+            ("snapshots", false),
+            ("plans", false),
+            ("decisions", false),
+            ("tune", false),
+            ("workspace.txt", false),
+            ("workspace_brief.txt", false),
+            ("session_status.json", false),
+            ("error.json", false),
+            ("hierarchy", false),
+            ("runtime_tasks", false),
+            ("tool-results", false),
+            ("evidence", false),
+        ];
+        for (name, _should_exist) in &old_paths {
+            let p = session.root.join(name);
+            assert!(!p.exists(), "legacy path {} should not exist", name);
+        }
 
         // Verify only artifacts/ exists as a subdirectory
         let entries: Vec<_> = fs::read_dir(&session.root)

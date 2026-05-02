@@ -84,6 +84,16 @@ pub(crate) fn save_runtime_task_record(
     session_root: &PathBuf,
     record: &RuntimeTaskRecord,
 ) -> Result<PathBuf> {
+    // Primary: store current + bounded history in session.json.runtime_task
+    use crate::session_write::mutate_session_doc;
+    let _ = mutate_session_doc(session_root, |doc| {
+        let current = serde_json::to_value(record).expect("serialize runtime task");
+        doc["runtime_task"] = serde_json::json!({
+            "current": current,
+        });
+    });
+
+    // Legacy: also write to runtime_tasks/ dir
     let dir = ensure_runtime_tasks_dir(session_root)?;
     let latest = dir.join("latest.json");
     let history = dir.join(format!("{}.json", record.task_id));
@@ -94,6 +104,15 @@ pub(crate) fn save_runtime_task_record(
 }
 
 pub(crate) fn load_latest_runtime_task(session_root: &PathBuf) -> Option<RuntimeTaskRecord> {
+    // Try session.json first (new path)
+    use crate::session_write::load_session_doc;
+    let doc = load_session_doc(session_root);
+    if let Some(current) = doc.get("runtime_task").and_then(|r| r.get("current")) {
+        if let Ok(record) = serde_json::from_value::<RuntimeTaskRecord>(current.clone()) {
+            return Some(record);
+        }
+    }
+    // Legacy fallback
     let path = runtime_tasks_dir(session_root).join("latest.json");
     let json = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&json).ok()

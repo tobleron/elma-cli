@@ -18,11 +18,9 @@ use crate::system_monitor;
 use crate::ui_autocomplete;
 use crate::ui_state::trace_log_state;
 use crate::ui_theme::*;
-use chrono::Local;
 use ratatui::prelude::*;
 use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::*;
-use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -125,91 +123,97 @@ impl ClaudeRenderer {
         let m = msg.clone();
         self.transcript.push(msg);
 
-        // Attempt to append the pushed message to the per-session transcript
+        // Append to session.md if we can derive the session root
         if let Ok(guard) = trace_log_state().lock() {
             if let Some(ref trace_path) = *guard {
                 if let Some(session_root) = trace_path.parent() {
-                    let artifacts_dir = session_root.join("artifacts");
-                    let _ = std::fs::create_dir_all(&artifacts_dir);
-                    let tpath = artifacts_dir.join("terminal_transcript.txt");
-                    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&tpath) {
-                        let ts = Local::now().to_rfc3339();
-                        let mut line = String::new();
-                        match m {
-                            ClaudeMessage::User { content } => {
-                                line = format!("{} USER: {}\n", ts, content);
-                            }
-                            ClaudeMessage::Assistant { content } => {
-                                line = format!("{} ASSISTANT: {}\n", ts, content.raw_markdown);
-                            }
-                            ClaudeMessage::Thinking { content, .. } => {
-                                line = format!("{} THINKING: {}\n", ts, content);
-                            }
-                            ClaudeMessage::ToolStart { name, input } => {
-                                line = format!("{} TOOL START: {} input={:?}\n", ts, name, input);
-                            }
-                            ClaudeMessage::ToolProgress { name, message } => {
-                                line = format!("{} TOOL PROGRESS: {} {}\n", ts, name, message);
-                            }
-                            ClaudeMessage::ToolResult {
-                                name,
-                                success,
-                                output,
-                                duration_ms,
-                            } => {
-                                line = format!(
-                                    "{} TOOL RESULT: {} success={} duration={:?}\n{}\n",
-                                    ts, name, success, duration_ms, output
-                                );
-                            }
-                            ClaudeMessage::ToolTrace {
-                                name,
-                                command,
-                                status,
-                                ..
-                            } => match status {
-                                crate::claude_ui::claude_state::ToolTraceStatus::Running => {
-                                    line = format!(
-                                        "{} TOOL TRACE RUNNING: {} {}\n",
-                                        ts, name, command
-                                    );
-                                }
-                                crate::claude_ui::claude_state::ToolTraceStatus::Completed {
-                                    success,
-                                    output,
-                                    duration_ms,
-                                } => {
-                                    line = format!("{} TOOL TRACE COMPLETED: {} success={} duration={:?}\n{}\n", ts, name, success, duration_ms, output);
-                                }
-                            },
-                            ClaudeMessage::PermissionRequest { command, reason } => {
-                                line =
-                                    format!("{} PERMISSION: {} reason={:?}\n", ts, command, reason);
-                            }
-                            ClaudeMessage::CompactBoundary => {
-                                line = format!("{} COMPACT BOUNDARY\n", ts);
-                            }
-                            ClaudeMessage::CompactSummary {
-                                message_count,
-                                context_preview,
-                            } => {
-                                line = format!(
-                                    "{} COMPACT SUMMARY: {} preview={:?}\n",
-                                    ts, message_count, context_preview
-                                );
-                            }
-                            ClaudeMessage::System { content } => {
-                                line = format!("{} SYSTEM: {}\n", ts, content);
-                            }
-                            ClaudeMessage::Notice(notice) => {
-                                line = format!(
-                                    "{} NOTICE: {:?} {}\n",
-                                    ts, notice.kind, notice.content
-                                );
+                    use crate::session_write::{append_session_markdown, MdEntry};
+                    let entry = match &m {
+                        ClaudeMessage::User { content } => {
+                            MdEntry::User { content: content.clone() }
+                        }
+                        ClaudeMessage::Assistant { content } => {
+                            MdEntry::Assistant { content: content.raw_markdown.clone() }
+                        }
+                        ClaudeMessage::Thinking { content, .. } => {
+                            MdEntry::Thinking { content: content.clone() }
+                        }
+                        ClaudeMessage::ToolStart { name, input } => {
+                            MdEntry::ToolStart { name: name.clone(), input: format!("{:?}", input) }
+                        }
+                        ClaudeMessage::ToolProgress { name, message } => {
+                            MdEntry::ToolProgress { name: name.clone(), message: message.clone() }
+                        }
+                        ClaudeMessage::ToolResult {
+                            name,
+                            success,
+                            output,
+                            duration_ms,
+                        } => {
+                            MdEntry::ToolResult {
+                                name: name.clone(),
+                                success: *success,
+                                output: output.clone(),
+                                duration_ms: *duration_ms,
                             }
                         }
-                        let _ = f.write_all(line.as_bytes());
-                    }
+                        ClaudeMessage::ToolTrace {
+                            name,
+                            command,
+                            status,
+                            ..
+                        } => match status {
+                            crate::claude_ui::claude_state::ToolTraceStatus::Running => {
+                                MdEntry::Meta {
+                                    label: name.clone(),
+                                    detail: format!("running: {}", command),
+                                }
+                            }
+                            crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                                success,
+                                output,
+                                ..
+                            } => {
+                                MdEntry::ToolResult {
+                                    name: name.clone(),
+                                    success: *success,
+                                    output: output.clone(),
+                                    duration_ms: None,
+                                }
+                            }
+                        },
+                        ClaudeMessage::PermissionRequest { command, reason } => {
+                            MdEntry::Meta {
+                                label: "permission".into(),
+                                detail: format!("{} reason={:?}", command, reason),
+                            }
+                        }
+                        ClaudeMessage::CompactBoundary => {
+                            MdEntry::Meta {
+                                label: "compact".into(),
+                                detail: String::new(),
+                            }
+                        }
+                        ClaudeMessage::CompactSummary { message_count, context_preview } => {
+                            MdEntry::Meta {
+                                label: "compact".into(),
+                                detail: format!("{} messages, preview={:?}", message_count, context_preview),
+                            }
+                        }
+                        ClaudeMessage::System { content } => {
+                            MdEntry::Meta {
+                                label: "system".into(),
+                                detail: content.clone(),
+                            }
+                        }
+                        ClaudeMessage::Notice(notice) => {
+                            MdEntry::Meta {
+                                label: "notice".into(),
+                                detail: format!("{:?} {}", notice.kind, notice.content),
+                            }
+                        }
+                    };
+                    append_session_markdown(session_root, &entry);
                 }
             }
         }

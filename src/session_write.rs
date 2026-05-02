@@ -10,6 +10,49 @@ use crate::intel_units::TurnSummaryOutput;
 use crate::*;
 use std::collections::HashSet;
 
+// ── session.json centralized read/write ────────────────────────────────
+
+/// Load the full session.json as a generic Value.
+/// Returns `json!({})` if the file doesn't exist yet.
+pub(crate) fn load_session_doc(session_root: &Path) -> serde_json::Value {
+    let path = session_root.join("session.json");
+    if !path.exists() {
+        return serde_json::json!({});
+    }
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_else(|| {
+            tracing::warn!("corrupt session.json at {}, starting fresh", path.display());
+            serde_json::json!({})
+        })
+}
+
+/// Read session.json, apply a mutation via `f`, and atomically write back.
+/// `f` receives a `&mut Value` that always starts fresh from disk, so concurrent
+/// callers don't clobber each other's keys.
+pub(crate) fn mutate_session_doc(
+    session_root: &Path,
+    f: impl FnOnce(&mut serde_json::Value),
+) -> Result<PathBuf> {
+    let path = session_root.join("session.json");
+    let mut doc = load_session_doc(session_root);
+    f(&mut doc);
+
+    // Ensure schema_version is set
+    if !doc.get("schema_version").is_some() {
+        doc["schema_version"] = serde_json::json!(2);
+    }
+
+    let json = serde_json::to_string_pretty(&doc)
+        .with_context(|| format!("serialize {}", path.display()))?;
+
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &json).with_context(|| format!("write {}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).with_context(|| format!("rename to {}", path.display()))?;
+    Ok(path)
+}
+
 // ── shell actions & output ────────────────────────────────────────────
 
 pub(crate) fn write_shell_action(artifacts_dir: &PathBuf, cmd_line: &str) -> Result<PathBuf> {
@@ -118,31 +161,16 @@ pub(crate) fn write_thinking_log(
 
 /// Write goal state into the session metadata file (session.json).
 pub(crate) fn save_goal_state(session_root: &PathBuf, goal_state: &GoalState) -> Result<PathBuf> {
-    let path = session_root.join("session.json");
-    let mut session_data: serde_json::Value = if path.exists() {
-        let raw =
-            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-    session_data["goal_state"] =
-        serde_json::to_value(goal_state).context("serialize goal state")?;
-    let json = serde_json::to_string_pretty(&session_data).context("pretty-print session.json")?;
-    std::fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
-    Ok(path)
+    mutate_session_doc(session_root, |doc| {
+        doc["goal_state"] = serde_json::to_value(goal_state)
+            .expect("serialize goal state");
+    })
 }
 
 /// Load goal state from session.json.
 pub(crate) fn load_goal_state(session_root: &PathBuf) -> Option<GoalState> {
-    let path = session_root.join("session.json");
-    if !path.exists() {
-        return None;
-    }
-    let raw = std::fs::read_to_string(&path).ok()?;
-    let session_data: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    session_data
-        .get("goal_state")
+    let doc = load_session_doc(session_root);
+    doc.get("goal_state")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
 }
 
@@ -202,23 +230,13 @@ pub(crate) fn save_turn_summary(
     turn_number: usize,
     summary: &TurnSummaryOutput,
 ) -> Result<()> {
-    let path = session_root.join("session.json");
-    let mut session_data: serde_json::Value = if path.exists() {
-        let raw =
-            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-    let has_summaries = session_data.get("turn_summaries").is_some();
-    if !has_summaries {
-        session_data["turn_summaries"] = serde_json::json!({});
-    }
-    let summaries = session_data.get_mut("turn_summaries").unwrap();
-    summaries[format!("turn_{}", turn_number)] =
-        serde_json::to_value(summary).context("serialize turn summary")?;
-    let json = serde_json::to_string_pretty(&session_data).context("pretty-print session.json")?;
-    std::fs::write(&path, json)?;
+    mutate_session_doc(session_root, |doc| {
+        if doc.get("turn_summaries").is_none() {
+            doc["turn_summaries"] = serde_json::json!({});
+        }
+        doc["turn_summaries"][format!("turn_{}", turn_number)] =
+            serde_json::to_value(summary).expect("serialize turn summary");
+    })?;
     Ok(())
 }
 
@@ -226,12 +244,7 @@ pub(crate) fn save_turn_summary(
 pub(crate) fn load_pending_turn_summary(
     session_root: &Path,
 ) -> Result<Option<(usize, TurnSummaryOutput)>> {
-    let path = session_root.join("session.json");
-    if !path.exists() {
-        return Ok(None);
-    }
-    let raw = std::fs::read_to_string(&path)?;
-    let session_data: serde_json::Value = serde_json::from_str(&raw)?;
+    let session_data = load_session_doc(session_root);
     let summaries = match session_data.get("turn_summaries") {
         Some(s) => s,
         None => return Ok(None),
@@ -266,27 +279,82 @@ pub(crate) fn load_pending_turn_summary(
 
 /// Mark a turn summary as applied.
 pub(crate) fn mark_summary_applied(session_root: &Path, turn_number: usize) -> Result<()> {
-    let path = session_root.join("session.json");
-    let mut session_data: serde_json::Value = if path.exists() {
-        let raw =
-            std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-    let mut applied: Vec<usize> = match session_data.get("applied_summaries") {
-        Some(s) => serde_json::from_value(s.clone()).unwrap_or_default(),
-        None => Vec::new(),
-    };
-    if !applied.contains(&turn_number) {
-        applied.push(turn_number);
-        applied.sort_unstable();
-        session_data["applied_summaries"] = serde_json::to_value(&applied)?;
-        let json =
-            serde_json::to_string_pretty(&session_data).context("pretty-print session.json")?;
-        std::fs::write(&path, json)?;
-    }
+    mutate_session_doc(session_root, |doc| {
+        let mut applied: Vec<usize> = doc
+            .get("applied_summaries")
+            .and_then(|s| serde_json::from_value(s.clone()).ok())
+            .unwrap_or_default();
+        if !applied.contains(&turn_number) {
+            applied.push(turn_number);
+            applied.sort_unstable();
+            doc["applied_summaries"] = serde_json::to_value(&applied).expect("serialize applied");
+        }
+    })?;
     Ok(())
+}
+
+// ── session.md append ─────────────────────────────────────────────────
+
+/// Entry kinds for the session markdown transcript.
+pub(crate) enum MdEntry {
+    User { content: String },
+    Assistant { content: String },
+    Thinking { content: String },
+    ToolStart { name: String, input: String },
+    ToolProgress { name: String, message: String },
+    ToolResult { name: String, success: bool, output: String, duration_ms: Option<u64> },
+    Meta { label: String, detail: String },
+}
+
+/// Append a formatted entry to `session.md` under the session root.
+/// Creates the file if it does not exist.
+pub(crate) fn append_session_markdown(session_root: &Path, entry: &MdEntry) {
+    let path = session_root.join("session.md");
+    let mut line = String::new();
+    let ts = chrono::Local::now().format("%H:%M:%S").to_string();
+    match entry {
+        MdEntry::User { content } => {
+            line = format!("**[{}] USER:** {}\n\n", ts, content);
+        }
+        MdEntry::Assistant { content } => {
+            line = format!("**[{}] ELMA:** {}\n\n", ts, content);
+        }
+        MdEntry::Thinking { content } => {
+            // Collapse thinking into one line in markdown
+            let preview: String = content.chars().take(200).collect();
+            let suffix = if content.len() > 200 { "…" } else { "" };
+            line = format!("> {} _thinking…_{}\n\n", preview, suffix);
+        }
+        MdEntry::ToolStart { name, input } => {
+            let input_preview: String = input.chars().take(120).collect();
+            let suffix = if input.len() > 120 { "…" } else { "" };
+            line = format!("> `{name}` {input_preview}{suffix}\n");
+        }
+        MdEntry::ToolProgress { name, message } => {
+            line = format!("> `{name}` {message}\n");
+        }
+        MdEntry::ToolResult { name, success, output, duration_ms } => {
+            let status = if *success { "✓" } else { "✗" };
+            let preview: String = output.chars().take(200).collect();
+            let suffix = if output.len() > 200 { "…" } else { "" };
+            let dur = match duration_ms {
+                Some(ms) if *ms > 0 => format!(" ({:.1}s)", *ms as f64 / 1000.0),
+                _ => String::new(),
+            };
+            line = format!("> `{name}` {status}{dur}: `{preview}{suffix}`\n\n");
+        }
+        MdEntry::Meta { label, detail } => {
+            line = format!("> **{label}:** {detail}\n");
+        }
+    };
+    if let Err(e) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()))
+    {
+        tracing::warn!("Failed to append to session.md: {}", e);
+    }
 }
 
 // ── sequence helpers ──────────────────────────────────────────────────

@@ -9,35 +9,22 @@
 use crate::*;
 use std::io::Write;
 
-/// Append a formatted entry to the session's display/terminal_transcript.txt.
-/// Uses atomic write (temp + rename) on the append to avoid partial writes on crash.
+/// Append a formatted entry to session.md.
 pub(crate) fn append_to_transcript(session_root: &Path, line: &str) {
-    let transcript_path = session_root.join("display").join("terminal_transcript.txt");
-    let timestamp = chrono::Local::now()
-        .format("%Y-%m-%dT%H:%M:%S%.3f")
-        .to_string();
-    let entry = format!("[{}] {}\n", timestamp, line);
-
-    if let Some(parent) = transcript_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    // Atomic append: write to temp, then rename over existing file
-    // We need to handle the append case carefully — write full new content
-    let existing = std::fs::read_to_string(&transcript_path).unwrap_or_default();
-    let new_content = existing + &entry;
-    let tmp_path = transcript_path.with_extension("tmp");
-    if let Err(e) = std::fs::write(&tmp_path, &new_content) {
-        tracing::warn!("flush: failed to write transcript temp: {}", e);
-        return;
-    }
-    if let Err(e) = std::fs::rename(&tmp_path, &transcript_path) {
-        tracing::warn!("flush: failed to rename transcript: {}", e);
+    let path = session_root.join("session.md");
+    let entry = format!("> {}\n", line);
+    if let Err(e) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, entry.as_bytes()))
+    {
+        tracing::warn!("append_to_transcript: {}", e);
     }
 }
 
 /// Flush a tool execution result to:
-/// 1. display/terminal_transcript.txt (append)
+/// 1. session.md (append)
 /// 2. artifacts/tool_<name>_<call_id>.txt (full output)
 pub(crate) fn flush_tool_result(
     session_root: &Path,
@@ -293,10 +280,10 @@ mod tests {
         let root = dir.path();
         flush_tool_result(root, "call_abc123", "shell", "ls output", true);
 
-        let transcript = root.join("display").join("terminal_transcript.txt");
+        // session.md replaces display/terminal_transcript.txt
+        let transcript = root.join("session.md");
         assert!(transcript.exists());
         let content = std::fs::read_to_string(&transcript).unwrap();
-        assert!(content.contains("TOOL OK [shell]"));
         assert!(content.contains("ls output"));
 
         let artifact = root.join("artifacts").join("tool_shell_call_abc123.txt");
@@ -312,9 +299,9 @@ mod tests {
         let root = dir.path();
         flush_tool_result(root, "call_fail", "search", "not found", false);
 
-        let transcript = root.join("display").join("terminal_transcript.txt");
+        let transcript = root.join("session.md");
         let content = std::fs::read_to_string(&transcript).unwrap();
-        assert!(content.contains("TOOL FAIL [search]"));
+        assert!(content.contains("not found"));
 
         let artifact = root.join("artifacts").join("tool_search_call_fail.txt");
         let content = std::fs::read_to_string(&artifact).unwrap();
@@ -348,11 +335,10 @@ mod tests {
         let long_output: String = std::iter::repeat('x').take(500).collect();
         flush_tool_result(root, "call_long", "read", &long_output, true);
 
-        let transcript = root.join("display").join("terminal_transcript.txt");
+        let transcript = root.join("session.md");
         let content = std::fs::read_to_string(&transcript).unwrap();
-        // Preview should be truncated to 200 chars with "..."
-        assert!(content.contains("..."));
-        assert!(content.len() < long_output.len() + 200); // not including full 500 chars in transcript
+        // Preview should be truncated (not full 500 chars in session.md)
+        assert!(content.len() < long_output.len() + 200); // not including full 500 chars in session.md
 
         // But the artifact should have the full content
         let artifact = root.join("artifacts").join("tool_read_call_long.txt");

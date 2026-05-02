@@ -175,17 +175,17 @@ pub(crate) fn get_session_mtime(session_dir: &PathBuf) -> u64 {
 
 /// Get transcript path relative to session root if it exists
 pub(crate) fn get_transcript_path(session_dir: &PathBuf) -> Option<String> {
-    let transcript = session_dir.join("display").join("terminal_transcript.txt");
-    if transcript.exists() {
-        transcript
-            .to_string_lossy()
-            .into_owned()
-            .split_whitespace()
-            .next()
-            .map(|s| s.to_string())
-    } else {
-        None
+    // New path
+    let md = session_dir.join("session.md");
+    if md.exists() {
+        return Some(md.to_string_lossy().into_owned());
     }
+    // Legacy fallback
+    let legacy = session_dir.join("display").join("terminal_transcript.txt");
+    if legacy.exists() {
+        return Some(legacy.to_string_lossy().into_owned());
+    }
+    None
 }
 
 /// Current Unix timestamp
@@ -213,34 +213,56 @@ pub(crate) fn build_index_entry(
     let artifact_count = count_session_artifacts(session_dir);
     let mtime = get_session_mtime(session_dir);
 
-    // Read status from session_status.json if present
+    // Read status from session.json (preferred) or session_status.json (legacy)
     let status = {
-        let status_file = session_dir.join("session_status.json");
-        if status_file.exists() {
-            if let Ok(json) = std::fs::read_to_string(&status_file) {
+        let main_path = session_dir.join("session.json");
+        if main_path.exists() {
+            if let Ok(json) = std::fs::read_to_string(&main_path) {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
-                    parsed["status"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| "unknown".to_string())
+                    if let Some(s) = parsed.get("status").and_then(|s| s.get("state")).and_then(|s| s.as_str()) {
+                        s.to_string()
+                    } else {
+                        "active".to_string()
+                    }
+                } else {
+                    "active".to_string()
+                }
+            } else {
+                "active".to_string()
+            }
+        } else {
+            let status_file = session_dir.join("session_status.json");
+            if status_file.exists() {
+                if let Ok(json) = std::fs::read_to_string(&status_file) {
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
+                        parsed["status"]
+                            .as_str()
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| "unknown".to_string())
+                    } else {
+                        "unknown".to_string()
+                    }
                 } else {
                     "unknown".to_string()
                 }
             } else {
-                "unknown".to_string()
+                "active".to_string()
             }
-        } else {
-            "active".to_string()
         }
     };
 
-    // Transcript path relative to sessions root
+    // Transcript path (session.md preferred, display/terminal_transcript.txt legacy)
     let transcript_path = {
-        let transcript_file = session_dir.join("display").join("terminal_transcript.txt");
-        if transcript_file.exists() {
-            Some(format!("{}/display/terminal_transcript.txt", session_id))
+        let md = session_dir.join("session.md");
+        if md.exists() {
+            Some(format!("{}/session.md", session_id))
         } else {
-            None
+            let legacy = session_dir.join("display").join("terminal_transcript.txt");
+            if legacy.exists() {
+                Some(format!("{}/display/terminal_transcript.txt", session_id))
+            } else {
+                None
+            }
         }
     };
 

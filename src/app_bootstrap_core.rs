@@ -379,16 +379,41 @@ fn persist_workspace_intel(
     ws: &str,
     ws_brief: &str,
 ) -> Result<()> {
+    use crate::session_write::mutate_session_doc;
+    let _ = mutate_session_doc(&session.root, |doc| {
+        if doc.get("runtime").is_none() {
+            doc["runtime"] = serde_json::json!({});
+        }
+        if !ws.is_empty() {
+            doc["runtime"]["workspace"] = serde_json::json!(ws);
+        }
+        if !ws_brief.is_empty() {
+            doc["runtime"]["workspace_brief"] = serde_json::json!(ws_brief);
+        }
+        if doc.get("id").is_none() {
+            if let Some(sid) = session.root.file_name().and_then(|n| n.to_str()) {
+                doc["id"] = serde_json::json!(sid);
+            }
+        }
+        if doc.get("created_unix_s").is_none() {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            doc["created_unix_s"] = serde_json::json!(now);
+            doc["updated_unix_s"] = serde_json::json!(now);
+        }
+    });
+
+    // Legacy writes for backward compatibility
     if !ws.is_empty() {
         let path = session.root.join("workspace.txt");
-        std::fs::write(&path, ws.trim().to_string() + "\n")
-            .with_context(|| format!("write {}", path.display()))?;
+        let _ = std::fs::write(&path, ws.trim().to_string() + "\n");
         trace(args, &format!("workspace_context_saved={}", path.display()));
     }
     if !ws_brief.is_empty() {
         let path = session.root.join("workspace_brief.txt");
-        std::fs::write(&path, ws_brief.trim().to_string() + "\n")
-            .with_context(|| format!("write {}", path.display()))?;
+        let _ = std::fs::write(&path, ws_brief.trim().to_string() + "\n");
         trace(args, &format!("workspace_brief_saved={}", path.display()));
     }
     Ok(())
