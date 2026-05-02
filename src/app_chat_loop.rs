@@ -60,34 +60,13 @@ async fn apply_policy_fallback(
     };
     let fallback: Option<(&str, fn(&str, &str) -> Program)> = match ladder.level {
         ExecutionLevel::Plan => {
-            if request_looks_like_logging_standardization(line) {
-                Some((
-                    "logging_standardization_plan_policy_fallback",
-                    build_logging_standardization_plan_program,
-                ))
-            } else if request_looks_like_workflow_endurance_audit(line) {
-                Some((
-                    "workflow_endurance_plan_policy_fallback",
-                    build_workflow_endurance_audit_plan_program,
-                ))
-            } else if request_looks_like_architecture_audit(line) {
-                Some((
-                    "architecture_audit_plan_policy_fallback",
-                    build_architecture_audit_plan_program,
-                ))
-            } else {
-                None
-            }
+            // Task 453 Category 1: Remove stress-test fallback policies
+            // These were exercise markers, not production user features
+            None
         }
         ExecutionLevel::MasterPlan => {
-            if request_looks_like_hybrid_audit_masterplan(line) {
-                Some((
-                    "hybrid_masterplan_policy_fallback",
-                    build_hybrid_audit_masterplan_program,
-                ))
-            } else {
-                None
-            }
+            // Task 453 Category 1: Remove stress-test fallback policies
+            None
         }
         _ => {
             if route_decision.route.eq_ignore_ascii_case("SHELL") {
@@ -527,53 +506,8 @@ fn apply_shape_fallbacks(
     let is_plan = ladder.level == ExecutionLevel::Plan;
     let is_master = ladder.level == ExecutionLevel::MasterPlan;
 
-    if is_master
-        && request_looks_like_hybrid_audit_masterplan(line)
-        && !program.steps.iter().any(|s| {
-            matches!(
-                s,
-                Step::Edit { .. } | Step::Read { .. } | Step::Search { .. } | Step::Shell { .. }
-            )
-        })
-    {
-        if let Some(path) = try_path() {
-            trace(
-                &runtime.args,
-                &format!("hybrid_masterplan_shape_fallback path={path}"),
-            );
-            *program = build_hybrid_audit_masterplan_program(line, &path);
-        }
-    }
-    if is_plan && request_looks_like_logging_standardization(line) {
-        if let Some(path) = try_path() {
-            trace(
-                &runtime.args,
-                &format!("logging_standardization_plan_shape_fallback path={path}"),
-            );
-            *program = build_logging_standardization_plan_program(line, &path);
-        }
-    }
-    if is_plan && request_looks_like_workflow_endurance_audit(line) {
-        if let Some(path) = try_path() {
-            trace(
-                &runtime.args,
-                &format!("workflow_endurance_plan_shape_fallback path={path}"),
-            );
-            *program = build_workflow_endurance_audit_plan_program(line, &path);
-        }
-    }
-    if is_plan
-        && request_looks_like_architecture_audit(line)
-        && !program.steps.iter().any(|s| matches!(s, Step::Plan { .. }))
-    {
-        if let Some(path) = try_path() {
-            trace(
-                &runtime.args,
-                &format!("architecture_audit_plan_shape_fallback path={path}"),
-            );
-            *program = build_architecture_audit_plan_program(line, &path);
-        }
-    }
+    // Task 453 Category 1: Remove stress-test shape fallbacks
+    // These were exercise markers, not production user features
 }
 
 fn has_edit_result(step_results: &[StepResult]) -> bool {

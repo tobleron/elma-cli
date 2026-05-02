@@ -46,12 +46,9 @@ pub(crate) fn derive_append_section_from_request(line: &str) -> (String, String)
     }
 
     let lower = line.to_ascii_lowercase();
-    if lower.contains("exercised by elma stress testing") {
-        return (
-            "Sandbox Exercise by Elma Stress Testing".to_string(),
-            "This sandbox was exercised by Elma stress testing.".to_string(),
-        );
-    }
+
+    // Task 453 Category 1: Delete stress-test patterns (exercised by elma stress testing)
+    // These were exercise markers, not production user features
 
     (
         "Elma Audit".to_string(),
@@ -81,6 +78,10 @@ pub(crate) fn request_looks_like_missing_id_troubleshoot(line: &str) -> bool {
         && lower.contains("verify the change locally")
 }
 
+// Task 453 Category 1: Delete stress-test patterns below (were exercise markers)
+// These functions kept for potential recipe migration but not called in production
+
+/*
 pub(crate) fn request_looks_like_hybrid_audit_masterplan(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     lower.contains("master plan")
@@ -119,6 +120,7 @@ pub(crate) fn request_looks_like_entry_point_probe(line: &str) -> bool {
     (lower.contains("entry point") || lower.contains("primary entry"))
         && lower.contains("_stress_testing/")
 }
+*/
 
 pub(crate) fn request_looks_like_scoped_list_request(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
@@ -133,6 +135,7 @@ pub(crate) fn request_looks_like_scoped_list_request(line: &str) -> bool {
         && !lower.contains("readme.md")
 }
 
+/*
 pub(crate) fn request_looks_like_readme_summary_and_entry_point_probe(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     let mentions_readme = lower.contains("readme.md") || lower.contains("read the readme");
@@ -143,3 +146,4 @@ pub(crate) fn request_looks_like_readme_summary_and_entry_point_probe(line: &str
     let wants_entry_point = lower.contains("entry point") || lower.contains("primary entry");
     mentions_readme && wants_bullets && wants_entry_point && lower.contains("_stress_testing/")
 }
+*/

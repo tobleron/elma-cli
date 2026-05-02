@@ -16,12 +16,10 @@ use crate::*;
 pub(crate) fn build_shell_path_probe_program(line: &str, path: &str) -> Program {
     let quoted_path = shell_quote(path);
     let lower = line.to_ascii_lowercase();
-    if request_looks_like_readme_summary_and_entry_point_probe(line) {
-        return build_readme_summary_and_entry_point_program(line, path);
-    }
-    if request_looks_like_workflow_endurance_audit(line) {
-        return build_workflow_endurance_audit_plan_program(line, path);
-    }
+
+    // Task 453 Category 1: Remove stress-test specific programs
+    // readme_summary, workflow_endurance were stress-test markers
+
     if request_looks_like_scoped_list_request(line) {
         return build_scoped_list_program(line, path);
     }
