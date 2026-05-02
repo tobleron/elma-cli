@@ -92,6 +92,9 @@ pub(crate) async fn check_permission(
         return true;
     }
 
+    // Capture current turn ID for event recording (if available)
+    let turn_id = crate::event_log::get_current_turn_id();
+
     let risk = classify_command(command);
     let mode = get_safe_mode();
 
@@ -105,12 +108,28 @@ pub(crate) async fn check_permission(
                     command
                 ),
             );
+            if let Some(ref tid) = turn_id {
+                crate::event_log::record_policy_event(
+                    crate::event_log::PolicyEventType::PermissionGranted,
+                    tid,
+                    None,
+                    &format!("safe_mode=off auto-approve: {}", command),
+                );
+            }
             return true;
         }
     }
 
     // Safe commands pass without approval (unless safe_mode=on)
     if matches!(risk, RiskLevel::Safe) && mode.allows_safe_auto_approve() {
+        if let Some(ref tid) = turn_id {
+            crate::event_log::record_policy_event(
+                crate::event_log::PolicyEventType::PermissionGranted,
+                tid,
+                None,
+                &format!("safe command auto-approve: {}", command),
+            );
+        }
         return true;
     }
 
@@ -120,6 +139,14 @@ pub(crate) async fn check_permission(
         (cache.is_approved(command), cache.non_interactive)
     };
     if already_approved {
+        if let Some(ref tid) = turn_id {
+            crate::event_log::record_policy_event(
+                crate::event_log::PolicyEventType::PermissionGranted,
+                tid,
+                None,
+                &format!("cached approval: {}", command),
+            );
+        }
         return true;
     }
 
@@ -133,6 +160,14 @@ pub(crate) async fn check_permission(
                     mode, command
                 ),
             );
+            if let Some(ref tid) = turn_id {
+                crate::event_log::record_policy_event(
+                    crate::event_log::PolicyEventType::PermissionGranted,
+                    tid,
+                    None,
+                    &format!("non-interactive auto-approve: {}", command),
+                );
+            }
             return true;
         }
         trace(
@@ -142,14 +177,48 @@ pub(crate) async fn check_permission(
                 mode, command
             ),
         );
+        if let Some(ref tid) = turn_id {
+            crate::event_log::record_policy_event(
+                crate::event_log::PolicyEventType::PolicyBlocked,
+                tid,
+                None,
+                &format!("non-interactive policy blocked: {}", command),
+            );
+        }
         return false;
     }
 
     // If we have a TUI, use async permission request
     if let Some(ref mut t) = tui {
+        // Record that we are requesting permission
+        if let Some(ref tid) = turn_id {
+            crate::event_log::record_policy_event(
+                crate::event_log::PolicyEventType::PermissionRequested,
+                tid,
+                None,
+                &format!("TUI permission request: {}", command),
+            );
+        }
         let approved = t.request_permission(command).await;
         if approved {
             record_approval(command);
+            if let Some(ref tid) = turn_id {
+                crate::event_log::record_policy_event(
+                    crate::event_log::PolicyEventType::PermissionGranted,
+                    tid,
+                    None,
+                    &format!("TUI user approved: {}", command),
+                );
+            }
+        } else {
+            if let Some(ref tid) = turn_id {
+                crate::event_log::record_policy_event(
+                    crate::event_log::PolicyEventType::PermissionDenied,
+                    tid,
+                    None,
+                    &format!("TUI user denied: {}", command),
+                );
+            }
         }
         return approved;
     }
@@ -166,9 +235,46 @@ pub(crate) async fn check_permission(
                 mode, command
             ),
         );
+        if let Some(ref tid) = turn_id {
+            crate::event_log::record_policy_event(
+                crate::event_log::PolicyEventType::PolicyBlocked,
+                tid,
+                None,
+                &format!("non-TTY fallback denied: {}", command),
+            );
+        }
         return false;
     }
-    ask_permission(args, command, &risk)
+    // Record permission request before blocking ask
+    if let Some(ref tid) = turn_id {
+        crate::event_log::record_policy_event(
+            crate::event_log::PolicyEventType::PermissionRequested,
+            tid,
+            None,
+            &format!("blocking ask: {}", command),
+        );
+    }
+    let approved = ask_permission(args, command, &risk);
+    if approved {
+        if let Some(ref tid) = turn_id {
+            crate::event_log::record_policy_event(
+                crate::event_log::PolicyEventType::PermissionGranted,
+                tid,
+                None,
+                &format!("blocking ask approved: {}", command),
+            );
+        }
+    } else {
+        if let Some(ref tid) = turn_id {
+            crate::event_log::record_policy_event(
+                crate::event_log::PolicyEventType::PermissionDenied,
+                tid,
+                None,
+                &format!("blocking ask denied: {}", command),
+            );
+        }
+    }
+    approved
 }
 
 /// Record that the user approved this command (for session caching).

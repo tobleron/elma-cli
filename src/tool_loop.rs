@@ -5,6 +5,7 @@ use crate::auto_compact::{
     apply_compact, apply_compact_with_summarizer, CompactTracker, DEFAULT_COMPACT_BUFFER_TOKENS,
     DEFAULT_CONTEXT_WINDOW_TOKENS,
 };
+use crate::event_log;
 use crate::tool_calling::build_tool_definitions;
 use crate::tool_result_storage::{apply_tool_result_budget, DEFAULT_MAX_RESULT_SIZE_CHARS};
 use crate::ui_state::{
@@ -606,7 +607,18 @@ pub(crate) async fn run_tool_loop(
 
     update_context_estimate(&messages, tui);
 
+    let mut turn_counter: usize = 0;
+
     loop {
+        turn_counter += 1;
+        let turn_id = format!("turn_{}", turn_counter);
+        // Task 470: Mark current turn and record turn start
+        crate::event_log::set_current_turn(&turn_id);
+        crate::event_log::record_lifecycle(
+            crate::event_log::LifecycleEventType::TurnStarted,
+            Some(&turn_id),
+        );
+
         // Check 45-minute timeout
         let elapsed = loop_start.elapsed();
         if elapsed > total_timeout {
@@ -616,6 +628,18 @@ pub(crate) async fn run_tool_loop(
                 elapsed_mins
             );
             trace(args, &format!("tool_loop: TIMEOUT {}", timeout_reason));
+            // Record finalization and finish turn
+            crate::event_log::record_finalization(
+                crate::event_log::FinalizationEventType::FinalAnswerPrepared,
+                &turn_id,
+                "timeout",
+            );
+            crate::event_log::record_lifecycle(
+                crate::event_log::LifecycleEventType::TurnFinished,
+                Some(&turn_id),
+            );
+            crate::event_log::clear_current_turn();
+            let _ = crate::event_log::persist(&sess.root);
             return Ok(ToolLoopResult {
                 final_answer: format!(
                     "⏱️ **Timeout After {:.1} Minutes**\n\n\
@@ -660,6 +684,24 @@ pub(crate) async fn run_tool_loop(
                 .await?;
             }
             let final_trimmed = normalize_final_answer_candidate(&final_content);
+            // Record finalization events (stop policy and final answer)
+            crate::event_log::record_finalization(
+                crate::event_log::FinalizationEventType::FinalAnswerPrepared,
+                &turn_id,
+                outcome.reason.as_str(),
+            );
+            crate::event_log::record_finalization(
+                crate::event_log::FinalizationEventType::StopPolicyTriggered,
+                &turn_id,
+                outcome.reason.as_str(),
+            );
+            // Finalize turn lifecycle and persist
+            crate::event_log::record_lifecycle(
+                crate::event_log::LifecycleEventType::TurnFinished,
+                Some(&turn_id),
+            );
+            crate::event_log::clear_current_turn();
+            let _ = crate::event_log::persist(&sess.root);
             return Ok(ToolLoopResult {
                 final_answer: if final_answer_needs_retry(&final_trimmed) {
                     build_fallback_from_recent_tool_evidence(&messages)
@@ -753,6 +795,13 @@ pub(crate) async fn run_tool_loop(
                 ..ChatRequestOptions::default()
             },
         );
+        // Task 470: Record ModelRequestStarted event
+        crate::event_log::record_model_event(
+            crate::event_log::ModelEventType::ModelRequestStarted,
+            &turn_id,
+            None,
+            None,
+        );
         let turn = match request_tool_loop_model_turn_streaming(
             tui,
             client,
@@ -763,7 +812,25 @@ pub(crate) async fn run_tool_loop(
         )
         .await
         {
-            Ok(turn) => turn,
+            Ok(turn) => {
+                // Task 470: Record ModelResponseReceived event
+                crate::event_log::record_model_event(
+                    crate::event_log::ModelEventType::ModelResponseReceived,
+                    &turn_id,
+                    None,
+                    None,
+                );
+                // Record ModelToolCallProposed for each tool call
+                for tc in &turn.tool_calls {
+                    crate::event_log::record_model_event(
+                        crate::event_log::ModelEventType::ModelToolCallProposed,
+                        &turn_id,
+                        Some(&tc.id),
+                        None,
+                    );
+                }
+                turn
+            }
             Err(error) => {
                 append_trace_log_line(&format!("[TOOL_LOOP_STREAM_FALLBACK] {}", error));
                 let mut fallback_req = req;
@@ -779,9 +846,26 @@ pub(crate) async fn run_tool_loop(
                 )
                 .await?;
                 let choice = resp.choices.get(0).context("No choices in response")?;
+                // Task 470: Record ModelResponseReceived event for fallback path
+                crate::event_log::record_model_event(
+                    crate::event_log::ModelEventType::ModelResponseReceived,
+                    &turn_id,
+                    None,
+                    None,
+                );
+                let tool_calls = choice.message.tool_calls.clone().unwrap_or_default();
+                // Record ModelToolCallProposed for each tool call in fallback
+                for tc in &tool_calls {
+                    crate::event_log::record_model_event(
+                        crate::event_log::ModelEventType::ModelToolCallProposed,
+                        &turn_id,
+                        Some(&tc.id),
+                        None,
+                    );
+                }
                 ToolLoopModelTurn {
                     content: choice.message.content.clone().unwrap_or_default(),
-                    tool_calls: choice.message.tool_calls.clone().unwrap_or_default(),
+                    tool_calls,
                     reasoning_content: choice.message.reasoning_content.clone(),
                 }
             }
@@ -945,6 +1029,14 @@ pub(crate) async fn run_tool_loop(
                     }
                 }
 
+                // Task 470: Record ToolStarted event
+                crate::event_log::record_tool_event(
+                    crate::event_log::ToolEventType::ToolStarted,
+                    &turn_id,
+                    &tc.id,
+                    &tc.function.name,
+                );
+
                 let mut result = tool_calling::execute_tool_call(
                     args,
                     tc,
@@ -956,6 +1048,19 @@ pub(crate) async fn run_tool_loop(
                     Some(&mut *tui),
                 )
                 .await;
+
+                // Task 470: Record ToolFinished or ToolFailed event
+                let tool_event_type = if result.ok {
+                    crate::event_log::ToolEventType::ToolFinished
+                } else {
+                    crate::event_log::ToolEventType::ToolFailed
+                };
+                crate::event_log::record_tool_event(
+                    tool_event_type,
+                    &turn_id,
+                    &tc.id,
+                    &tc.function.name,
+                );
 
                 // Task 283: Flush tool result to session transcript and artifacts
                 crate::session_flush::flush_tool_result(
@@ -1020,7 +1125,10 @@ pub(crate) async fn run_tool_loop(
                              Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
                              Err(_) => result.content.clone(), // Fallback: return raw if stripping fails
                          };
-                         ledger.add_entry(source, &clean_content);
+                         let entry = ledger.add_entry(source, &clean_content);
+                         // Task 470: Record EvidenceEvent for the new ledger entry
+                         let source_artifact = entry.raw_path.as_deref().unwrap_or(&tc.function.name);
+                         crate::event_log::record_evidence_event(&turn_id, &entry.summary, source_artifact);
                      });
                 }
 
@@ -1353,8 +1461,26 @@ pub(crate) async fn run_tool_loop(
                         )
                         .await?;
                     }
-                    let trimmed = normalize_final_answer_candidate(&final_content);
-                    return Ok(ToolLoopResult {
+                let trimmed = normalize_final_answer_candidate(&final_content);
+                // Record finalization events
+                crate::event_log::record_finalization(
+                    crate::event_log::FinalizationEventType::FinalAnswerPrepared,
+                    &turn_id,
+                    outcome.reason.as_str(),
+                );
+                crate::event_log::record_finalization(
+                    crate::event_log::FinalizationEventType::StopPolicyTriggered,
+                    &turn_id,
+                    outcome.reason.as_str(),
+                );
+                // Finalize turn lifecycle and persist
+                crate::event_log::record_lifecycle(
+                    crate::event_log::LifecycleEventType::TurnFinished,
+                    Some(&turn_id),
+                );
+                crate::event_log::clear_current_turn();
+                let _ = crate::event_log::persist(&sess.root);
+                return Ok(ToolLoopResult {
                         final_answer: if final_answer_needs_retry(&trimmed) {
                             build_fallback_from_recent_tool_evidence(&messages)
                         } else {

@@ -77,6 +77,7 @@ markdown-to-ansi = "0.2"
 strip-ansi-escapes = "0.1"
 chrono = "0.4"
 rayon = "1.10"
+sha1 = "0.10"
 rusqlite = { version = "0.32", features = ["bundled"] }
 libc = "0.2.186"
 

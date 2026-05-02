@@ -385,6 +385,13 @@ fn trace_verbose(verbose: bool, message: &str) {
 }
 
 pub(crate) fn intel_chat_url(profile: &Profile) -> Result<Url> {
+    if profile.base_url.is_empty() {
+        return Err(anyhow::anyhow!(
+            "profile '{}' has empty base_url",
+            profile.name
+        )
+        .into());
+    }
     let base = Url::parse(&profile.base_url).map_err(IntelError::from)?;
     let joined = base
         .join("/v1/chat/completions")

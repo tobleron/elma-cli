@@ -380,6 +380,83 @@ pub(crate) fn sync_and_upgrade_profiles(
         base_url,
         model_id,
     )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("summarizer.toml"),
+        &mut profiles.summarizer_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("turn_summary.toml"),
+        &mut profiles.turn_summary_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("planner_master.toml"),
+        &mut profiles.planner_master_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("planner.toml"),
+        &mut profiles.planner_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("decider.toml"),
+        &mut profiles.decider_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("evidence_compactor.toml"),
+        &mut profiles.evidence_compactor_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("artifact_classifier.toml"),
+        &mut profiles.artifact_classifier_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("result_presenter_concise.toml"),
+        &mut profiles.result_presenter_concise_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("result_presenter_long.toml"),
+        &mut profiles.result_presenter_long_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("refinement.toml"),
+        &mut profiles.refinement_cfg,
+        base_url,
+        model_id,
+    )?;
+    sync_managed_profile(
+        args,
+        &model_cfg_dir.join("meta_review.toml"),
+        &mut profiles.meta_review_cfg,
+        base_url,
+        model_id,
+    )?;
 
     Ok(())
 }

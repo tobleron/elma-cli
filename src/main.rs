@@ -59,6 +59,7 @@ mod evaluation_routing;
 mod evaluation_workflow;
 mod evidence_ledger; // Task 287: Evidence Ledger
 mod evidence_summary; // Task 287: Evidence Summarization
+mod event_log; // Task 470: Action-Observation Event Log
 mod execution;
 mod execution_ladder; // Execution ladder for minimum-sufficient orchestration
 mod execution_steps;

@@ -552,68 +552,126 @@ fn exec_read(
     call_id: &str,
     mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> ToolExecutionResult {
-    let path = av["path"].as_str().unwrap_or("").to_string();
-    if path.is_empty() {
-        let error_msg = "Error: empty path".to_string();
+    let paths: Vec<String> = if let Some(arr) = av["paths"].as_array() {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        let single = av["path"].as_str().unwrap_or("").to_string();
+        if single.is_empty() {
+            Vec::new()
+        } else {
+            vec![single]
+        }
+    };
+
+    if paths.is_empty() {
+        let error_msg = "Error: no path or paths provided".to_string();
         emit_tool_result(&mut tui, "read", false, &error_msg);
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
             tool_name: "read".to_string(),
-            content: error_msg.to_string(),
+            content: error_msg,
             ok: false,
             exit_code: None,
             timed_out: false,
             signal_killed: None,
         };
     }
-    let full = if std::path::Path::new(&path).is_relative() {
-        workdir.join(&path)
-    } else if std::path::Path::new(&path).is_absolute() {
-        let error_msg = format!("absolute_path_not_allowed: {} — use workspace-relative path", path);
-        emit_tool_result(&mut tui, "read", false, &error_msg);
-        return ToolExecutionResult {
-            tool_call_id: call_id.to_string(),
-            tool_name: "read".to_string(),
-            content: error_msg.to_string(),
-            ok: false,
-            exit_code: None,
-            timed_out: false,
-            signal_killed: None,
-        };
-    } else {
-        workdir.join(&path)
-    };
 
-    emit_tool_start(&mut tui, "read", &path);
-    emit_tool_progress(&mut tui, "read", "reading file");
+    let is_multi = paths.len() > 1;
+    let mut all_content = String::new();
+    let mut errors: Vec<String> = Vec::new();
 
-    match crate::document_adapter::read_file_smart(&full) {
-        Ok((content, header)) => {
-            let content = format!("{}\n{}", header, content);
-            emit_tool_result(&mut tui, "read", true, &content);
-            ToolExecutionResult {
-                tool_call_id: call_id.to_string(),
-                tool_name: "read".to_string(),
-                content,
-                ok: true,
-                exit_code: None,
-                timed_out: false,
-                signal_killed: None,
+    for (i, tp) in paths.iter().enumerate() {
+        if std::path::Path::new(tp).is_absolute() {
+            let err = format!("absolute_path_not_allowed: {} — use workspace-relative path", tp);
+            if is_multi {
+                errors.push(err.clone());
+                all_content.push_str(&format!("\n### File {}: ERROR — {}\n", i + 1, tp));
+                continue;
+            } else {
+                emit_tool_result(&mut tui, "read", false, &err);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "read".to_string(),
+                    content: err,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    signal_killed: None,
+                };
             }
         }
-        Err(e) => {
-            let error_msg = format!("Error reading {}: {}", full.display(), e);
-            emit_tool_result(&mut tui, "read", false, &error_msg);
-            ToolExecutionResult {
-                tool_call_id: call_id.to_string(),
-                tool_name: "read".to_string(),
-                content: error_msg.to_string(),
-                ok: false,
-                exit_code: None,
-                timed_out: false,
-                signal_killed: None,
+
+        let full = workdir.join(tp);
+        if !full.exists() {
+            let err = format!("file_not_found: {}", tp);
+            if is_multi {
+                errors.push(err.clone());
+                all_content.push_str(&format!("\n### File {}: ERROR — {}\n", i + 1, tp));
+                continue;
+            } else {
+                emit_tool_result(&mut tui, "read", false, &err);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "read".to_string(),
+                    content: err,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    signal_killed: None,
+                };
             }
         }
+
+        match crate::document_adapter::read_file_smart(&full) {
+            Ok((content, header)) => {
+                let file_block = if is_multi {
+                    format!("### File {}: {}\n{}\n\n{}", i + 1, tp, header, content)
+                } else {
+                    format!("{}\n{}", header, content)
+                };
+                all_content.push_str(&file_block);
+                if i < paths.len() - 1 {
+                    all_content.push_str("\n\n");
+                }
+            }
+            Err(e) => {
+                let err = format!("Error reading {}: {}", tp, e);
+                if is_multi {
+                    errors.push(err.clone());
+                    all_content.push_str(&format!("\n### File {}: ERROR — {}\n", i + 1, tp));
+                } else {
+                    emit_tool_result(&mut tui, "read", false, &err);
+                    return ToolExecutionResult {
+                        tool_call_id: call_id.to_string(),
+                        tool_name: "read".to_string(),
+                        content: err,
+                        ok: false,
+                        exit_code: None,
+                        timed_out: false,
+                        signal_killed: None,
+                    };
+                }
+            }
+        }
+    }
+
+    let ok = errors.is_empty();
+    emit_tool_start(&mut tui, "read", &paths[0]);
+    emit_tool_progress(&mut tui, "read", "reading file(s)");
+    emit_tool_result(&mut tui, "read", ok, &all_content);
+
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "read".to_string(),
+        content: all_content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
     }
 }
 
