@@ -15,6 +15,7 @@ pub(crate) use std::process::Command;
 pub(crate) use std::sync::{Mutex, OnceLock};
 pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+mod abstractions; // Task 576: Injectable abstractions for testing
 mod app;
 mod config_cmd;
 mod session_browser;
@@ -171,6 +172,8 @@ mod skills;
 mod snapshot;
 mod stop_policy;
 mod storage;
+mod stream_types; // Task 558: SSE streaming types
+mod sse_stream; // Task 558: SSE byte stream parser
 mod strategy; // Multi-strategy planning with fallback chains (Task 010)
 mod streaming_tool_executor; // Task 115: Streaming Token Execution
 mod system_monitor; // Right-side panel system resource monitor
@@ -248,6 +251,7 @@ pub(crate) use routing::*;
 pub(crate) use runtime_task::*;
 pub(crate) use scenarios::*;
 pub(crate) use session::*;
+pub(crate) use abstractions::*;
 pub(crate) use session_display::*;
 pub(crate) use session_flush::*; // Task 283: Session Transcript Flush
 pub(crate) use skills::*;
