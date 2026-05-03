@@ -9,6 +9,7 @@
 
 use crate::evidence_summary::{should_store_raw, summarize_tool_result, SummarizeExtra};
 use crate::*;
+use sha1::{Digest, Sha1};
 use std::fmt;
 use std::sync::{OnceLock, RwLock};
 
@@ -280,14 +281,26 @@ let entry = EvidenceEntry {
         self.mark_stale(path);
     }
 
+    /// Compute a content hash for staleness detection using SHA-1.
+    fn compute_content_hash(path: &str) -> Option<u64> {
+        let content = std::fs::read(path).ok()?;
+        use sha1::{Digest, Sha1};
+        let mut hasher = Sha1::new();
+        hasher.update(&content);
+        let hash = hasher.finalize();
+        // Use first 8 bytes as a u64 for compact storage
+        let bytes = &hash[..8];
+        Some(u64::from_le_bytes(bytes.try_into().ok()?))
+    }
+
     pub(crate) fn check_file_is_stale(&self, path: &str) -> bool {
-        let entries = &self.entries;
-        for entry in entries.iter().rev() {
+        for entry in self.entries.iter().rev() {
             if let EvidenceSource::Read { path: entry_path } = &entry.source {
                 if entry_path == path || entry_path.contains(path) {
                     if entry.staleness == Staleness::Stale {
                         return true;
                     }
+                    // Check mtime-based staleness
                     if let Some(stored_mtime) = entry.file_mtime {
                         if let Ok(current_meta) = std::fs::metadata(path) {
                             if let Ok(current_modified) = current_meta.modified() {
@@ -296,6 +309,14 @@ let entry = EvidenceEntry {
                                         return true;
                                     }
                                 }
+                            }
+                        }
+                    }
+                    // Check content-hash based staleness
+                    if let Some(stored_hash) = entry.file_hash {
+                        if let Some(current_hash) = Self::compute_content_hash(path) {
+                            if current_hash != stored_hash {
+                                return true;
                             }
                         }
                     }
@@ -355,9 +376,23 @@ let entry = EvidenceEntry {
         self.entries.last().map(|e| e.summary.clone())
     }
 
+    /// Atomic write: write to temp file, fsync, rename.
+    fn atomic_write(path: &std::path::Path, content: &str) -> Result<()> {
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, content)
+            .with_context(|| format!("write {}", tmp.display()))?;
+        // Attempt fsync for durability (best-effort on some platforms)
+        if let Ok(file) = std::fs::File::open(&tmp) {
+            let _ = file.sync_all();
+        }
+        std::fs::rename(&tmp, path)
+            .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))
+    }
+
     pub(crate) fn persist(&self) -> Result<()> {
-        // Primary: store compact evidence in session.json.evidence
         let session_root = PathBuf::from(&self.base_dir);
+
+        // Atomic write to session.json.evidence
         let _ = crate::session_write::mutate_session_doc(&session_root, |doc| {
             let compact = serde_json::json!({
                 "entries": serde_json::to_value(&self.entries).unwrap_or_default(),
@@ -366,14 +401,20 @@ let entry = EvidenceEntry {
             doc["evidence"] = compact;
         });
 
-        // Legacy: also write to evidence/ dir
+        // Atomic write to evidence/ dir
         let evidence_dir = session_root.join("evidence").join(&self.session_id);
         std::fs::create_dir_all(&evidence_dir)
             .with_context(|| format!("mkdir {}", evidence_dir.display()))?;
         let ledger_path = evidence_dir.join("ledger.json");
         let json = serde_json::to_string_pretty(self).context("Failed to serialize ledger")?;
-        std::fs::write(&ledger_path, json)
-            .with_context(|| format!("write {}", ledger_path.display()))
+        let tmp = ledger_path.with_extension("tmp");
+        std::fs::write(&tmp, &json)
+            .with_context(|| format!("write {}", tmp.display()))?;
+        if let Ok(file) = std::fs::File::open(&tmp) {
+            let _ = file.sync_all();
+        }
+        std::fs::rename(&tmp, &ledger_path)
+            .with_context(|| format!("rename {} -> {}", tmp.display(), ledger_path.display()))
     }
 
     /// Attempt to load evidence from session.json (new canonical path).

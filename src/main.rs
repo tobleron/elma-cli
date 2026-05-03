@@ -43,6 +43,7 @@ mod background_task; // Task 268: Background Task Management
 mod claude_ui;
 mod command_budget; // Task 121: Command Budget & Rate Limiting
 mod config_validate; // Task 583: Config validation at startup
+mod context_budget; // Task 568: Context window budget tracking
 mod continuity; // Task 380: Semantic Continuity Tracking
 
 mod decomposition; // Task 023: Hierarchical decomposition
@@ -252,6 +253,7 @@ pub(crate) use runtime_task::*;
 pub(crate) use scenarios::*;
 pub(crate) use session::*;
 pub(crate) use abstractions::*;
+pub(crate) use context_budget::*;
 pub(crate) use session_display::*;
 pub(crate) use session_flush::*; // Task 283: Session Transcript Flush
 pub(crate) use skills::*;
