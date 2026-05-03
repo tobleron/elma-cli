@@ -1,19 +1,10 @@
 //! @efficiency-role: domain-logic
-//! Tool Calling Registry
+//! Tool Calling Registry — dispatcher for all tool executors.
 
 use crate::*;
-use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
-pub(crate) struct ToolExecutionResult {
-    pub(crate) tool_call_id: String,
-    pub(crate) tool_name: String,
-    pub(crate) content: String,
-    pub(crate) ok: bool,
-    pub(crate) exit_code: Option<i32>,
-    pub(crate) timed_out: bool,
-    pub(crate) signal_killed: Option<i32>,
-}
+// ToolExecutionResult lives in crate::tools::types; re-export for backward compat.
+pub(crate) use crate::tools::types::ToolExecutionResult;
 
 /// Build initial tool definitions - only non-deferred tools (default tools)
 pub(crate) fn build_tool_definitions(_workdir: &PathBuf) -> Vec<ToolDefinition> {
@@ -84,6 +75,28 @@ pub(crate) async fn execute_tool_call(
             }
         }
     };
+
+    // Validate arguments against tool schema before dispatch
+    if let Some(schema) = crate::tools::validation::get_tool_schema(&tool_name) {
+        let validation = schema.validate(&args_value);
+        if !validation.ok {
+            let error_msg = validation.field_errors
+                .iter()
+                .map(|fe| format!("{}: {}", fe.field, fe.error))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return ToolExecutionResult {
+                tool_call_id: call_id,
+                tool_name,
+                content: format!("Argument validation failed: {}", error_msg),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    }
+
     match tool_name.as_str() {
         "ls" => exec_ls(&args_value, workdir, &call_id, tui),
         "observe" => exec_observe(&args_value, workdir, &call_id, tui),

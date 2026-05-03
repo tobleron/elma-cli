@@ -1,10 +1,15 @@
 //! @efficiency-role: infra-adapter
-//! Tools Module - Combined tools.rs (cache + registry)
-//! discovery.rs remains as a separate submodule
+//! Tools Module - tool caching, discovery, validation, and execution
 
 pub mod discovery;
+pub mod helpers;
+pub mod types;
+pub mod validation;
 
 pub use discovery::*;
+pub use helpers::*;
+pub use types::*;
+pub use validation::*;
 
 // ── Cache types and functions ──────────────────────────────────────────────
 
@@ -61,7 +66,6 @@ impl ToolCache {
     }
 
     pub fn is_valid(&self, current_path_hash: &str) -> bool {
-        // Cache valid for 7 days
         let age_seconds = current_timestamp() - self.cached_at;
         let seven_days = 7 * 24 * 60 * 60;
 
@@ -73,7 +77,6 @@ impl ToolCache {
     }
 
     pub fn add_tool(&mut self, tool: CachedTool) {
-        // Don't add duplicates
         if !self.tools.iter().any(|t| t.name == tool.name) {
             self.tools.push(tool);
         }
@@ -87,12 +90,10 @@ impl ToolCache {
 pub fn compute_path_hash() -> String {
     let mut hasher = DefaultHasher::new();
 
-    // Hash PATH environment variable
     if let Ok(path) = std::env::var("PATH") {
         path.hash(&mut hasher);
     }
 
-    // Hash PATHEXT on Windows
     #[cfg(windows)]
     if let Ok(pathext) = std::env::var("PATHEXT") {
         pathext.hash(&mut hasher);
@@ -156,7 +157,6 @@ pub struct BuiltinStep {
 
 impl ToolRegistry {
     pub fn new(workspace: &Path) -> Self {
-        // Use blocking executor for tool discovery (called once at startup)
         let discovered = futures::executor::block_on(discover_available_tools(workspace));
 
         let builtin = vec![
@@ -207,7 +207,6 @@ impl ToolRegistry {
     }
 
     pub fn describe_tool(&self, name: &str) -> Option<String> {
-        // Check discovered tools
         if let Some(tool) = self.discovered.iter().find(|t| t.name == name) {
             return Some(format!(
                 "{}: {} (Template: {})",
@@ -215,7 +214,6 @@ impl ToolRegistry {
             ));
         }
 
-        // Check builtin steps
         if let Some(step) = self.builtin.iter().find(|s| s.name == name) {
             return Some(format!(
                 "{}: {} (Type: {})",
@@ -231,7 +229,6 @@ impl ToolRegistry {
 
         output.push_str("## Available Tools\n\n");
 
-        // Builtin steps
         output.push_str("### Built-in Steps\n");
         for step in &self.builtin {
             output.push_str(&format!("- `{}`: {}\n", step.name, step.description));
@@ -239,7 +236,6 @@ impl ToolRegistry {
 
         output.push('\n');
 
-        // CLI tools
         let cli_tools: Vec<_> = self
             .discovered
             .iter()
@@ -254,7 +250,6 @@ impl ToolRegistry {
             output.push('\n');
         }
 
-        // Project-specific tools
         let project_tools: Vec<_> = self
             .discovered
             .iter()
@@ -269,7 +264,6 @@ impl ToolRegistry {
             output.push('\n');
         }
 
-        // Custom scripts
         let custom_scripts: Vec<_> = self
             .discovered
             .iter()

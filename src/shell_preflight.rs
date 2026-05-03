@@ -25,28 +25,6 @@ const UNSCOPED_WARN_THRESHOLD: usize = 20;
 /// Threshold: block unscoped operations affecting this many files.
 const UNSCOPED_BLOCK_THRESHOLD: usize = 100;
 
-/// Protected directories — informational only, no longer block mutations.
-const _PROTECTED_DIRS: &[&str] = &[
-    "sessions/",
-    "config/",
-    "_tasks/",
-    "_dev-tasks/",
-    "src/",
-    ".git/",
-    "target/",
-    "_claude_code_src/",
-];
-
-/// Protected files — informational only, no longer block mutations.
-const _PROTECTED_FILES: &[&str] = &[
-    "Cargo.toml",
-    "Cargo.lock",
-    "rust-toolchain.toml",
-    ".gitignore",
-    "AGENTS.md",
-    "QWEN.md",
-];
-
 /// Clear the confirmation cache (called on session reset).
 pub(crate) fn clear_confirmation_cache() {
     if let Ok(mut cache) = CONFIRMED_COMMANDS.lock() {
@@ -631,10 +609,32 @@ pub(crate) fn preflight_command(command: &str, workdir: &PathBuf) -> PreflightRe
     }
 }
 
-fn check_protected_paths(_command: &str) -> Option<String> {
-    // Protected path blocking removed — Elma may operate in other projects
-    // where src/, config/, etc. are not Elma-specific directories.
-    // Risk classification (classify_command) and dry-run previews still apply.
+fn check_protected_paths(command: &str) -> Option<String> {
+    let cmd = command.trim();
+
+    let path_args: Option<Vec<&str>> = if let Some(args) = cmd.strip_prefix("rm ") {
+        Some(args.split_whitespace().filter(|a| !a.starts_with('-')).collect())
+    } else if let Some(args) = cmd.strip_prefix("mv ") {
+        Some(args.split_whitespace().filter(|a| !a.starts_with('-')).collect())
+    } else if let Some(args) = cmd.strip_prefix("cp ") {
+        Some(args.split_whitespace().filter(|a| !a.starts_with('-')).collect())
+    } else if let Some(args) = cmd.strip_prefix("chmod ") {
+        let parts: Vec<&str> = args.split_whitespace().filter(|a| !a.starts_with('-')).collect();
+        Some(parts.into_iter().skip(1).collect())
+    } else if let Some(args) = cmd.strip_prefix("chown ") {
+        let parts: Vec<&str> = args.split_whitespace().filter(|a| !a.starts_with('-')).collect();
+        Some(parts.into_iter().skip(1).collect())
+    } else {
+        None
+    };
+
+    if let Some(targets) = path_args {
+        for target in targets {
+            if let Some(msg) = crate::protected_paths::ProtectedPaths::check_mutation(target) {
+                return Some(msg);
+            }
+        }
+    }
     None
 }
 
@@ -898,7 +898,6 @@ mod tests {
         assert!(result.is_unscoped || result.estimated_count < UNSCOPED_WARN_THRESHOLD);
     }
 
-    // Protected dirs/files no longer block mutations — only risk classification applies.
     #[test]
     fn test_protected_dir_read_allowed() {
         assert!(check_protected_paths("ls sessions/").is_none());
@@ -907,18 +906,16 @@ mod tests {
     }
 
     #[test]
-    fn test_protected_dir_mutation_no_longer_blocked() {
-        // Protected path blocking removed — mutations now pass through
-        // but risk classification and dry-run previews still apply.
-        assert!(check_protected_paths("rm -rf sessions/").is_none());
-        assert!(check_protected_paths("mv src/backup/").is_none());
-        assert!(check_protected_paths("cp config/orchestrator.toml /tmp/").is_none());
+    fn test_git_protected_mutation_blocked() {
+        assert!(check_protected_paths("rm -rf .git/").is_some(), ".git/ should be protected");
+        assert!(check_protected_paths("mv .git/hooks /tmp/").is_some(), ".git/ should be protected");
+        assert!(check_protected_paths("rm -rf .git").is_some(), ".git should be protected");
     }
 
     #[test]
-    fn test_protected_file_mutation_no_longer_blocked() {
-        assert!(check_protected_paths("rm Cargo.toml").is_none());
-        assert!(check_protected_paths("mv Cargo.lock backup/").is_none());
+    fn test_gitignore_protected() {
+        assert!(check_protected_paths("rm .gitignore").is_some(), ".gitignore should be protected");
+        assert!(check_protected_paths("mv .gitignore backup/").is_some(), ".gitignore should be protected");
     }
 
     #[test]
@@ -954,11 +951,4 @@ mod tests {
         assert!(matches!(classify_command(cmd), RiskLevel::Dangerous(_)));
     }
 
-    #[test]
-    fn test_real_mutation_no_longer_blocked() {
-        // Protected path blocking removed — all these pass through now
-        assert!(check_protected_paths("rm -rf .git/").is_none());
-        assert!(check_protected_paths("mv .git/hooks /tmp/").is_none());
-        assert!(check_protected_paths("cp config/orchestrator.toml /tmp/").is_none());
-    }
 }

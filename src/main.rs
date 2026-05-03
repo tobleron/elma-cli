@@ -123,6 +123,7 @@ mod orchestration_planning; // Planning Prior and Hierarchical Decomposition Mod
 mod orchestration_retry; // Retry orchestration and meta-review
 mod paths;
 mod permission_gate; // Task 117: Permission Gate for Destructive Commands
+mod protected_paths; // Task 551: Protected path blocking
 mod patch_executor; // Task 455: Patch Tool Multi-File Atomic
 mod persistent_shell; // Task 288: Persistent Guarded Shell
 mod profile_sets;
@@ -178,7 +179,7 @@ mod tool_discovery;
 mod tool_loop;
 mod tool_registry;
 mod tool_result_storage; // Task 113: Tool Result Budget & Disk Persistence
-mod tools; // Tools Module - Combined tools.rs (cache + registry)
+mod tools; // Tools Module - tool caching, discovery, validation, and execution
 mod trajectory; // Task 271: Trajectory Compression For Long-Running Sessions
 mod trash;
 mod tune;
@@ -226,6 +227,7 @@ pub(crate) use orchestration::*;
 pub(crate) use orchestration_helpers::*;
 pub(crate) use paths::*;
 pub(crate) use profile_sets::*;
+pub(crate) use protected_paths::*;
 pub(crate) use program::*;
 pub(crate) use project_guidance::*;
 pub(crate) use project_init::*;

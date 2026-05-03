@@ -19,9 +19,8 @@ use crate::*;
 mod depth;
 pub use depth::{
     assessment_needs_decomposition, assessment_to_depth, calculate_confidence, depth_to_level,
-    generate_level_reason, generate_strategy_hint, has_dependencies, needs_revision_loop,
-    requests_bulk, requests_multi_step_verbs, requests_phases, requests_planning, requests_strategy,
-    truncate_message,
+    explicit_planning_signal, generate_level_reason, generate_strategy_hint, needs_revision_loop,
+    strategic_signal, truncate_message,
 };
 
 // ============================================================================
@@ -278,46 +277,26 @@ pub async fn assess_execution_level(
     let workflow_plan: WorkflowPlannerOutput =
         serde_json::from_value(workflow_output.data.clone()).unwrap_or_default();
 
-    let explicit_planning_request = requests_planning(user_message);
-    let strategic_request = requests_strategy(user_message);
-    let phased_request = requests_phases(user_message);
-
     // Determine base level from complexity
     let base_level = complexity_to_level(&complexity.complexity);
 
-    // Apply escalation heuristics
+    // Apply escalation heuristics using intel unit signals and feature vectors
     let mut level = base_level;
     let mut escalation_factors = Vec::new();
 
-    // Escalate for explicit planning request
-    if explicit_planning_request {
+    // Escalate if intel units signal planning need
+    if explicit_planning_signal(needs_plan, &complexity.complexity) {
         if level < ExecutionLevel::Plan {
             level = ExecutionLevel::Plan;
-            escalation_factors.push("explicit planning request");
+            escalation_factors.push("planning signal from intel units");
         }
     }
 
-    // Escalate for strategic request
-    if strategic_request {
+    // Escalate if complexity assessment indicates open-ended (strategic) work
+    if strategic_signal(&complexity.complexity) {
         if level < ExecutionLevel::MasterPlan {
             level = ExecutionLevel::MasterPlan;
-            escalation_factors.push("strategic decomposition request");
-        }
-    }
-
-    // Escalate for bulk requests (Task 540)
-    if requests_bulk(user_message) {
-        if level < ExecutionLevel::Plan {
-            level = ExecutionLevel::Plan;
-            escalation_factors.push("bulk operation detected");
-        }
-    }
-
-    // Escalate for multi-step verbs (Task 540)
-    if requests_multi_step_verbs(user_message) {
-        if level < ExecutionLevel::Plan {
-            level = ExecutionLevel::Plan;
-            escalation_factors.push("multi-step sequential verbs detected");
+            escalation_factors.push("open-ended complexity assessment");
         }
     }
 
@@ -391,23 +370,26 @@ pub async fn assess_execution_level(
         && level == ExecutionLevel::Plan
         && complexity.risk == "LOW"
         && !needs_plan
-        && !strategic_request
-        && !explicit_planning_request
-        && !phased_request;
+        && !strategic_signal(&complexity.complexity)
+        && !explicit_planning_signal(needs_plan, &complexity.complexity)
+        && complexity.complexity != "OPEN_ENDED";
     if bounded_ordered_shell_task {
         level = ExecutionLevel::Task;
     }
 
     // Determine requires_ordering
-    let requires_ordering = needs_plan || has_dependencies(user_message, workspace_brief);
+    let requires_ordering = needs_plan || complexity.complexity == "MULTISTEP";
 
     // Determine requires_phases
     let requires_phases = level == ExecutionLevel::MasterPlan
-        || phased_request
         || complexity.complexity == "OPEN_ENDED";
 
     // Determine requires_revision_loop
-    let requires_revision_loop = needs_revision_loop(user_message, &complexity);
+    let requires_revision_loop = needs_revision_loop(
+        &route_decision.route,
+        &complexity.complexity,
+        &complexity.risk,
+    );
 
     // Generate reason
     let reason = generate_level_reason(level, user_message, &escalation_factors);

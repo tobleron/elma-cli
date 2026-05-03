@@ -108,170 +108,25 @@ pub fn escalate_on_weakness(current_level: ExecutionLevel) -> ExecutionLevel {
 }
 
 // ============================================================================
-// Request Predicate Functions
+// Escalation via Feature-Vector Signals (not keyword matchers)
 // ============================================================================
 
-/// Check if request explicitly asks for planning
-pub fn requests_planning(user_message: &str) -> bool {
-    let lower = user_message.to_lowercase();
-
-    // Principle: Look for planning SEMANTICS, not just keywords
-    // Sequential language, decomposition language, planning language
-
-    let planning_indicators = [
-        "step-by-step",
-        "step by step",
-        "give me a plan",
-        "create a plan",
-        "break down",
-        "breakdown",
-        "detailed plan",
-        "implementation plan",
-        "how would you approach",
-        "what steps",
-        "ordered steps",
-    ];
-
-    planning_indicators
-        .iter()
-        .any(|indicator| lower.contains(indicator))
+/// Determine if explicit planning signal from intel unit indicates structured planning.
+pub fn explicit_planning_signal(needs_plan: bool, complexity_complexity: &str) -> bool {
+    needs_plan || complexity_complexity == "MULTISTEP" || complexity_complexity == "OPEN_ENDED"
 }
 
-/// Check if request implies strategic decomposition
-pub fn requests_strategy(user_message: &str) -> bool {
-    let lower = user_message.to_lowercase();
-
-    // Principle: Strategic = multi-phase, multi-session, or architectural
-
-    let strategy_indicators = [
-        "migration strategy",
-        "architecture redesign",
-        "phased approach",
-        "long-term plan",
-        "overall strategy",
-        "master plan",
-        "masterplan",
-        "strategic overview",
-        "roadmap",
-        "multi-phase",
-        "multi-session",
-    ];
-
-    strategy_indicators
-        .iter()
-        .any(|indicator| lower.contains(indicator))
+/// Determine if strategic/staged approach is indicated by complexity assessment.
+pub fn strategic_signal(complexity_complexity: &str) -> bool {
+    complexity_complexity == "OPEN_ENDED"
 }
 
-/// Check if request asks for phased decomposition
-pub fn requests_phases(user_message: &str) -> bool {
-    let lower = user_message.to_lowercase();
-
-    let phase_indicators = [
-        "phases",
-        "phase",
-        "milestone",
-        "stages",
-        "stage",
-        "rollout",
-        "deployment plan",
-        "staged approach",
-    ];
-
-    phase_indicators
-        .iter()
-        .any(|indicator| lower.contains(indicator))
-}
-
-/// Check if request implies bulk processing
-pub fn requests_bulk(user_message: &str) -> bool {
-    let lower = user_message.to_lowercase();
-
-    let bulk_indicators = [
-        "all files",
-        "every file",
-        "bulk ",
-        "mass ",
-        "multiple files",
-        "several files",
-        "whole repo",
-        "entire workspace",
-        "all documents",
-    ];
-
-    bulk_indicators
-        .iter()
-        .any(|indicator| lower.contains(indicator))
-}
-
-/// Check if request implies multiple sequential verbs
-pub fn requests_multi_step_verbs(user_message: &str) -> bool {
-    let lower = user_message.to_lowercase();
-
-    let sequence_indicators = [
-        " then ",
-        " after ",
-        " before ",
-        " followed by ",
-        " and then ",
-        " once ",
-        " as soon as ",
-    ];
-
-    sequence_indicators
-        .iter()
-        .any(|indicator| lower.contains(indicator))
-}
-
-/// Check if request has dependencies requiring ordering
-pub fn has_dependencies(user_message: &str, _workspace_brief: &str) -> bool {
-    let lower = user_message.to_lowercase();
-
-    // Look for dependency language
-    let dependency_indicators = [
-        "first x then y",
-        "before doing",
-        "after completing",
-        "dependencies",
-        "prerequisite",
-        "must complete",
-        "implement feature",
-        "refactor",
-        "clean up",
-    ];
-
-    dependency_indicators
-        .iter()
-        .any(|indicator| lower.contains(indicator))
-}
-
-/// Check if request needs revision loop
-pub fn needs_revision_loop(user_message: &str, complexity: &ComplexityAssessment) -> bool {
-    let lower = user_message.to_lowercase();
-
-    // Revision indicators
-    let revision_indicators = [
-        "fix",
-        "debug",
-        "troubleshoot",
-        "refactor",
-        "iterate",
-        "keep trying",
-        "refine",
-        "adjust",
-        "verify after",
-    ];
-
-    let has_revision_language = revision_indicators
-        .iter()
-        .any(|indicator| lower.contains(indicator));
-
-    // Edit operations often need revision
-    let is_edit_heavy = lower.contains("edit")
-        || lower.contains("modify")
-        || lower.contains("update")
-        || lower.contains("change");
-
-    has_revision_language || (is_edit_heavy && complexity.complexity != "DIRECT")
+/// Determine if revision loop is anticipated based on route and complexity.
+pub fn needs_revision_loop(route: &str, complexity_complexity: &str, risk: &str) -> bool {
+    let is_edit_route = route.eq_ignore_ascii_case("EDIT");
+    let is_high_complexity = complexity_complexity == "MULTISTEP" || complexity_complexity == "OPEN_ENDED";
+    let is_high_risk = risk == "HIGH";
+    is_edit_route || (is_high_complexity && is_high_risk)
 }
 
 /// Generate human-readable reason for level choice
@@ -389,24 +244,6 @@ mod tests {
             ..action
         };
         assert!(assessment_needs_decomposition(&master));
-    }
-
-    #[test]
-    fn test_requests_planning() {
-        assert!(requests_planning("give me a step-by-step plan"));
-        assert!(requests_planning("create a plan to refactor"));
-        assert!(requests_planning("break down this task"));
-        assert!(!requests_planning("run cargo test"));
-        assert!(!requests_planning("read this file"));
-    }
-
-    #[test]
-    fn test_requests_strategy() {
-        assert!(requests_strategy("design a migration strategy"));
-        assert!(requests_strategy("create a masterplan"));
-        assert!(requests_strategy("phased approach for redesign"));
-        assert!(!requests_strategy("run tests"));
-        assert!(!requests_strategy("read file"));
     }
 
     #[test]
