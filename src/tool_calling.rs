@@ -62,10 +62,21 @@ pub(crate) async fn execute_tool_call(
     let args_value: serde_json::Value = match serde_json::from_str(&tool_call.function.arguments) {
         Ok(v) => v,
         Err(e) => {
+            let raw = &tool_call.function.arguments;
+            let preview: String = raw.chars().take(300).collect();
+            let detail = if raw.len() > 300 {
+                format!("{}…", preview)
+            } else {
+                preview
+            };
+            crate::append_trace_log_line(&format!(
+                "[TOOL_PARSE_ERROR] tool={} raw={:?} error={}",
+                tool_name, detail, e
+            ));
             return ToolExecutionResult {
                 tool_call_id: call_id,
                 tool_name,
-                content: format!("Error parsing arguments: {}", e),
+                content: format!("Error parsing arguments: {} | raw: {}", e, detail),
                 ok: false,
                 exit_code: None,
                 timed_out: false,
