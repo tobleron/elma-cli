@@ -1013,6 +1013,17 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Task 498 / Task 597: Continuity guard — if score < 0.85, re-prompt once.
         // Uses a lightweight text-only model call with full conversation context
         // instead of re-running the entire tool-calling pipeline.
+        //
+        // Task 605 + 606: Skip continuity retry for DIRECT-complexity answers.
+        // For DIRECT tasks, the evidence finalizer (Task 601) already produced a
+        // clean evidence-grounded answer in a stripped context. Re-introducing
+        // the full conversation via continuity retry only feeds workspace context
+        // back to the small model, triggering hallucinated expansions
+        // (e.g. "Wednesday, December 18, 2024" from macOS build version).
+        let is_direct = matches!(
+            computed_complexity,
+            crate::complexity_assessor::Complexity::Direct
+        );
         let already_retried = runtime
             .messages
             .last()
@@ -1020,7 +1031,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             .unwrap_or(false);
         let mut final_text = final_text;
         let mut retry_happened = false;
-        if continuity_tracker.alignment_score < 0.85 && !already_retried {
+        if !is_direct
+            && continuity_tracker.alignment_score < 0.85
+            && !already_retried
+        {
             let gap_reason = continuity_tracker.gap();
             let evidence_count = crate::evidence_ledger::get_session_ledger()
                 .map(|l| l.entries_count())
