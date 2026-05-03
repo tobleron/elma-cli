@@ -577,8 +577,9 @@ async fn request_tool_loop_final_answer_streaming(
                 };
                 if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
                     content.push_str(text);
+                    let display = crate::claude_ui::strip_thinking_tags(text);
                     tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantContentDelta(
-                        text.to_string(),
+                        display,
                     ));
                     let _ = tui.pump_ui();
                 }
@@ -1202,11 +1203,12 @@ pub(crate) async fn run_tool_loop(
                 args,
                 &format!("tool_loop: {} tool call(s)", turn.tool_calls.len()),
             );
-            // Preserve model narrative text alongside tool calls
+            // Preserve model narrative text alongside tool calls (strip think tags)
             if !content.trim().is_empty() {
+                let clean_content = crate::text_utils::strip_thinking_blocks(&content);
                 messages.push(ChatMessage {
                     role: "assistant".to_string(),
-                    content: content.clone(),
+                    content: clean_content,
                     name: None,
                     tool_calls: None,
                     tool_call_id: None,
