@@ -16,6 +16,8 @@ pub(crate) use std::sync::{Mutex, OnceLock};
 pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 mod abstractions; // Task 576: Injectable abstractions for testing
+mod agent_fsm; // Task 562: Agent FSM lifecycle
+mod atomic_write; // Task 575: Atomic file writes
 mod app;
 mod config_cmd;
 mod session_browser;
@@ -253,6 +255,8 @@ pub(crate) use runtime_task::*;
 pub(crate) use scenarios::*;
 pub(crate) use session::*;
 pub(crate) use abstractions::*;
+pub(crate) use agent_fsm::*;
+pub(crate) use atomic_write::*;
 pub(crate) use context_budget::*;
 pub(crate) use session_display::*;
 pub(crate) use session_flush::*; // Task 283: Session Transcript Flush

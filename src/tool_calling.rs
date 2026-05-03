@@ -6,7 +6,18 @@ use crate::*;
 // ToolExecutionResult lives in crate::tools::types; re-export for backward compat.
 pub(crate) use crate::tools::types::ToolExecutionResult;
 
-/// Build initial tool definitions - only non-deferred tools (default tools)
+/// Take a snapshot before a mutating operation. Best-effort (errors are traced, not returned).
+fn snapshot_before_mutation(args: &Args, session: &SessionPaths, workdir: &Path, tool: &str, target: &str) {
+    let _ = crate::snapshot::create_workspace_snapshot(
+        session,
+        workdir,
+        &format!("pre-{} snapshot before: {}", tool, target),
+        true,
+    ).map(|s| trace(args, &format!("snapshot_saved id={} for {}", s.snapshot_id, tool)))
+     .map_err(|e| trace(args, &format!("snapshot_failed for {}: {}", tool, e)));
+}
+
+/// Build initial tool definitions - only non-deployed tools (default tools)
 pub(crate) fn build_tool_definitions(_workdir: &PathBuf) -> Vec<ToolDefinition> {
     crate::tool_registry::build_current_tools()
 }
