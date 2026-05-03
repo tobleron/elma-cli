@@ -182,6 +182,46 @@ pub fn requests_phases(user_message: &str) -> bool {
         .any(|indicator| lower.contains(indicator))
 }
 
+/// Check if request implies bulk processing
+pub fn requests_bulk(user_message: &str) -> bool {
+    let lower = user_message.to_lowercase();
+
+    let bulk_indicators = [
+        "all files",
+        "every file",
+        "bulk ",
+        "mass ",
+        "multiple files",
+        "several files",
+        "whole repo",
+        "entire workspace",
+        "all documents",
+    ];
+
+    bulk_indicators
+        .iter()
+        .any(|indicator| lower.contains(indicator))
+}
+
+/// Check if request implies multiple sequential verbs
+pub fn requests_multi_step_verbs(user_message: &str) -> bool {
+    let lower = user_message.to_lowercase();
+
+    let sequence_indicators = [
+        " then ",
+        " after ",
+        " before ",
+        " followed by ",
+        " and then ",
+        " once ",
+        " as soon as ",
+    ];
+
+    sequence_indicators
+        .iter()
+        .any(|indicator| lower.contains(indicator))
+}
+
 /// Check if request has dependencies requiring ordering
 pub fn has_dependencies(user_message: &str, _workspace_brief: &str) -> bool {
     let lower = user_message.to_lowercase();

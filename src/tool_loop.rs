@@ -734,8 +734,9 @@ pub(crate) async fn run_tool_loop(
     evidence_required: bool,
     ctx_max: Option<u64>,
     goal_state: &GoalState,
+    complexity: &str,
 ) -> Result<ToolLoopResult> {
-    let budget = StageBudget::default();
+    let budget = StageBudget::from_complexity(complexity);
     let total_timeout = Duration::from_secs(45 * 60); // 45 minutes
     let loop_start = Instant::now();
     let original_user_request = user_message.to_string();
@@ -754,6 +755,7 @@ pub(crate) async fn run_tool_loop(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
     crate::evidence_ledger::init_session_ledger(&session_id, &sess.root);
+    crate::event_log::init_session_event_log(&session_id);
 
     let mut messages: Vec<ChatMessage> = vec![
         ChatMessage::simple("system", system_prompt),
@@ -761,9 +763,10 @@ pub(crate) async fn run_tool_loop(
     ];
     let mut tracker = CompactTracker::new();
     let mut stop_policy = StopPolicy::new(budget);
-    // Track successfully executed tool results keyed by normalized signal.
+    // Track tool outcomes keyed by normalized signal.
     // Used to skip duplicate tool calls and keep their results from previous execution.
-    let mut successful_results: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    // Maps signal -> (success, preview_content)
+    let mut tool_outcomes: std::collections::HashMap<String, (bool, String)> = std::collections::HashMap::new();
 
     let mut update_context_estimate =
         |msgs: &[ChatMessage], tui: &mut crate::ui_terminal::TerminalUI| {
@@ -809,6 +812,7 @@ pub(crate) async fn run_tool_loop(
             );
             crate::event_log::clear_current_turn();
             let _ = crate::event_log::persist(&sess.root);
+            tui.push_stop_notice(&format!("Timeout: {}", timeout_reason));
             return Ok(ToolLoopResult {
                 final_answer: format!(
                     "⏱️ **Timeout After {:.1} Minutes**\n\n\
@@ -872,6 +876,7 @@ pub(crate) async fn run_tool_loop(
             );
             crate::event_log::clear_current_turn();
             let _ = crate::event_log::persist(&sess.root);
+            tui.push_stop_notice(&format!("Budget limit: {}", outcome.reason.as_str()));
             return Ok(ToolLoopResult {
                 final_answer: if final_answer_needs_retry(&final_trimmed) {
                     build_fallback_from_recent_tool_evidence(&messages)
@@ -941,7 +946,7 @@ pub(crate) async fn run_tool_loop(
         }
         // Telemetry: warn when approaching budget limits (only when a limit is set)
         let iter = stop_policy.iteration();
-        if max_iter > 0 && iter == max_iter - 2 {
+        if max_iter > 0 && iter >= max_iter.saturating_sub(2) {
             tui.push_budget_notice(&format!(
                 "Approaching iteration limit ({}/{})",
                 iter, max_iter
@@ -1058,6 +1063,7 @@ pub(crate) async fn run_tool_loop(
                 )
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
+                tui.push_stop_notice(&format!("Tool call limit: {}", outcome.reason.as_str()));
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
                         build_fallback_from_recent_tool_evidence(&messages)
@@ -1113,6 +1119,7 @@ pub(crate) async fn run_tool_loop(
                 )
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
+                tui.push_stop_notice(&format!("Stagnation: {}", outcome.reason.as_str()));
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
                         build_fallback_from_recent_tool_evidence(&messages)
@@ -1127,13 +1134,18 @@ pub(crate) async fn run_tool_loop(
                     timeout_reason: None,
                 });
             } else {
+                let stagnation_info = stop_policy.stagnation_trace_info();
                 trace(
                     args,
                     &format!(
                         "tool_loop: {} (no new tool signal)",
-                        stop_policy.stagnation_trace_info()
+                        stagnation_info
                     ),
                 );
+                // Task 540: Surface stagnation warning to transcript if persistent
+                if stop_policy.stagnation_runs() >= 3 {
+                    tui.push_meta_event("STAGNATION", &stagnation_info);
+                }
             }
 
             trace(
@@ -1165,13 +1177,22 @@ pub(crate) async fn run_tool_loop(
                     && tc.function.name != "workspace_info"
                     && tc.function.name != "tool_search"
                 {
-                    if let Some(prev) = successful_results.get(&sig) {
-                        trace(args, &format!("tool_loop: duplicate skipped (already succeeded) signal={}", sig));
-                        messages.push(ChatMessage::simple(
-                            "system",
-                            &format!("Already completed earlier — same result: {}", prev),
-                        ));
-                        continue;
+                    if let Some((ok, prev)) = tool_outcomes.get(&sig) {
+                        if *ok {
+                            trace(args, &format!("tool_loop: duplicate skipped (already succeeded) signal={}", sig));
+                            messages.push(ChatMessage::simple(
+                                "system",
+                                &format!("Already completed earlier — same result: {}", prev),
+                            ));
+                            continue;
+                        } else {
+                            // Task 537: If it failed before, allow retry but warn model
+                            trace(args, &format!("tool_loop: duplicate detected (previous failure) signal={}", sig));
+                            messages.push(ChatMessage::simple(
+                                "system",
+                                &format!("Note: Your previous attempt at '{}' failed. Only retry if you have changed the arguments or have a new strategy.", sig),
+                            ));
+                        }
                     }
                 }
                 // Task T209: Shell budget forecasting
@@ -1438,6 +1459,10 @@ pub(crate) async fn run_tool_loop(
                             final_summary.unwrap_or(raw_content)
                         };
 
+                        // Task 540: Surface stop reason to transcript before exit
+                        tui.push_meta_event("STOP", "Task completed via summary tool");
+
+                        tui.push_stop_notice("Completed via summary tool");
                         return Ok(ToolLoopResult {
                             final_answer,
                             iterations: stop_policy.iteration(),
@@ -1451,21 +1476,18 @@ pub(crate) async fn run_tool_loop(
                 }
                 // respond always continues the loop - it's for interim status, not final answer
 
-                // ── Result gate: compact failures, store successes ──
-                // If the tool succeeded: store result preview for duplicate detection,
-                // then push assistant + tool messages as normal.
-                // If the tool failed: skip the full message pair, push a brief
-                // system message instead. Keeps failure noise out of context.
-                let store_for_dup = tc.function.name != "respond"
+                // ── Result gate: store outcomes for dedup ──
+                let store_for_dedup = tc.function.name != "respond"
                     && tc.function.name != "summary"
                     && tc.function.name != "workspace_info"
                     && tc.function.name != "tool_search";
+                
+                if store_for_dedup {
+                    let preview = result.content.chars().take(200).collect::<String>();
+                    tool_outcomes.insert(sig, (result.ok, preview));
+                }
+
                 if result.ok {
-                    // Store successful result for duplicate detection
-                    if store_for_dup {
-                        let preview = result.content.chars().take(200).collect::<String>();
-                        successful_results.insert(sig, preview);
-                    }
 
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
@@ -1578,6 +1600,7 @@ pub(crate) async fn run_tool_loop(
                 )
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
+                tui.push_stop_notice("Forced finalization due to repeated shell failures");
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
                         build_fallback_from_recent_tool_evidence(&messages)

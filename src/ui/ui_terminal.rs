@@ -198,7 +198,7 @@ impl TerminalUI {
     pub(crate) fn add_message(&mut self, role: MessageRole, content: String) {
         use crate::claude_ui::ClaudeMessage;
 
-        self.transcript_token_estimate += content.len() as u64 / 4;
+        self.transcript_token_estimate += crate::token_counter::count_tokens(&content) as u64;
 
         match &role {
             MessageRole::User => {
@@ -777,28 +777,28 @@ impl TerminalUI {
                 ClaudeMessage::ToolTrace {
                     command, status, ..
                 } => {
-                    total += command.len() as u64 / 4;
+                    total += crate::token_counter::count_tokens(command) as u64;
                     if let crate::claude_ui::claude_state::ToolTraceStatus::Completed {
                         output,
                         ..
                     } = status
                     {
-                        total += output.len() as u64 / 4;
+                        total += crate::token_counter::count_tokens(output) as u64;
                     }
                     continue;
                 }
                 ClaudeMessage::ToolResult { output, .. } => {
-                    total += output.len() as u64 / 4;
+                    total += crate::token_counter::count_tokens(output) as u64;
                     continue;
                 }
                 ClaudeMessage::System { content } => content.as_str(),
                 ClaudeMessage::Notice(notice) => notice.content.as_str(),
                 _ => continue,
             };
-            total += text.len() as u64 / 4;
+            total += crate::token_counter::count_tokens(text) as u64;
         }
-        total += self.claude.streaming.thinking.len() as u64 / 4;
-        total += self.claude.streaming.content.len() as u64 / 4;
+        total += crate::token_counter::count_tokens(&self.claude.streaming.thinking) as u64;
+        total += crate::token_counter::count_tokens(&self.claude.streaming.content) as u64;
         total
     }
 
@@ -852,7 +852,7 @@ impl TerminalUI {
         // Sync input to Claude renderer
         self.claude.set_input(self.input.lines().to_vec());
         self.claude
-            .set_input_cursor(self.input.cursor_row(), self.input.display_col());
+            .set_input_cursor(self.input.cursor_row(), self.input.cursor_col());
         self.claude.set_task_list(self.tasks.clone());
 
         // Note: scroll offset is managed solely by ClaudeTranscript (self.claude)
@@ -868,7 +868,8 @@ impl TerminalUI {
 
         // Estimate the current model budget (base from last update + streaming)
         let streaming_tokens =
-            (self.claude.streaming.thinking.len() + self.claude.streaming.content.len()) as u64 / 4;
+            crate::token_counter::count_tokens(&self.claude.streaming.thinking) as u64
+            + crate::token_counter::count_tokens(&self.claude.streaming.content) as u64;
         let model_context_tokens_estimate = self.state.footer.context_current + streaming_tokens;
         let transcript_tokens_estimate = self.transcript_token_estimate;
 
@@ -2349,7 +2350,8 @@ mod tests {
         );
 
         let streaming_tokens =
-            (tui.claude.streaming.thinking.len() + tui.claude.streaming.content.len()) as u64 / 4;
+            crate::token_counter::count_tokens(&tui.claude.streaming.thinking) as u64
+            + crate::token_counter::count_tokens(&tui.claude.streaming.content) as u64;
         let model_budget = tui.state.footer.context_current + streaming_tokens;
         assert_eq!(
             model_budget, 100,

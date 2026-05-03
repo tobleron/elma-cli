@@ -35,17 +35,35 @@ No step ever fails because "the model is too small." If a step fails, it is spli
 
 ## Current Focus
 
-**Make the full hierarchy reliable on 3B models:** complexity → intent → classify → route → formula → graph → approach → instruction → step → answer.
+**Completed:** The full hierarchy is now reliable on 3B models: complexity → intent → classify → route → formula → graph → approach → instruction → step → answer.
 
-## How We Get There
+**New Focus Areas:**
+1. **Recipe system adoption** — expand formula-to-recipe bridge coverage (Task 451)
+2. **Model capability awareness** — leverage token budgeting and feature detection (Task 448, 499)
+3. **Advanced code intelligence** — repo map with symbol awareness (Task 463), interpreter tools (Task 461)
+4. **Execution safety** — sandboxed profiles (Task 459), multi-file atomic patches (Task 455)
+5. **Transcript richness** — event logging (Task 470), continuity tracking (Task 380), effective history (Task 310)
 
-1. **Complexity-gated decomposition** — complexity assessment decides maximum graph depth before work begins
-2. **Split multi-field intel units** (e.g., `evidence_need_assessor` into `needs_evidence` + `needs_tools`)
-3. **Clean-context finalization** — final answers never leak internal state, stop reasons, or error messages
-4. **Transcript visibility** — every routing decision, graph creation, approach fork, task status change visible in transcript rows
-5. **Approach branching** — failures fork new approaches from the objective root, never continue down broken branches
-6. **Task persistence** — tasks survive session close via `sessions/<id>/runtime_tasks/tasks.json` and `_elma-tasks/` files
-7. **Re-apply non-DSL improvements** (routing collapse fix, hard max iterations, stagnation detection, dedup, CHAT bypass)
+## How We Got Here (Completed)
+
+1. ✅ **Complexity-gated decomposition** — complexity assessment decides maximum graph depth (Task 389)
+2. ✅ **Split multi-field intel units** — evidence_needs split, 18+ focused units in `intel_units/`
+3. ✅ **Clean-context finalization** — final answers never leak internal state (Task 384)
+4. ✅ **Transcript visibility** — routing decisions, graph creation, approach forks, task changes visible (Task 470)
+5. ✅ **Approach branching** — failures fork new approaches from objective root (Task 390)
+6. ✅ **Task persistence** — tasks survive session close via `runtime_tasks/tasks.json` and `_elma-tasks/` (Task 494)
+7. ✅ **Non-DSL improvements** — routing fixes, stagnation detection, CHAT bypass
+8. ✅ **Work graph bridge** — graph nodes ↔ tasks ↔ step execution (Task 494)
+9. ✅ **Background tasks** — async job execution with start/status/output/stop (Task 268)
+10. ✅ **Semantic continuity** — tracking across full pipeline (Task 380)
+
+## Next Objectives
+
+1. **Recipe system expansion** — add recipes for common workflows (code review, refactoring, debugging)
+2. **Token efficiency** — optimize context usage with tiktoken-rs integration (Task 499)
+3. **Multi-model support** — leverage model capabilities registry for optimal model selection
+4. **Enhanced document intelligence** — improve format support and extraction accuracy
+5. **Developer experience** — improve debugging tools, transcript analysis, and error reporting
 
 ## Non-Goals
 

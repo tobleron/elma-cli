@@ -208,7 +208,9 @@ fn scan_standard_directories(tools: &mut Vec<CachedTool>) {
         "/usr/local/bin",
         "/usr/bin",
         "/bin",
+        #[cfg(target_os = "macos")]
         "/opt/homebrew/bin",
+        #[cfg(target_os = "linux")]
         "/home/linuxbrew/.linuxbrew/bin",
     ];
 

@@ -53,6 +53,7 @@ pub(crate) async fn build_program_with_temp(
         tui,
         context_hint,
         route_decision.evidence_required,
+        _complexity.complexity.as_str(),
     )
     .await
     {

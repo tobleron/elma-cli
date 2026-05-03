@@ -52,7 +52,7 @@ pub(crate) async fn execute_tool_call(
     tool_call: &ToolCall,
     workdir: &PathBuf,
     session: &SessionPaths,
-    _client: &reqwest::Client,
+    client: &reqwest::Client,
     _chat_url: &Url,
     _intent: &str,
     tui: Option<&mut crate::ui_terminal::TerminalUI>,
@@ -85,6 +85,7 @@ pub(crate) async fn execute_tool_call(
         }
     };
     match tool_name.as_str() {
+        "ls" => exec_ls(&args_value, workdir, &call_id, tui),
         "observe" => exec_observe(&args_value, workdir, &call_id, tui),
         "tool_search" => exec_tool_search(&args_value, &call_id, tui),
         "shell" => exec_shell(args, &args_value, workdir, session, &call_id, tui).await,
@@ -106,6 +107,15 @@ pub(crate) async fn execute_tool_call(
         "file_size" => exec_file_size(&args_value, workdir, &call_id, tui),
         "workspace_info" => exec_workspace_info(workdir, &call_id, tui),
         "exists" => exec_exists(&args_value, workdir, &call_id, tui),
+        "repo_map" => exec_repo_map(&args_value, workdir, &call_id, tui).await,
+        "git_inspect" => exec_git_inspect(&args_value, workdir, &call_id, tui).await,
+        "run_python" => exec_run_python(&args_value, workdir, &call_id, tui).await,
+        "run_node" => exec_run_node(&args_value, workdir, &call_id, tui).await,
+        "job_start" => exec_job_start(&args_value, workdir, &call_id, tui).await,
+        "job_status" => exec_job_status(&args_value, workdir, &call_id, tui).await,
+        "job_output" => exec_job_output(&args_value, workdir, &call_id, tui).await,
+        "job_stop" => exec_job_stop(&args_value, workdir, &call_id, tui).await,
+        "fetch" => exec_fetch(client, &args_value, &call_id, tui).await,
         unknown => {
             crate::append_trace_log_line(&format!(
                 "[TOOL_UNKNOWN] name={:?} args={}",
@@ -382,13 +392,27 @@ async fn exec_shell(
 
             let output = &er.inline_text;
             let lc = output.lines().count();
+            
+            // Task 538: Detect silent truncation by head/tail/limiters
+            let mut output_with_warning = output.clone();
+            if er.exit_code == 0 {
+                if let Some(limit) = extract_line_limit(&command) {
+                    if lc >= limit {
+                        output_with_warning.push_str(&format!(
+                            "\n\n⚠️ [TRUNCATED] Output matches line limit ({} lines). Full output may contain more content. Increase the limit or refine your command if needed.",
+                            limit
+                        ));
+                    }
+                }
+            }
+
             let _ = std::fs::write(
                 session.artifacts_dir.join(format!("tool_{}.sh", call_id)),
                 &command,
             );
             let _ = std::fs::write(
                 session.artifacts_dir.join(format!("tool_{}.out", call_id)),
-                output,
+                &output_with_warning,
             );
             trace(
                 args,
@@ -396,7 +420,7 @@ async fn exec_shell(
             );
             // Return full output — truncation is handled by tool_result_storage budget
             let content = if er.exit_code == 0 {
-                output.clone()
+                output_with_warning
             } else {
                 // Run context modifier errors for failed commands
                 let error_msgs = hooks.run_context_modifier_errors(&command, output);
@@ -436,6 +460,261 @@ async fn exec_shell(
                 timed_out: is_timeout,
                 signal_killed: None,
             }
+        }
+    }
+}
+
+fn exec_ls(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let raw_path = av["path"].as_str().unwrap_or("").to_string();
+    let depth = av["depth"].as_i64().unwrap_or(2).clamp(1, 5) as usize;
+    let ignore_patterns: Vec<String> = av["ignore"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let target = if raw_path.is_empty() {
+        workdir.clone()
+    } else if std::path::Path::new(&raw_path).is_absolute() {
+        let error_msg = "absolute_path_not_allowed: use workspace-relative path".to_string();
+        emit_tool_result(&mut tui, "ls", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "ls".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    } else {
+        workdir.join(&raw_path)
+    };
+
+    emit_tool_start(&mut tui, "ls", &raw_path);
+
+    let md = match std::fs::symlink_metadata(&target) {
+        Ok(m) => m,
+        Err(e) => {
+            let error_msg = format!("Error accessing {}: {}", target.display(), e);
+            emit_tool_result(&mut tui, "ls", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "ls".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    if md.is_file() {
+        let modified = md.modified().ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| format_time(d.as_secs()))
+            .unwrap_or_default();
+        let content = format!(
+            "File: {}  ({} B, modified {})",
+            target.file_name().unwrap_or_default().to_string_lossy(),
+            md.len(),
+            modified
+        );
+        emit_tool_result(&mut tui, "ls", true, &content);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "ls".to_string(),
+            content,
+            ok: true,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    if !md.is_dir() {
+        let error_msg = format!("Not a directory or file: {}", target.display());
+        emit_tool_result(&mut tui, "ls", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "ls".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let mut entries: Vec<LsEntry> = Vec::new();
+    let total_count = collect_entries(&target, &target, depth, &ignore_patterns, &mut entries);
+
+    let max_entries = 1000;
+    let truncated = entries.len() > max_entries;
+    if truncated {
+        entries.truncate(max_entries);
+    }
+
+    let mut lines = Vec::new();
+    let display_name = if raw_path.is_empty() {
+        ".".to_string()
+    } else {
+        raw_path.clone()
+    };
+    lines.push(format!("{}/  ({} item(s))", display_name, total_count));
+
+    for entry in &entries {
+        let indent = "    ".repeat(entry.depth);
+        let modified = format_time(entry.modified_secs);
+        let size_str = if entry.is_dir {
+            String::new()
+        } else {
+            format!("  ({} B, {})", entry.size, modified)
+        };
+        let suffix = if entry.is_dir { "/" } else { "" };
+        lines.push(format!("{}{}{}{}", indent, entry.name, suffix, size_str));
+    }
+
+    if truncated {
+        lines.push(format!("... and {} more entries", total_count.saturating_sub(max_entries)));
+    }
+
+    let content = lines.join("\n");
+    emit_tool_result(&mut tui, "ls", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "ls".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
+struct LsEntry {
+    name: String,
+    depth: usize,
+    is_dir: bool,
+    size: u64,
+    modified_secs: u64,
+}
+
+fn collect_entries(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    max_depth: usize,
+    ignore_patterns: &[String],
+    entries: &mut Vec<LsEntry>,
+) -> usize {
+    let current_depth = if dir == root {
+        0
+    } else {
+        dir.strip_prefix(root)
+            .map(|p| p.components().count())
+            .unwrap_or(0)
+    };
+
+    if current_depth > max_depth {
+        return 0;
+    }
+
+    let read_dir = match std::fs::read_dir(dir) {
+        Ok(r) => r,
+        Err(_) => return 0,
+    };
+
+    let mut local: Vec<LsEntry> = Vec::new();
+    let mut total: usize = 0;
+
+    for entry in read_dir.filter_map(|e| e.ok()) {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        if is_ignored(&name, ignore_patterns) {
+            continue;
+        }
+        total += 1;
+
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        let is_dir = ft.is_dir();
+        let md = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+
+        let modified_secs = md.modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        local.push(LsEntry {
+            name,
+            depth: current_depth,
+            is_dir,
+            size: md.len(),
+            modified_secs,
+        });
+
+        if is_dir && current_depth < max_depth {
+            total += collect_entries(root, &entry.path(), max_depth, ignore_patterns, entries);
+        }
+    }
+
+    local.sort_by(|a, b| {
+        if a.is_dir != b.is_dir {
+            b.is_dir.cmp(&a.is_dir)
+        } else {
+            a.name.cmp(&b.name)
+        }
+    });
+
+    entries.extend(local);
+    total
+}
+
+fn is_ignored(name: &str, patterns: &[String]) -> bool {
+    for pattern in patterns {
+        if let Ok(true) = glob::Pattern::new(pattern).map(|p| p.matches(name)) {
+            return true;
+        }
+    }
+    false
+}
+
+fn format_time(secs: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let diff = now.saturating_sub(secs);
+    if diff < 60 {
+        "just now".to_string()
+    } else if diff < 3600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86400 {
+        format!("{}h ago", diff / 3600)
+    } else if diff < 604800 {
+        format!("{}d ago", diff / 86400)
+    } else {
+        match chrono::DateTime::from_timestamp(secs as i64, 0) {
+            Some(dt) => dt.format("%b %d").to_string(),
+            None => "unknown".to_string(),
         }
     }
 }
@@ -535,7 +814,10 @@ fn exec_observe(
             Err(_) => {}
         }
     }
+    #[cfg(unix)]
     lines.push(format!("permissions: {:o}", std::os::unix::fs::MetadataExt::mode(&md) & 0o777));
+    #[cfg(not(unix))]
+    lines.push(format!("permissions: {:?}", md.permissions()));
     lines.push(format!("readonly: {}", md.permissions().readonly()));
 
     // Symlink target
@@ -780,6 +1062,44 @@ fn exec_glob(
     }
 }
 
+fn verify_syntax(path: &str, workdir: &PathBuf) -> Result<(), String> {
+    if path.ends_with(".rs") {
+        let mut curr = workdir.clone();
+        let mut found_cargo = false;
+        for _ in 0..5 {
+            if curr.join("Cargo.toml").exists() {
+                found_cargo = true;
+                break;
+            }
+            if let Some(parent) = curr.parent() {
+                curr = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
+        
+        if found_cargo {
+            let output = std::process::Command::new("cargo")
+                .arg("check")
+                .arg("--message-format=short")
+                .current_dir(&curr)
+                .output();
+            
+            match output {
+                Ok(out) if !out.status.success() => {
+                    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                    let combined = format!("{}\n{}", stdout, stderr);
+                    return Err(format!("Cargo check failed after mutation:\n{}", combined.trim()));
+                }
+                Err(e) => return Err(format!("Failed to run cargo check: {}", e)),
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
 fn exec_patch(
     av: &serde_json::Value,
     workdir: &PathBuf,
@@ -865,6 +1185,20 @@ fn exec_patch(
                     }
                 };
                 results.push(format!("{}: {}", path, result_msg));
+            }
+
+            // Task 543: Verify syntax if any Rust files were touched
+            for op in &parsed.operations {
+                let p = match op {
+                    PatchOperation::AddFile { path, .. } => path,
+                    PatchOperation::UpdateFile { path, .. } => path,
+                    PatchOperation::DeleteFile { .. } => continue,
+                };
+                if let Err(e) = verify_syntax(p, workdir) {
+                    all_ok = false;
+                    results.push(format!("Verification failed: {}", e));
+                    break;
+                }
             }
 
             let output = results.join("\n");
@@ -971,6 +1305,19 @@ fn exec_edit(
                     signal_killed: None,
                 };
             }
+            // Task 543: Verify syntax
+            if let Err(e) = verify_syntax(&path, workdir) {
+                emit_tool_result(&mut tui, "edit", false, &e);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "edit".to_string(),
+                    content: e,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    signal_killed: None,
+                };
+            }
             emit_tool_result(&mut tui, "edit", true, "edited");
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
@@ -1068,6 +1415,19 @@ fn exec_write(
 
     match std::fs::write(&full, &content) {
         Ok(_) => {
+            // Task 543: Verify syntax
+            if let Err(e) = verify_syntax(&path, workdir) {
+                emit_tool_result(&mut tui, "write", false, &e);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "write".to_string(),
+                    content: e,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    signal_killed: None,
+                };
+            }
             emit_tool_result(&mut tui, "write", true, "written");
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
@@ -1150,6 +1510,9 @@ async fn exec_search(
         if !include.is_empty() {
             cmd.arg("--glob").arg(include);
         }
+    } else {
+        // Task 542: Exclude _knowledge_base by default to avoid noise in audits
+        cmd.arg("--glob").arg("!_knowledge_base/**");
     }
 
     if let Some(p) = &sp {
@@ -1168,7 +1531,7 @@ async fn exec_search(
         Ok(output) => {
             let exit_code = output.status.code().unwrap_or(0);
             let success = exit_code == 0 || exit_code == 1;
-            let content = if exit_code == 0 {
+            let mut content = if exit_code == 0 {
                 String::from_utf8_lossy(&output.stdout).to_string()
             } else if exit_code == 1 {
                 format!("No matches found for: {}", pattern)
@@ -1179,6 +1542,16 @@ async fn exec_search(
                     String::from_utf8_lossy(&output.stderr)
                 )
             };
+
+            // Task 542: Add annotation if matches include _knowledge_base
+            if content.contains("_knowledge_base/") {
+                let kb_count = content.lines().filter(|l| l.contains("_knowledge_base/")).count();
+                let total_count = content.lines().count();
+                content.push_str(&format!(
+                    "\n\nℹ️ NOTE: {} of {} matches are in _knowledge_base/ (third-party reference code). Exclude these from risk analysis of Elma's own codebase.",
+                    kb_count, total_count
+                ));
+            }
 
             emit_tool_result(&mut tui, "search", success, &content);
             ToolExecutionResult {
@@ -1884,6 +2257,149 @@ async fn exec_job_stop(
     }
 }
 
+async fn exec_fetch(
+    client: &reqwest::Client,
+    av: &serde_json::Value,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let url_str = av["url"].as_str().unwrap_or("").to_string();
+    let format = av["format"].as_str().unwrap_or("text").to_string();
+    let timeout_secs = av["timeout"].as_u64().unwrap_or(120);
+
+    if url_str.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "fetch".to_string(),
+            content: "Error: empty URL".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let parsed_url = match url::Url::parse(&url_str) {
+        Ok(u) => u,
+        Err(e) => {
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "fetch".to_string(),
+                content: format!("Error: invalid URL: {}", e),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let scheme = parsed_url.scheme();
+    if scheme != "http" && scheme != "https" {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "fetch".to_string(),
+            content: format!("Error: only http and https schemes are allowed, got '{}'", scheme),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "fetch", &url_str);
+
+    let request = client
+        .get(parsed_url.as_str())
+        .timeout(std::time::Duration::from_secs(timeout_secs.min(120)))
+        .header("User-Agent", "ElmaCLI/1.0")
+        .send();
+
+    let response = match request.await {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = if e.is_timeout() {
+                format!("Error: request timed out after {}s", timeout_secs)
+            } else {
+                format!("Error: request failed: {}", e)
+            };
+            emit_tool_result(&mut tui, "fetch", false, &msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "fetch".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let status = response.status();
+    if !status.is_success() {
+        let msg = format!("Error: HTTP {}", status);
+        emit_tool_result(&mut tui, "fetch", false, &msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "fetch".to_string(),
+            content: msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            signal_killed: None,
+        };
+    }
+
+    let raw_bytes = match response.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            let msg = format!("Error: failed to read response body: {}", e);
+            emit_tool_result(&mut tui, "fetch", false, &msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "fetch".to_string(),
+                content: msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let capped = &raw_bytes[..raw_bytes.len().min(100_000)];
+
+    let content = match format.as_str() {
+        "markdown" => {
+            html2text::from_read(capped, 120).unwrap_or_else(|_| String::from_utf8_lossy(capped).to_string())
+        }
+        "html" => {
+            String::from_utf8_lossy(capped).to_string()
+        }
+        _ => {
+            String::from_utf8_lossy(capped).to_string()
+        }
+    };
+
+    let truncated = if raw_bytes.len() > 100_000 {
+        format!("{}\n\n[Content truncated at 100KB — fetched {} bytes total]", content, raw_bytes.len())
+    } else {
+        content
+    };
+
+    emit_tool_result(&mut tui, "fetch", true, &truncated);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "fetch".to_string(),
+        content: truncated,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+        signal_killed: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1901,7 +2417,7 @@ mod tests {
 
     #[test]
     fn observe_empty_path_returns_error() {
-        let wd = PathBuf::from("/tmp");
+        let wd = std::env::temp_dir();
         let result = exec_observe(&serde_json::json!({"path": ""}), &wd, "o1", None);
         assert!(!result.ok);
         assert!(result.content.contains("empty path"));
@@ -1909,7 +2425,7 @@ mod tests {
 
     #[test]
     fn observe_nonexistent_path_returns_exists_false() {
-        let wd = PathBuf::from("/tmp");
+        let wd = std::env::temp_dir();
         let result = exec_observe(
             &serde_json::json!({"path": "/nonexistent_path_xyzabc123"}),
             &wd,
@@ -1929,7 +2445,7 @@ mod tests {
         f.write_all(b"hello world").unwrap();
         f.flush().unwrap();
 
-        let wd = PathBuf::from("/tmp");
+        let wd = std::env::temp_dir();
         let result = exec_observe(
             &serde_json::json!({"path": file_path.to_str().unwrap()}),
             &wd,
@@ -1952,7 +2468,7 @@ mod tests {
         std::fs::write(dir.join("b.txt"), "b").unwrap();
         std::fs::write(dir.join("c.txt"), "c").unwrap();
 
-        let wd = PathBuf::from("/tmp");
+        let wd = std::env::temp_dir();
         let result = exec_observe(
             &serde_json::json!({"path": dir.to_str().unwrap()}),
             &wd,
@@ -2802,4 +3318,28 @@ fn exec_exists(
         timed_out: false,
         signal_killed: None,
     }
+}
+
+/// Task 538: Helper to extract line limits from shell commands (e.g. head -N, tail -N)
+fn extract_line_limit(command: &str) -> Option<usize> {
+    // Check for | head -N, | head -n N, | tail -N, | tail -n N
+    let patterns = [
+        r"\|\s*head\s*-n\s*(\d+)",
+        r"\|\s*head\s*-(\d+)",
+        r"\|\s*tail\s*-n\s*(\d+)",
+        r"\|\s*tail\s*-(\d+)",
+    ];
+    
+    for p in patterns {
+        if let Ok(re) = regex::Regex::new(p) {
+            if let Some(caps) = re.captures(command) {
+                if let Some(m) = caps.get(1) {
+                    if let Ok(limit) = m.as_str().parse::<usize>() {
+                        return Some(limit);
+                    }
+                }
+            }
+        }
+    }
+    None
 }

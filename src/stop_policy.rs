@@ -29,12 +29,14 @@ fn args_hash(args: &str) -> u64 {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum StopReason {
     StageBudgetExceeded,
+    IterationLimitReached,
     TaskBudgetExceeded,
     RepeatedToolFailure,
     RepeatedNoNewEvidence,
     RepeatedSameCommand,
     RepeatedSameConclusion,
     RespondAbuse,
+    RespondOnlyStagnation,
     WallClockExceeded,
     ModelProgressStalled,
     UserInterrupted,
@@ -44,12 +46,14 @@ impl StopReason {
     pub(crate) fn as_str(&self) -> &'static str {
         match self {
             StopReason::StageBudgetExceeded => "stage_budget_exceeded",
+            StopReason::IterationLimitReached => "iteration_limit_reached",
             StopReason::TaskBudgetExceeded => "task_budget_exceeded",
             StopReason::RepeatedToolFailure => "repeated_tool_failure",
             StopReason::RepeatedNoNewEvidence => "repeated_no_new_evidence",
             StopReason::RepeatedSameCommand => "repeated_same_command",
             StopReason::RepeatedSameConclusion => "repeated_same_conclusion",
             StopReason::RespondAbuse => "respond_abuse",
+            StopReason::RespondOnlyStagnation => "respond_only_stagnation",
             StopReason::WallClockExceeded => "wall_clock_exceeded",
             StopReason::ModelProgressStalled => "model_progress_stalled",
             StopReason::UserInterrupted => "user_interrupted",
@@ -69,11 +73,27 @@ pub(crate) struct StageBudget {
 impl Default for StageBudget {
     fn default() -> Self {
         Self {
-            max_tool_calls: 0, // 0 = unlimited (context window + memory are the only hard limits)
-            max_iterations: 0, // 0 = unlimited (context compaction + stagnation detection are the guards)
+            max_tool_calls: 0,
+            max_iterations: 20, // Default cap for safety
             max_repeated_failures: 6,
             max_stagnation_cycles: 8,
             max_wall_clock_s: 300,
+        }
+    }
+}
+
+impl StageBudget {
+    pub(crate) fn from_complexity(complexity: &str) -> Self {
+        let max_iterations = match complexity.to_ascii_uppercase().as_str() {
+            "DIRECT" => 1,
+            "INVESTIGATE" => 3,
+            "MULTISTEP" => 10,
+            "OPEN_ENDED" => 20,
+            _ => 12, // Default for unknown complexity
+        };
+        Self {
+            max_iterations,
+            ..Self::default()
         }
     }
 }
@@ -162,8 +182,8 @@ impl StopPolicy {
 
         if self.budget.max_iterations > 0 && self.iteration > self.budget.max_iterations {
             return Some(self.build_outcome(
-                StopReason::StageBudgetExceeded,
-                "Iteration budget exhausted. The model has used the maximum number of tool loops for this stage.",
+                StopReason::IterationLimitReached,
+                format!("Iteration limit reached ({}/{}). The model has used the maximum number of tool loops allowed for this complexity tier.", self.iteration - 1, self.budget.max_iterations),
             ));
         }
 
@@ -426,7 +446,7 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
         if self.consecutive_respond_only_turns >= 5 {
             return Some(self.build_outcome(
                 StopReason::RespondAbuse,
-                "The model has called 'respond' 5+ times without using any evidence-collecting tools. Force-stopping to preserve the iteration budget.",
+                "Respond Abuse: The model has called 'respond' 5+ times without using any evidence-collecting tools. This usually indicates the model is stuck in a conversational loop.",
             ));
         }
         None
@@ -437,7 +457,7 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
     pub(crate) fn check_respond_only_stagnation(&mut self) -> Option<StopOutcome> {
         if self.consecutive_respond_only_turns >= 5 {
             return Some(self.build_outcome(
-                StopReason::RespondAbuse,
+                StopReason::RespondOnlyStagnation,
                 "Respond-only stagnation: the model called respond 5+ times without real evidence collection.",
             ));
         }
@@ -566,6 +586,9 @@ fn next_step_hint(reason: &StopReason) -> String {
         StopReason::StageBudgetExceeded => {
             "Narrow the request scope or split the work into smaller sequential stages.".to_string()
         }
+        StopReason::IterationLimitReached => {
+            "The hard iteration cap was reached. Consider breaking the task into smaller sub-tasks.".to_string()
+        }
         StopReason::TaskBudgetExceeded => {
             "Break the task into independent sub-tasks and run them one at a time.".to_string()
         }
@@ -573,7 +596,7 @@ fn next_step_hint(reason: &StopReason) -> String {
             "The same tool failed multiple times. Consider switching to an alternative tool: use 'shell' with cat/head for file reading, or 'search' with grep for finding content, or 'glob' for filename matching.".to_string()
         }
         StopReason::RepeatedNoNewEvidence => {
-            "Ask a more specific question or provide a file path to inspect directly.".to_string()
+            "The model is stuck repeating tool calls. Try a different approach or ask for missing information.".to_string()
         }
         StopReason::RepeatedSameCommand => {
             "Change the query parameters or inspect a different file/directory.".to_string()
@@ -582,7 +605,10 @@ fn next_step_hint(reason: &StopReason) -> String {
             "Introduce a new evidence source or rephrase the objective.".to_string()
         }
         StopReason::RespondAbuse => {
-            "Use search, read, or shell tools to collect evidence. Do not call respond without gathering facts first.".to_string()
+            "The model is stuck in a conversational loop. Use search, read, or shell tools to collect evidence.".to_string()
+        }
+        StopReason::RespondOnlyStagnation => {
+            "Status updates alone do not solve tasks. Gather evidence from the workspace.".to_string()
         }
         StopReason::WallClockExceeded => {
             "Run the step again with a tighter scope, or split it into smaller chunks.".to_string()
@@ -692,20 +718,39 @@ pub(crate) fn classify_command_strategy(cmd: &str) -> String {
 /// Collapses highly variable identifiers (timestamps, session ids) so repeated
 /// directory-probing loops are detected as the same strategy.
 pub(crate) fn normalize_shell_signal(cmd: &str) -> String {
+    // Task 544: Granular shell signals
+    // Collapses digits only if they look like timestamps or large offsets.
+    // Preserves small integers used in limits (head -150) or offsets.
     let mut out = String::with_capacity(cmd.len());
-    let mut prev_was_digit = false;
+    
+    // Simple heuristic: collapse numbers with 4+ digits (likely timestamps/IDs)
+    // or very long sequences of digits.
+    let mut current_number = String::new();
+    
     for ch in cmd.chars() {
         if ch.is_ascii_digit() {
-            if !prev_was_digit {
-                out.push('#');
-                prev_was_digit = true;
+            current_number.push(ch);
+        } else {
+            if !current_number.is_empty() {
+                if current_number.len() >= 4 {
+                    out.push('#');
+                } else {
+                    out.push_str(&current_number);
+                }
+                current_number.clear();
             }
-            continue;
+            out.push(ch);
         }
-        prev_was_digit = false;
-        out.push(ch);
     }
-    out.replace("s_#_#", "s_SESSION")
+    if !current_number.is_empty() {
+        if current_number.len() >= 4 {
+            out.push('#');
+        } else {
+            out.push_str(&current_number);
+        }
+    }
+    
+    out.replace("s_SESSION", "s_SESSION") // Keep existing markers
 }
 
 #[cfg(test)]

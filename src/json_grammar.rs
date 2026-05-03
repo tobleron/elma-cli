@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_load_grammar_file_not_found() {
-        let result = load_grammar("nonexistent.gbnf", &PathBuf::from("/tmp"));
+        let result = load_grammar("nonexistent.gbnf", &std::env::temp_dir());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
     }

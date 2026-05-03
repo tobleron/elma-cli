@@ -4,14 +4,14 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "write",
-            "Create or overwrite a file with given content. Auto-creates parent directories. Use this for creating new files or complete rewrites. For surgical changes to existing files, use the 'edit' tool instead. Returns what was added/removed.",
+            "Create or overwrite a file with given content. ALWAYS use this instead of 'shell tee'. Auto-creates parent directories. Use this for creating new files or complete rewrites. For surgical changes to existing files, use the 'edit' tool instead. NOTE: Writing a .rs file will trigger an automatic 'cargo check' verification.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Workspace-relative path to the file"},
+                    "path": {"type": "string", "description": "Workspace-relative path to the file"},
                     "content": {"type": "string", "description": "The content to write to the file"}
                 },
-                "required": ["file_path", "content"]
+                "required": ["path", "content"]
             }),
             vec![
                 "write file",

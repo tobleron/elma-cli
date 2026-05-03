@@ -611,9 +611,22 @@ pub(crate) fn read_file_with_budget(
 
     match format {
         DocumentFormat::Txt | DocumentFormat::Code | DocumentFormat::Markdown => {
-            // Plaintext files — read directly
+            // Plaintext files — read directly with budget enforcement
             match std::fs::read_to_string(path) {
-                Ok(content) => Ok((content, format!("File: {}", path.display()))),
+                Ok(content) => {
+                    let max = budget.max_chars;
+                    if content.len() > max {
+                        let truncated: String = content.chars().take(max).collect();
+                        let warning = format!(
+                            "\n\n[TRUNCATED: File is too large ({} chars). Only first {} chars shown. Use search or read with line ranges to see more.]",
+                            content.len(),
+                            max
+                        );
+                        Ok((format!("{}{}", truncated, warning), format!("File: {} (TRUNCATED)", path.display())))
+                    } else {
+                        Ok((content, format!("File: {}", path.display())))
+                    }
+                }
                 Err(e) => Err(anyhow::anyhow!("Failed to read {}: {}", path.display(), e)),
             }
         }
@@ -647,9 +660,22 @@ pub(crate) fn read_file_with_budget(
             }
         }
         _ => {
-            // Unsupported format — try plaintext read, will likely fail for binaries
+            // Unsupported format — try plaintext read with budget enforcement
             match std::fs::read_to_string(path) {
-                Ok(content) => Ok((content, format!("File: {}", path.display()))),
+                Ok(content) => {
+                    let max = budget.max_chars;
+                    if content.len() > max {
+                        let truncated: String = content.chars().take(max).collect();
+                        let warning = format!(
+                            "\n\n[TRUNCATED: File is too large ({} chars). Only first {} chars shown.]",
+                            content.len(),
+                            max
+                        );
+                        Ok((format!("{}{}", truncated, warning), format!("File: {} (TRUNCATED)", path.display())))
+                    } else {
+                        Ok((content, format!("File: {}", path.display())))
+                    }
+                }
                 Err(e) => Err(anyhow::anyhow!("Failed to read {}: {}", path.display(), e)),
             }
         }

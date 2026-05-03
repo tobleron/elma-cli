@@ -1024,6 +1024,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 &mut tui,
                 context_hint,
                 route_decision.evidence_required,
+                complexity.complexity.as_str(),
             )
             .await
             {

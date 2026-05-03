@@ -4,10 +4,10 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "shell",
-            "Execute a shell command and return its output. Use this to list files, get the current time, run builds, inspect git status, or perform any system operation.",
+            "Execute a shell command and return its output. ONLY use this for operations without a native tool equivalent (e.g. running builds, git status, date). NEVER use for listing files, reading files, or searching text—use 'ls', 'read', or 'search' instead.",
             serde_json::json!({
                 "type": "object",
-                "properties": {"command": {"type": "string", "description": "The shell command to execute (e.g. 'ls docs/', 'date', 'cargo build')"}},
+                "properties": {"command": {"type": "string", "description": "The shell command to execute (e.g. 'cargo build', 'git status', 'date')"}},
                 "required": ["command"]
             }),
             vec![
@@ -16,7 +16,6 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "execute bash command",
                 "run terminal command",
                 "execute system command",
-                "list directory files",
                 "get current time date",
                 "run build test",
             ],

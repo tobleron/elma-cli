@@ -198,7 +198,13 @@ PRESENTATION RULES:
 2. If the results are empty or do not support the user's request, state that clearly and honestly.
 3. DO NOT add "I am Elma" or "Here are your results" boilerplate.
 4. DO NOT provide tutorials, marketing fluff, or slide-deck formatting unless explicitly asked in the USER MESSAGE.
-5. PRESERVE exact relative paths (e.g. "src/main.rs") and identifiers."#,
+5. PRESERVE exact relative paths (e.g. "src/main.rs") and identifiers.
+6. RISK REPORTING: If the user request involves audit/risk analysis:
+   - Every numbered risk must include an `evidence_status`: [verified] (file read/command run), [inferred] (logical deduction from verified facts), or [assumed] (cited without reading).
+   - DO NOT assign a severity label (Low/Medium/High) to any [assumed] risk.
+   - Risks tagged [assumed] must be moved to a separate "Unverified Signals" section, not numbered alongside verified risks.
+   - Unread files are NOT confirmed evidence. If you cite a file you haven't read, it MUST be [assumed].
+   - Prefer verified evidence over assumptions in the main report list."#,
         user_message = user_message.trim(),
         route = route_decision.route,
         speech_act = route_decision.speech_act.choice,

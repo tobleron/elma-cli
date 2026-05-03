@@ -107,6 +107,7 @@ pub(crate) async fn run_tool_calling_pipeline(
     tui: &mut crate::ui_terminal::TerminalUI,
     context_hint: &str,
     evidence_required: bool,
+    complexity: &str,
 ) -> Result<(String, usize, usize, bool)> {
     let system_prompt = build_tool_calling_system_prompt(runtime, line);
     trace(
@@ -133,6 +134,7 @@ pub(crate) async fn run_tool_calling_pipeline(
         evidence_required,
         runtime.ctx_max,
         &runtime.goal_state,
+        complexity,
     )
     .await?;
 

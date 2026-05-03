@@ -517,7 +517,7 @@ mod tests {
             "test_1".to_string(),
             "test task".to_string(),
             "echo hello".to_string(),
-            PathBuf::from("/tmp"),
+            std::env::temp_dir(),
             1024,
             60,
         );
@@ -531,7 +531,7 @@ mod tests {
             "test_1".to_string(),
             "test".to_string(),
             "echo".to_string(),
-            PathBuf::from("/tmp"),
+            std::env::temp_dir(),
             100,
             60,
         );

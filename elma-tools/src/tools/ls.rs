@@ -4,11 +4,11 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "ls",
-            "List files and directories in a given path. Shows a tree view with file sizes and modification times. Skips hidden files and common system/generated directories. Use this to explore unknown directory structures or inspect what files exist in a specific location. Max 1000 entries.",
+            "List files and directories in a given path. ALWAYS use this instead of 'shell ls' or 'shell tree'. It returns a superior tree view with file sizes and modification times. Use this to explore unknown directory structures or inspect what files exist in a specific location. Max 1000 entries.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Directory to list (defaults to workspace root)"},
+                    "path": {"type": "string", "description": "Directory to list (defaults to workspace root). Use '.' for current dir."},
                     "depth": {"type": "integer", "description": "Maximum recursion depth (default: 2, max: 5)"},
                     "ignore": {"type": "array", "items": {"type": "string"}, "description": "Additional glob patterns to exclude"}
                 },
@@ -23,6 +23,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "directory listing",
                 "show folder contents",
                 "tree view of directory",
+                "ls command equivalent",
+                "tree command equivalent",
             ],
         )
         .not_deferred()

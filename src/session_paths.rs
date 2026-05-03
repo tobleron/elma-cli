@@ -2,11 +2,36 @@
 //!
 //! Session - Paths and Basic Setup
 //!
-//! Session layout (no backward compatibility with old structure):
+//! ## Canonical Session Store Policy
+//!
+//! Two stores are canonical. All other session data files are legacy duplicates
+//! that exist only for backward-compatible fallback reads — they must not be
+//! written in new sessions.
+//!
+//! ### Canonical stores
 //!   session.md        — chronological user-visible transcript, no thinking bodies
-//!   session.json      — metadata, status, workspace brief, goal/runtime task state
+//!   session.json      — metadata, status, workspace brief, goal/runtime task state,
+//!                       hierarchy, evidence, turn summaries
 //!   thinking.jsonl    — streamed thinking/reasoning records (turn id + timestamp)
 //!   artifacts/        — raw tool outputs, shell scripts/output, snapshots, large docs
+//!
+//! ### Legacy stores (duplicates — writers should be phased out)
+//!   terminal_transcript.txt    — duplicate of session.md
+//!   error.json                 — duplicate of session.json.status.error
+//!   session_status.json        — duplicate of session.json.status
+//!   hierarchy/*.json           — duplicate of session.json.hierarchy
+//!   runtime_tasks/*.json       — duplicate of session.json.runtime_task
+//!   workspace.txt              — duplicate of session.json.runtime.workspace
+//!   workspace_brief.txt        — same as above
+//!   project_guidance.txt       — duplicate of session.json.runtime.guidance_snapshot
+//!   evidence/{id}/ledger.json  — duplicate of session.json.evidence
+//!   summaries/*.md             — duplicate of session.json.turn_summaries
+//!
+//! ### Dead code
+//!   session_store.rs (SQLite)  — never instantiated in production; ~510 lines dead
+//!
+//! Readers may fall back to legacy files for sessions created before this policy
+//! took effect. Writers must never create legacy files from this point forward.
 
 use crate::*;
 

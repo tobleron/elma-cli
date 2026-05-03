@@ -4,7 +4,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "glob",
-            "Find files matching a glob pattern. Use for filename-based search (e.g., '**/*.rs', 'src/**/mod.rs', '*.toml'). Returns relative file paths sorted by modification time. Respects .gitignore. Max 100 results.",
+            "Find files matching a glob pattern. ALWAYS use this instead of 'shell find' or 'shell fd'. It is optimized for filename-based search (e.g., '**/*.rs', 'src/**/mod.rs', '*.toml'). Returns relative file paths sorted by modification time. Respects .gitignore. Max 100 results.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -21,6 +21,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "find file by name",
                 "locate file",
                 "file pattern matching",
+                "find command equivalent",
+                "fd command equivalent",
             ],
         )
         .not_deferred()

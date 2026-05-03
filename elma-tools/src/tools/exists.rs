@@ -4,16 +4,27 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "exists",
-            "Check if a path exists and its type (file, directory, or other).",
+            "Quickly check if one or more paths exist in the workspace. This is the fastest way to verify a path without reading content. Supports multiple paths.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path to check"},
-                    "type": {"type": "string", "description": "Optional: 'file', 'dir', or 'any'", "default": "any"}
+                    "path": {"type": "string", "description": "Single workspace-relative path to check"},
+                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Multiple workspace-relative paths to check simultaneously"}
                 },
-                "required": ["path"]
+                "oneOf": [
+                    {"required": ["path"]},
+                    {"required": ["paths"]}
+                ]
             }),
-            vec!["check path exists", "path exists", "file exists", "directory exists"],
+            vec![
+                "check if file exists",
+                "path existence check",
+                "is file there",
+                "verify path",
+                "exists check",
+                "check multiple files exist",
+                "fast path verification",
+            ],
         )
         .not_deferred()
         .with_implementation(crate::registry::ImplementationKind::RustWrapper)

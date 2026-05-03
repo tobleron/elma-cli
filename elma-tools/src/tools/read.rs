@@ -4,7 +4,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "read",
-            "Read the contents of a file (source code, documents, config files, PDFs, EPUBs). Prefer this over shell cat for structured document types.",
+            "Read the contents of one or more files. ALWAYS use this instead of 'shell cat'. It handles source code, documents, config files, PDFs, and EPUBs natively. It can read multiple files at once efficiently.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -24,6 +24,8 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
                 "read source code",
                 "read document",
                 "read multiple files",
+                "cat command equivalent",
+                "read pdf epub document",
             ],
         )
         .not_deferred()

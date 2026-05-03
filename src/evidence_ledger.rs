@@ -653,7 +653,7 @@ mod tests {
     use super::*;
 
     fn test_ledger() -> EvidenceLedger {
-        let dir = PathBuf::from("/tmp/test_evidence");
+        let dir = std::env::temp_dir().join("test_evidence");
         let mut ledger = EvidenceLedger::new("s_test", &dir);
         ledger.add_entry(
             EvidenceSource::Shell {
@@ -673,7 +673,7 @@ mod tests {
 
     #[test]
     fn test_new_ledger() {
-        let dir = PathBuf::from("/tmp/test_ledger_new");
+        let dir = std::env::temp_dir().join("test_ledger_new");
         let ledger = EvidenceLedger::new("s_123", &dir);
         assert_eq!(ledger.session_id, "s_123");
         assert!(ledger.entries.is_empty());
@@ -792,7 +792,7 @@ mod tests {
     /// End-to-end: full evidence lifecycle from tool execution to enforcement
     #[test]
     fn test_evidence_ledger_e2e() {
-        let test_dir = PathBuf::from("/tmp/test_evidence_e2e");
+        let test_dir = std::env::temp_dir().join("test_evidence_e2e");
         let _ = std::fs::remove_dir_all(&test_dir);
 
         let mut ledger = EvidenceLedger::new("s_e2e_test", &test_dir);
@@ -895,7 +895,7 @@ mod tests {
     fn test_narrative_includes_evidence_ids() {
         use crate::{Program, Step, StepCommon, StepResult};
 
-        let test_dir = PathBuf::from("/tmp/test_narrative_evidence");
+        let test_dir = std::env::temp_dir().join("test_narrative_evidence");
         let _ = std::fs::remove_dir_all(&test_dir);
 
         let mut ledger = EvidenceLedger::new("s_narrative", &test_dir);
@@ -978,7 +978,7 @@ mod tests {
 
     #[test]
     fn test_has_evidence_matching_empty_ledger() {
-        let dir = PathBuf::from("/tmp/test_clear");
+        let dir = std::env::temp_dir().join("test_clear");
         let ledger = EvidenceLedger::new("s_empty", &dir);
         assert!(!ledger.has_evidence_matching(&["anything"]));
     }
@@ -993,7 +993,7 @@ mod tests {
 
     #[test]
     fn test_evidence_entry_has_mtime_field() {
-        let dir = PathBuf::from("/tmp/test_entry");
+        let dir = std::env::temp_dir().join("test_entry");
         let mut ledger = EvidenceLedger::new("s_test", &dir);
         ledger.add_entry(
             EvidenceSource::Read { path: "Cargo.toml".to_string() },
@@ -1005,7 +1005,7 @@ mod tests {
 
     #[test]
     fn test_check_file_is_stale_no_file() {
-        let dir = PathBuf::from("/tmp/test_stale");
+        let dir = std::env::temp_dir().join("test_stale");
         let ledger = EvidenceLedger::new("s_test", &dir);
         assert!(!ledger.check_file_is_stale("nonexistent.txt"));
     }

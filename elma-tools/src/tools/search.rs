@@ -4,25 +4,26 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "search",
-            "Search for text patterns in files using ripgrep. Use this to find function definitions, usages, config keys, or any text across the workspace. Set literal_text=true to search for literal text without regex escaping.",
+            "Search for a pattern in the workspace. ALWAYS use this instead of 'shell grep' or 'shell rg'. It is optimized for codebase search and supports glob filtering and multi-path scope. Max 50 matches.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string", "description": "The text or regex pattern to search for"},
-                    "path": {"type": "string", "description": "Optional directory or file path to restrict the search scope"},
-                    "literal_text": {"type": "boolean", "description": "If true, treat pattern as literal text (auto-escapes regex special chars)"},
-                    "include": {"type": "string", "description": "File pattern to filter by (e.g. '*.rs', '*.{ts,tsx}')"}
+                    "pattern": {"type": "string", "description": "The search pattern (plain text or regex)"},
+                    "path": {"type": "string", "description": "Optional subdirectory to search in"},
+                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Optional multiple directories to search in"},
+                    "includes": {"type": "array", "items": {"type": "string"}, "description": "Optional glob patterns to include (e.g. ['*.rs'])"}
                 },
                 "required": ["pattern"]
             }),
             vec![
-                "search text in files",
-                "find pattern in code",
-                "grep search files",
-                "search file contents",
-                "find text pattern",
-                "find function definition",
-                "search workspace code",
+                "search for text",
+                "find pattern in files",
+                "grep in workspace",
+                "search codebase",
+                "find string",
+                "ripgrep equivalent",
+                "grep command equivalent",
+                "search in multiple paths",
             ],
         )
         .not_deferred()

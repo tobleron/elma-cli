@@ -503,7 +503,7 @@ mod tests {
         use crate::session_browser::SessionPickerEntry;
         let entries = vec![SessionPickerEntry {
             id: "s_10000_123456789".to_string(),
-            path: std::path::PathBuf::from("/tmp"),
+            path: std::env::temp_dir(),
             status: "active".to_string(),
             created_at_unix: now - 3600,
             last_modified_unix: now - 60,

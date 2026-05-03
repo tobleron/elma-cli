@@ -287,13 +287,14 @@ mod tests {
 
     #[test]
     fn test_patch_executor_creation() {
-        let executor = PatchExecutor::new(PathBuf::from("/tmp"), "test_call_id");
-        assert_eq!(executor.workdir, PathBuf::from("/tmp"));
+        let tmp = std::env::temp_dir();
+        let executor = PatchExecutor::new(tmp.clone(), "test_call_id");
+        assert_eq!(executor.workdir, tmp);
     }
 
     #[test]
     fn test_patch_executor_dry_run() {
-        let executor = PatchExecutor::new(PathBuf::from("/tmp"), "test_call_id");
+        let executor = PatchExecutor::new(std::env::temp_dir(), "test_call_id");
         assert!(!executor.dry_run);
     }
 

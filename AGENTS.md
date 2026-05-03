@@ -108,17 +108,20 @@ Task status flows: `pending → in_progress → completed|failed`. Never store t
 
 ## Theme
 
-The Elma terminal UI uses a tokenized color system:
+The Elma terminal UI uses a tokenized color system (`src/ui/ui_theme.rs`):
 
-| Token | Color | Purpose |
-|-------|-------|---------|
-| Background | Dark grey | Terminal canvas background |
-| Primary | Pink | Primary accent, prompt affordances, active selection, attention states |
-| Secondary | Cyan | Complementary accent, tools, file mentions, progress, informational contrast |
-| Shell output | Black | Sub-terminal shell command output panels |
-| Elma output (final) | White | Assistant responses after thinking completes |
-| Elma output (thinking) | Grey | Assistant responses while thinking is in progress |
-| Metadata | Grey | Separators, disabled text, inactive hints, timestamps |
+| Token | Color (RGB) | Purpose |
+|-------|--------------|---------|
+| Background (`bg`) | Dark grey (28, 28, 30) | Terminal canvas background |
+| Primary (`accent_primary`) | Hot Pink (255, 105, 180) | Primary accent, prompt affordances, active selection, attention states |
+| Secondary (`accent_secondary`) | Cyan (0, 255, 255) | Complementary accent, tools, file mentions, progress, informational contrast |
+| Foreground (`fg`) | White (255, 255, 255) | Elma output (final), primary text |
+| Foreground Dim (`fg_dim`) | Grey (128, 128, 128) | Elma output (thinking), metadata, separators, inactive hints, timestamps |
+| Success | Green (0, 255, 0) | Success states |
+| Error | Red (255, 0, 0) | Error states |
+| Warning | Yellow (255, 255, 0) | Warning states |
+| Border | Dark grey (64, 64, 64) | Borders, separators |
+| Footer BG (`bg_footer`) | Dark grey (36, 36, 40) | Status bar background |
 
 Theme implementation must be tokenized — all color references go through the canonical theme module. Future themes must be able to swap Pink for another primary color without rewriting renderers. Do not hardcode UI colors outside the theme module.
 

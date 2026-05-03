@@ -1275,7 +1275,14 @@ impl ClaudeRenderer {
         }
 
         let cursor_row = (transcript_height + self.input_cursor_row) as u16;
-        let cursor_col = (2 + self.input_cursor_col) as u16;
+        let display_col = if self.input_cursor_row < self.input_lines.len() {
+            let line = &self.input_lines[self.input_cursor_row];
+            let byte_pos = self.input_cursor_col.min(line.len());
+            str_display_width(&line[..byte_pos])
+        } else {
+            self.input_cursor_col
+        };
+        let cursor_col = (2 + display_col) as u16;
 
         ClaudeScreen {
             lines,

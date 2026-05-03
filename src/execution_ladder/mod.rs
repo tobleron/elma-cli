@@ -20,7 +20,8 @@ mod depth;
 pub use depth::{
     assessment_needs_decomposition, assessment_to_depth, calculate_confidence, depth_to_level,
     generate_level_reason, generate_strategy_hint, has_dependencies, needs_revision_loop,
-    requests_phases, requests_planning, requests_strategy, truncate_message,
+    requests_bulk, requests_multi_step_verbs, requests_phases, requests_planning, requests_strategy,
+    truncate_message,
 };
 
 // ============================================================================
@@ -301,6 +302,22 @@ pub async fn assess_execution_level(
         if level < ExecutionLevel::MasterPlan {
             level = ExecutionLevel::MasterPlan;
             escalation_factors.push("strategic decomposition request");
+        }
+    }
+
+    // Escalate for bulk requests (Task 540)
+    if requests_bulk(user_message) {
+        if level < ExecutionLevel::Plan {
+            level = ExecutionLevel::Plan;
+            escalation_factors.push("bulk operation detected");
+        }
+    }
+
+    // Escalate for multi-step verbs (Task 540)
+    if requests_multi_step_verbs(user_message) {
+        if level < ExecutionLevel::Plan {
+            level = ExecutionLevel::Plan;
+            escalation_factors.push("multi-step sequential verbs detected");
         }
     }
 

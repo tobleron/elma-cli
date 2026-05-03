@@ -847,7 +847,7 @@ mod tests {
 
     #[test]
     fn test_preflight_mv_source_missing() {
-        let workdir = PathBuf::from("/tmp");
+        let workdir = std::env::temp_dir();
         let result = preflight_command("mv nonexistent_file somewhere/", &workdir);
         assert!(!result.can_execute());
         assert!(result
@@ -859,7 +859,7 @@ mod tests {
 
     #[test]
     fn test_preflight_mv_dest_missing() {
-        let workdir = PathBuf::from("/tmp");
+        let workdir = std::env::temp_dir();
         let src = workdir.join("preflight_test_src.txt");
         std::fs::write(&src, "test").ok();
         let result = preflight_command(&format!("mv {} nonexistent_dir/", src.display()), &workdir);
@@ -894,7 +894,7 @@ mod tests {
 
     #[test]
     fn test_glob_unscoped_warning() {
-        let result = detect_unscoped("mv * dest/", &PathBuf::from("/tmp"));
+        let result = detect_unscoped("mv * dest/", &std::env::temp_dir());
         assert!(result.is_unscoped || result.estimated_count < UNSCOPED_WARN_THRESHOLD);
     }
 
@@ -929,7 +929,7 @@ mod tests {
 
     #[test]
     fn test_dry_run_preview_generated() {
-        let workdir = PathBuf::from("/tmp");
+        let workdir = std::env::temp_dir();
         // Caution commands should get dry-run previews
         let result = preflight_command("mv /tmp/file1 /tmp/file2", &workdir);
         assert!(result.dry_run_preview.is_some() || result.error_guidance.is_some());

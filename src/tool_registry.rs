@@ -60,13 +60,14 @@ mod tests {
 
     #[test]
     fn test_tool_executor_parity() {
-        let tools = crate::tool_registry::build_current_tools();
-        let executor_handles = vec![
+        let registry = crate::tool_registry::get_registry();
+        let executor_handles: Vec<&str> = vec![
             "observe",
             "tool_search",
             "shell",
             "read",
             "glob",
+            "ls",
             "patch",
             "search",
             "respond",
@@ -74,12 +75,40 @@ mod tests {
             "update_todo_list",
             "edit",
             "write",
+            "stat",
+            "copy",
+            "mkdir",
+            "move",
+            "trash",
+            "touch",
+            "file_size",
+            "workspace_info",
+            "exists",
+            "repo_map",
+            "git_inspect",
+            "run_python",
+            "run_node",
+            "job_start",
+            "job_status",
+            "job_output",
+            "job_stop",
+            "fetch",
         ];
-        for name in executor_handles {
+        for name in &executor_handles {
             assert!(
-                tools.iter().any(|t| t.function.name == name),
+                registry.get(name).is_some(),
                 "tool {} is handled by executor but not in registry",
                 name
+            );
+        }
+        for tool in registry.available_tools() {
+            if tool.function.name == "respond" || tool.function.name == "summary" {
+                continue;
+            }
+            assert!(
+                executor_handles.contains(&tool.function.name.as_str()),
+                "tool {} is in registry but has no executor handler",
+                tool.function.name
             );
         }
     }

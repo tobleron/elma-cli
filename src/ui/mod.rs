@@ -13,7 +13,6 @@ pub mod ui_modal;
 pub mod ui_modal_search;
 pub mod ui_model_picker;
 pub mod ui_progress;
-pub mod ui_render_legacy;
 pub mod ui_spinner;
 pub mod ui_state;
 pub mod ui_syntax;
