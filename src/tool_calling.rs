@@ -106,15 +106,33 @@ pub(crate) async fn execute_tool_call(
         "file_size" => exec_file_size(&args_value, workdir, &call_id, tui),
         "workspace_info" => exec_workspace_info(workdir, &call_id, tui),
         "exists" => exec_exists(&args_value, workdir, &call_id, tui),
-        unknown => ToolExecutionResult {
-            tool_call_id: call_id,
-            tool_name: tool_name.clone(),
-            content: format!("Unknown tool: {}", unknown),
-            ok: false,
-            exit_code: None,
-            timed_out: false,
-            signal_killed: None,
-        },
+        unknown => {
+            crate::append_trace_log_line(&format!(
+                "[TOOL_UNKNOWN] name={:?} args={}",
+                unknown,
+                &tool_call.function.arguments.chars().take(200).collect::<String>()
+            ));
+            let hint = if unknown.contains("read") || unknown.contains("Read") {
+                format!("Unknown tool: {}. Did you mean 'read'?", unknown)
+            } else if ["list", "ls", "dir", "cat", "head", "tail", "find", "grep", "echo", "sh", "bash", "zsh", "which", "where"].contains(&unknown) {
+                format!("Unknown tool: {}. Did you mean 'shell'?", unknown)
+            } else if unknown.contains("search") || unknown.contains("Search") || unknown.contains("grep") || unknown == "rg" {
+                format!("Unknown tool: {}. Did you mean 'search' or 'shell' with grep?", unknown)
+            } else if unknown.contains("glob") || unknown.contains("Glob") {
+                format!("Unknown tool: {}. Did you mean 'glob'?", unknown)
+            } else {
+                format!("Unknown tool: {}", unknown)
+            };
+            ToolExecutionResult {
+                tool_call_id: call_id,
+                tool_name: tool_name.clone(),
+                content: hint,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                signal_killed: None,
+            }
+        }
     }
 }
 
