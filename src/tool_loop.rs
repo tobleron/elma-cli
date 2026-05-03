@@ -692,29 +692,10 @@ fn tool_signal(tc: &ToolCall) -> String {
         return key;
     }
     if fn_name == "shell" {
-        format!("{fn_name}:{}", normalize_shell_signal(&key))
+        format!("{fn_name}:{}", crate::text_utils::normalize_shell_signal(&key))
     } else {
         format!("{fn_name}:{key}")
     }
-}
-
-fn normalize_shell_signal(cmd: &str) -> String {
-    // Collapse highly variable identifiers (timestamps, session ids) so repeated
-    // directory-probing loops are detected as the same strategy.
-    let mut out = String::with_capacity(cmd.len());
-    let mut prev_was_digit = false;
-    for ch in cmd.chars() {
-        if ch.is_ascii_digit() {
-            if !prev_was_digit {
-                out.push('#');
-                prev_was_digit = true;
-            }
-            continue;
-        }
-        prev_was_digit = false;
-        out.push(ch);
-    }
-    out.replace("s_#_#", "s_SESSION")
 }
 
 pub(crate) async fn run_tool_loop(
@@ -1092,7 +1073,7 @@ pub(crate) async fn run_tool_loop(
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    crate::stop_policy::normalize_shell_signal(&cmd)
+                    crate::text_utils::normalize_shell_signal(&cmd)
                 } else {
                     tool_signal(tc)
                 };
@@ -1911,8 +1892,8 @@ mod tests {
 
     #[test]
     fn normalizes_shell_signal_session_ids() {
-        let a = normalize_shell_signal("ls sessions/s_1776868918_801751000/shell/");
-        let b = normalize_shell_signal("ls sessions/s_1775151941_439997000/shell/");
+        let a = crate::text_utils::normalize_shell_signal("ls sessions/s_1776868918_801751000/shell/");
+        let b = crate::text_utils::normalize_shell_signal("ls sessions/s_1775151941_439997000/shell/");
         assert_eq!(a, b);
         assert!(a.contains("s_SESSION"));
     }

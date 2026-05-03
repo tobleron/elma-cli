@@ -255,6 +255,42 @@ pub(crate) fn compact_plain_text(text: &str) -> String {
     result.trim().to_string()
 }
 
+/// Normalize a shell command string for repeated-command detection.
+/// Collapses large digit sequences (timestamps, session IDs) to `#`
+/// while preserving small numbers used in limits (head -20, tail -50).
+/// Also normalizes session path patterns to a stable marker.
+pub fn normalize_shell_signal(cmd: &str) -> String {
+    let mut out = String::with_capacity(cmd.len());
+    let mut current_number = String::new();
+
+    for ch in cmd.chars() {
+        if ch.is_ascii_digit() {
+            current_number.push(ch);
+        } else {
+            if !current_number.is_empty() {
+                if current_number.len() >= 4 {
+                    out.push('#');
+                } else {
+                    out.push_str(&current_number);
+                }
+                current_number.clear();
+            }
+            out.push(ch);
+        }
+    }
+    if !current_number.is_empty() {
+        if current_number.len() >= 4 {
+            out.push('#');
+        } else {
+            out.push_str(&current_number);
+        }
+    }
+
+    // Normalize session path patterns (s_1234_5678 → s_SESSION)
+    let re = regex::Regex::new(r"s_#+").unwrap();
+    re.replace_all(&out, "s_SESSION").to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

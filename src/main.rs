@@ -41,7 +41,9 @@ mod auto_compact; // Task 114: Auto-Compact (Context Window Management)
 mod background_task; // Task 268: Background Task Management
 mod claude_ui;
 mod command_budget; // Task 121: Command Budget & Rate Limiting
+mod config_validate; // Task 583: Config validation at startup
 mod continuity; // Task 380: Semantic Continuity Tracking
+
 mod decomposition; // Task 023: Hierarchical decomposition
 mod defaults;
 mod defaults_core;
@@ -138,6 +140,8 @@ mod project_init;
 mod prompt_constants;
 mod prompt_core; // Task 313: Protected Core System Prompt
 mod pubsub; // Task 019: Generic Pub/Sub Broker
+mod retry; // Task 570: Bounded retry with exponential backoff
+mod sanitize; // Task 577: ANSI escape sanitization boundary
 mod refinement;
 mod reflection;
 mod repo_explorer; // Task 196: Repo explorer and analyzer skill
@@ -225,9 +229,12 @@ pub(crate) use models_api::*;
 pub(crate) use optimization::*;
 pub(crate) use orchestration::*;
 pub(crate) use orchestration_helpers::*;
+pub(crate) use config_validate::*;
 pub(crate) use paths::*;
 pub(crate) use profile_sets::*;
 pub(crate) use protected_paths::*;
+pub(crate) use retry::*;
+pub(crate) use sanitize::*;
 pub(crate) use program::*;
 pub(crate) use project_guidance::*;
 pub(crate) use project_init::*;

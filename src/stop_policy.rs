@@ -215,7 +215,7 @@ impl StopPolicy {
                 if let Ok(args) = serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
                 {
                     if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
-                        let normalized = normalize_shell_signal(cmd);
+                        let normalized = crate::text_utils::normalize_shell_signal(cmd);
                         self.recent_commands.push(normalized);
                     }
                 }
@@ -712,45 +712,6 @@ pub(crate) fn classify_command_strategy(cmd: &str) -> String {
     } else {
         "other_shell".to_string()
     }
-}
-
-/// Normalize a shell command string for repeated-command detection.
-/// Collapses highly variable identifiers (timestamps, session ids) so repeated
-/// directory-probing loops are detected as the same strategy.
-pub(crate) fn normalize_shell_signal(cmd: &str) -> String {
-    // Task 544: Granular shell signals
-    // Collapses digits only if they look like timestamps or large offsets.
-    // Preserves small integers used in limits (head -150) or offsets.
-    let mut out = String::with_capacity(cmd.len());
-    
-    // Simple heuristic: collapse numbers with 4+ digits (likely timestamps/IDs)
-    // or very long sequences of digits.
-    let mut current_number = String::new();
-    
-    for ch in cmd.chars() {
-        if ch.is_ascii_digit() {
-            current_number.push(ch);
-        } else {
-            if !current_number.is_empty() {
-                if current_number.len() >= 4 {
-                    out.push('#');
-                } else {
-                    out.push_str(&current_number);
-                }
-                current_number.clear();
-            }
-            out.push(ch);
-        }
-    }
-    if !current_number.is_empty() {
-        if current_number.len() >= 4 {
-            out.push('#');
-        } else {
-            out.push_str(&current_number);
-        }
-    }
-    
-    out.replace("s_SESSION", "s_SESSION") // Keep existing markers
 }
 
 #[cfg(test)]
