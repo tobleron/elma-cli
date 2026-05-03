@@ -437,7 +437,7 @@ async fn request_final_answer_from_evidence(
         ChatMessage::simple(
             "user",
             &format!(
-                "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer concisely using only the evidence above. Do not call tools.",
+                "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer concisely using only the evidence above. Use plain text only — no markdown formatting, no headings, no tables, no code blocks, no bullet lists. Do not call tools.",
                 original_user_request,
                 evidence_block
             ),
@@ -455,23 +455,90 @@ async fn request_final_answer_from_evidence(
             ..ChatRequestOptions::deterministic(max_tokens)
         },
     );
-    let resp = await_with_busy_input(
-        tui,
-        crate::ui_chat::chat_once_with_timeout(
-            client,
-            chat_url,
-            &req,
-            runtime_llm_config().final_answer_timeout_s,
-        ),
-    )
-    .await?;
-    Ok(normalize_final_answer_candidate(
-        &resp
-            .choices
-            .first()
-            .map(|c| c.message.content.clone().unwrap_or_default())
-            .unwrap_or_default(),
-    ))
+    request_tool_loop_final_answer_streaming(tui, client, chat_url, req, runtime_llm_config().final_answer_timeout_s).await
+}
+
+/// Stream a final answer from the LLM, pushing content to the TUI incrementally.
+async fn request_tool_loop_final_answer_streaming(
+    tui: &mut crate::ui_terminal::TerminalUI,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    mut req: ChatCompletionRequest,
+    timeout_s: u64,
+) -> Result<String> {
+    req.stream = true;
+
+    let response = client
+        .post(chat_url.clone())
+        .json(&req)
+        .timeout(Duration::from_secs(timeout_s))
+        .send()
+        .await
+        .context("final answer stream request failed")?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("API error {}: {}", status, body);
+    }
+
+    let mut byte_stream = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut content = String::new();
+
+    loop {
+        let chunk_opt = tokio::select! {
+            chunk = byte_stream.next() => chunk,
+            _ = tokio::time::sleep(Duration::from_millis(40)) => {
+                let _ = tui.pump_ui();
+                if let Ok(Some(queued)) = tui.poll_busy_submission() {
+                    tui.enqueue_submission(queued);
+                }
+                continue;
+            }
+        };
+        let Some(chunk_result) = chunk_opt else {
+            break;
+        };
+        let chunk_bytes = chunk_result?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk_bytes));
+
+        while let Some(pos) = buffer.find('\n') {
+            let line = buffer.drain(..pos + 1).collect::<String>();
+            let line = line.trim();
+            if !line.starts_with("data: ") {
+                continue;
+            }
+            let data = &line[6..];
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data) else {
+                continue;
+            };
+            let Some(choices) = chunk.get("choices").and_then(|c| c.as_array()) else {
+                continue;
+            };
+            for choice in choices {
+                let Some(delta) = choice.get("delta") else {
+                    continue;
+                };
+                if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
+                    content.push_str(text);
+                    tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantContentDelta(
+                        text.to_string(),
+                    ));
+                    let _ = tui.pump_ui();
+                }
+            }
+        }
+    }
+
+    content.push('\n');
+    tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished);
+    let _ = tui.pump_ui();
+
+    let cleaned = crate::text_utils::strip_thinking_blocks(&content);
+    Ok(cleaned.trim().to_string())
 }
 
 async fn finalize_from_evidence_or_fallback(
@@ -538,7 +605,7 @@ async fn request_final_answer_without_tools(
     if force_plain_text {
         req_messages.push(ChatMessage::simple(
             "user",
-            "Return plain terminal text only. Do not emit XML/JSON tool calls or function-call markup.",
+            "Return plain terminal text only. No markdown formatting, no headings, no tables, no code blocks, no bullet lists. Do not emit XML/JSON tool calls or function-call markup.",
         ));
     }
     let profile = ad_hoc_profile(model_id, "tool_loop_plain_finalizer");
@@ -694,6 +761,9 @@ pub(crate) async fn run_tool_loop(
     ];
     let mut tracker = CompactTracker::new();
     let mut stop_policy = StopPolicy::new(budget);
+    // Track successfully executed tool results keyed by normalized signal.
+    // Used to skip duplicate tool calls and keep their results from previous execution.
+    let mut successful_results: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     let mut update_context_estimate =
         |msgs: &[ChatMessage], tui: &mut crate::ui_terminal::TerminalUI| {
@@ -1083,12 +1153,19 @@ pub(crate) async fn run_tool_loop(
                 });
             }
             let mut first_tool_call = true;
-            let reasoning_for_messages = if content.trim().is_empty() {
-                turn.reasoning_content.clone()
-            } else {
-                None
-            };
             for tc in &turn.tool_calls {
+                // ── Duplicate gate: skip if this exact command succeeded earlier ──
+                // Prevents the model from re-running the same successful command
+                // when it forgets (common with small models).
+                let sig = tool_signal(tc);
+                if let Some(prev) = successful_results.get(&sig) {
+                    trace(args, &format!("tool_loop: duplicate skipped (already succeeded) signal={}", sig));
+                    messages.push(ChatMessage::simple(
+                        "system",
+                        &format!("Already completed earlier — same result: {}", prev),
+                    ));
+                    continue;
+                }
                 // Task T209: Shell budget forecasting
                 if tc.function.name == "shell" {
                     let (is_risky, reason) =
@@ -1366,54 +1443,65 @@ pub(crate) async fn run_tool_loop(
                 }
                 // respond always continues the loop - it's for interim status, not final answer
 
-                messages.push(ChatMessage {
-                    role: "assistant".to_string(),
-                    content: "".to_string(),
-                    name: None,
-                    tool_calls: Some(vec![tc.clone()]),
-                    tool_call_id: None,
-                    reasoning_content: if first_tool_call {
-                        reasoning_for_messages.clone()
+                // ── Result gate: compact failures, store successes ──
+                // If the tool succeeded: store result preview for duplicate detection,
+                // then push assistant + tool messages as normal.
+                // If the tool failed: skip the full message pair, push a brief
+                // system message instead. Keeps failure noise out of context.
+                if result.ok {
+                    // Store successful result for duplicate detection
+                    let preview = result.content.chars().take(200).collect::<String>();
+                    successful_results.insert(sig, preview);
+
+                    messages.push(ChatMessage {
+                        role: "assistant".to_string(),
+                        content: "".to_string(),
+                        name: None,
+                        tool_calls: Some(vec![tc.clone()]),
+                        tool_call_id: None,
+                        reasoning_content: None,
+                        summarized: false,
+                    });
+                    // Apply result budget — persist large outputs to disk, keep inline for small ones
+                    let budgeted = apply_tool_result_budget(
+                        sess,
+                        &tc.id,
+                        &tc.function.name,
+                        &result.content,
+                        DEFAULT_MAX_RESULT_SIZE_CHARS,
+                    );
+                    // Empty result guard: inject placeholder for ok-but-empty results
+                    let model_content = if budgeted.content_for_model.trim().is_empty()
+                        && tc.function.name != "respond"
+                    {
+                        "(empty result)".to_string()
                     } else {
-                        None
-                    },
-                    summarized: false,
-                });
-                first_tool_call = false;
-                // Apply result budget — persist large outputs to disk, keep inline for small ones
-                let budgeted = apply_tool_result_budget(
-                    sess,
-                    &tc.id,
-                    &tc.function.name,
-                    &result.content,
-                    DEFAULT_MAX_RESULT_SIZE_CHARS,
-                );
-                // Empty result guard: inject placeholder for ok-but-empty results
-                // Prevents small models from misinterpreting empty success as "need to retry"
-                let model_content = if result.ok
-                    && budgeted.content_for_model.trim().is_empty()
-                    && tc.function.name != "respond"
-                {
-                    "(empty result)".to_string()
+                        budgeted.content_for_model
+                    };
+
+                    // Task 332: Append reflection to tool results
+                    let reflection = crate::evidence_ledger::get_session_ledger()
+                        .and_then(|ledger| ledger.get_latest_reflection())
+                        .map(|r| format!("\n→ Reflection: {}", r))
+                        .unwrap_or_default();
+
+                    messages.push(ChatMessage {
+                        role: "tool".to_string(),
+                        content: format!("{}{}", model_content, reflection),
+                        name: Some(tc.function.name.clone()),
+                        tool_calls: None,
+                        tool_call_id: Some(tc.id.clone()),
+                        reasoning_content: None,
+                        summarized: false,
+                    });
                 } else {
-                    budgeted.content_for_model
-                };
-
-                // Task 332: Append reflection to tool results
-                let reflection = crate::evidence_ledger::get_session_ledger()
-                    .and_then(|ledger| ledger.get_latest_reflection())
-                    .map(|r| format!("\n→ Reflection: {}", r))
-                    .unwrap_or_default();
-
-                messages.push(ChatMessage {
-                    role: "tool".to_string(),
-                    content: format!("{}{}", model_content, reflection),
-                    name: Some(tc.function.name.clone()),
-                    tool_calls: None,
-                    tool_call_id: Some(tc.id.clone()),
-                    reasoning_content: None,
-                    summarized: false,
-                });
+                    // Failure: don't bloat context with full error output.
+                    // Push a single compact message instead.
+                    messages.push(ChatMessage::simple(
+                        "system",
+                        "That attempt failed. Try a different approach.",
+                    ));
+                }
             }
 
             update_context_estimate(&messages, tui);

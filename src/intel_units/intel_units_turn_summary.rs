@@ -67,6 +67,7 @@ impl IntelUnit for TurnSummaryUnit {
         );
 
         let raw = execute_intel_text_from_user_content(&context.client, &self.profile, prompt).await?;
+        let raw = crate::text_utils::strip_thinking_blocks(&raw);
 
         let summary = raw
             .split_whitespace()

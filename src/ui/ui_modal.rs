@@ -5,11 +5,15 @@
 //! Simple, robust, keyboard-first. No fake translucency, no shadows.
 //! Thin border, theme-token colors.
 
-use crate::ui_colors::*;
+use crate::ui_colors::border_gray;
 use crate::ui_state::ModalState;
 use crate::ui_theme::*;
-use crate::ui_theme::{current_theme, fg_bold_token, fg_token};
+use crate::ui_theme::{current_theme, fg_bold_token, fg_token, dim, fg, fg_bold};
 use crate::ui_wrap::{display_width, wrap_ansi};
+
+const ICON_ERROR: &str = "✗";
+const ICON_WARNING: &str = "⚠";
+const ICON_INFO: &str = "ℹ";
 
 /// Render a modal overlay into display lines.
 ///
@@ -127,7 +131,7 @@ fn render_help_box(content: &str, _screen_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
 
     // Title
-    let title_line = format!(" {} ", fg_bold(AQUA.0, AQUA.1, AQUA.2, "Commands"));
+    let title_line = format!(" {} ", fg_bold_token(current_theme().accent_secondary, "Commands"));
     lines.push(title_line);
 
     lines.push(String::new()); // spacer
@@ -188,7 +192,7 @@ fn render_select_box(title: &str, options: &[String], _screen_width: usize) -> V
 /// Render a settings display box.
 fn render_settings_box(content: &str, _screen_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
-    let title_line = format!(" {} ", fg_bold(AQUA.0, AQUA.1, AQUA.2, "Settings"));
+    let title_line = format!(" {} ", fg_bold_token(current_theme().accent_secondary, "Settings"));
     lines.push(title_line);
     lines.push(String::new());
     let max_width = 60;
@@ -206,7 +210,7 @@ fn render_settings_box(content: &str, _screen_width: usize) -> Vec<String> {
 /// Render a usage/stats dialog.
 fn render_usage_box(content: &str, _screen_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
-    let title_line = format!(" {} ", fg_bold(YELLOW.0, YELLOW.1, YELLOW.2, "Usage"));
+    let title_line = format!(" {} ", fg_bold_token(current_theme().warning, "Usage"));
     lines.push(title_line);
     lines.push(String::new());
     let max_width = 60;
@@ -343,10 +347,11 @@ fn render_plan_progress(
     _screen_width: usize,
 ) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
+    let accent = current_theme().accent_secondary;
     let title_line = format!(
         " {} {}  {}/{}",
-        fg(BLUE.0, BLUE.1, BLUE.2, "◆"),
-        fg_bold(BLUE.0, BLUE.1, BLUE.2, title),
+        fg_token(accent, "◆"),
+        fg_bold_token(accent, title),
         current,
         total,
     );
@@ -367,9 +372,9 @@ fn render_plan_progress(
     lines.push(String::new());
     for (i, step) in steps.iter().enumerate().take(6) {
         let prefix = if i < current {
-            fg(GREEN.0, GREEN.1, GREEN.2, "✓")
+            success_green("✓")
         } else if i == current {
-            fg(ORANGE.0, ORANGE.1, ORANGE.2, "▶")
+            fg_token(accent, "▶")
         } else {
             dim("·")
         };
@@ -387,14 +392,25 @@ fn render_plan_progress(
 /// Render a notification.
 fn render_notification(message: &str, level: &str, _screen_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
-    let (icon, color) = match level {
-        "error" => ("✗", (RED.0, RED.1, RED.2)),
-        "warning" => ("⚠", (YELLOW.0, YELLOW.1, YELLOW.2)),
-        _ => ("ℹ", (BLUE.0, BLUE.1, BLUE.2)),
+    let styled = match level {
+        "error" => error_red(ICON_ERROR),
+        "warning" => warn_yellow(ICON_WARNING),
+        _ => info_cyan(ICON_INFO),
     };
-    let title = format!(" {} {}", fg(color.0, color.1, color.2, icon), message);
+    let title = format!(" {} {}", styled, message);
     lines.push(format!("  {}", title));
     lines
+}
+
+/// Render a notification with icon.
+fn error_red(icon: &str) -> String {
+    fg_token(current_theme().error, icon)
+}
+fn warn_yellow(icon: &str) -> String {
+    fg_token(current_theme().warning, icon)
+}
+fn info_cyan(icon: &str) -> String {
+    fg_token(current_theme().accent_secondary, icon)
 }
 
 /// Render a splash screen.
@@ -408,37 +424,23 @@ fn render_splash(content: &str, _screen_width: usize) -> Vec<String> {
     lines
 }
 
-/// Create a centered border line for the top or bottom of the modal box.
-fn center_box_line(width: usize, _label: Option<&str>) -> String {
-    let inner = width.saturating_sub(2);
-    format!(
-        "{}{}",
-        fg(
-            BORDER_GRAY.0,
-            BORDER_GRAY.1,
-            BORDER_GRAY.2,
-            &"─".repeat(inner)
-        ),
-        fg(BORDER_GRAY.0, BORDER_GRAY.1, BORDER_GRAY.2, "")
+/// Wrap a text line in side borders using border_gray color.
+fn wrap_in_borders(text: &str, width: usize) -> String {
+    let (r, g, b) = border_gray();
+    let padded = format!(" {:width$}", text, width = width.saturating_sub(3));
+    format!("{}{}{}",
+        fg(r, g, b, "│"),
+        padded,
+        fg(r, g, b, "│"),
     )
 }
 
-/// Wrap a content line in left and right border characters.
-fn wrap_in_borders(content: &str, total_width: usize) -> String {
-    let inner_width = total_width.saturating_sub(2);
-    let content_dw = display_width(content);
-    let right_pad = if inner_width > content_dw {
-        " ".repeat(inner_width - content_dw)
-    } else {
-        String::new()
-    };
-    format!(
-        "{}{}{}{}",
-        fg(BORDER_GRAY.0, BORDER_GRAY.1, BORDER_GRAY.2, "│"),
-        content,
-        right_pad,
-        fg(BORDER_GRAY.0, BORDER_GRAY.1, BORDER_GRAY.2, "│")
-    )
+/// Create a centered border line for the top or bottom of the modal box.
+fn center_box_line(width: usize, _label: Option<&str>) -> String {
+    let inner = width.saturating_sub(2);
+    let (r, g, b) = border_gray();
+    let bar = "─".repeat(inner);
+    format!("{}{}{}", fg(r, g, b, "│"), fg(r, g, b, &bar), fg(r, g, b, "│"))
 }
 
 #[cfg(test)]
