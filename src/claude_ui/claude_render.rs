@@ -638,6 +638,10 @@ impl ClaudeRenderer {
         })
     }
 
+    pub(crate) fn replace_last_assistant_message(&mut self, content: AssistantContent) {
+        self.transcript.replace_last_assistant_message(content);
+    }
+
     /// Render modal overlay in Claude style
     fn render_modal_claude(&self, f: &mut Frame, modal: &crate::ui_state::ModalState, area: Rect) {
         let theme = current_theme();

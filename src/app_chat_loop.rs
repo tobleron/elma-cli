@@ -1019,6 +1019,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             .map(|m| m.content.contains("[continuity_retry]"))
             .unwrap_or(false);
         let mut final_text = final_text;
+        let mut retry_happened = false;
         if continuity_tracker.alignment_score < 0.85 && !already_retried {
             let gap_reason = continuity_tracker.gap();
             let evidence_count = crate::evidence_ledger::get_session_ledger()
@@ -1062,6 +1063,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                             let improved = crate::final_answer::process_final_answer(content);
                             if !improved.trim().is_empty() {
                                 final_text = improved;
+                                retry_happened = true;
                                 runtime.messages.push(ChatMessage::simple("assistant", &final_text));
                             }
                         }
@@ -1088,7 +1090,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         // Show assistant response (thinking is already stripped from final_text)
         if !final_text.is_empty() {
-            tui.add_message(MessageRole::Assistant, display_text);
+            if retry_happened {
+                tui.replace_last_assistant_message(display_text);
+            } else {
+                tui.add_message(MessageRole::Assistant, display_text);
+            }
             runtime
                 .messages
                 .push(ChatMessage::simple("assistant", &final_text));

@@ -238,6 +238,14 @@ impl TerminalUI {
         self.pending_draw = true;
     }
 
+    /// Replace the content of the last assistant message in-place (Task 602).
+    /// Used by continuity retry to overwrite a streamed wrong answer.
+    pub(crate) fn replace_last_assistant_message(&mut self, content: String) {
+        let assistant = crate::claude_ui::AssistantContent::from_markdown(&content);
+        self.claude.replace_last_assistant_message(assistant);
+        self.pending_draw = true;
+    }
+
     /// Add a Claude-native message directly.
     pub(crate) fn add_claude_message(&mut self, msg: crate::claude_ui::ClaudeMessage) {
         self.claude.push_message(msg);

@@ -1815,9 +1815,31 @@ pub(crate) async fn run_tool_loop(
                 // Push a user nudge to force action
                 messages.push(ChatMessage::simple("user", "You haven't executed any tools yet. Please execute the necessary tools to answer my request accurately."));
                 continue;
-            } else {
+            }
+            // Task 601: When evidence was gathered, route through evidence finalizer
+            // instead of using raw model output. The small model often produces
+            // wrong answers that contradict its own tool results.
+            if has_recent_tool_evidence(&messages) {
+                trace(args, "tool_loop: routing voluntary stop through evidence finalizer (Task 601)");
+                let final_content = finalize_from_evidence_or_fallback(
+                    args,
+                    tui,
+                    client,
+                    chat_url,
+                    model_id,
+                    &original_user_request,
+                    &messages,
+                    max_tokens,
+                    None,
+                )
+                .await;
+                let trimmed_final = normalize_final_answer_candidate(&final_content);
                 return Ok(ToolLoopResult {
-                    final_answer: normalize_final_answer_candidate(&content),
+                    final_answer: if final_answer_needs_retry(&trimmed_final) {
+                        build_fallback_from_recent_tool_evidence(&messages, None)
+                    } else {
+                        trimmed_final
+                    },
                     iterations: stop_policy.iteration(),
                     tool_calls_made: stop_policy.total_tool_calls(),
                     stopped_by_max: false,
@@ -1827,6 +1849,16 @@ pub(crate) async fn run_tool_loop(
                     evidence_progress_summary: None,
                 });
             }
+            return Ok(ToolLoopResult {
+                final_answer: normalize_final_answer_candidate(&content),
+                iterations: stop_policy.iteration(),
+                tool_calls_made: stop_policy.total_tool_calls(),
+                stopped_by_max: false,
+                stop_outcome: None,
+                total_elapsed_s: loop_start.elapsed().as_secs() as f64,
+                timeout_reason: None,
+                evidence_progress_summary: None,
+            });
         }
     }
 }

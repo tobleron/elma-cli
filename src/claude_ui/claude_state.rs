@@ -1036,6 +1036,21 @@ impl ClaudeTranscript {
         }
     }
 
+    /// Replace the content of the last assistant message in-place.
+    /// Used by continuity retry to overwrite a streamed wrong answer
+    /// instead of pushing a second duplicate message (Task 602).
+    pub(crate) fn replace_last_assistant_message(&mut self, content: AssistantContent) {
+        for msg in self.messages.iter_mut().rev() {
+            if let ClaudeMessage::Assistant {
+                content: ref mut c,
+            } = msg
+            {
+                *c = content;
+                return;
+            }
+        }
+    }
+
     pub(crate) fn scroll_to_bottom(&mut self) {
         self.scroll_offset = 0;
         self.divider_index = None;
