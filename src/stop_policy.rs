@@ -117,6 +117,9 @@ pub(crate) struct StopPolicy {
     start_time: Instant,
     seen_signals: HashSet<String>,
     tool_failures: Vec<(String, String)>,
+    /// Track consecutive failures with identical error text (Task 589).
+    consecutive_identical_errors: usize,
+    last_tool_error_text: Option<String>,
     /// Track last failed tool name for argument-change detection.
     last_failed_tool_name: Option<String>,
     /// Hash of last failed tool's arguments (for change detection).
@@ -150,6 +153,8 @@ impl StopPolicy {
             start_time: Instant::now(),
             seen_signals: HashSet::new(),
             tool_failures: Vec::new(),
+            consecutive_identical_errors: 0,
+            last_tool_error_text: None,
             last_failed_tool_name: None,
             last_failed_args_hash: None,
             stubborn_attempts: 0,
@@ -255,7 +260,16 @@ impl StopPolicy {
                 }
             }
             self.tool_failures
-                .push((call.function.name.clone(), error_class));
+                .push((call.function.name.clone(), error_class.clone()));
+
+            // Task 589: Track consecutive identical errors for accelerated stagnation
+            let error_text = format!("{}_{}", call.function.name, error_class);
+            if Some(&error_text) == self.last_tool_error_text.as_ref() {
+                self.consecutive_identical_errors += 1;
+            } else {
+                self.consecutive_identical_errors = 1;
+            }
+            self.last_tool_error_text = Some(error_text);
 
             // Track argument-level changes for non-shell failures only.
             // Shell failures have their own strategy-based tracking via record_shell_failure.
@@ -370,16 +384,32 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
         ))
     }
 
+    /// Get the effective stagnation threshold.
+    /// Accelerated to 3 when 3+ consecutive identical errors occur (Task 589).
+    fn effective_stagnation_threshold(&self) -> usize {
+        if self.consecutive_identical_errors >= 3 {
+            3 // Accelerated: stop wasting iterations on identical failures
+        } else {
+            self.budget.max_stagnation_cycles // Default: 8
+        }
+    }
+
     /// Call when no new tool signals were seen this iteration (stagnation).
     pub(crate) fn record_stagnation(&mut self) -> Option<StopOutcome> {
         self.stagnation_runs += 1;
-        if self.stagnation_runs >= self.budget.max_stagnation_cycles {
+        let threshold = self.effective_stagnation_threshold();
+        if self.stagnation_runs >= threshold {
             return Some(self.build_outcome(
                 StopReason::RepeatedNoNewEvidence,
-                "Stagnation threshold reached. The model is repeating the same tool calls without producing new evidence.",
+                format!("Stagnation threshold reached ({} identical failures). The model is repeating the same tool calls without producing new evidence.", self.consecutive_identical_errors),
             ));
         }
         None
+    }
+
+    /// Check if accelerated stagnation is active (Task 589).
+    pub(crate) fn is_identical_error_loop(&self) -> bool {
+        self.consecutive_identical_errors >= 3
     }
 
     /// Trace info about stagnation for debugging (tool + args).

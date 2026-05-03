@@ -1619,6 +1619,25 @@ pub(crate) async fn run_tool_loop(
                 }
             }
 
+            // Task 589: Inject strategy-shift message for accelerated identical-error loops
+            if stop_policy.is_identical_error_loop() {
+                let last_tool = stop_policy.last_failed_tool_signal();
+                if last_tool == "read" {
+                    let shift = "The 'read' tool has failed 3+ times with the same error. \
+                        Stop using 'read' and use 'shell cat <path>' instead to read files. \
+                        Example: shell command='cat docs/ARCHITECTURE.md'";
+                    trace(args, &format!("tool_loop: identical-error loop detected for read"));
+                    messages.push(ChatMessage::simple("user", shift));
+                } else {
+                    let shift = format!(
+                        "Tool '{}' has failed 3+ times with the same error. Stop using it and try a completely different approach.",
+                        last_tool
+                    );
+                    trace(args, &format!("tool_loop: identical-error loop detected for {}", last_tool));
+                    messages.push(ChatMessage::simple("user", &shift));
+                }
+            }
+
             // T304: Force finalization after repeated failures to preserve output budget
             // If 5+ consecutive shell failures, force final answer before context is exhausted
             let consecutive_failures = stop_policy.consecutive_shell_failures();

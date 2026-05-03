@@ -36,10 +36,22 @@ pub(crate) fn build_tool_definitions_for_context(
 
 /// Generates a corrective guidance message after a tool failure.
 /// Helps small models recover by providing the correct usage pattern.
+/// Includes an exact copyable template for the tool call JSON.
 pub(crate) fn format_tool_error_correction(tool_name: &str) -> String {
     let schema = crate::tools::validation::get_tool_schema(tool_name);
     match schema {
-        Some(s) => s.format_schema_narrative(),
+        Some(s) => {
+            let base = s.format_schema_narrative();
+            // Add exact copyable template if available
+            if let Some(ref example) = s.usage_example {
+                format!(
+                    "{}\n\nCopy this exact JSON for your next call:\n{} arguments={}",
+                    base, tool_name, example
+                )
+            } else {
+                base
+            }
+        }
         None => format!("Tool '{}' failed. Check the arguments and try again.", tool_name),
     }
 }
@@ -141,6 +153,38 @@ pub(crate) async fn execute_tool_call(
                 }
             }
         }
+    };
+
+    // Task 586: Pre-execution arg repair for read tool.
+    // If the model called read without filePath, try to extract a path from the raw args.
+    let args_value = if tool_name == "read" && args_value.get("filePath").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty()) {
+        let raw = &tool_call.function.arguments;
+        let path_re = regex::Regex::new(r#"["']([a-zA-Z0-9_./\\-]+(?:\.[a-zA-Z0-9]+)?)["']"#).unwrap();
+        if let Some(cap) = path_re.captures(raw) {
+            let extracted = cap.get(1).unwrap().as_str().to_string();
+            if extracted.contains('.') || extracted.contains('/') {
+                if let Some(obj) = args_value.as_object() {
+                    let mut map = obj.clone();
+                    map.insert("filePath".to_string(), serde_json::Value::String(extracted));
+                    if let Ok(repaired) = serde_json::to_value(map) {
+                        crate::append_trace_log_line(&format!(
+                            "[TOOL_ARG_REPAIR] read: injected filePath from raw args"
+                        ));
+                        repaired
+                    } else {
+                        args_value
+                    }
+                } else {
+                    args_value
+                }
+            } else {
+                args_value
+            }
+        } else {
+            args_value
+        }
+    } else {
+        args_value
     };
 
     // Validate arguments against tool schema before dispatch

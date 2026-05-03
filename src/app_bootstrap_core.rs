@@ -309,6 +309,7 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         execution_plan: ExecutionPlanSelection::simple_general(),
         active_runtime_task,
         last_stop_outcome: None,
+        last_evidence_summary: None,
         verbose: false,
         retry_attempt: 0,
         tool_registry: tool_discovery::ToolRegistry::new(),

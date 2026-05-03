@@ -115,6 +115,17 @@ pub(crate) async fn run_tool_calling_pipeline(
         "tool_calling: direct model planning (no Maestro)",
     );
 
+    // Task 590: Inject cross-cycle evidence summary if available
+    let user_line: String = if let Some(ref prior_evidence) = runtime.last_evidence_summary {
+        trace(&runtime.args, "tool_loop: injected cross-cycle evidence summary");
+        format!(
+            "{}\n\n[Previously gathered in a prior attempt]\n{}\nDo NOT repeat steps already completed. Continue from where you left off.",
+            line, prior_evidence
+        )
+    } else {
+        line.to_string()
+    };
+
     tui.start_status("Executing...");
 
     let result = run_tool_loop(
@@ -123,7 +134,7 @@ pub(crate) async fn run_tool_calling_pipeline(
         &runtime.chat_url,
         &runtime.model_id,
         &system_prompt,
-        line,
+        &user_line,
         &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         &runtime.session,
         0.2, // temperature — low for reliability
@@ -141,6 +152,7 @@ pub(crate) async fn run_tool_calling_pipeline(
     tui.complete_status("Done");
 
     runtime.last_stop_outcome = result.stop_outcome.clone();
+    runtime.last_evidence_summary = result.evidence_progress_summary.clone();
 
     // Task 422: Clear evidence ledger at end of turn
     crate::evidence_ledger::clear_session_ledger();

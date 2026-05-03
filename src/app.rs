@@ -69,6 +69,8 @@ pub(crate) struct AppRuntime {
     pub(crate) execution_plan: ExecutionPlanSelection,
     pub(crate) active_runtime_task: Option<RuntimeTaskRecord>,
     pub(crate) last_stop_outcome: Option<StopOutcome>,
+    /// Task 590: Cross-cycle evidence summary for continuity retries.
+    pub(crate) last_evidence_summary: Option<String>,
     pub(crate) verbose: bool,
     pub(crate) retry_attempt: u32,
     pub(crate) tool_registry: tool_discovery::ToolRegistry,
