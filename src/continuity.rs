@@ -11,6 +11,25 @@ use crate::*;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Set the continuity threshold based on model parameter count heuristic.
+/// Models under 7B get a lower threshold because they produce lower-confidence
+/// outputs even when correct.
+pub(crate) fn apply_model_threshold(tracker: &mut ContinuityTracker, model_id: &str) {
+    let params = model_id
+        .split(|c: char| !c.is_ascii_digit())
+        .filter_map(|s| s.parse::<u64>().ok())
+        .next()
+        .unwrap_or(0);
+    let threshold = if params > 0 && params < 7 {
+        0.65
+    } else if params >= 7 && params < 20 {
+        0.72
+    } else {
+        0.80
+    };
+    tracker.set_threshold(threshold);
+}
+
 /// Whether an intent survived a pipeline transformation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum ContinuityVerdict {
@@ -53,6 +72,9 @@ pub(crate) struct ContinuityTracker {
     pub alignment_score: f64,
     /// Whether fallback has been triggered.
     pub fallback_triggered: bool,
+    /// Continuity score threshold below which fallback is triggered.
+    /// Set lower for small models that produce lower-confidence outputs.
+    pub threshold: f64,
 }
 
 impl ContinuityTracker {
@@ -68,9 +90,16 @@ impl ContinuityTracker {
             checkpoints: Vec::new(),
             alignment_score: 1.0,
             fallback_triggered: false,
+            threshold: 0.80,
         };
         tracker.add_checkpoint("initialization", ContinuityVerdict::Aligned, "tracker created");
         tracker
+    }
+
+    /// Set the continuity threshold.
+    /// Lower values make fallback less sensitive (useful for small models).
+    pub fn set_threshold(&mut self, threshold: f64) {
+        self.threshold = threshold;
     }
 
     /// Add a continuity checkpoint and recalculate alignment score.
@@ -120,7 +149,7 @@ impl ContinuityTracker {
 
     /// True if alignment is critically low (requires intervention).
     pub fn needs_fallback(&self) -> bool {
-        self.alignment_score < 0.80
+        self.alignment_score < self.threshold
     }
 
     /// True if the most recent checkpoint is fully aligned (not drifted or mismatched).

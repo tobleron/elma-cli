@@ -72,7 +72,7 @@ impl Default for StageBudget {
             max_tool_calls: 0, // 0 = unlimited (context window + memory are the only hard limits)
             max_iterations: 0, // 0 = unlimited (context compaction + stagnation detection are the guards)
             max_repeated_failures: 3,
-            max_stagnation_cycles: 3,
+            max_stagnation_cycles: 8,
             max_wall_clock_s: 300,
         }
     }
@@ -711,7 +711,7 @@ mod tests {
     fn default_budget_matches_legacy_constants() {
         let b = StageBudget::default();
         assert_eq!(b.max_iterations, 0); // 0 = unlimited
-        assert_eq!(b.max_stagnation_cycles, 3);
+        assert_eq!(b.max_stagnation_cycles, 8);
     }
 
     #[test]

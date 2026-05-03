@@ -2,9 +2,9 @@
 //!
 //! Turn Summary Intel Unit
 //!
-//! One job: summarize a single conversation turn into a compact narrative
-//! that can replace the raw messages in the next turn's context.
-//! Output: structured JSON with narrative, status, tools, artifacts.
+//! One job: summarize a single conversation turn into one concise sentence
+//! (under 100 words). Output is plain text — no JSON schema at all.
+//! The returned sentence is stored as `summary_narrative` in session.json.
 
 use crate::intel_trait::*;
 use crate::*;
@@ -12,13 +12,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct TurnSummaryOutput {
+    pub uid: String,
     pub summary_narrative: String,
-    pub status_category: String,
-    pub noteworthy: bool,
-    pub tools_used: Vec<String>,
-    pub tool_call_count: usize,
-    pub errors: Vec<String>,
-    pub artifacts_created: Vec<String>,
+    pub artifact_path: String,
 }
 
 pub(crate) struct TurnSummaryUnit {
@@ -46,75 +42,55 @@ impl IntelUnit for TurnSummaryUnit {
             .and_then(|v| v.as_str())
             .map(|s| !s.trim().is_empty())
             .unwrap_or(false);
-        let has_steps = context
-            .extra("step_results")
-            .and_then(|v| v.as_array())
-            .map(|a| !a.is_empty())
-            .unwrap_or(false);
-        if !has_final && !has_steps {
-            return Err(anyhow::anyhow!("No turn data to summarize"));
+        if !has_final {
+            return Err(anyhow::anyhow!("No final text to summarize"));
         }
         Ok(())
     }
 
     async fn execute(&self, context: &IntelContext) -> Result<IntelOutput> {
         let user_message = &context.user_message;
-        let route = &context.route_decision.route;
-        let formula = context
-            .extra("formula")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
         let final_text = context
             .extra("final_text")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let tools_used = context
-            .extra("tools_used")
+        let uid = context
+            .extra("uid")
             .and_then(|v| v.as_str())
-            .unwrap_or("none");
-        let step_results = context
-            .extra("step_results")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                serde_json::to_string_pretty(&a)
-                    .unwrap_or_default()
-                    .chars()
-                    .take(3000)
-                    .collect::<String>()
-            })
-            .unwrap_or_default();
+            .unwrap_or("unknown");
 
-        let narrative = format!(
-            r#"USER REQUEST: {user_message}
-ROUTE: {route}
-FORMULA: {formula}
-TOOLS USED: {tools_used}
-STEP RESULTS: {step_results}
-FINAL RESPONSE: {final_text}
-
-TASK:
-Summarize what happened in this turn. Write a compact narrative that captures what the user asked, what actions Elma took, and what the outcome was. This summary will replace the raw turn messages in the next turn's context.
-
-Output contract:
-{{"summary_narrative": "...", "status_category": "completed|blocked|failed|waiting|partial", "noteworthy": true/false, "tools_used": ["read","bash"], "tool_call_count": 4, "errors": [], "artifacts_created": ["path/to/file"]}}"#
+        let prompt = format!(
+            "Summarize this conversation turn in ONE concise sentence (under 100 words). \
+             Say what the user asked and what the outcome was.\n\n\
+             User asked: {user_message}\n\
+             Outcome: {final_text}"
         );
 
-        let result: TurnSummaryOutput =
-            execute_intel_json_from_user_content(&context.client, &self.profile, narrative).await?;
+        let raw = execute_intel_text_from_user_content(&context.client, &self.profile, prompt).await?;
+
+        let summary = raw
+            .split_whitespace()
+            .take(100)
+            .collect::<Vec<_>>()
+            .join(" ");
 
         Ok(IntelOutput::success(
             self.name(),
-            serde_json::to_value(&result)?,
+            serde_json::json!({
+                "uid": uid,
+                "summary_narrative": summary,
+                "artifact_path": "",
+            }),
             0.9,
         ))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
-        if output.get("summary_narrative").is_none() {
-            return Err(anyhow::anyhow!("Missing 'summary_narrative' field"));
-        }
-        if output.get("status_category").is_none() {
-            return Err(anyhow::anyhow!("Missing 'status_category' field"));
+        let text = output
+            .get_str("summary_narrative")
+            .unwrap_or("");
+        if text.trim().is_empty() {
+            return Err(anyhow::anyhow!("Empty summary narrative"));
         }
         Ok(())
     }
@@ -122,29 +98,12 @@ Output contract:
     fn fallback(&self, context: &IntelContext, error: &str) -> Result<IntelOutput> {
         trace_fallback(self.name(), error);
 
+        let uid = context
+            .extra("uid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
         let user_msg = context.user_message.chars().take(200).collect::<String>();
-        let formula = context
-            .extra("formula")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-
-        let tools_used: Vec<String> = context
-            .extra("tools_used")
-            .and_then(|v| v.as_str())
-            .map(|s| {
-                s.split(',')
-                    .map(|t| t.trim().to_string())
-                    .filter(|t| !t.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let tool_call_count: usize = context
-            .extra("tool_call_count")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .unwrap_or(tools_used.len());
-
         let final_excerpt = context
             .extra("final_text")
             .and_then(|v| v.as_str())
@@ -152,43 +111,18 @@ Output contract:
             .map(|s| s.chars().take(300).collect::<String>())
             .unwrap_or_default();
 
-        let step_summary = context
-            .extra("step_results")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                let total = a.len();
-                let succeeded = a.iter().filter(|r| r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false)).count();
-                format!("{}/{} steps succeeded", succeeded, total)
-            })
-            .unwrap_or_default();
-
         let narrative = if !final_excerpt.is_empty() {
-            format!(
-                "User asked: \"{user_msg}\". Elma used {tool_call_count} tool(s): [{}]. Outcome: {final_excerpt}",
-                tools_used.join(", "),
-            )
-        } else if !step_summary.is_empty() {
-            format!(
-                "User asked: \"{user_msg}\". Elma used {tool_call_count} tool(s): [{}]. {step_summary}.",
-                tools_used.join(", "),
-            )
+            format!("User asked: \"{user_msg}\". Outcome: {final_excerpt}")
         } else {
-            format!(
-                "User asked: \"{user_msg}\". Elma used {tool_call_count} tool(s): [{}] (formula: {formula}). Summary generation failed: {error}",
-                tools_used.join(", "),
-            )
+            format!("User asked: \"{user_msg}\". Summary generation failed: {error}")
         };
 
         Ok(IntelOutput::fallback(
             self.name(),
             serde_json::json!({
+                "uid": uid,
                 "summary_narrative": narrative,
-                "status_category": "partial",
-                "noteworthy": false,
-                "tools_used": tools_used,
-                "tool_call_count": tool_call_count,
-                "errors": [error.to_string()],
-                "artifacts_created": [],
+                "artifact_path": "",
             }),
             &format!("turn summary failed: {}", error),
         ))
@@ -221,27 +155,16 @@ mod tests {
     #[test]
     fn test_turn_summary_output_fields() {
         let data = serde_json::json!({
+            "uid": "s_test_0:0",
             "summary_narrative": "User asked to find unused deps. Elma searched and found serde_json.",
-            "status_category": "completed",
-            "noteworthy": false,
-            "tools_used": ["read", "bash"],
-            "tool_call_count": 3,
-            "errors": [],
-            "artifacts_created": []
+            "artifact_path": "",
         });
         let output = IntelOutput::success("turn_summary", data, 0.9);
         assert_eq!(
             output.get_str("summary_narrative"),
             Some("User asked to find unused deps. Elma searched and found serde_json.")
         );
-        assert_eq!(output.get_str("status_category"), Some("completed"));
-        assert_eq!(output.get_bool("noteworthy"), Some(false));
-        assert_eq!(
-            output
-                .get("tools_used")
-                .and_then(|v| v.as_array())
-                .map(|a| a.len()),
-            Some(2)
-        );
+        assert_eq!(output.get_str("uid"), Some("s_test_0:0"));
+        assert_eq!(output.get_str("artifact_path"), Some(""));
     }
 }

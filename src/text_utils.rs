@@ -231,6 +231,30 @@ pub(crate) fn user_requested_markdown(text: &str) -> bool {
     t.contains("markdown")
 }
 
+/// Collapse markdown formatting to compact plain text suitable for TUI display.
+/// Removes heading markers, bold/italic markers, horizontal rules, and collapses
+/// excessive blank lines.
+pub(crate) fn compact_plain_text(text: &str) -> String {
+    let mut result = text.to_string();
+
+    let heading_re = Regex::new(r"^#{1,6}\s+").unwrap();
+    result = heading_re.replace_all(&result, "").to_string();
+
+    let bold_re = Regex::new(r"\*\*(.+?)\*\*").unwrap();
+    result = bold_re.replace_all(&result, "$1").to_string();
+
+    let italic_re = Regex::new(r"\*(.+?)\*").unwrap();
+    result = italic_re.replace_all(&result, "$1").to_string();
+
+    let rule_re = Regex::new(r"^\s*-{3,}\s*$").unwrap();
+    result = rule_re.replace_all(&result, "").to_string();
+
+    let blank_re = Regex::new(r"\n{3,}").unwrap();
+    result = blank_re.replace_all(&result, "\n\n").to_string();
+
+    result.trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -183,9 +183,6 @@ pub(crate) fn write_summary_markdown(
     model: &str,
     session_id: &str,
     narrative: &str,
-    status: &str,
-    tools_used: &[String],
-    errors: &[String],
 ) {
     let summaries_dir = session_root.join("summaries");
     if let Err(e) = std::fs::create_dir_all(&summaries_dir) {
@@ -197,7 +194,6 @@ pub(crate) fn write_summary_markdown(
         return;
     }
 
-    // Sanitize timestamp for filename
     let file_ts = timestamp.replace(':', "-").replace('T', "_");
     let filename = format!("{}_summary_{}.md", file_ts, turn_number);
     let filepath = summaries_dir.join(&filename);
@@ -208,13 +204,6 @@ pub(crate) fn write_summary_markdown(
     content.push_str(&format!("session: {}\n", session_id));
     content.push_str(&format!("model: {}\n", model));
     content.push_str(&format!("turn: {}\n", turn_number));
-    content.push_str(&format!("status: {}\n", status));
-    if !tools_used.is_empty() {
-        content.push_str(&format!("tools: [{}]\n", tools_used.join(", ")));
-    }
-    if !errors.is_empty() {
-        content.push_str(&format!("errors: [{}]\n", errors.join(", ")));
-    }
     content.push_str("---\n\n");
     content.push_str(narrative);
     content.push('\n');

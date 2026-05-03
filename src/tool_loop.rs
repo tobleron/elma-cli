@@ -1070,8 +1070,24 @@ pub(crate) async fn run_tool_loop(
                 args,
                 &format!("tool_loop: {} tool call(s)", turn.tool_calls.len()),
             );
+            // Preserve model narrative text alongside tool calls
+            if !content.trim().is_empty() {
+                messages.push(ChatMessage {
+                    role: "assistant".to_string(),
+                    content: content.clone(),
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                    reasoning_content: turn.reasoning_content.clone(),
+                    summarized: false,
+                });
+            }
             let mut first_tool_call = true;
-            let reasoning_for_messages = turn.reasoning_content.clone();
+            let reasoning_for_messages = if content.trim().is_empty() {
+                turn.reasoning_content.clone()
+            } else {
+                None
+            };
             for tc in &turn.tool_calls {
                 // Task T209: Shell budget forecasting
                 if tc.function.name == "shell" {

@@ -95,8 +95,9 @@ impl StreamingUI {
         }
 
         if self.is_streaming_content || !self.content.is_empty() {
+            let display_text = crate::text_utils::compact_plain_text(&self.content);
             messages.push(ClaudeMessage::Assistant {
-                content: crate::claude_ui::AssistantContent::from_markdown(&self.content),
+                content: crate::claude_ui::AssistantContent::from_markdown(&display_text),
             });
         }
 

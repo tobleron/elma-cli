@@ -30,6 +30,7 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     set_runtime_llm_config(llm_runtime_cfg.clone());
     let (base_url, base_url_source) =
         resolve_base_url(&cfg_root, args.base_url.as_deref(), args.model.as_deref())?;
+    crate::llm_config::set_global_base_url(&base_url);
 
     // Persist to OS-native elma.toml (canonical global config)
     if base_url_source == "cli_or_env" {

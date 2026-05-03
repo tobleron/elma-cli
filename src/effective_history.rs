@@ -26,22 +26,16 @@ pub(crate) fn compute_effective_history(messages: &[ChatMessage]) -> Vec<ChatMes
 /// Inject a turn summary as a system message into the message list.
 /// The summary is inserted after the last message of the summarized turn.
 pub(crate) fn inject_turn_summary(messages: &mut Vec<ChatMessage>, summary: &TurnSummaryOutput) {
-    let content = if summary.artifacts_created.is_empty() {
-        format!(
-            "Previous turn summary: {}\nStatus: {}\nTools used: {}",
-            summary.summary_narrative,
-            summary.status_category,
-            summary.tools_used.join(", "),
-        )
+    let artifact_line = if summary.artifact_path.is_empty() {
+        String::new()
     } else {
-        format!(
-            "Previous turn summary: {}\nStatus: {}\nTools used: {}\nArtifacts: {}",
-            summary.summary_narrative,
-            summary.status_category,
-            summary.tools_used.join(", "),
-            summary.artifacts_created.join(", "),
-        )
+        format!("\nArtifact: {}", summary.artifact_path)
     };
+    let content = format!(
+        "Previous turn summary: {}{}",
+        summary.summary_narrative,
+        artifact_line,
+    );
 
     let summary_msg = ChatMessage {
         role: "system".to_string(),
@@ -126,13 +120,9 @@ mod tests {
         ];
 
         let summary = TurnSummaryOutput {
+            uid: "s_test:0".to_string(),
             summary_narrative: "User said hello, Elma said hi".to_string(),
-            status_category: "completed".to_string(),
-            noteworthy: false,
-            tools_used: vec![],
-            tool_call_count: 0,
-            errors: vec![],
-            artifacts_created: vec![],
+            artifact_path: String::new(),
         };
 
         inject_turn_summary(&mut messages, &summary);
@@ -148,13 +138,9 @@ mod tests {
         let mut messages = vec![make_msg("user", "hello", false)];
 
         let summary = TurnSummaryOutput {
+            uid: "s_test:0".to_string(),
             summary_narrative: "test".to_string(),
-            status_category: "completed".to_string(),
-            noteworthy: false,
-            tools_used: vec![],
-            tool_call_count: 0,
-            errors: vec![],
-            artifacts_created: vec![],
+            artifact_path: String::new(),
         };
 
         inject_turn_summary(&mut messages, &summary);
@@ -167,13 +153,9 @@ mod tests {
         let mut messages = vec![make_msg("assistant", "done", false)];
 
         let summary = TurnSummaryOutput {
+            uid: "s_test:0".to_string(),
             summary_narrative: "Edited Cargo.toml".to_string(),
-            status_category: "completed".to_string(),
-            noteworthy: true,
-            tools_used: vec!["edit".to_string()],
-            tool_call_count: 1,
-            errors: vec![],
-            artifacts_created: vec!["Cargo.toml".to_string()],
+            artifact_path: "Cargo.toml".to_string(),
         };
 
         inject_turn_summary(&mut messages, &summary);
