@@ -152,7 +152,7 @@ impl ClaudeMessage {
                 };
                 vec![Line::from(vec![
                     Span::styled(
-                        "❯",
+                        "|",
                         Style::default()
                             .fg(theme.accent_primary.to_ratatui_color())
                             .add_modifier(Modifier::BOLD),
@@ -168,7 +168,7 @@ impl ClaudeMessage {
                 for (i, content_line) in content_lines.into_iter().enumerate() {
                     if i == 0 {
                         let mut spans = vec![Span::styled(
-                            ASSISTANT_DOT,
+                            "\\_",
                             Style::default()
                                 .fg(theme.accent_primary.to_ratatui_color())
                                 .add_modifier(Modifier::BOLD),
@@ -1093,8 +1093,11 @@ impl ClaudeTranscript {
         while i < self.messages.len() {
             let msg = &self.messages[i];
 
-            // Task 4: Thinking thread removed from left panel — lives in right panel only
-            if matches!(msg, ClaudeMessage::Thinking { .. }) {
+            // Thinking, System, and Notice messages live in right panel — not transcript
+            if matches!(msg, ClaudeMessage::Thinking { .. }
+                | ClaudeMessage::System { .. }
+                | ClaudeMessage::Notice(_))
+            {
                 i += 1;
                 continue;
             }
@@ -1162,8 +1165,11 @@ impl ClaudeTranscript {
     pub(crate) fn render(&self) -> Vec<String> {
         let mut lines = Vec::new();
         for (i, msg) in self.messages.iter().enumerate() {
-            // Thinking thread lives only in right panel — not in transcript
-            if matches!(msg, ClaudeMessage::Thinking { .. }) {
+            // Thinking, System, and Notice messages live in right panel — not transcript
+            if matches!(msg, ClaudeMessage::Thinking { .. }
+                | ClaudeMessage::System { .. }
+                | ClaudeMessage::Notice(_))
+            {
                 continue;
             }
             lines.extend(msg.to_lines(self.thinking_expanded_for_index(i)));

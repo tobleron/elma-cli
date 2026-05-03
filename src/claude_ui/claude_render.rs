@@ -147,7 +147,7 @@ impl ClaudeRenderer {
     }
 
     pub(crate) fn push_message(&mut self, msg: ClaudeMessage) {
-        // Capture last notice text for right panel thinking footer
+        // Capture last notice text and system messages for right panel thinking footer
         if let ClaudeMessage::Notice(ref notice) = msg {
             let kind_label = match notice.kind {
                 crate::claude_ui::UiNoticeKind::Budget => "Budget",
@@ -159,6 +159,9 @@ impl ClaudeRenderer {
             if !kind_label.is_empty() {
                 self.last_notice_text = Some(format!("{}: {}", kind_label, notice.content));
             }
+        }
+        if let ClaudeMessage::System { ref content } = msg {
+            self.last_notice_text = Some(content.clone());
         }
         let m = msg.clone();
         self.transcript.push(msg);
@@ -1308,15 +1311,22 @@ impl ClaudeRenderer {
                 .collect();
 
             // Split panel into top info section + bottom thinking section
+            let show_reasoning = crate::ui_state::is_reasoning_visible();
             let panel_chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(10),   // info area (logo, stats, model)
-                    Constraint::Min(3),    // thinking area (scrollable)
-                ])
+                .constraints(if show_reasoning {
+                    vec![
+                        Constraint::Min(10),   // info area (logo, stats, model)
+                        Constraint::Min(3),    // thinking area (scrollable)
+                    ]
+                } else {
+                    vec![
+                        Constraint::Min(0),    // info fills entire panel
+                    ]
+                })
                 .split(panel_area);
             let info_area = panel_chunks[0];
-            let thinking_area = panel_chunks[1];
+            let thinking_area = if show_reasoning { panel_chunks[1] } else { Rect::default() };
 
             render_right_panel_info(
                 info_area,
@@ -1327,16 +1337,20 @@ impl ClaudeRenderer {
                 self.output_token_count,
             );
 
-            render_right_panel_thinking(
-                thinking_area,
-                f,
-                &all_thinking,
-                self.anim_frame,
-                &mut self.thinking_scroll,
-                self.streaming.is_streaming_thinking,
-                &self.streaming.thinking,
-                self.last_notice_text.as_deref(),
-            );
+            // Render thinking section only if ctrl+t (reasoning) is active
+            let show_reasoning = crate::ui_state::is_reasoning_visible();
+            if show_reasoning {
+                render_right_panel_thinking(
+                    thinking_area,
+                    f,
+                    &all_thinking,
+                    self.anim_frame,
+                    &mut self.thinking_scroll,
+                    self.streaming.is_streaming_thinking,
+                    &self.streaming.thinking,
+                    self.last_notice_text.as_deref(),
+                );
+            }
         }
 
         // Render modal if active (Claude-style absolute overlay)
@@ -1753,70 +1767,31 @@ fn render_right_panel_thinking(
 
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
-    // Separator header
+    // Separator header — shown only once at top
     all_lines.push(Line::from(vec![Span::styled(
         "── Thinking ──",
         Style::default().fg(theme.fg_dim.to_ratatui_color()),
     )]));
 
-    // Live streaming thinking shows first
+    // Live streaming thinking
     if is_streaming && !live_text.is_empty() {
-        let spinner = SPINNER_FRAMES[anim_frame % SPINNER_FRAMES.len()];
+        let first_line = live_text.lines().next().unwrap_or(live_text);
+        let display = truncate_to_width(first_line, area.width.saturating_sub(4) as usize);
         all_lines.push(Line::from(vec![
-            Span::styled(format!("{} ", spinner), accent),
-            Span::styled("Thinking...", dim),
+            Span::styled("* ", accent),
+            Span::styled(display, dim),
         ]));
-        for line in live_text.lines() {
-            let display = truncate_to_width(line, area.width.saturating_sub(4) as usize);
-            all_lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(display, dim),
-            ]));
-        }
-        all_lines.push(Line::from(""));
     }
 
-    // Completed thinking entries (newest first = top)
+    // Completed thinking entries — each shows as "* first content line"
     for entry in entries {
-        let delay_secs = (entry.word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0) as u64;
-        let time_label = if delay_secs >= 60 {
-            format!("{}m {}s", delay_secs / 60, delay_secs % 60)
-        } else {
-            format!("{}s", delay_secs)
-        };
-
-        if entry.collapsed {
-            // Single-line collapsed: "> Thinking.. [1m 3s]"
-            all_lines.push(Line::from(vec![
-                Span::styled(">", accent),
-                Span::raw(" "),
-                Span::styled(format!("Thinking.. [{}]", time_label), dim),
-            ]));
-        } else {
-            // Expanded: "⌄ Thinking [1m 3s]" + content + collapse hint
-            all_lines.push(Line::from(vec![
-                Span::styled("⌄", accent),
-                Span::raw(" "),
-                Span::styled(format!("Thinking [{}]", time_label), dim),
-            ]));
-            for line in entry.content.lines() {
-                let display = truncate_to_width(line, area.width.saturating_sub(4) as usize);
-                all_lines.push(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled(display, dim),
-                ]));
-            }
-            all_lines.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled("(ctrl+o to collapse)", dim),
-            ]));
-        }
-    }
-
-    if entries.is_empty() && !(is_streaming && !live_text.is_empty()) {
+        let first_line = entry.content.lines().next().unwrap_or(&entry.content);
+        let display = truncate_to_width(first_line, area.width.saturating_sub(4) as usize);
+        let spin = SPINNER_FRAMES[anim_frame % SPINNER_FRAMES.len()];
+        let bullet = if entry.collapsed { "*" } else { "⌄" };
         all_lines.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled("(waiting for input)", dim),
+            Span::styled(format!("{} ", bullet), accent),
+            Span::styled(display, dim),
         ]));
     }
 
