@@ -167,6 +167,7 @@ mod session_gc; // Task 282: Session Garbage Collector
 mod session_hierarchy;
 mod session_index; // Task 282: Session Index
 mod session_paths;
+mod session_state; // Task 554: Session-scoped state container
 mod session_store; // Task 277: SQLite Session Storage
 mod session_write;
 mod shell_preflight; // Task 116: Destructive Command Detection & Preflight
@@ -260,6 +261,7 @@ pub(crate) use atomic_write::*;
 pub(crate) use context_budget::*;
 pub(crate) use session_display::*;
 pub(crate) use session_flush::*; // Task 283: Session Transcript Flush
+pub(crate) use session_state::*;
 pub(crate) use skills::*;
 pub(crate) use snapshot::*;
 pub(crate) use stop_policy::*;
