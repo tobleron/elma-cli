@@ -226,6 +226,25 @@ pub(crate) fn strip_markdown(text: &str) -> String {
         .collect::<Vec<_>>()
         .join("");
 
+    // Strip horizontal rules and table rows (safety net — main path strips in process_final_answer)
+    let no_seps: String = result
+        .lines()
+        .filter(|line| {
+            let t = line.trim();
+            if (t.chars().all(|c| c == '-') || t.chars().all(|c| c == '*') || t.chars().all(|c| c == '_'))
+                && t.len() >= 3
+            {
+                return false;
+            }
+            if t.starts_with('|') && t.ends_with('|') && t.len() > 1 {
+                return false;
+            }
+            true
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    result = no_seps;
+
     // Clean up excessive whitespace
     result = result
         .lines()
@@ -252,11 +271,30 @@ pub(crate) fn strip_markdown(text: &str) -> String {
     result.trim().to_string()
 }
 
-/// Run the full answer pipeline: strip think tags → sanitize → return.
+/// Run the full answer pipeline: strip think tags → sanitize → strip separators → return.
 pub(crate) fn process_final_answer(raw: &str) -> String {
     let without_think = text_utils::strip_thinking_blocks(raw);
     let (cleaned, _modified) = sanitize_final_answer(&without_think);
-    cleaned
+    // Strip markdown separators the model might add: ---, ***, ___, | table | rows
+    let no_seps: String = cleaned
+        .lines()
+        .filter(|line| {
+            let t = line.trim();
+            // ---, ***, ___ separator lines
+            if (t.chars().all(|c| c == '-') || t.chars().all(|c| c == '*') || t.chars().all(|c| c == '_'))
+                && t.len() >= 3
+            {
+                return false;
+            }
+            // | table | rows
+            if t.starts_with('|') && t.ends_with('|') && t.len() > 1 {
+                return false;
+            }
+            true
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    no_seps.trim().to_string()
 }
 
 /// Prepare a final answer for terminal display: sanitize + strip markdown.

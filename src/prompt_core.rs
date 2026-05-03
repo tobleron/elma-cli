@@ -54,7 +54,9 @@ Tool workflow:
 
 Prefer `rg` for text search and file listing — it respects .gitignore and skips hidden files automatically.
 
-Begin with the most direct source of truth. Collect evidence until you have sufficient information. Ground all answers in tool output.";
+Begin with the most direct source of truth. Collect evidence until you have sufficient information. Ground all answers in tool output.
+
+Write in plain text only. No markdown, no headings, no bold, no tables, no separator lines (--- or ***). Use simple paragraphs and dashes for lists (- item).";
 
 // ============================================================================
 // Prompt Assembly
@@ -138,7 +140,7 @@ mod tests {
 
         // This hash represents the approved version of the prompt.
         // Update it ONLY after user review and scenario validation.
-        let approved_hash: u64 = 0xb1e8fa37b57b74c9;
+        let approved_hash: u64 = 0xff701a79d108e9cd;
 
         // If this assertion fails, the prompt has been modified.
         // See the module documentation for the change process.
