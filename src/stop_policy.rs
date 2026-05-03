@@ -71,7 +71,7 @@ impl Default for StageBudget {
         Self {
             max_tool_calls: 0, // 0 = unlimited (context window + memory are the only hard limits)
             max_iterations: 0, // 0 = unlimited (context compaction + stagnation detection are the guards)
-            max_repeated_failures: 3,
+            max_repeated_failures: 6,
             max_stagnation_cycles: 8,
             max_wall_clock_s: 300,
         }
