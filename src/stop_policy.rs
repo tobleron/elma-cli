@@ -1248,4 +1248,128 @@ mod tests {
         let hint = next_step_hint(&StopReason::RespondAbuse);
         assert!(hint.contains("search") || hint.contains("read") || hint.contains("shell"));
     }
+
+    // ── Regression tests ──
+
+    #[test]
+    fn regression_chat_loop_should_trigger_respond_abuse() {
+        let budget = StageBudget { max_stagnation_cycles: 10, ..Default::default() };
+        let mut policy = StopPolicy::new(budget);
+        // Simulate 5 respond-only turns
+        for _ in 0..4 {
+            assert!(policy.record_respond_only_turn().is_none());
+        }
+        let outcome = policy.record_respond_only_turn();
+        assert!(outcome.is_some());
+        assert_eq!(outcome.unwrap().reason, StopReason::RespondAbuse);
+    }
+
+    #[test]
+    fn regression_read_read_respond_workflow_does_not_stop() {
+        let budget = StageBudget { max_stagnation_cycles: 8, ..Default::default() };
+        let mut policy = StopPolicy::new(budget);
+
+        // Simulate: 3 normal tool calls (read, read, respond) — should not stop
+        let calls = vec![
+            ToolCall { id: "c1".to_string(), call_type: "function".to_string(), function: ToolFunctionCall { name: "read".to_string(), arguments: r#"{"path":"a"}"#.to_string() } },
+            ToolCall { id: "c2".to_string(), call_type: "function".to_string(), function: ToolFunctionCall { name: "read".to_string(), arguments: r#"{"path":"b"}"#.to_string() } },
+            ToolCall { id: "c3".to_string(), call_type: "function".to_string(), function: ToolFunctionCall { name: "respond".to_string(), arguments: r#"{"content":"done"}"#.to_string() } },
+        ];
+
+        // Each call registers as a new signal
+        policy.start_iteration();
+        assert!(policy.record_tool_calls(&calls[..1]).is_none());
+        policy.register_signal("read:a".to_string());
+        policy.record_new_signals();
+
+        policy.start_iteration();
+        assert!(policy.record_tool_calls(&calls[1..2]).is_none());
+        policy.register_signal("read:b".to_string());
+        policy.record_new_signals();
+
+        policy.start_iteration();
+        assert!(policy.record_tool_calls(&calls[2..]).is_none());
+        policy.register_signal("respond:done".to_string());
+        policy.record_new_signals();
+
+        assert!(policy.check_should_stop().is_none());
+    }
+
+    #[test]
+    fn regression_same_tool_different_commands_should_not_stagnate() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+
+        policy.start_iteration();
+        assert!(policy.register_signal("shell:find . -name '*.rs'".to_string()));
+        policy.record_new_signals();
+
+        policy.start_iteration();
+        assert!(policy.register_signal("shell:find . -name '*.py'".to_string()));
+        policy.record_new_signals();
+
+        policy.start_iteration();
+        assert!(policy.register_signal("shell:find . -maxdepth 1".to_string()));
+        policy.record_new_signals();
+
+        // Changing arguments should not trigger stagnation
+        assert!(!policy.is_struggling());
+    }
+
+    #[test]
+    fn regression_exact_repeat_commands_should_stagnate() {
+        let budget = StageBudget { max_stagnation_cycles: 3, ..Default::default() };
+        let mut policy = StopPolicy::new(budget);
+
+        // Same command repeated
+        let cmd = "find . -type f";
+        policy.start_iteration();
+        assert!(policy.register_signal(cmd.to_string()));
+        policy.record_new_signals();
+
+        policy.start_iteration();
+        assert!(!policy.register_signal(cmd.to_string())); // already seen
+        assert!(policy.record_stagnation().is_none()); // run 1, under threshold
+
+        policy.start_iteration();
+        assert!(!policy.register_signal(cmd.to_string()));
+        assert!(policy.record_stagnation().is_none()); // run 2, under threshold
+
+        policy.start_iteration();
+        // Third stagnation should trigger
+        let outcome = policy.record_stagnation();
+        assert!(outcome.is_some(), "3 stagnation runs should trigger stop");
+    }
+
+    #[test]
+    fn regression_goal_consistency_fires_at_18_tool_calls() {
+        let budget = StageBudget::default();
+        let mut policy = StopPolicy::new(budget);
+
+        assert!(!policy.goal_consistency_check_needed());
+
+        // 17 calls should not fire
+        for _ in 0..17 {
+            policy.total_tool_calls += 1;
+        }
+        assert!(!policy.goal_consistency_check_needed());
+
+        // 18th call should fire
+        policy.total_tool_calls += 1;
+        assert!(policy.goal_consistency_check_needed());
+
+        // Next check should not fire again at same milestone
+        assert!(!policy.goal_consistency_check_needed());
+    }
+
+    #[test]
+    fn regression_wall_clock_budget_stops_after_timeout() {
+        let budget = StageBudget { max_wall_clock_s: 1, ..Default::default() };
+        let mut policy = StopPolicy::new(budget);
+        // Set start_time to a past time to simulate wall clock expiry
+        policy.start_time = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        let outcome = policy.start_iteration();
+        assert!(outcome.is_some(), "wall clock budget should trigger stop when exceeded");
+        assert_eq!(outcome.unwrap().reason.as_str(), "wall_clock_exceeded");
+    }
 }
