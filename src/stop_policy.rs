@@ -890,6 +890,8 @@ mod tests {
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
 
@@ -993,6 +995,8 @@ mod tests {
             ok: false,
             exit_code: None,
             timed_out: true,
+            status: crate::tools::ToolStatus::TimedOut,
+            duration_ms: 0,
             signal_killed: None,
         };
 
@@ -1040,6 +1044,8 @@ mod tests {
             ok: false,
             exit_code: None,
             timed_out: true,
+            status: crate::tools::ToolStatus::TimedOut,
+            duration_ms: 0,
             signal_killed: None,
         };
 
@@ -1092,6 +1098,8 @@ mod tests {
             ok: false,
             exit_code: None,
             timed_out: true,
+            status: crate::tools::ToolStatus::TimedOut,
+            duration_ms: 0,
             signal_killed: None,
         };
 
@@ -1125,6 +1133,8 @@ mod tests {
             ok: true,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
         policy.record_tool_result(&success_call, &success_result);

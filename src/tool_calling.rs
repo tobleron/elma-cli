@@ -83,6 +83,8 @@ pub(crate) async fn execute_tool_call(
                         ok: false,
                         exit_code: None,
                         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                         signal_killed: None,
                     }
                 }
@@ -106,6 +108,8 @@ pub(crate) async fn execute_tool_call(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -167,6 +171,8 @@ pub(crate) async fn execute_tool_call(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -222,6 +228,8 @@ async fn exec_shell(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -249,6 +257,8 @@ async fn exec_shell(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -269,6 +279,8 @@ async fn exec_shell(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -298,6 +310,8 @@ async fn exec_shell(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -320,6 +334,8 @@ async fn exec_shell(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -341,6 +357,8 @@ async fn exec_shell(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -360,6 +378,8 @@ async fn exec_shell(
             ok: true,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -468,9 +488,12 @@ async fn exec_shell(
                 tool_name: "shell".to_string(),
                 content,
                 ok: er.exit_code == 0,
+                status: if er.exit_code == 0 { crate::tools::ToolStatus::Success }
+                        else { crate::tools::ToolStatus::ExecutionError },
                 exit_code: Some(er.exit_code),
                 timed_out: er.timed_out,
                 signal_killed: None,
+                duration_ms: 0,
             }
         }
         Err(e) => {
@@ -482,10 +505,13 @@ async fn exec_shell(
                 tool_call_id: call_id.to_string(),
                 tool_name: "shell".to_string(),
                 content: error_msg.to_string(),
+                status: if is_timeout { crate::tools::ToolStatus::TimedOut }
+                        else { crate::tools::ToolStatus::ExecutionError },
                 ok: false,
                 exit_code: None,
                 timed_out: is_timeout,
                 signal_killed: None,
+                duration_ms: 0,
             }
         }
     }
@@ -520,6 +546,8 @@ fn exec_ls(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     } else {
@@ -540,6 +568,8 @@ fn exec_ls(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -564,6 +594,8 @@ fn exec_ls(
             ok: true,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -578,6 +610,8 @@ fn exec_ls(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -624,6 +658,8 @@ fn exec_ls(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -763,6 +799,8 @@ fn exec_observe(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -779,6 +817,8 @@ fn exec_observe(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     } else {
@@ -802,6 +842,8 @@ fn exec_observe(
                 ok: true,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -815,6 +857,8 @@ fn exec_observe(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -881,6 +925,8 @@ fn exec_observe(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -915,6 +961,8 @@ fn exec_read(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -939,6 +987,8 @@ fn exec_read(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -960,6 +1010,8 @@ fn exec_read(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -991,6 +1043,8 @@ fn exec_read(
                         ok: false,
                         exit_code: None,
                         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                         signal_killed: None,
                     };
                 }
@@ -1010,6 +1064,8 @@ fn exec_read(
         ok,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1036,6 +1092,8 @@ fn exec_glob(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1085,6 +1143,8 @@ fn exec_glob(
         ok: !results.is_empty(),
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1144,6 +1204,8 @@ fn exec_patch(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1237,6 +1299,8 @@ fn exec_patch(
                 ok: all_ok,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1250,6 +1314,8 @@ fn exec_patch(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1276,6 +1342,8 @@ fn exec_edit(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1292,6 +1360,8 @@ fn exec_edit(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1310,6 +1380,8 @@ fn exec_edit(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1329,6 +1401,8 @@ fn exec_edit(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -1342,6 +1416,8 @@ fn exec_edit(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -1353,6 +1429,8 @@ fn exec_edit(
                 ok: true,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         } else {
@@ -1365,6 +1443,8 @@ fn exec_edit(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1378,6 +1458,8 @@ fn exec_edit(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         }
     }
@@ -1402,6 +1484,8 @@ fn exec_write(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1418,6 +1502,8 @@ fn exec_write(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1435,6 +1521,8 @@ fn exec_write(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1452,6 +1540,8 @@ fn exec_write(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -1463,6 +1553,8 @@ fn exec_write(
                 ok: true,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1476,6 +1568,8 @@ fn exec_write(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1500,6 +1594,8 @@ async fn exec_search(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1515,6 +1611,8 @@ async fn exec_search(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1588,6 +1686,8 @@ async fn exec_search(
                 ok: success,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1601,6 +1701,8 @@ async fn exec_search(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1625,6 +1727,8 @@ fn exec_respond(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1645,6 +1749,8 @@ fn exec_summary(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1663,6 +1769,8 @@ fn exec_tool_search(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1676,6 +1784,8 @@ fn exec_tool_search(
             ok: true,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1700,6 +1810,8 @@ fn exec_tool_search(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1732,6 +1844,8 @@ async fn exec_repo_map(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1767,6 +1881,8 @@ async fn exec_git_inspect(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1805,6 +1921,8 @@ async fn exec_git_inspect(
                 ok,
                 exit_code: Some(exit_code),
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1818,6 +1936,8 @@ async fn exec_git_inspect(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1841,6 +1961,8 @@ async fn exec_run_python(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1872,6 +1994,8 @@ async fn exec_run_python(
                 ok,
                 exit_code: Some(exit_code),
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1885,6 +2009,8 @@ async fn exec_run_python(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1906,6 +2032,8 @@ async fn exec_run_node(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1937,6 +2065,8 @@ async fn exec_run_node(
                 ok,
                 exit_code: Some(exit_code),
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1950,6 +2080,8 @@ async fn exec_run_node(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1973,6 +2105,8 @@ async fn exec_job_start(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -1992,6 +2126,8 @@ async fn exec_job_start(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2011,6 +2147,8 @@ async fn exec_job_start(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2036,6 +2174,8 @@ async fn exec_job_start(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2051,6 +2191,8 @@ async fn exec_job_start(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2064,6 +2206,8 @@ async fn exec_job_start(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2083,6 +2227,8 @@ async fn exec_job_status(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2097,6 +2243,8 @@ async fn exec_job_status(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2116,6 +2264,8 @@ async fn exec_job_status(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2140,6 +2290,8 @@ async fn exec_job_status(
         ok: true,
         exit_code: task.exit_code,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2159,6 +2311,8 @@ async fn exec_job_output(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2173,6 +2327,8 @@ async fn exec_job_output(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2192,6 +2348,8 @@ async fn exec_job_output(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2217,6 +2375,8 @@ async fn exec_job_output(
         ok: true,
         exit_code: task.exit_code,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2236,6 +2396,8 @@ async fn exec_job_stop(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2250,6 +2412,8 @@ async fn exec_job_stop(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2267,6 +2431,8 @@ async fn exec_job_stop(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2280,6 +2446,8 @@ async fn exec_job_stop(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2302,6 +2470,8 @@ async fn exec_fetch(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2316,6 +2486,8 @@ async fn exec_fetch(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2330,6 +2502,8 @@ async fn exec_fetch(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2358,6 +2532,8 @@ async fn exec_fetch(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2374,6 +2550,8 @@ async fn exec_fetch(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2390,6 +2568,8 @@ async fn exec_fetch(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2423,6 +2603,8 @@ async fn exec_fetch(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2573,6 +2755,8 @@ fn exec_update_todo_list(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2661,6 +2845,8 @@ fn exec_update_todo_list(
         content,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2682,6 +2868,8 @@ fn exec_stat(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2697,6 +2885,8 @@ fn exec_stat(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2713,6 +2903,8 @@ fn exec_stat(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2740,6 +2932,8 @@ fn exec_stat(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2763,6 +2957,8 @@ fn exec_copy(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2780,6 +2976,8 @@ fn exec_copy(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2821,6 +3019,8 @@ fn exec_copy(
         ok,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2844,6 +3044,8 @@ fn exec_move(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2861,6 +3063,8 @@ fn exec_move(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2882,6 +3086,8 @@ fn exec_move(
         ok,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2905,6 +3111,8 @@ fn exec_mkdir(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2932,6 +3140,8 @@ fn exec_mkdir(
         ok,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2954,6 +3164,8 @@ fn exec_trash(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -2970,6 +3182,8 @@ fn exec_trash(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -3000,6 +3214,8 @@ fn exec_trash(
         ok,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3022,6 +3238,8 @@ fn exec_touch(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -3044,6 +3262,8 @@ fn exec_touch(
         ok,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3066,6 +3286,8 @@ fn exec_file_size(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -3082,6 +3304,8 @@ fn exec_file_size(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -3117,6 +3341,8 @@ fn exec_file_size(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3296,6 +3522,8 @@ fn exec_workspace_info(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3319,6 +3547,8 @@ fn exec_exists(
             ok: false,
             exit_code: None,
             timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
             signal_killed: None,
         };
     }
@@ -3343,6 +3573,8 @@ fn exec_exists(
         ok: true,
         exit_code: None,
         timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
         signal_killed: None,
     }
 }
