@@ -1457,32 +1457,53 @@ fn wrap_lines_with_mapping(
             .copied()
             .unwrap_or_else(|| mapping.last().copied().unwrap_or(0));
 
-        // Consolidate consecutive same-style text to avoid thousands of tiny spans
-        let text = line.spans.iter().map(|s| s.content.as_ref()).collect::<String>();
-        let style = line.spans.first().map(|s| s.style).unwrap_or_default();
+        // Batch consecutive characters with the same style together
+        let mut current_spans: Vec<Span<'static>> = Vec::new();
+        let mut current_width = 0usize;
+        let mut batch: Vec<(char, Style)> = Vec::new();
 
-        // Wrap the consolidated string
-        let mut current_start = 0usize;
-        let mut char_pos = 0usize;
-        for (ci, c) in text.char_indices() {
-            let ch_width = UnicodeWidthChar::width(c).unwrap_or(0);
-            if char_pos > 0 && char_pos + ch_width > width {
-                wrapped_lines.push(Line::from(vec![Span::styled(
-                    text[current_start..ci].to_string(),
-                    style,
-                )]));
-                wrapped_mapping.push(mapped_index);
-                current_start = ci;
-                char_pos = 0;
+        for span in line.spans {
+            let style = span.style;
+            for ch in span.content.chars() {
+                let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+                if current_width > 0 && current_width + ch_width > width {
+                    // Flush batch
+                    if !batch.is_empty() {
+                        let text: String = batch.iter().map(|(c, _)| c).collect();
+                        let batch_style = batch[0].1;
+                        current_spans.push(Span::styled(text, batch_style));
+                        batch.clear();
+                    }
+                    wrapped_lines.push(Line::from(std::mem::take(&mut current_spans)));
+                    wrapped_mapping.push(mapped_index);
+                    current_width = 0;
+                }
+                // Batch same-style consecutive chars
+                if batch.is_empty() || batch.last().map(|(_, s)| s == &style).unwrap_or(false) {
+                    batch.push((ch, style));
+                } else {
+                    let text: String = batch.iter().map(|(c, _)| c).collect();
+                    let batch_style = batch[0].1;
+                    current_spans.push(Span::styled(text, batch_style));
+                    batch.clear();
+                    batch.push((ch, style));
+                }
+                current_width += ch_width;
             }
-            char_pos += ch_width;
         }
-        // Last segment
-        let remaining = &text[current_start..];
-        if remaining.is_empty() {
+
+        // Flush remaining batch
+        if !batch.is_empty() {
+            let text: String = batch.iter().map(|(c, _)| c).collect();
+            let batch_style = batch[0].1;
+            current_spans.push(Span::styled(text, batch_style));
+            batch.clear();
+        }
+
+        if current_spans.is_empty() {
             wrapped_lines.push(Line::default());
         } else {
-            wrapped_lines.push(Line::from(vec![Span::styled(remaining.to_string(), style)]));
+            wrapped_lines.push(Line::from(current_spans));
         }
         wrapped_mapping.push(mapped_index);
     }
@@ -1975,7 +1996,7 @@ fn render_footer_line(
         spans.push(Span::styled("  ", dim_style));
     }
 
-    // Left: workspace path (compact)
+    // Left: workspace path (compact) with red dot on the right
     if let Ok(cwd) = std::env::current_dir() {
         let ws = cwd.to_string_lossy();
         let ws_short: String = if ws.chars().count() > 28 {
@@ -1983,7 +2004,11 @@ fn render_footer_line(
         } else {
             ws.to_string()
         };
-        spans.push(Span::styled(format!("🔴 {}", ws_short), dim_style));
+        let red_dot = Style::default()
+            .fg(theme.accent_primary.to_ratatui_color())
+            .bg(theme.bg_footer.to_ratatui_color());
+        spans.push(Span::styled(format!("{} ", ws_short), dim_style));
+        spans.push(Span::styled("●", red_dot));
         spans.push(Span::styled("  ", dim_style));
     }
 
