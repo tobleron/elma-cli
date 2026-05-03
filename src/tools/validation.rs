@@ -284,6 +284,94 @@ pub fn get_tool_schema(tool_name: &str) -> Option<ToolArgSchema> {
                 .help("Move a file to the trash. IRREVERSIBLE in some contexts.")
                 .example(r#"{"path": "src/temp.rs"}"#),
         ),
+        "touch" => Some(
+            ToolArgSchema::new("touch")
+                .required("path", ArgType::RelPath)
+                .help("Create an empty file or update its modification time.")
+                .example(r#"{"path": "newfile.txt"}"#),
+        ),
+        "file_size" => Some(
+            ToolArgSchema::new("file_size")
+                .required("path", ArgType::RelPath)
+                .help("Get the size of a file in bytes.")
+                .example(r#"{"path": "Cargo.toml"}"#),
+        ),
+        "observe" => Some(
+            ToolArgSchema::new("observe")
+                .required("path", ArgType::RelPath)
+                .help("Get detailed metadata about a file or directory: size, permissions, type, timestamps.")
+                .example(r#"{"path": "src/main.rs"}"#),
+        ),
+        "patch" => Some(
+            ToolArgSchema::new("patch")
+                .required("patch", ArgType::String_)
+                .help("Apply a multi-file diff/patch. The patch content specifies which files to modify and how.")
+                .example(r#"{"patch": "--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new"}"#),
+        ),
+        "run_python" => Some(
+            ToolArgSchema::new("run_python")
+                .required("code", ArgType::String_)
+                .optional("timeout_seconds", ArgType::UInt)
+                .help("Execute Python code and return its output.")
+                .example(r#"{"code": "print(42)"}"#),
+        ),
+        "run_node" => Some(
+            ToolArgSchema::new("run_node")
+                .required("code", ArgType::String_)
+                .optional("timeout_seconds", ArgType::UInt)
+                .help("Execute Node.js code and return its output.")
+                .example(r#"{"code": "console.log(42)"}"#),
+        ),
+        "tool_search" => Some(
+            ToolArgSchema::new("tool_search")
+                .required("query", ArgType::String_)
+                .help("Search for tools matching a query (e.g., 'read', 'search', 'git'). Returns tool definitions.")
+                .example(r#"{"query": "file operations"}"#),
+        ),
+        "update_todo_list" => Some(
+            ToolArgSchema::new("update_todo_list")
+                .required("action", ArgType::String_)
+                .optional("id", ArgType::String_)
+                .optional("text", ArgType::String_)
+                .optional("reason", ArgType::String_)
+                .help("Manage the todo task list. Actions: add, update, in_progress, completed, blocked, remove, list.")
+                .example(r#"{"action": "add", "text": "Fix bug", "reason": "found during review"}"#),
+        ),
+        "fetch" => Some(
+            ToolArgSchema::new("fetch")
+                .required("url", ArgType::String_)
+                .optional("format", ArgType::String_)
+                .optional("timeout", ArgType::UInt)
+                .help("Fetch content from a URL. Format: text, markdown, or html. Timeout in seconds (default 120).")
+                .example(r#"{"url": "https://example.com", "format": "markdown"}"#),
+        ),
+        "job_start" => Some(
+            ToolArgSchema::new("job_start")
+                .required("command", ArgType::Command)
+                .optional("name", ArgType::String_)
+                .optional("memory_limit_mb", ArgType::UInt)
+                .optional("timeout_seconds", ArgType::UInt)
+                .help("Start a background job running a shell command.")
+                .example(r#"{"command": "npm run build", "name": "build", "timeout_seconds": 300}"#),
+        ),
+        "job_status" => Some(
+            ToolArgSchema::new("job_status")
+                .required("job_id", ArgType::String_)
+                .help("Check the status of a background job by its job_id.")
+                .example(r#"{"job_id": "job_001"}"#),
+        ),
+        "job_output" => Some(
+            ToolArgSchema::new("job_output")
+                .required("job_id", ArgType::String_)
+                .help("Get the output of a background job by its job_id.")
+                .example(r#"{"job_id": "job_001"}"#),
+        ),
+        "job_stop" => Some(
+            ToolArgSchema::new("job_stop")
+                .required("job_id", ArgType::String_)
+                .help("Stop a background job by its job_id.")
+                .example(r#"{"job_id": "job_001"}"#),
+        ),
         _ => None,
     }
 }
