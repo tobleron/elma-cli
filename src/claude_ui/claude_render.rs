@@ -87,6 +87,8 @@ pub(crate) struct ClaudeRenderer {
     pub(crate) last_content_area: Option<ratatui::layout::Rect>,
     pub(crate) last_start_line: usize,
     pub(crate) last_line_mapping: Vec<usize>,
+    // Completed thinking entries with expiry (for right panel fade-out)
+    completed_thinking: Vec<(String, Instant)>,
 }
 
 impl ClaudeRenderer {
@@ -116,6 +118,7 @@ impl ClaudeRenderer {
             last_content_area: None,
             last_start_line: 0,
             last_line_mapping: Vec::new(),
+            completed_thinking: Vec::new(),
         }
     }
 
@@ -577,6 +580,18 @@ impl ClaudeRenderer {
     }
 
     pub(crate) fn finish_thinking(&mut self) {
+        // Capture completed thinking for right panel fade-out
+        let thinking = self.streaming.thinking.clone();
+        if !thinking.is_empty() {
+            let word_count = thinking.split_whitespace().count();
+            // Timeout = word_count / 300 * 60 seconds (same formula as collapse logic)
+            let delay_secs = (word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0);
+            let expires = Instant::now() + std::time::Duration::from_secs_f64(delay_secs);
+            self.completed_thinking.push((thinking, expires));
+            // Prune expired entries
+            let now = Instant::now();
+            self.completed_thinking.retain(|(_, e)| *e > now);
+        }
         self.streaming.finish_thinking();
         self.transcript.finish_live_thinking();
         self.streaming.thinking.clear();
@@ -845,7 +860,7 @@ impl ClaudeRenderer {
         // 3. Picker (if active)
         // 4. Input (fixed at bottom, dynamically sized based on wrapped lines)
         // 5. Footer (1 row)
-        let input_display_width = main_area.width.saturating_sub(4) as usize;
+        let input_display_width = main_area.width.saturating_sub(6) as usize;
         let wrapped_input = wrap_input_lines(&self.input_lines, input_display_width);
         let input_height = wrapped_input.len().min(10) as u16;
         let main_chunks = Layout::default()
@@ -1197,14 +1212,26 @@ impl ClaudeRenderer {
             );
         }
 
-        // Render right-side info panel with live thinking streaming
+        // Render right-side info panel with thinking threads
         if panel_width > 0 {
-            let live_thinking = if self.streaming.is_streaming_thinking {
-                Some(self.streaming.thinking.clone())
+            let now = Instant::now();
+            self.completed_thinking.retain(|(_, e)| *e > now);
+            let expired_thinking: Vec<String> = self
+                .completed_thinking
+                .iter()
+                .rev()
+                .map(|(t, _)| t.clone())
+                .collect();
+            let thinking_text = if self.streaming.is_streaming_thinking {
+                let mut all = expired_thinking;
+                all.push(self.streaming.thinking.clone());
+                Some(all.join("\n"))
+            } else if !expired_thinking.is_empty() {
+                Some(expired_thinking.join("\n"))
             } else {
                 None
             };
-            render_right_panel(panel_area, f, &self.footer_model, live_thinking);
+            render_right_panel(panel_area, f, &self.footer_model, thinking_text);
         }
 
         // Render modal if active (Claude-style absolute overlay)
@@ -1307,7 +1334,7 @@ impl ClaudeRenderer {
 }
 
 fn content_area_width_guess(transcript_width: usize) -> usize {
-    transcript_width.saturating_sub(4).max(12)
+    transcript_width.saturating_sub(8).max(12)
 }
 
 fn wrap_lines_with_mapping(
@@ -1493,8 +1520,8 @@ fn render_right_panel(
 
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
-    // ── Top: ELMA logo ──
-    let logo = r#"           oooo
+    // ── Top: ELMA logo (centered within panel) ──
+    let logo = r#"            oooo
             `888
    .ooooo.   888  ooo. .oo.  .oo.    .oooo.
   d88' `88b  888  `888P"Y88bP"Y88b  `P  )88b
@@ -1502,17 +1529,33 @@ fn render_right_panel(
   888    .o  888   888   888   888  d8(  888
   `Y8bod8P' o888o o888o o888o o888o `Y888""8o
 "#;
-    for logo_line in logo.lines() {
+    let logo_lines: Vec<&str> = logo.lines().collect();
+    let logo_width = logo_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let logo_pad = if logo_width < text_width {
+        (text_width - logo_width) / 2
+    } else {
+        0
+    };
+    let logo_pad_str: String = std::iter::repeat(' ').take(logo_pad).collect();
+    for logo_line in &logo_lines {
+        let padded = format!("{}{}", logo_pad_str, logo_line);
         all_lines.push(Line::from(vec![Span::styled(
-            logo_line.to_string(),
+            padded,
             Style::default().fg(theme.accent_primary.to_ratatui_color()),
         )]));
     }
 
-    // Tagline
+    // Tagline (centered)
     all_lines.push(Line::from(""));
+    let tagline = "Local first terminal agent v0.1.0";
+    let tagline_pad = if tagline.chars().count() < text_width {
+        (text_width - tagline.chars().count()) / 2
+    } else {
+        0
+    };
+    let tag_pad_str: String = std::iter::repeat(' ').take(tagline_pad).collect();
     all_lines.push(Line::from(vec![Span::styled(
-        "Local first terminal agent v0.1.0",
+        format!("{}{}", tag_pad_str, tagline),
         Style::default().fg(theme.accent_secondary.to_ratatui_color()),
     )]));
     all_lines.push(Line::from(""));
@@ -1570,8 +1613,8 @@ fn render_right_panel(
         Style::default().fg(theme.fg_dim.to_ratatui_color()),
     )]));
 
-    // ── Bottom: thinking threads stream ──
-    if let Some(thinking) = live_thinking {
+    // ── Bottom: live thinking stream ──
+    if let Some(ref thinking) = live_thinking {
         for line in thinking.lines() {
             let display = if line.chars().count() > text_width.saturating_sub(4) {
                 line.chars().take(text_width.saturating_sub(4)).collect::<String>() + "…"
