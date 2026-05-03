@@ -444,6 +444,11 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
         None
     }
 
+    /// Get total tool failures recorded.
+    pub(crate) fn tool_failures_count(&self) -> usize {
+        self.tool_failures.len()
+    }
+
     /// General check that can be called at any safe point.
     pub(crate) fn check_should_stop(&self) -> Option<StopOutcome> {
         if self.budget.max_iterations > 0 && self.iteration > self.budget.max_iterations {

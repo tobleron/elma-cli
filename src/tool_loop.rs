@@ -1155,16 +1155,24 @@ pub(crate) async fn run_tool_loop(
             let mut first_tool_call = true;
             for tc in &turn.tool_calls {
                 // ── Duplicate gate: skip if this exact command succeeded earlier ──
-                // Prevents the model from re-running the same successful command
+                // Prevents the model from re-running the same successful tool call
                 // when it forgets (common with small models).
+                // Exempts respond and summary — they are designed to be called
+                // multiple times with different content.
                 let sig = tool_signal(tc);
-                if let Some(prev) = successful_results.get(&sig) {
-                    trace(args, &format!("tool_loop: duplicate skipped (already succeeded) signal={}", sig));
-                    messages.push(ChatMessage::simple(
-                        "system",
-                        &format!("Already completed earlier — same result: {}", prev),
-                    ));
-                    continue;
+                if tc.function.name != "respond"
+                    && tc.function.name != "summary"
+                    && tc.function.name != "workspace_info"
+                    && tc.function.name != "tool_search"
+                {
+                    if let Some(prev) = successful_results.get(&sig) {
+                        trace(args, &format!("tool_loop: duplicate skipped (already succeeded) signal={}", sig));
+                        messages.push(ChatMessage::simple(
+                            "system",
+                            &format!("Already completed earlier — same result: {}", prev),
+                        ));
+                        continue;
+                    }
                 }
                 // Task T209: Shell budget forecasting
                 if tc.function.name == "shell" {
@@ -1448,10 +1456,16 @@ pub(crate) async fn run_tool_loop(
                 // then push assistant + tool messages as normal.
                 // If the tool failed: skip the full message pair, push a brief
                 // system message instead. Keeps failure noise out of context.
+                let store_for_dup = tc.function.name != "respond"
+                    && tc.function.name != "summary"
+                    && tc.function.name != "workspace_info"
+                    && tc.function.name != "tool_search";
                 if result.ok {
                     // Store successful result for duplicate detection
-                    let preview = result.content.chars().take(200).collect::<String>();
-                    successful_results.insert(sig, preview);
+                    if store_for_dup {
+                        let preview = result.content.chars().take(200).collect::<String>();
+                        successful_results.insert(sig, preview);
+                    }
 
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
@@ -1591,6 +1605,10 @@ pub(crate) async fn run_tool_loop(
             }
 
             // Check for repeated tool failures after executing all calls
+            let dbg_failures = stop_policy.tool_failures_count();
+            if dbg_failures > 0 {
+                trace(args, &format!("tool_loop: tool_failures={}", dbg_failures));
+            }
             if let Some(outcome) = stop_policy.check_should_stop() {
                 trace(
                     args,
