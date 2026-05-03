@@ -75,6 +75,19 @@ impl IntelUnit for TurnSummaryUnit {
             .collect::<Vec<_>>()
             .join(" ");
 
+        // Task 604: If the LLM returned empty content, construct a minimal
+        // narrative from the available context rather than returning an empty
+        // summary that fails post_flight validation.
+        let summary = if summary.trim().is_empty() {
+            let user_preview = user_message.chars().take(120).collect::<String>();
+            let outcome_preview = final_text.chars().take(200).collect::<String>();
+            format!(
+                "User asked: \"{user_preview}\". Outcome: {outcome_preview}"
+            )
+        } else {
+            summary
+        };
+
         Ok(IntelOutput::success(
             self.name(),
             serde_json::json!({

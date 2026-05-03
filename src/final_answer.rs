@@ -9,6 +9,8 @@
 
 use crate::*;
 
+use crate::types_api::ChatMessage;
+
 /// Patterns that must never appear in a final user-facing answer.
 /// If any match, the finalizer intel unit is invoked.
 pub(crate) static BLOCKED_PATTERNS: &[&str] = &[
@@ -303,6 +305,77 @@ pub(crate) fn process_final_answer_display(raw: &str) -> String {
     strip_markdown(&sanitized)
 }
 
+// ── Task 603: Evidence contradiction correction ──
+
+static DATE_DENIAL_PATTERNS: &[&str] = &[
+    "don't have access to the real-time system clock",
+    "can't access the real-time system clock",
+    "cannot access the real-time system clock",
+    "don't have the current date",
+    "don't have the exact current day",
+    "don't have the current day of the week",
+    "cannot determine the current day",
+    "cannot determine the day of the week",
+    "don't have the current date/time",
+    "do not have the current date",
+    "don't have access to the real time system clock",
+];
+
+static DAY_NAMES: &[&str] = &[
+    "Sunday", "Monday", "Tuesday", "Wednesday",
+    "Thursday", "Friday", "Saturday",
+];
+
+fn contains_date_denial(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    DATE_DENIAL_PATTERNS.iter().any(|p| lower.contains(p))
+}
+
+fn find_day_in_messages(messages: &[ChatMessage]) -> Option<&'static str> {
+    for msg in messages.iter().rev() {
+        if msg.role != "tool" {
+            continue;
+        }
+        let trimmed = msg.content.trim().to_lowercase();
+        for &day in DAY_NAMES {
+            if trimmed.contains(&day.to_lowercase()) {
+                return Some(day);
+            }
+        }
+    }
+    None
+}
+
+/// Check the final answer for proven contradictions against tool evidence.
+/// If a contradiction is found AND the tool evidence supports a correction,
+/// appends a correction note rather than modifying the original answer text.
+///
+/// Currently handles: date denial (answer says "don't have date" but
+/// `date +%A` returned a day name).
+pub(crate) fn correct_evidence_contradictions(
+    answer: &str,
+    messages: &[ChatMessage],
+) -> String {
+    let answer = answer.trim();
+    if answer.is_empty() {
+        return answer.to_string();
+    }
+
+    if contains_date_denial(answer) {
+        if let Some(day) = find_day_in_messages(messages) {
+            let mut corrected = answer.to_string();
+            corrected.push_str(&format!(
+                "\n\n(Correction: Today is {day}. The `date` command returned \"{day}\" — \
+                 this fact was available in the tool output but was not included in the \
+                 answer above.)"
+            ));
+            return corrected;
+        }
+    }
+
+    answer.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +450,81 @@ mod tests {
         assert!(!result.contains("Verification"));
         assert!(!result.contains("Answer:"));
         assert!(result.contains("5:35 PM"));
+    }
+
+    #[test]
+    fn test_contains_date_denial_detects_patterns() {
+        let denials = [
+            "I don't have access to the real-time system clock",
+            "I don't have the current date/time from the system",
+            "I cannot determine the day of the week",
+            "I don't have the current date",
+        ];
+        for text in &denials {
+            assert!(contains_date_denial(text), "should detect: {}", text);
+        }
+    }
+
+    #[test]
+    fn test_contains_date_denial_no_false_positive() {
+        let ok = [
+            "Today is Sunday",
+            "The current time is 5:35 PM",
+            "I found the date in the system",
+        ];
+        for text in &ok {
+            assert!(!contains_date_denial(text), "no false positive: {}", text);
+        }
+    }
+
+    #[test]
+    fn test_find_day_in_messages_finds_day() {
+        let mut msg = ChatMessage::simple("user", "hello");
+        msg.role = "tool".to_string();
+        msg.content = "Sunday".to_string();
+        assert_eq!(find_day_in_messages(&[msg]), Some("Sunday"));
+    }
+
+    #[test]
+    fn test_find_day_in_messages_no_false_positive() {
+        let mut msg = ChatMessage::simple("user", "hello");
+        msg.role = "tool".to_string();
+        msg.content = "Build succeeded".to_string();
+        assert_eq!(find_day_in_messages(&[msg]), None);
+    }
+
+    #[test]
+    fn test_correct_evidence_contradictions_appends_correction() {
+        let answer = "I don't have access to the real-time system clock.";
+        let mut tool_msg = ChatMessage::simple("user", "");
+        tool_msg.role = "tool".to_string();
+        tool_msg.content = "Sunday".to_string();
+        let result = correct_evidence_contradictions(answer, &[tool_msg]);
+        assert!(result.contains("Sunday"));
+        assert!(result.contains("Correction:"));
+        assert!(result.contains("date"));
+    }
+
+    #[test]
+    fn test_correct_evidence_contradictions_no_denial() {
+        let answer = "Today is Sunday.";
+        let mut tool_msg = ChatMessage::simple("user", "");
+        tool_msg.role = "tool".to_string();
+        tool_msg.content = "Sunday".to_string();
+        let result = correct_evidence_contradictions(answer, &[tool_msg]);
+        // No denial detected, no correction needed
+        assert_eq!(result, answer);
+    }
+
+    #[test]
+    fn test_correct_evidence_contradictions_no_evidence() {
+        let answer = "I don't have access to the real-time system clock.";
+        let mut tool_msg = ChatMessage::simple("user", "");
+        tool_msg.role = "tool".to_string();
+        tool_msg.content = "Command failed".to_string();
+        let result = correct_evidence_contradictions(answer, &[tool_msg]);
+        // No tool evidence with a day name, answer unchanged
+        assert_eq!(result, answer);
     }
 
     #[test]

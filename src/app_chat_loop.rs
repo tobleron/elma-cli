@@ -1085,6 +1085,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Task 384: Clean-Context Finalization — strip internal framing
         let final_text = crate::final_answer::process_final_answer(&final_text);
 
+        // Task 603: Detect and correct evidence contradictions in the final answer
+        let final_text =
+            crate::final_answer::correct_evidence_contradictions(&final_text, &runtime.messages);
+
         // Task 392: Strip markdown for terminal display (keep original for messages/artifacts)
         let display_text = crate::final_answer::process_final_answer_display(&final_text);
 
