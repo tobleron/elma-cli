@@ -56,7 +56,7 @@ Prefer `rg` for text search and file listing — it respects .gitignore and skip
 
 Begin with the most direct source of truth. Collect evidence until you have sufficient information. Ground all answers in tool output.
 
-Write in plain text only. No markdown, no headings, no bold, no tables, no separator lines (--- or ***). Use simple paragraphs and dashes for lists (- item).";
+Write in natural plain text only. Use paragraphs and simple sentences. No markdown, no headings, no bold, no tables, no separator lines (--- or ***). Do NOT use numbered lists or bullet points. Write as if explaining to a friend in natural prose.";
 
 // ============================================================================
 // Prompt Assembly
@@ -140,7 +140,7 @@ mod tests {
 
         // This hash represents the approved version of the prompt.
         // Update it ONLY after user review and scenario validation.
-        let approved_hash: u64 = 0xff701a79d108e9cd;
+        let approved_hash: u64 = 0xff67b3ed150f0ee8;
 
         // If this assertion fails, the prompt has been modified.
         // See the module documentation for the change process.

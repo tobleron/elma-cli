@@ -19,18 +19,25 @@ pub(crate) fn strip_thinking_blocks(text: &str) -> String {
                 result.replace_range(start..end + "</think>".len(), "");
                 continue;
             }
+            // Unclosed <think> — strip to end of text
+            result.replace_range(start.., "");
+            continue;
         }
         if let Some(start) = result.find("<thinking>") {
             if let Some(end) = result.find("</thinking>") {
                 result.replace_range(start..end + "</thinking>".len(), "");
                 continue;
             }
+            result.replace_range(start.., "");
+            continue;
         }
         if let Some(start) = result.find("<reasoning>") {
             if let Some(end) = result.find("</reasoning>") {
                 result.replace_range(start..end + "</reasoning>".len(), "");
                 continue;
             }
+            result.replace_range(start.., "");
+            continue;
         }
         break;
     }
