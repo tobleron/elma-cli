@@ -162,7 +162,7 @@ impl ClaudeMessage {
                 ])]
             }
             ClaudeMessage::Assistant { content } => {
-                let content_width = width.saturating_sub(2).max(12);
+                let content_width = width.saturating_sub(4).max(12);
                 let content_lines = render_assistant_content(content, content_width);
                 let mut lines = Vec::new();
                 for (i, content_line) in content_lines.into_iter().enumerate() {
@@ -1088,7 +1088,7 @@ impl ClaudeTranscript {
                 msg_lines
                     .into_iter()
                     .map(|line| {
-                        let mut spans = vec![Span::raw("  ")];
+                        let mut spans = vec![Span::raw("    ")];
                         spans.extend(line.spans.into_iter());
                         Line::from(spans)
                     })

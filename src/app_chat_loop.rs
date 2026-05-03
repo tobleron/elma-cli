@@ -33,6 +33,7 @@ where
         tokio::select! {
             result = &mut future => return result,
             _ = tokio::time::sleep(std::time::Duration::from_millis(40)) => {
+                tui.process_pending_input_events();
                 tui.pump_ui()?;
                 if let Some(queued) = tui.poll_busy_submission()? {
                     queued_inputs.push_back(queued);
@@ -984,8 +985,16 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             .await?
         };
 
-        // Task 380: Post-execution continuity check
-        let has_evidence = !step_results.is_empty() && step_results.iter().any(|r| r.ok);
+        // Task 380 / Task 598: Post-execution continuity check.
+        // For direct tool-calling, step_results is empty — derive evidence
+        // from the evidence ledger instead.
+        let has_evidence = if !step_results.is_empty() {
+            step_results.iter().any(|r| r.ok)
+        } else {
+            crate::evidence_ledger::get_session_ledger()
+                .map(|l| l.entries_count() > 0)
+                .unwrap_or(false)
+        };
         continuity_tracker.check_final_answer(&final_text, has_evidence);
         trace(
             &runtime.args,
@@ -1001,8 +1010,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             ),
         );
 
-        // Task 498: Continuity guard — if score < 0.85, re-prompt once.
-        // This is a recoverable quality pass, not a reason to close the TUI.
+        // Task 498 / Task 597: Continuity guard — if score < 0.85, re-prompt once.
+        // Uses a lightweight text-only model call with full conversation context
+        // instead of re-running the entire tool-calling pipeline.
         let already_retried = runtime
             .messages
             .last()
@@ -1011,25 +1021,50 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let mut final_text = final_text;
         if continuity_tracker.alignment_score < 0.85 && !already_retried {
             let gap_reason = continuity_tracker.gap();
-            let continuity_prompt = format!(
-                "[continuity_retry]\nThe previous answer may not fully address your request.\nOriginal request: {}\nIssue detected: {}\n\nPlease provide a more complete answer focused on what was asked.",
-                line, gap_reason
+            let evidence_count = crate::evidence_ledger::get_session_ledger()
+                .map(|l| l.entries_count())
+                .unwrap_or(0);
+            let retry_msg = format!(
+                "[continuity_retry]\n\
+                The previous answer may not fully address your request.\n\n\
+                Original request: {}\n\n\
+                Evidence gathered: {} tool outputs recorded.\n\
+                Issue detected: The answer appears to have a gap vs the request.\n\
+                Specifically: {}\n\n\
+                Please provide a more complete answer. Do NOT call any tools — \
+                use the evidence you already gathered. Reference specific files \
+                and findings.",
+                line, evidence_count, gap_reason
             );
-            let context_hint = route_decision.route.as_str();
-            match crate::orchestration_core::run_tool_calling_pipeline(
-                runtime,
-                &continuity_prompt,
-                &mut tui,
-                context_hint,
-                route_decision.evidence_required,
-                complexity.complexity.as_str(),
+            runtime.messages.push(ChatMessage::simple("user", &retry_msg));
+
+            // Lightweight text-only request with full conversation as context
+            let profile = crate::llm_config::ad_hoc_profile(&runtime.model_id, "continuity_retry");
+            let req = crate::llm_config::chat_request_from_profile(
+                &profile,
+                runtime.messages.clone(),
+                crate::llm_config::ChatRequestOptions {
+                    stream: Some(false),
+                    ..crate::llm_config::ChatRequestOptions::default()
+                },
+            );
+            match crate::ui::ui_chat::chat_once_with_timeout(
+                &runtime.client,
+                &runtime.chat_url,
+                &req,
+                profile.timeout_s,
             )
             .await
             {
-                Ok((retry_text, _, _, _)) => {
-                    let retry_text = crate::final_answer::process_final_answer(&retry_text);
-                    if !retry_text.trim().is_empty() {
-                        final_text = retry_text;
+                Ok(response) => {
+                    if let Some(choice) = response.choices.get(0) {
+                        if let Some(ref content) = choice.message.content {
+                            let improved = crate::final_answer::process_final_answer(content);
+                            if !improved.trim().is_empty() {
+                                final_text = improved;
+                                runtime.messages.push(ChatMessage::simple("assistant", &final_text));
+                            }
+                        }
                     }
                 }
                 Err(e) => {

@@ -269,9 +269,7 @@ impl ClaudeRenderer {
     }
 
     fn footer_streaming_state(&self) -> Option<String> {
-        if self.streaming.is_streaming_thinking {
-            Some("∴ Thinking...".to_string())
-        } else if self.streaming.is_streaming_content {
+        if self.streaming.is_streaming_content {
             Some("…".to_string())
         } else {
             None
@@ -502,7 +500,13 @@ impl ClaudeRenderer {
                 success,
                 output,
             } => {
-                let truncated = terminal_tool_output_preview(&output);
+                // Condense workspace_info for the in-memory trace display
+                let trace_output = if name == "workspace_info" {
+                    condense_workspace_info_for_transcript(&output)
+                } else {
+                    output.clone()
+                };
+                let truncated = terminal_tool_output_preview(&trace_output);
                 self.transcript.update_last_tool_trace(
                     &name,
                     crate::claude_ui::claude_state::ToolTraceStatus::Completed {
@@ -511,17 +515,19 @@ impl ClaudeRenderer {
                         duration_ms: None,
                     },
                 );
-                // Append completed trace to terminal transcript
+                // Append completed trace to terminal transcript file
+                // using transcript-safe truncation (not the raw output).
                 if let Ok(guard) = trace_log_state().lock() {
                     if let Some(ref trace_path) = *guard {
                         if let Some(session_root) = trace_path.parent() {
+                            let safe_output = transcript_safe_output(&name, &output);
                             let completed_msg = ClaudeMessage::ToolTrace {
                                 name,
                                 command: String::new(),
                                 status:
                                     crate::claude_ui::claude_state::ToolTraceStatus::Completed {
                                         success,
-                                        output,
+                                        output: safe_output,
                                         duration_ms: None,
                                     },
                                 collapsed: true,
@@ -788,8 +794,8 @@ impl ClaudeRenderer {
             area,
         );
 
-        // Horizontal gutter (1 column each side) so content doesn't touch edges
-        let gutter = 1u16;
+        // Horizontal gutter (2 columns each side) so content doesn't touch edges
+        let gutter = 2u16;
         let content_area = ratatui::layout::Rect {
             x: area.x + gutter,
             y: area.y,
@@ -798,15 +804,20 @@ impl ClaudeRenderer {
         };
 
         // Split horizontally: main content (left) + info panel (right)
-        // Right panel = 25% of content width
-        let panel_width = if content_area.width >= 60 {
-            ((content_area.width as f64 * 0.25) as u16).max(18)
+        // Left = generous square: at least 60% of width, capped at terminal
+        // height as the "square" side. Right = remainder, min 18 cols.
+        let square_side = area.height;
+        let min_main_width = content_area.width * 3 / 5;
+        let max_main_width = content_area.width.saturating_sub(18);
+        let main_width = if content_area.width >= 60 {
+            square_side.min(max_main_width).max(min_main_width)
         } else {
-            0u16
+            max_main_width
         };
+        let panel_width = content_area.width.saturating_sub(main_width).max(18);
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(0), Constraint::Length(panel_width)])
+            .constraints([Constraint::Length(main_width), Constraint::Length(panel_width)])
             .split(content_area);
         let main_area = h_chunks[0];
         let panel_area = h_chunks[1];
@@ -834,7 +845,7 @@ impl ClaudeRenderer {
         // 3. Picker (if active)
         // 4. Input (fixed at bottom, dynamically sized based on wrapped lines)
         // 5. Footer (1 row)
-        let input_display_width = main_area.width.saturating_sub(2) as usize;
+        let input_display_width = main_area.width.saturating_sub(4) as usize;
         let wrapped_input = wrap_input_lines(&self.input_lines, input_display_width);
         let input_height = wrapped_input.len().min(10) as u16;
         let main_chunks = Layout::default()
@@ -1186,9 +1197,14 @@ impl ClaudeRenderer {
             );
         }
 
-        // Render right-side info panel
+        // Render right-side info panel with live thinking streaming
         if panel_width > 0 {
-            render_right_panel(panel_area, f, &self.footer_model);
+            let live_thinking = if self.streaming.is_streaming_thinking {
+                Some(self.streaming.thinking.clone())
+            } else {
+                None
+            };
+            render_right_panel(panel_area, f, &self.footer_model, live_thinking);
         }
 
         // Render modal if active (Claude-style absolute overlay)
@@ -1229,9 +1245,7 @@ impl ClaudeRenderer {
             }
         }
 
-        let streaming_hint = if self.streaming.is_streaming_thinking {
-            Some(crate::ui_theme::dim("∴ Thinking..."))
-        } else if self.streaming.is_streaming_content {
+        let streaming_hint = if self.streaming.is_streaming_content {
             Some(crate::ui_theme::dim("…"))
         } else {
             None
@@ -1293,7 +1307,7 @@ impl ClaudeRenderer {
 }
 
 fn content_area_width_guess(transcript_width: usize) -> usize {
-    transcript_width.saturating_sub(1).max(12)
+    transcript_width.saturating_sub(4).max(12)
 }
 
 fn wrap_lines_with_mapping(
@@ -1465,103 +1479,77 @@ fn str_display_width(s: &str) -> usize {
     s.chars().map(char_display_width).sum()
 }
 
-fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterModel>) {
+fn render_right_panel(
+    area: Rect,
+    f: &mut Frame,
+    footer_model: &Option<FooterModel>,
+    live_thinking: Option<String>,
+) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
     let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
-
-    let mut lines: Vec<Line<'static>> = Vec::new();
-
-    // Pad: 2 spaces left padding inside the panel
     let pad = "  ";
-
-    // Available text width (account for left border + padding)
     let text_width = area.width.saturating_sub(3) as usize;
 
-    // ELMA logo in roman figlet style (with left margin)
-    let logo_color = Style::default().fg(theme.accent_primary.to_ratatui_color());
-    let logo = r#"            oooo                              
-            `888                              
-   .ooooo.   888  ooo. .oo.  .oo.    .oooo.   
-  d88' `88b  888  `888P"Y88bP"Y88b  `P  )88b  
-  888ooo888  888   888   888   888   .oP"888  
-  888    .o  888   888   888   888  d8(  888  
-  `Y8bod8P' o888o o888o o888o o888o `Y888""8o 
+    let mut all_lines: Vec<Line<'static>> = Vec::new();
+
+    // ── Top: ELMA logo ──
+    let logo = r#"           oooo
+            `888
+   .ooooo.   888  ooo. .oo.  .oo.    .oooo.
+  d88' `88b  888  `888P"Y88bP"Y88b  `P  )88b
+  888ooo888  888   888   888   888   .oP"888
+  888    .o  888   888   888   888  d8(  888
+  `Y8bod8P' o888o o888o o888o o888o `Y888""8o
 "#;
-    let logo_lines: Vec<&str> = logo.lines().collect();
-    let logo_width = logo_lines
-        .iter()
-        .map(|l| l.chars().count())
-        .max()
-        .unwrap_or(0);
-    for logo_line in &logo_lines {
-        lines.push(Line::from(vec![Span::styled(*logo_line, logo_color)]));
+    for logo_line in logo.lines() {
+        all_lines.push(Line::from(vec![Span::styled(
+            logo_line.to_string(),
+            Style::default().fg(theme.accent_primary.to_ratatui_color()),
+        )]));
     }
 
-    // Version tagline centered under logo
-    lines.push(Line::from(""));
-    let tagline = "Local first terminal agent v0.1.0";
-    let tagline_width = tagline.chars().count();
-    let tagline_pad = if tagline_width < logo_width {
-        (logo_width - tagline_width) / 2
-    } else {
-        0
-    };
-    let tagline_padded = format!("{: >width$}", "", width = tagline_pad) + tagline;
-    lines.push(Line::from(vec![Span::styled(
-        tagline_padded,
+    // Tagline
+    all_lines.push(Line::from(""));
+    all_lines.push(Line::from(vec![Span::styled(
+        "Local first terminal agent v0.1.0",
         Style::default().fg(theme.accent_secondary.to_ratatui_color()),
     )]));
-    lines.push(Line::from(""));
+    all_lines.push(Line::from(""));
 
     // System info
     if let Some(snap) = system_monitor::get_snapshot() {
-        lines.push(Line::from(vec![Span::styled(
-            format!("{}CPU {:5.1}%", pad, snap.cpu_pct),
-            dim,
+        all_lines.push(Line::from(vec![Span::styled(
+            format!("{}CPU {:5.1}%", pad, snap.cpu_pct), dim,
         )]));
-
-        lines.push(Line::from(vec![Span::styled(
-            format!("{}MEM {:5.1}%", pad, snap.mem_pct),
-            dim,
+        all_lines.push(Line::from(vec![Span::styled(
+            format!("{}MEM {:5.1}%", pad, snap.mem_pct), dim,
         )]));
-
-        lines.push(Line::from(vec![Span::styled(
-            format!(
-                "{}    {:.1}/{:.1} GB",
-                pad, snap.mem_used_gb, snap.mem_total_gb
-            ),
-            dim,
+        all_lines.push(Line::from(vec![Span::styled(
+            format!("{}    {:.1}/{:.1} GB", pad, snap.mem_used_gb, snap.mem_total_gb), dim,
         )]));
-
-        lines.push(Line::from(vec![Span::styled(
-            format!("{}ELMA {:.0} MB", pad, snap.process_mem_mb),
-            accent,
+        all_lines.push(Line::from(vec![Span::styled(
+            format!("{}ELMA {:.0} MB", pad, snap.process_mem_mb), accent,
         )]));
-
-        lines.push(Line::from(vec![Span::styled(
-            format!("{}COR {} cores", pad, snap.num_cpus),
-            dim,
+        all_lines.push(Line::from(vec![Span::styled(
+            format!("{}COR {} cores", pad, snap.num_cpus), dim,
         )]));
     }
 
     // Workspace path
     if let Ok(cwd) = std::env::current_dir() {
-        let ws_path = cwd.display().to_string();
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![Span::styled(
-            truncate_to_width(&format!("{}📁 {}", pad, ws_path), text_width),
-            dim,
+        all_lines.push(Line::from(""));
+        all_lines.push(Line::from(vec![Span::styled(
+            truncate_to_width(&format!("{}📁 {}", pad, cwd.display()), text_width), dim,
         )]));
     }
 
     // Model name
     if let Some(ref fm) = footer_model {
         if let Some(ref model) = fm.model_label {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![Span::styled(
-                truncate_to_width(&format!("{}{}", pad, model), text_width),
-                dim,
+            all_lines.push(Line::from(""));
+            all_lines.push(Line::from(vec![Span::styled(
+                truncate_to_width(&format!("{}{}", pad, model), text_width), dim,
             )]));
         }
     }
@@ -1569,14 +1557,35 @@ fn render_right_panel(area: Rect, f: &mut Frame, footer_model: &Option<FooterMod
     // Context usage
     if let Some(ref fm) = footer_model {
         if let Some(ctx) = fm.context_pct {
-            lines.push(Line::from(vec![Span::styled(
-                format!("{}CTX {}%", pad, ctx.min(100)),
-                dim,
+            all_lines.push(Line::from(vec![Span::styled(
+                format!("{}CTX {}%", pad, ctx.min(100)), dim,
             )]));
         }
     }
 
-    let panel = Paragraph::new(lines)
+    // ── Separator before thinking section ──
+    all_lines.push(Line::from(""));
+    all_lines.push(Line::from(vec![Span::styled(
+        "── Thinking ──",
+        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+    )]));
+
+    // ── Bottom: thinking threads stream ──
+    if let Some(thinking) = live_thinking {
+        for line in thinking.lines() {
+            let display = if line.chars().count() > text_width.saturating_sub(4) {
+                line.chars().take(text_width.saturating_sub(4)).collect::<String>() + "…"
+            } else {
+                line.to_string()
+            };
+            all_lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(display, dim),
+            ]));
+        }
+    }
+
+    let panel = Paragraph::new(all_lines)
         .block(
             Block::default()
                 .borders(Borders::LEFT)
@@ -2355,6 +2364,7 @@ pub(crate) fn claude_message_to_transcript_line(msg: &ClaudeMessage) -> String {
     }
 }
 
+/// Character limit for transcript tool output preview.
 const TRANSCRIPT_OUTPUT_LIMIT: usize = 1024;
 
 /// Truncate tool output for terminal transcript to prevent memory spikes.
@@ -2367,5 +2377,71 @@ fn terminal_tool_output_preview(output: &str) -> String {
         )
     } else {
         preview
+    }
+}
+
+/// Condense workspace_info output for transcript display (Task 592).
+/// Strips the directory tree listing (200+ lines) and replaces it with
+/// a summary line. Keeps: root path, project type, git status, guidance.
+fn condense_workspace_info_for_transcript(output: &str) -> String {
+    let mut result = String::new();
+    let mut in_dir_tree = false;
+    let mut dir_tree_lines = 0usize;
+    let mut lines_after_dir = Vec::new();
+    let mut passed_dir_tree = false;
+
+    for line in output.lines() {
+        if line.starts_with("## Directory Structure") {
+            in_dir_tree = true;
+            dir_tree_lines = 1;
+            continue;
+        }
+        if in_dir_tree {
+            if line.starts_with("## ") {
+                in_dir_tree = false;
+                passed_dir_tree = true;
+            } else {
+                dir_tree_lines += 1;
+                continue;
+            }
+        }
+        if passed_dir_tree {
+            lines_after_dir.push(line);
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+
+    result.push_str(&format!(
+        "Directory tree available in evidence; summary: ~{} entries\n",
+        dir_tree_lines
+    ));
+    for line in &lines_after_dir {
+        result.push_str(line);
+        result.push('\n');
+    }
+    result
+}
+
+/// Truncate large tool output for the terminal transcript file (Task 593).
+/// Returns output safe for the transcript file (not the model context).
+fn transcript_safe_output(name: &str, output: &str) -> String {
+    if name == "workspace_info" {
+        let condensed = condense_workspace_info_for_transcript(output);
+        terminal_tool_output_preview(&condensed)
+    } else if name == "shell" {
+        let limit = 2000usize;
+        let preview: String = output.chars().take(limit).collect();
+        if output.len() > limit {
+            format!(
+                "{preview}… [+{} characters truncated — full content available to model and in session evidence]",
+                output.len().saturating_sub(limit)
+            )
+        } else {
+            preview
+        }
+    } else {
+        terminal_tool_output_preview(output)
     }
 }

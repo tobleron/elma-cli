@@ -252,9 +252,10 @@ pub(crate) fn strip_markdown(text: &str) -> String {
     result.trim().to_string()
 }
 
-/// Run the full answer pipeline: sanitize → check blocked patterns → return.
+/// Run the full answer pipeline: strip think tags → sanitize → return.
 pub(crate) fn process_final_answer(raw: &str) -> String {
-    let (cleaned, _modified) = sanitize_final_answer(raw);
+    let without_think = text_utils::strip_thinking_blocks(raw);
+    let (cleaned, _modified) = sanitize_final_answer(&without_think);
     cleaned
 }
 

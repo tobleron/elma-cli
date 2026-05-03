@@ -2237,6 +2237,90 @@ impl TerminalUI {
         Ok(None)
     }
 
+    /// Process pending keyboard events into the input buffer while
+    /// Elma is busy (Task 600). Prevents the input from appearing to
+    /// "hang" when the user types during model processing.
+    /// Drains event_rx non-blockingly and updates self.input + self.claude.
+    pub(crate) fn process_pending_input_events(&mut self) {
+        if !self.raw_mode {
+            return;
+        }
+        while let Ok(ev) = self.event_rx.try_recv() {
+            match ev {
+                Event::Key(KeyEvent { code, kind, .. }) if kind == KeyEventKind::Press => {
+                    match code {
+                        KeyCode::Char(c) => {
+                            self.input.insert_char(c);
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Backspace => {
+                            self.input.backspace();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Left => {
+                            self.input.move_left();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Right => {
+                            self.input.move_right();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Home => {
+                            self.input.move_home();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::End => {
+                            self.input.move_end();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Up => {
+                            self.input.history_up();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Down => {
+                            self.input.history_down();
+                            self.pending_draw = true;
+                        }
+                        KeyCode::Enter => {
+                            let input = self.input.content_trimmed();
+                            if !input.is_empty() {
+                                self.input.push_to_history();
+                                self.input.clear();
+                                self.enqueue_submission(input);
+                            }
+                            self.pending_draw = true;
+                        }
+                        _ => {}
+                    }
+                }
+                Event::Resize(_, _) => {
+                    self.previous_claude_screen = None;
+                    self.pending_draw = true;
+                }
+                Event::Mouse(mouse_event) => {
+                    match mouse_event.kind {
+                        MouseEventKind::ScrollDown => {
+                            self.claude.scroll_down(3);
+                            self.pending_draw = true;
+                        }
+                        MouseEventKind::ScrollUp => {
+                            self.claude.scroll_up(3);
+                            self.pending_draw = true;
+                        }
+                        _ => {
+                            self.handle_transcript_click(&mouse_event);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Sync input buffer to ClaudeRenderer for display
+        self.claude.set_input(self.input.lines().to_vec());
+        self.claude
+            .set_input_cursor(self.input.cursor_row(), self.input.cursor_col());
+    }
+
     // --- Cleanup ---
 
     /// Restore terminal state: leave alternate screen, disable raw mode, show cursor.

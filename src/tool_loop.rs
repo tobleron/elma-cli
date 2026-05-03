@@ -33,6 +33,7 @@ where
         tokio::select! {
            result = &mut future => return result,
             _ = tokio::time::sleep(Duration::from_millis(40)) => {
+                tui.process_pending_input_events();
                 let _ = tui.pump_ui();
                 if let Ok(Some(queued)) = tui.poll_busy_submission() {
                     tui.enqueue_submission(queued);
@@ -981,14 +982,18 @@ pub(crate) async fn run_tool_loop(
                 ),
             );
         }
-        // Telemetry: warn when approaching budget limits (only when a limit is set)
+        // Telemetry: warn once at the 2/3 mark when approaching budget limits
         let iter = stop_policy.iteration();
-        if max_iter > 0 && iter >= max_iter.saturating_sub(2) {
+        if max_iter > 0 && iter == (max_iter * 2 / 3).max(1) {
             tui.push_budget_notice(&format!(
                 "Approaching iteration limit ({}/{})",
                 iter, max_iter
             ));
         }
+
+        // Process pending keyboard events so the input buffer stays
+        // responsive even while Elma is mid-tool-loop (Task 600).
+        tui.process_pending_input_events();
         let total_calls = stop_policy.total_tool_calls();
         let profile = ad_hoc_profile(model_id, "tool_loop");
         let req = chat_request_from_profile(
@@ -1395,6 +1400,22 @@ pub(crate) async fn run_tool_loop(
 
                 stop_policy.record_tool_result(tc, &result);
 
+                // Task 599: Preemptive strategy shift for first read failure.
+                // Small models cannot parse validation error messages. After the
+                // first read failure (filePath missing), immediately suggest cat
+                // instead of waiting for 3 iterations of identical errors.
+                if !result.ok && tc.function.name == "read"
+                    && result.content.contains("filePath: required field")
+                {
+                    let read_fail_count = stop_policy.consecutive_identical_errors();
+                    if read_fail_count == 1 {
+                        messages.push(ChatMessage::simple(
+                            "system",
+                            "The 'read' tool requires a filePath argument. Use 'shell cat <path>' instead. Example: shell command='cat docs/ARCHITECTURE.md'"
+                        ));
+                    }
+                }
+
                 // T333: Mark real tool calls & reset respond counter
                 if tc.function.name != "respond"
                     && tc.function.name != "summary"
@@ -1474,8 +1495,9 @@ pub(crate) async fn run_tool_loop(
                     }
                 }
 
-                // summary tool = run final summary intel unit, then exit loop
-                // respond tool ALWAYS continues the loop (interim status, not final)
+                // summary tool = return model's raw answer directly (Task 596).
+                // The model already produces human-readable markdown. Avoid a second
+                // model call that degrades the answer into robot-schema format.
                 if tc.function.name == "summary" {
                     let raw_content = normalize_final_answer_candidate(&result.content);
                     if raw_content.is_empty() {
@@ -1484,32 +1506,10 @@ pub(crate) async fn run_tool_loop(
                             "tool_loop: summary returned empty answer; continuing loop",
                         );
                     } else {
-                        // For simple turns (few iterations, few tool calls), use
-                        // the model's own summary content directly. The intel
-                        // summarizer can produce structured output that replaces
-                        // natural responses for simple conversational exchanges.
-                        let is_simple_turn =
-                            stop_policy.total_tool_calls() <= 2 && stop_policy.iteration() <= 2;
-                        let final_answer = if is_simple_turn {
-                            raw_content
-                        } else {
-                            let final_summary = run_final_summary_intel(
-                                args,
-                                client,
-                                summarizer_cfg,
-                                &original_user_request,
-                                &raw_content,
-                            )
-                            .await;
-                            final_summary.unwrap_or(raw_content)
-                        };
-
-                        // Task 540: Surface stop reason to transcript before exit
                         tui.push_meta_event("STOP", "Task completed via summary tool");
-
                         tui.push_stop_notice("Completed via summary tool");
                         return Ok(ToolLoopResult {
-                            final_answer,
+                            final_answer: raw_content,
                             iterations: stop_policy.iteration(),
                             tool_calls_made: stop_policy.total_tool_calls(),
                             stopped_by_max: true,
@@ -2130,54 +2130,4 @@ mod tests {
     }
 }
 
-async fn run_final_summary_intel(
-    args: &Args,
-    client: &reqwest::Client,
-    summarizer_cfg: Option<&Profile>,
-    user_request: &str,
-    model_provided_content: &str,
-) -> Option<String> {
-    use crate::intel_trait::execute_intel_text_from_user_content;
 
-    let cfg = summarizer_cfg?;
-
-    let evidence_summary = crate::evidence_ledger::get_session_ledger()
-        .map(|ledger| {
-            ledger
-                .entries
-                .iter()
-                .map(|e| e.summary.clone())
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .unwrap_or_default();
-
-    let narrative = format!(
-        r#"Generate a concise final summary (1-2 sentences max).
-
-User request: {}
-
-Evidence:
-{}
-
-Model's draft answer:
-{}
-
-Provide a short, direct answer."#,
-        user_request,
-        if evidence_summary.is_empty() {
-            "(none)".to_string()
-        } else {
-            evidence_summary
-        },
-        model_provided_content
-    );
-
-    match execute_intel_text_from_user_content(client, cfg, narrative).await {
-        Ok(summary) => Some(summary),
-        Err(e) => {
-            trace(args, &format!("final_summary_intel failed: {}", e));
-            None
-        }
-    }
-}

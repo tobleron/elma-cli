@@ -294,11 +294,21 @@ impl StopPolicy {
                 self.last_failed_tool_name = Some(call.function.name.clone());
                 self.last_failed_args_hash = Some(current_args_hash);
             }
-        } else if call.function.name == "shell" {
-            // Reset consecutive failure count on success
-            self.consecutive_shell_failures = 0;
-            self.last_shell_strategy = None;
-            self.last_shell_scope = None;
+        } else {
+            // Tool succeeded: reset shell-specific tracking
+            if call.function.name == "shell" {
+                self.consecutive_shell_failures = 0;
+                self.last_shell_strategy = None;
+                self.last_shell_scope = None;
+            }
+            // Reset identical-error tracker if a different tool succeeded,
+            // indicating the model has shifted strategy (Task 591).
+            if let Some(ref last_failed) = self.last_failed_tool_name {
+                if *last_failed != call.function.name {
+                    self.consecutive_identical_errors = 0;
+                    self.last_tool_error_text = None;
+                }
+            }
         }
     }
 
@@ -410,6 +420,11 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
     /// Check if accelerated stagnation is active (Task 589).
     pub(crate) fn is_identical_error_loop(&self) -> bool {
         self.consecutive_identical_errors >= 3
+    }
+
+    /// Get the count of consecutive identical errors (Task 599).
+    pub(crate) fn consecutive_identical_errors(&self) -> usize {
+        self.consecutive_identical_errors
     }
 
     /// Trace info about stagnation for debugging (tool + args).

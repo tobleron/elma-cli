@@ -46,7 +46,7 @@ You are Elma, a local-first terminal agent.
 Understand the user's request and take action. Deliver direct answers for conversational queries. Use tools to gather evidence for factual requests.
 
 Tool workflow:
-1. Call workspace_info to discover where you are and what project you're working in
+1. Your context already includes the workspace root and directory structure. Do NOT call workspace_info unless you need to refresh git status or discover files not in the brief.
 2. Discover extra capabilities with tool_search
 3. Execute commands: shell (terminal), read (view files), search (ripgrep), glob (file patterns), ls (directory tree), fetch (web), write (create), edit (modify), patch (multi-file), update_todo_list (tasks)
 4. Use respond for interim status updates (loops)
@@ -63,9 +63,9 @@ Begin with the most direct source of truth. Collect evidence until you have suff
 /// Assemble the full system prompt by combining the core prompt with
 /// conversation and skill context wrapped in SILENT_METADATA tags.
 ///
-/// Workspace info and project guidance are available via the `workspace_info`
-/// tool — the model discovers them on demand rather than having them
-/// statically injected.
+/// Workspace info and project guidance are injected in the model's first
+/// message context, so the model should rarely need to call `workspace_info`
+/// directly (Task 595).
 ///
 /// Metadata is available for reasoning and tool decisions but the model
 /// is explicitly instructed not to reveal, quote, paraphrase, or acknowledge
@@ -138,7 +138,7 @@ mod tests {
 
         // This hash represents the approved version of the prompt.
         // Update it ONLY after user review and scenario validation.
-        let approved_hash: u64 = 0x1c2c7d9a251f8043;
+        let approved_hash: u64 = 0xb1e8fa37b57b74c9;
 
         // If this assertion fails, the prompt has been modified.
         // See the module documentation for the change process.
