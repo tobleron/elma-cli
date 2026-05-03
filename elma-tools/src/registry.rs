@@ -772,6 +772,42 @@ impl Default for ExecutorState {
     }
 }
 
+/// High-level tool category for model-facing safety annotations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ToolCategory {
+    ReadOnly,
+    ReadWrite,
+    Destructive,
+    Meta,
+    Network,
+}
+
+impl ToolCategory {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ToolCategory::ReadOnly => "[Read-Only]",
+            ToolCategory::ReadWrite => "[Modifies Files]",
+            ToolCategory::Destructive => "[Destructive]",
+            ToolCategory::Meta => "[Meta]",
+            ToolCategory::Network => "[Network]",
+        }
+    }
+
+    /// Infer category from policy risks and mutation flag.
+    pub fn from_policy(policy: &ToolPolicy) -> Self {
+        if policy.mutates_workspace {
+            return ToolCategory::ReadWrite;
+        }
+        if policy.risks.contains(&ToolRisk::DestructivePotential) {
+            return ToolCategory::Destructive;
+        }
+        if policy.risks.contains(&ToolRisk::Network) {
+            return ToolCategory::Network;
+        }
+        ToolCategory::ReadOnly
+    }
+}
+
 /// Policy metadata for a tool.
 #[derive(Clone, Debug)]
 pub struct ToolPolicy {
