@@ -244,6 +244,13 @@ pub fn get_tool_schema(tool_name: &str) -> Option<ToolArgSchema> {
                 .help("Get file metadata: size, permissions, modification time.")
                 .example(r#"{"path": "Cargo.toml"}"#),
         ),
+        "exists" => Some(
+            ToolArgSchema::new("exists")
+                .required("path", ArgType::RelPath)
+                .optional("type", ArgType::String_)
+                .help("Check if a file or directory exists. Provide path (relative to workspace root). Optionally specify type to check (file, dir, or any).")
+                .example(r#"{"path": "project_tmp/GEMINI.md"}"#),
+        ),
         "ls" => Some(
             ToolArgSchema::new("ls")
                 .optional("path", ArgType::RelPath)

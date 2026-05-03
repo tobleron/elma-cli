@@ -1402,19 +1402,19 @@ pub(crate) async fn run_tool_loop(
 
                 stop_policy.record_tool_result(tc, &result);
 
-                // Task 599: Preemptive strategy shift for first read failure.
+                // Task 599: Preemptive strategy shift for first read/exists failure.
                 // Small models cannot parse validation error messages. After the
-                // first read failure (filePath missing), immediately suggest cat
-                // instead of waiting for 3 iterations of identical errors.
-                if !result.ok && tc.function.name == "read"
-                    && result.content.contains("filePath: required field")
-                {
-                    let read_fail_count = stop_policy.consecutive_identical_errors();
-                    if read_fail_count == 1 {
-                        messages.push(ChatMessage::simple(
-                            "system",
-                            "The 'read' tool requires a filePath argument. Use 'shell cat <path>' instead. Example: shell command='cat docs/ARCHITECTURE.md'"
-                        ));
+                // first failure with a missing required field, immediately suggest
+                // the correct usage instead of waiting for 3 identical errors.
+                if !result.ok && result.content.contains("required field") {
+                    let fail_count = stop_policy.consecutive_identical_errors();
+                    if fail_count == 1 {
+                        let hint = match tc.function.name.as_str() {
+                            "read" => "The 'read' tool requires a filePath argument. Use 'shell cat <path>' instead. Example: shell command='cat docs/ARCHITECTURE.md'".to_string(),
+                            "exists" => "The 'exists' tool requires a 'path' argument. Example: exists path='project_tmp/GEMINI.md'. Use 'shell test -f <path>' as an alternative.".to_string(),
+                            n => format!("Tool '{}' requires specific arguments. Check the schema and try again.", n),
+                        };
+                        messages.push(ChatMessage::simple("system", &hint));
                     }
                 }
 

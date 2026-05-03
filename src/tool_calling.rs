@@ -155,22 +155,35 @@ pub(crate) async fn execute_tool_call(
         }
     };
 
-    // Task 586: Pre-execution arg repair for read tool.
-    // If the model called read without filePath, try to extract a path from the raw args.
-    let args_value = if tool_name == "read" && args_value.get("filePath").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty()) {
-        let raw = &tool_call.function.arguments;
-        let path_re = regex::Regex::new(r#"["']([a-zA-Z0-9_./\\-]+(?:\.[a-zA-Z0-9]+)?)["']"#).unwrap();
-        if let Some(cap) = path_re.captures(raw) {
-            let extracted = cap.get(1).unwrap().as_str().to_string();
-            if extracted.contains('.') || extracted.contains('/') {
-                if let Some(obj) = args_value.as_object() {
-                    let mut map = obj.clone();
-                    map.insert("filePath".to_string(), serde_json::Value::String(extracted));
-                    if let Ok(repaired) = serde_json::to_value(map) {
-                        crate::append_trace_log_line(&format!(
-                            "[TOOL_ARG_REPAIR] read: injected filePath from raw args"
-                        ));
-                        repaired
+    // Task 586: Pre-execution arg repair for read and exists tools.
+    // If the model called read/exists without filePath/path, try to extract from raw args.
+    let args_value = {
+        let needs_repair = if tool_name == "read" {
+            args_value.get("filePath").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty())
+        } else if tool_name == "exists" {
+            args_value.get("path").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty())
+        } else {
+            false
+        };
+        if needs_repair {
+            let raw = &tool_call.function.arguments;
+            let path_re = regex::Regex::new(r#"["']([a-zA-Z0-9_./\\-]+(?:\.[a-zA-Z0-9]+)?)["']"#).unwrap();
+            if let Some(cap) = path_re.captures(raw) {
+                let extracted = cap.get(1).unwrap().as_str().to_string();
+                if extracted.contains('.') || extracted.contains('/') {
+                    if let Some(obj) = args_value.as_object() {
+                        let mut map = obj.clone();
+                        let key = if tool_name == "read" { "filePath" } else { "path" };
+                        map.insert(key.to_string(), serde_json::Value::String(extracted));
+                        if let Ok(repaired) = serde_json::to_value(map) {
+                            crate::append_trace_log_line(&format!(
+                                "[TOOL_ARG_REPAIR] {}: injected {} from raw args",
+                                tool_name, key
+                            ));
+                            repaired
+                        } else {
+                            args_value
+                        }
                     } else {
                         args_value
                     }
@@ -183,8 +196,6 @@ pub(crate) async fn execute_tool_call(
         } else {
             args_value
         }
-    } else {
-        args_value
     };
 
     // Validate arguments against tool schema before dispatch
