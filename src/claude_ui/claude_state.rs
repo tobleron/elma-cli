@@ -162,7 +162,7 @@ impl ClaudeMessage {
                 ])]
             }
             ClaudeMessage::Assistant { content } => {
-                let content_width = width.saturating_sub(6).max(12);
+                let content_width = width.saturating_sub(4).max(12);
                 let content_lines = render_assistant_content(content, content_width);
                 let mut lines = Vec::new();
                 for (i, content_line) in content_lines.into_iter().enumerate() {
@@ -1093,17 +1093,23 @@ impl ClaudeTranscript {
         while i < self.messages.len() {
             let msg = &self.messages[i];
 
+            // Task 4: Thinking thread removed from left panel — lives in right panel only
+            if matches!(msg, ClaudeMessage::Thinking { .. }) {
+                i += 1;
+                continue;
+            }
+
             let msg_lines =
                 self.messages[i].to_ratatui_lines(self.thinking_expanded_for_index(i), width);
 
-            // Indent non-User messages under the user prompt
+            // Indent non-User messages under the user prompt (shallow indent)
             let msg_lines: Vec<Line<'static>> = if matches!(msg, ClaudeMessage::User { .. }) {
                 msg_lines
             } else {
                 msg_lines
                     .into_iter()
                     .map(|line| {
-                        let mut spans = vec![Span::raw("      ")];
+                        let mut spans = vec![Span::raw("  ")];
                         spans.extend(line.spans.into_iter());
                         Line::from(spans)
                     })
@@ -1156,6 +1162,10 @@ impl ClaudeTranscript {
     pub(crate) fn render(&self) -> Vec<String> {
         let mut lines = Vec::new();
         for (i, msg) in self.messages.iter().enumerate() {
+            // Thinking thread lives only in right panel — not in transcript
+            if matches!(msg, ClaudeMessage::Thinking { .. }) {
+                continue;
+            }
             lines.extend(msg.to_lines(self.thinking_expanded_for_index(i)));
         }
         lines

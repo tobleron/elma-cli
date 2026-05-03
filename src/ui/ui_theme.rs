@@ -1,6 +1,6 @@
 //! @efficiency-role: ui-component
 //!
-//! Tokenized Theme System — Pink/Cyan default theme for Claude Code parity.
+//! Tokenized Theme System — Red/Cyan default theme.
 //! Replaces hardcoded Gruvbox colors with semantic tokens.
 
 use std::sync::OnceLock;
@@ -28,7 +28,7 @@ pub(crate) struct Theme {
     pub fg: ColorToken,
     /// Dim/secondary text, metadata, separators (grey)
     pub fg_dim: ColorToken,
-    /// Primary accent (Pink in default theme)
+    /// Primary accent (Red in default theme)
     pub accent_primary: ColorToken,
     /// Complementary accent (Cyan in default theme)
     pub accent_secondary: ColorToken,
@@ -46,12 +46,12 @@ pub(crate) struct Theme {
     pub bg_footer: ColorToken,
 }
 
-/// Claude Code default theme: black/white/grey + Pink/Cyan
+/// Elma default theme: black/white/grey + Red/Cyan
 pub(crate) fn default_theme() -> Theme {
     Theme {
         fg: ColorToken(255, 255, 255),             // White
         fg_dim: ColorToken(128, 128, 128),         // Grey
-        accent_primary: ColorToken(255, 105, 180), // Hot Pink
+        accent_primary: ColorToken(230, 60, 60),   // Red
         accent_secondary: ColorToken(0, 255, 255), // Cyan
         success: ColorToken(0, 255, 0),            // Green
         error: ColorToken(255, 0, 0),              // Red
@@ -303,7 +303,7 @@ mod tests {
         let theme = default_theme();
         assert_eq!(theme.fg, ColorToken(255, 255, 255)); // White
         assert_eq!(theme.fg_dim, ColorToken(128, 128, 128)); // Grey
-        assert_eq!(theme.accent_primary, ColorToken(255, 105, 180)); // Hot Pink
+        assert_eq!(theme.accent_primary, ColorToken(230, 60, 60)); // Red
         assert_eq!(theme.accent_secondary, ColorToken(0, 255, 255)); // Cyan
         assert_eq!(theme.success, ColorToken(0, 255, 0)); // Green
         assert_eq!(theme.error, ColorToken(255, 0, 0)); // Red
@@ -315,9 +315,9 @@ mod tests {
 
     #[test]
     fn test_theme_functions_use_tokens() {
-        // elma_accent should use accent_primary (Pink)
+        // elma_accent should use accent_primary (Red)
         let result = elma_accent("test");
-        assert!(result.contains("\x1b[38;2;255;105;180m")); // Hot Pink
+        assert!(result.contains("\x1b[38;2;230;60;60m")); // Red
         assert!(result.contains("test"));
         assert!(result.ends_with("\x1b[0m"));
 
@@ -331,6 +331,7 @@ mod tests {
     #[test]
     fn test_current_theme_returns_default() {
         let theme = current_theme();
-        assert_eq!(theme.accent_primary, ColorToken(255, 105, 180));
+        assert_eq!(theme.accent_primary, ColorToken(230, 60, 60));
+
     }
 }

@@ -87,8 +87,28 @@ pub(crate) struct ClaudeRenderer {
     pub(crate) last_content_area: Option<ratatui::layout::Rect>,
     pub(crate) last_start_line: usize,
     pub(crate) last_line_mapping: Vec<usize>,
-    // Completed thinking entries with expiry (for right panel fade-out)
-    completed_thinking: Vec<(String, Instant)>,
+    // Thinking entries for right panel (collapsible, not expiring)
+    thinking_entries: Vec<ThinkingEntry>,
+    // Right panel thinking scroll
+    thinking_scroll: usize,
+    // Token count tracking for animated token counters
+    input_token_count: usize,
+    output_token_count: usize,
+    prev_input_count: usize,
+    prev_output_count: usize,
+}
+
+/// A thinking/chain-of-thought entry for the right panel.
+/// Collapses instead of disappearing after the delay.
+#[derive(Clone, Debug)]
+struct ThinkingEntry {
+    content: String,
+    word_count: usize,
+    created_at: Instant,
+    /// When this entry should auto-collapse (based on word count).
+    collapse_deadline: Instant,
+    /// Whether currently collapsed (single-line summary).
+    collapsed: bool,
 }
 
 impl ClaudeRenderer {
@@ -118,7 +138,12 @@ impl ClaudeRenderer {
             last_content_area: None,
             last_start_line: 0,
             last_line_mapping: Vec::new(),
-            completed_thinking: Vec::new(),
+            thinking_entries: Vec::new(),
+            thinking_scroll: 0,
+            input_token_count: 0,
+            output_token_count: 0,
+            prev_input_count: 0,
+            prev_output_count: 0,
         }
     }
 
@@ -289,6 +314,25 @@ impl ClaudeRenderer {
 
     pub(crate) fn scroll_to_bottom(&mut self) {
         self.transcript.scroll_to_bottom();
+    }
+
+    pub(crate) fn scroll_thinking_up(&mut self) {
+        self.thinking_scroll = self.thinking_scroll.saturating_add(1);
+    }
+
+    pub(crate) fn scroll_thinking_down(&mut self) {
+        self.thinking_scroll = self.thinking_scroll.saturating_sub(1);
+    }
+
+    pub(crate) fn set_thinking_scroll(&mut self, pos: usize) {
+        self.thinking_scroll = pos;
+    }
+
+    pub(crate) fn set_token_counts(&mut self, input: usize, output: usize) {
+        self.prev_input_count = self.input_token_count;
+        self.prev_output_count = self.output_token_count;
+        self.input_token_count = input;
+        self.output_token_count = output;
     }
 
     pub(crate) fn set_transcript_expanded(&mut self, expanded: bool) {
@@ -580,17 +624,30 @@ impl ClaudeRenderer {
     }
 
     pub(crate) fn finish_thinking(&mut self) {
-        // Capture completed thinking for right panel fade-out
+        // Capture completed thinking for right panel (collapsible, never auto-removed)
         let thinking = self.streaming.thinking.clone();
         if !thinking.is_empty() {
             let word_count = thinking.split_whitespace().count();
-            // Timeout = word_count / 300 * 60 seconds (same formula as collapse logic)
             let delay_secs = (word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0);
-            let expires = Instant::now() + std::time::Duration::from_secs_f64(delay_secs);
-            self.completed_thinking.push((thinking, expires));
-            // Prune expired entries
             let now = Instant::now();
-            self.completed_thinking.retain(|(_, e)| *e > now);
+            self.thinking_entries.push(ThinkingEntry {
+                content: thinking,
+                word_count,
+                created_at: now,
+                collapse_deadline: now + std::time::Duration::from_secs_f64(delay_secs),
+                collapsed: false,
+            });
+            // Auto-collapse entries whose deadline has passed
+            let now2 = Instant::now();
+            for entry in &mut self.thinking_entries {
+                if entry.collapse_deadline <= now2 {
+                    entry.collapsed = true;
+                }
+            }
+            // Trim old entries (keep last 50)
+            if self.thinking_entries.len() > 50 {
+                self.thinking_entries.remove(0);
+            }
         }
         self.streaming.finish_thinking();
         self.transcript.finish_live_thinking();
@@ -949,14 +1006,15 @@ impl ClaudeRenderer {
         let content_area = scrollable_chunks[0];
         let pill_area = scrollable_chunks[1];
 
-        // Reserve a dedicated scrollbar column so transcript text never paints
-        // underneath it. This avoids edge-glyph artifacts on long tool rows.
+        // Reserve a dedicated scrollbar column + right margin so transcript text
+        // never paints underneath the scrollbar or its edge.
         let content_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .constraints([Constraint::Min(0), Constraint::Length(2), Constraint::Length(1)])
             .split(content_area);
         let text_area = content_chunks[0];
-        let scrollbar_area = content_chunks[1];
+        let _right_margin = content_chunks[1];
+        let scrollbar_area = content_chunks[2];
         let height = text_area.height as usize;
         let content_width = content_area_width_guess(text_area.width as usize);
 
@@ -1218,24 +1276,50 @@ impl ClaudeRenderer {
 
         // Render right-side info panel with thinking threads
         if panel_width > 0 {
+            // Auto-collapse entries whose deadline has passed
             let now = Instant::now();
-            self.completed_thinking.retain(|(_, e)| *e > now);
-            let expired_thinking: Vec<String> = self
-                .completed_thinking
+            for entry in &mut self.thinking_entries {
+                if entry.collapse_deadline <= now {
+                    entry.collapsed = true;
+                }
+            }
+
+            // Collect visible thinking: newest first
+            let all_thinking: Vec<&ThinkingEntry> = self
+                .thinking_entries
                 .iter()
                 .rev()
-                .map(|(t, _)| t.clone())
                 .collect();
-            let thinking_text = if self.streaming.is_streaming_thinking {
-                let mut all = expired_thinking;
-                all.push(self.streaming.thinking.clone());
-                Some(all.join("\n"))
-            } else if !expired_thinking.is_empty() {
-                Some(expired_thinking.join("\n"))
-            } else {
-                None
-            };
-            render_right_panel(panel_area, f, &self.footer_model, thinking_text);
+
+            // Split panel into top info section + bottom thinking section
+            let panel_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(10),   // info area (logo, stats, model)
+                    Constraint::Min(3),    // thinking area (scrollable)
+                ])
+                .split(panel_area);
+            let info_area = panel_chunks[0];
+            let thinking_area = panel_chunks[1];
+
+            render_right_panel_info(
+                info_area,
+                f,
+                &self.footer_model,
+                self.anim_frame,
+                self.input_token_count,
+                self.output_token_count,
+            );
+
+            render_right_panel_thinking(
+                thinking_area,
+                f,
+                &all_thinking,
+                self.anim_frame,
+                &mut self.thinking_scroll,
+                self.streaming.is_streaming_thinking,
+                &self.streaming.thinking,
+            );
         }
 
         // Render modal if active (Claude-style absolute overlay)
@@ -1510,15 +1594,18 @@ fn str_display_width(s: &str) -> usize {
     s.chars().map(char_display_width).sum()
 }
 
-fn render_right_panel(
+fn render_right_panel_info(
     area: Rect,
     f: &mut Frame,
     footer_model: &Option<FooterModel>,
-    live_thinking: Option<String>,
+    anim_frame: usize,
+    input_tokens: usize,
+    output_tokens: usize,
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
     let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
+    let secondary = Style::default().fg(theme.accent_secondary.to_ratatui_color());
     let pad = "  ";
     let text_width = area.width.saturating_sub(3) as usize;
 
@@ -1545,7 +1632,7 @@ fn render_right_panel(
         let padded = format!("{}{}", logo_pad_str, logo_line);
         all_lines.push(Line::from(vec![Span::styled(
             padded,
-            Style::default().fg(theme.accent_primary.to_ratatui_color()),
+            accent,
         )]));
     }
 
@@ -1560,36 +1647,43 @@ fn render_right_panel(
     let tag_pad_str: String = std::iter::repeat(' ').take(tagline_pad).collect();
     all_lines.push(Line::from(vec![Span::styled(
         format!("{}{}", tag_pad_str, tagline),
-        Style::default().fg(theme.accent_secondary.to_ratatui_color()),
+        secondary,
     )]));
+
+    // ── System info with progress bars ──
+    // Progress bar style: dynamic fill chars driven by anim_frame
     all_lines.push(Line::from(""));
-
-    // System info
     if let Some(snap) = system_monitor::get_snapshot() {
-        all_lines.push(Line::from(vec![Span::styled(
-            format!("{}CPU {:5.1}%", pad, snap.cpu_pct), dim,
-        )]));
-        all_lines.push(Line::from(vec![Span::styled(
-            format!("{}MEM {:5.1}%", pad, snap.mem_pct), dim,
-        )]));
-        all_lines.push(Line::from(vec![Span::styled(
-            format!("{}    {:.1}/{:.1} GB", pad, snap.mem_used_gb, snap.mem_total_gb), dim,
-        )]));
-        all_lines.push(Line::from(vec![Span::styled(
-            format!("{}ELMA {:.0} MB", pad, snap.process_mem_mb), accent,
-        )]));
-        all_lines.push(Line::from(vec![Span::styled(
-            format!("{}COR {} cores", pad, snap.num_cpus), dim,
-        )]));
+        // Helper: render an animated progress bar line
+        let bar_width = (text_width.saturating_sub(12)).max(8).min(30);
+        all_lines.push(render_progress_bar_line(
+            "CPU", snap.cpu_pct / 100.0, bar_width, anim_frame, theme, pad,
+        ));
+        all_lines.push(render_progress_bar_line(
+            "MEM", snap.mem_pct / 100.0, bar_width, anim_frame.wrapping_add(3), theme, pad,
+        ));
+        all_lines.push(Line::from(vec![
+            Span::styled(format!("{}  {:.1}/{:.1} GB", pad, snap.mem_used_gb, snap.mem_total_gb), dim),
+        ]));
+        all_lines.push(render_progress_bar_line(
+            "ELMA", (snap.process_mem_mb / 32000.0).min(1.0), bar_width, anim_frame.wrapping_add(7), theme, pad,
+        ));
+        all_lines.push(Line::from(vec![
+            Span::styled(format!("{}COR {} cores", pad, snap.num_cpus), dim),
+        ]));
     }
 
-    // Workspace path
-    if let Ok(cwd) = std::env::current_dir() {
-        all_lines.push(Line::from(""));
-        all_lines.push(Line::from(vec![Span::styled(
-            truncate_to_width(&format!("{}📁 {}", pad, cwd.display()), text_width), dim,
-        )]));
-    }
+    // ── Animated token counter ──
+    all_lines.push(Line::from(""));
+    let token_arrow_up = if anim_frame % 6 < 3 { "↑" } else { "⇑" };
+    let token_arrow_down = if anim_frame % 6 < 3 { "↓" } else { "⇓" };
+    let token_line = format!(
+        "{}{} {}  {} {}",
+        pad, token_arrow_down, input_tokens, token_arrow_up, output_tokens,
+    );
+    all_lines.push(Line::from(vec![
+        Span::styled(token_line, dim),
+    ]));
 
     // Model name
     if let Some(ref fm) = footer_model {
@@ -1601,47 +1695,179 @@ fn render_right_panel(
         }
     }
 
-    // Context usage
-    if let Some(ref fm) = footer_model {
-        if let Some(ctx) = fm.context_pct {
-            all_lines.push(Line::from(vec![Span::styled(
-                format!("{}CTX {}%", pad, ctx.min(100)), dim,
-            )]));
-        }
-    }
+    let panel = Paragraph::new(all_lines)
+        .style(Style::default().bg(theme.bg.to_ratatui_color()));
 
-    // ── Separator before thinking section ──
-    all_lines.push(Line::from(""));
+    f.render_widget(panel, area);
+}
+
+fn render_right_panel_thinking(
+    area: Rect,
+    f: &mut Frame,
+    entries: &[&ThinkingEntry],
+    anim_frame: usize,
+    scroll: &mut usize,
+    is_streaming: bool,
+    live_text: &str,
+) {
+    let theme = current_theme();
+    let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
+    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
+
+    let mut all_lines: Vec<Line<'static>> = Vec::new();
+
+    // Separator header
     all_lines.push(Line::from(vec![Span::styled(
         "── Thinking ──",
         Style::default().fg(theme.fg_dim.to_ratatui_color()),
     )]));
 
-    // ── Bottom: live thinking stream ──
-    if let Some(ref thinking) = live_thinking {
-        for line in thinking.lines() {
-            let display = if line.chars().count() > text_width.saturating_sub(4) {
-                line.chars().take(text_width.saturating_sub(4)).collect::<String>() + "…"
-            } else {
-                line.to_string()
-            };
+    // Live streaming thinking shows first
+    if is_streaming && !live_text.is_empty() {
+        let spinner = SPINNER_FRAMES[anim_frame % SPINNER_FRAMES.len()];
+        all_lines.push(Line::from(vec![
+            Span::styled(format!("{} ", spinner), accent),
+            Span::styled("Thinking...", dim),
+        ]));
+        for line in live_text.lines() {
+            let display = truncate_to_width(line, area.width.saturating_sub(4) as usize);
             all_lines.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(display, dim),
             ]));
         }
+        all_lines.push(Line::from(""));
     }
 
-    let panel = Paragraph::new(all_lines)
-        .block(
-            Block::default()
-                .borders(Borders::LEFT)
-                .border_style(Style::default().fg(theme.border.to_ratatui_color()))
-                .padding(ratatui::widgets::Padding::new(0, 1, 0, 0)),
-        )
-        .style(Style::default().bg(theme.bg.to_ratatui_color()));
+    // Completed thinking entries (newest first = top)
+    for entry in entries {
+        let delay_secs = (entry.word_count as f64 / 300.0 * 60.0).clamp(3.0, 60.0) as u64;
+        let time_label = if delay_secs >= 60 {
+            format!("{}m {}s", delay_secs / 60, delay_secs % 60)
+        } else {
+            format!("{}s", delay_secs)
+        };
 
-    f.render_widget(panel, area);
+        if entry.collapsed {
+            // Single-line collapsed: "> Thinking.. [1m 3s]"
+            all_lines.push(Line::from(vec![
+                Span::styled(">", accent),
+                Span::raw(" "),
+                Span::styled(format!("Thinking.. [{}]", time_label), dim),
+            ]));
+        } else {
+            // Expanded: "⌄ Thinking [1m 3s]" + content + collapse hint
+            all_lines.push(Line::from(vec![
+                Span::styled("⌄", accent),
+                Span::raw(" "),
+                Span::styled(format!("Thinking [{}]", time_label), dim),
+            ]));
+            for line in entry.content.lines() {
+                let display = truncate_to_width(line, area.width.saturating_sub(4) as usize);
+                all_lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(display, dim),
+                ]));
+            }
+            all_lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled("(ctrl+o to collapse)", dim),
+            ]));
+        }
+    }
+
+    if entries.is_empty() && !(is_streaming && !live_text.is_empty()) {
+        all_lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled("(waiting for input)", dim),
+        ]));
+    }
+
+    let total_lines = all_lines.len();
+    let area_height = area.height.saturating_sub(0) as usize;
+
+    if total_lines > area_height {
+        let max_scroll = total_lines.saturating_sub(area_height);
+        if *scroll > max_scroll {
+            *scroll = max_scroll;
+        }
+        let visible: Vec<Line<'static>> = all_lines
+            .iter()
+            .skip(*scroll)
+            .take(area_height)
+            .cloned()
+            .collect();
+
+        let thinking_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(0), Constraint::Length(3), Constraint::Length(1)])
+            .split(area);
+        let text_area = thinking_chunks[0];
+        let _margin = thinking_chunks[1];
+        let scrollbar_area = thinking_chunks[2];
+
+        let mut scrollbar_state = ScrollbarState::new(total_lines)
+            .position(*scroll)
+            .viewport_content_length(area_height);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::default().fg(theme.accent_primary.to_ratatui_color()))
+            .track_style(Style::default().fg(theme.border.to_ratatui_color()));
+        f.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+
+        let panel = Paragraph::new(visible)
+            .block(
+                Block::default()
+                    .borders(Borders::LEFT)
+                    .border_style(Style::default().fg(theme.border.to_ratatui_color()))
+                    .padding(ratatui::widgets::Padding::new(0, 1, 0, 0)),
+            )
+            .style(Style::default().bg(theme.bg.to_ratatui_color()));
+        f.render_widget(panel, text_area);
+    } else {
+        let panel = Paragraph::new(all_lines)
+            .block(
+                Block::default()
+                    .borders(Borders::LEFT)
+                    .border_style(Style::default().fg(theme.border.to_ratatui_color()))
+                    .padding(ratatui::widgets::Padding::new(0, 1, 0, 0)),
+            )
+            .style(Style::default().bg(theme.bg.to_ratatui_color()));
+        f.render_widget(panel, area);
+    }
+}
+
+/// Render a single thin animated progress bar line
+fn render_progress_bar_line(
+    label: &str,
+    fraction: f64,
+    bar_width: usize,
+    anim_frame: usize,
+    theme: &Theme,
+    pad: &str,
+) -> Line<'static> {
+    let pct = (fraction.clamp(0.0, 1.0) * 100.0) as u8;
+    let filled = (fraction.clamp(0.0, 1.0) * bar_width as f64).round() as usize;
+    let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
+    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
+    let secondary = Style::default().fg(theme.accent_secondary.to_ratatui_color());
+
+    let bar_color = match label {
+        "CPU" => accent,
+        "MEM" => secondary,
+        _ => accent,
+    };
+
+    // Thin horizontal line: filled portion in color, empty portion dim
+    let fill: String = "─".repeat(filled);
+    let empty: String = "─".repeat(bar_width.saturating_sub(filled));
+
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    spans.push(Span::styled(format!("{}{} ", pad, label), dim));
+    spans.push(Span::styled(format!("{}% ", pct), accent));
+    spans.push(Span::styled(fill, bar_color));
+    spans.push(Span::styled(empty, Style::default().fg(theme.border.to_ratatui_color())));
+
+    Line::from(spans)
 }
 
 /// Truncate a string to fit within a width, handling multi-byte characters correctly.
@@ -1708,13 +1934,10 @@ fn render_footer_line(
         .fg(theme.accent_primary.to_ratatui_color())
         .add_modifier(Modifier::BOLD)
         .bg(theme.bg_footer.to_ratatui_color());
-    let primary_fill_style = Style::default()
-        .fg(theme.accent_primary.to_ratatui_color())
-        .bg(theme.bg_footer.to_ratatui_color());
 
     let width = width as usize;
 
-    // Left section: mode label (pink+bold) or empty
+    // Left section: mode label + workspace path
     let left: String = model.mode_label.as_deref().unwrap_or("").to_string();
     let left_width = left.chars().count();
     let left_pad = if left.is_empty() { 0 } else { left_width + 2 };
@@ -1727,13 +1950,24 @@ fn render_footer_line(
         spans.push(Span::styled("  ", dim_style));
     }
 
+    // Left: workspace path (compact)
+    if let Ok(cwd) = std::env::current_dir() {
+        let ws = cwd.to_string_lossy();
+        let ws_short: String = if ws.chars().count() > 28 {
+            ws.chars().take(26).collect::<String>() + "…"
+        } else {
+            ws.to_string()
+        };
+        spans.push(Span::styled(format!("📁 {}", ws_short), dim_style));
+        spans.push(Span::styled("  ", dim_style));
+    }
+
     // ----  Build left-center segments (context bar + tx metric)  ----
     let mut left_segments: Vec<(String, Style)> = Vec::new();
     let mut tx_metric_idx: Option<usize> = None;
 
     if let Some(ctx) = model.context_pct {
         let pct = ctx.min(100) as f64 / 100.0;
-        // Higher resolution: each of the 6 bar positions has 4 sub-steps
         let bar_steps = 6usize;
         let total_sub_steps = bar_steps * 4;
         let filled_sub = (pct * total_sub_steps as f64).round() as usize;
@@ -1759,9 +1993,12 @@ fn render_footer_line(
             s
         };
 
+        let primary_fill_style = Style::default()
+            .fg(theme.accent_primary.to_ratatui_color())
+            .bg(theme.bg_footer.to_ratatui_color());
+
         left_segments.push((format!("ctx {}% ", ctx.min(100)), dim_style));
         left_segments.push(("[".to_string(), accent_style));
-        // Split bar into filled (primary) and empty (dim) segments
         let filled_part: String = bar_chars.chars().filter(|&c| c != ' ').collect();
         let empty_part: String = bar_chars.chars().filter(|&c| c == ' ').collect();
         if !filled_part.is_empty() {
@@ -1803,7 +2040,6 @@ fn render_footer_line(
     // Width-aware rendering
     let available = width.saturating_sub(left_pad);
 
-    // Drop transcript metric if both sides don't fit
     let left_total: usize = left_segments.iter().map(|(s, _)| s.chars().count()).sum();
     let right_total: usize = right_segments.iter().map(|(s, _)| s.chars().count()).sum();
     if left_total + right_total > available {
@@ -1815,7 +2051,6 @@ fn render_footer_line(
     let right_total: usize = right_segments.iter().map(|(s, _)| s.chars().count()).sum();
 
     if left_total + right_total <= available {
-        // Both fit: push left, then pad, then right
         for (text, style) in &left_segments {
             spans.push(Span::styled(text.clone(), *style));
         }
@@ -1827,7 +2062,6 @@ fn render_footer_line(
             spans.push(Span::styled(text.clone(), *style));
         }
     } else {
-        // Not enough room: show only left side (truncated), right side dropped
         let mut remaining = available;
         for (text, style) in &left_segments {
             let w = text.chars().count();
@@ -2019,46 +2253,30 @@ mod tests {
         renderer.start_thinking();
         renderer.append_thinking("live reasoning text");
 
+        // Thinking is removed from left panel — hidden in transcript render
         let live_lines = renderer.transcript.render();
-        // During streaming, show the active thinking row plus the live text.
         assert!(
-            live_lines.iter().any(|line| line.contains("∴"))
-                && live_lines.iter().any(|line| line.contains("Thinking...")),
-            "active thinking should show a visible thinking header"
+            live_lines.iter().all(|line| !line.contains("∴")),
+            "thinking header should NOT appear in left panel transcript"
         );
         assert!(
-            live_lines
-                .iter()
-                .any(|line| line.contains("live reasoning text")),
-            "active thinking should stream visible content"
+            live_lines.iter().all(|line| !line.contains("live reasoning text")),
+            "thinking content should NOT appear in left panel"
         );
 
         renderer.finish_thinking();
         let held_lines = renderer.transcript.render();
         assert!(
-            held_lines
-                .iter()
-                .any(|line| line.contains("live reasoning text")),
-            "finished thinking should remain expanded briefly before collapsing"
+            held_lines.iter().all(|line| !line.contains("live reasoning text")),
+            "finished thinking should NOT appear in left panel"
         );
 
         renderer.transcript.thinking_collapse_deadline =
             Some((0, Instant::now() - Duration::from_secs(1)));
         let collapsed_lines = renderer.transcript.render();
         assert!(
-            collapsed_lines.iter().any(|line| line.contains("Thinking")),
-            "finished thinking should remain as a collapsed transcript row"
-        );
-        assert!(
-            collapsed_lines
-                .iter()
-                .all(|line| !line.contains("live reasoning text")),
-            "finished thinking should collapse by default"
-        );
-        // Collapsed state should show ">" prefix and time label
-        assert!(
-            collapsed_lines.iter().any(|line| line.contains(">")),
-            "collapsed thinking should have > prefix"
+            collapsed_lines.iter().all(|line| !line.contains("Thinking")),
+            "thinking should NOT render as collapsed row in left panel"
         );
     }
 
@@ -2069,14 +2287,16 @@ mod tests {
         renderer.append_thinking("first second third fourth fifth");
 
         let (lines, _) = renderer.transcript.render_ratatui(80);
+        // Thinking is removed from left panel — lives only in right panel.
+        // The transcript should have NO thinking content shown.
         assert!(
-            lines.len() >= 2,
-            "live thinking should render expanded content"
+            lines.is_empty(),
+            "thinking should not render in left panel transcript"
         );
-        assert!(fragments_contain(&lines[0], "Thinking..."));
-        assert!(lines
-            .iter()
-            .any(|line| fragments_contain(line, "first second third fourth fifth")));
+        assert!(
+            !lines.iter().any(|l| fragments_contain(l, "first second third fourth fifth")),
+            "thinking content should not appear in left panel"
+        );
     }
 
     #[test]
@@ -2112,52 +2332,16 @@ mod tests {
         renderer.transcript.thinking_collapse_deadline =
             Some((0, std::time::Instant::now() - Duration::from_secs(1)));
 
-        // Verify it's collapsed (1 line, no content)
+        // Thinking is removed from left panel — not rendered in transcript.
         let (lines, mapping) = renderer.transcript.render_ratatui(80);
-        assert_eq!(lines.len(), 1, "collapsed thinking should be 1 line");
-        assert!(
-            lines.iter().any(|l| fragments_contain(l, "Thinking..")),
-            "collapsed should have Thinking.."
-        );
-        assert!(
-            !lines.iter().any(|l| fragments_contain(l, "step-by-step")),
-            "collapsed should not have content"
-        );
+        assert_eq!(lines.len(), 0, "thinking should not render in left panel");
 
-        // Click on the thinking row to expand it
+        // Clicking thinking row in transcript has no visible effect
         if let Some(&msg_idx) = mapping.get(0) {
             renderer.transcript.toggle_trace_collapse(msg_idx);
         }
-
-        // Verify it's now expanded (multiple lines + ctrl+o hint)
         let (lines2, _) = renderer.transcript.render_ratatui(80);
-        assert!(
-            lines2.len() > 1,
-            "expanded thinking should have multiple lines (got {})",
-            lines2.len()
-        );
-        assert!(
-            lines2.iter().any(|l| fragments_contain(l, "step-by-step")),
-            "expanded thinking should show content"
-        );
-        assert!(
-            lines2
-                .iter()
-                .any(|l| fragments_contain(l, "(ctrl+o to collapse)")),
-            "expanded thinking should show collapse hint"
-        );
-
-        // Click again to collapse
-        if let Some(&msg_idx) = mapping.get(0) {
-            renderer.transcript.toggle_trace_collapse(msg_idx);
-        }
-        let (lines3, _) = renderer.transcript.render_ratatui(80);
-        assert_eq!(
-            lines3.len(),
-            1,
-            "clicking again should collapse (got {} lines)",
-            lines3.len()
-        );
+        assert_eq!(lines2.len(), 0, "after click, thinking still not in left panel");
     }
 
     #[test]
