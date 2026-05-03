@@ -94,8 +94,8 @@ pub(crate) struct ClaudeRenderer {
     // Token count tracking for animated token counters
     input_token_count: usize,
     output_token_count: usize,
-    prev_input_count: usize,
-    prev_output_count: usize,
+    // Latest budget/stop notice text for thinking panel footer
+    last_notice_text: Option<String>,
 }
 
 /// A thinking/chain-of-thought entry for the right panel.
@@ -142,12 +142,24 @@ impl ClaudeRenderer {
             thinking_scroll: 0,
             input_token_count: 0,
             output_token_count: 0,
-            prev_input_count: 0,
-            prev_output_count: 0,
+            last_notice_text: None,
         }
     }
 
     pub(crate) fn push_message(&mut self, msg: ClaudeMessage) {
+        // Capture last notice text for right panel thinking footer
+        if let ClaudeMessage::Notice(ref notice) = msg {
+            let kind_label = match notice.kind {
+                crate::claude_ui::UiNoticeKind::Budget => "Budget",
+                crate::claude_ui::UiNoticeKind::StopReason => "Stop",
+                crate::claude_ui::UiNoticeKind::Compaction => "Compaction",
+                crate::claude_ui::UiNoticeKind::Queue => "Queue",
+                _ => "",
+            };
+            if !kind_label.is_empty() {
+                self.last_notice_text = Some(format!("{}: {}", kind_label, notice.content));
+            }
+        }
         let m = msg.clone();
         self.transcript.push(msg);
 
@@ -329,8 +341,6 @@ impl ClaudeRenderer {
     }
 
     pub(crate) fn set_token_counts(&mut self, input: usize, output: usize) {
-        self.prev_input_count = self.input_token_count;
-        self.prev_output_count = self.output_token_count;
         self.input_token_count = input;
         self.output_token_count = output;
     }
@@ -503,6 +513,8 @@ impl ClaudeRenderer {
                 // The transcript thinking row starts when real reasoning begins.
             }
             UiEvent::UserSubmitted(content) => {
+                self.input_token_count = content.len() / 4;
+                self.output_token_count = 0;
                 self.push_message(ClaudeMessage::User { content });
             }
             UiEvent::ThinkingStarted => {
@@ -621,6 +633,8 @@ impl ClaudeRenderer {
     pub(crate) fn append_thinking(&mut self, text: &str) {
         self.streaming.append_thinking(text);
         self.transcript.append_live_thinking(text);
+        // Animate output token counter: roughly 1 token per 4 chars of thinking
+        self.output_token_count = self.output_token_count.saturating_add(text.len() / 4 + 1);
     }
 
     pub(crate) fn finish_thinking(&mut self) {
@@ -660,6 +674,8 @@ impl ClaudeRenderer {
 
     pub(crate) fn append_content(&mut self, text: &str) {
         self.streaming.append_content(text);
+        // Animate output token counter: roughly 1 token per 4 chars of content
+        self.output_token_count = self.output_token_count.saturating_add(text.len() / 4 + 1);
     }
 
     pub(crate) fn finish_content(&mut self) {
@@ -1319,6 +1335,7 @@ impl ClaudeRenderer {
                 &mut self.thinking_scroll,
                 self.streaming.is_streaming_thinking,
                 &self.streaming.thinking,
+                self.last_notice_text.as_deref(),
             );
         }
 
@@ -1439,27 +1456,33 @@ fn wrap_lines_with_mapping(
             .get(index)
             .copied()
             .unwrap_or_else(|| mapping.last().copied().unwrap_or(0));
-        let mut current_spans: Vec<Span<'static>> = Vec::new();
-        let mut current_width = 0usize;
 
-        for span in line.spans {
-            let style = span.style;
-            for ch in span.content.chars() {
-                let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-                if current_width > 0 && current_width + ch_width > width {
-                    wrapped_lines.push(Line::from(std::mem::take(&mut current_spans)));
-                    wrapped_mapping.push(mapped_index);
-                    current_width = 0;
-                }
-                current_spans.push(Span::styled(ch.to_string(), style));
-                current_width += ch_width;
+        // Consolidate consecutive same-style text to avoid thousands of tiny spans
+        let text = line.spans.iter().map(|s| s.content.as_ref()).collect::<String>();
+        let style = line.spans.first().map(|s| s.style).unwrap_or_default();
+
+        // Wrap the consolidated string
+        let mut current_start = 0usize;
+        let mut char_pos = 0usize;
+        for (ci, c) in text.char_indices() {
+            let ch_width = UnicodeWidthChar::width(c).unwrap_or(0);
+            if char_pos > 0 && char_pos + ch_width > width {
+                wrapped_lines.push(Line::from(vec![Span::styled(
+                    text[current_start..ci].to_string(),
+                    style,
+                )]));
+                wrapped_mapping.push(mapped_index);
+                current_start = ci;
+                char_pos = 0;
             }
+            char_pos += ch_width;
         }
-
-        if current_spans.is_empty() {
+        // Last segment
+        let remaining = &text[current_start..];
+        if remaining.is_empty() {
             wrapped_lines.push(Line::default());
         } else {
-            wrapped_lines.push(Line::from(current_spans));
+            wrapped_lines.push(Line::from(vec![Span::styled(remaining.to_string(), style)]));
         }
         wrapped_mapping.push(mapped_index);
     }
@@ -1650,23 +1673,15 @@ fn render_right_panel_info(
         secondary,
     )]));
 
-    // ── System info with progress bars ──
-    // Progress bar style: dynamic fill chars driven by anim_frame
+    // ── System info with thin progress bars ──
     all_lines.push(Line::from(""));
     if let Some(snap) = system_monitor::get_snapshot() {
-        // Helper: render an animated progress bar line
         let bar_width = (text_width.saturating_sub(12)).max(8).min(30);
         all_lines.push(render_progress_bar_line(
             "CPU", snap.cpu_pct / 100.0, bar_width, anim_frame, theme, pad,
         ));
         all_lines.push(render_progress_bar_line(
             "MEM", snap.mem_pct / 100.0, bar_width, anim_frame.wrapping_add(3), theme, pad,
-        ));
-        all_lines.push(Line::from(vec![
-            Span::styled(format!("{}  {:.1}/{:.1} GB", pad, snap.mem_used_gb, snap.mem_total_gb), dim),
-        ]));
-        all_lines.push(render_progress_bar_line(
-            "ELMA", (snap.process_mem_mb / 32000.0).min(1.0), bar_width, anim_frame.wrapping_add(7), theme, pad,
         ));
         all_lines.push(Line::from(vec![
             Span::styled(format!("{}COR {} cores", pad, snap.num_cpus), dim),
@@ -1685,7 +1700,7 @@ fn render_right_panel_info(
         Span::styled(token_line, dim),
     ]));
 
-    // Model name
+    // Model name (under token counter, just above thinking)
     if let Some(ref fm) = footer_model {
         if let Some(ref model) = fm.model_label {
             all_lines.push(Line::from(""));
@@ -1709,6 +1724,7 @@ fn render_right_panel_thinking(
     scroll: &mut usize,
     is_streaming: bool,
     live_text: &str,
+    notice_text: Option<&str>,
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
@@ -1781,6 +1797,15 @@ fn render_right_panel_thinking(
             Span::raw("  "),
             Span::styled("(waiting for input)", dim),
         ]));
+    }
+
+    // System info at bottom of thinking section
+    if let Some(notice) = notice_text {
+        all_lines.push(Line::from(""));
+        all_lines.push(Line::from(vec![Span::styled(
+            truncate_to_width(notice, area.width.saturating_sub(4) as usize),
+            Style::default().fg(theme.fg_dim.to_ratatui_color()),
+        )]));
     }
 
     let total_lines = all_lines.len();
@@ -1958,7 +1983,7 @@ fn render_footer_line(
         } else {
             ws.to_string()
         };
-        spans.push(Span::styled(format!("📁 {}", ws_short), dim_style));
+        spans.push(Span::styled(format!("🔴 {}", ws_short), dim_style));
         spans.push(Span::styled("  ", dim_style));
     }
 
