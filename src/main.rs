@@ -55,6 +55,7 @@ mod dirs;
 mod document_adapter; // Task 197: Document intelligence skill stack
 mod effective_history; // Task 310: Deferred Pre-Turn Summary
 mod env_utils; // Task 290: Clean environment injection for persistent shell
+mod errors; // Task 564: Structured error types
 mod evaluation;
 mod evaluation_response;
 mod evaluation_routing;
@@ -212,6 +213,7 @@ pub(crate) use decomposition::*; // Task 023
 pub(crate) use defaults::*;
 pub(crate) use defaults_evidence::*; // JSON pipeline intel functions
 pub(crate) use document_adapter::*; // Task 197: Document intelligence
+pub(crate) use errors::*;
 pub(crate) use evaluation::*;
 pub(crate) use execution::*;
 pub(crate) use execution_ladder::*; // Execution ladder types and functions
