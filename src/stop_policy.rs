@@ -85,11 +85,11 @@ impl Default for StageBudget {
 impl StageBudget {
     pub(crate) fn from_complexity(complexity: &str) -> Self {
         let max_iterations = match complexity.to_ascii_uppercase().as_str() {
-            "DIRECT" => 1,
-            "INVESTIGATE" => 3,
-            "MULTISTEP" => 10,
+            "DIRECT" => 3,
+            "INVESTIGATE" => 6,
+            "MULTISTEP" => 12,
             "OPEN_ENDED" => 20,
-            _ => 12, // Default for unknown complexity
+            _ => 6, // Default for unknown complexity
         };
         Self {
             max_iterations,

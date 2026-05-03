@@ -44,6 +44,7 @@ mod auto_compact; // Task 114: Auto-Compact (Context Window Management)
 mod background_task; // Task 268: Background Task Management
 mod claude_ui;
 mod command_budget; // Task 121: Command Budget & Rate Limiting
+mod complexity_assessor; // Task 556: Heuristic complexity assessment
 mod config_validate; // Task 583: Config validation at startup
 mod context_budget; // Task 568: Context window budget tracking
 mod continuity; // Task 380: Semantic Continuity Tracking
@@ -258,6 +259,7 @@ pub(crate) use session::*;
 pub(crate) use abstractions::*;
 pub(crate) use agent_fsm::*;
 pub(crate) use atomic_write::*;
+pub(crate) use complexity_assessor::*;
 pub(crate) use context_budget::*;
 pub(crate) use session_display::*;
 pub(crate) use session_flush::*; // Task 283: Session Transcript Flush

@@ -268,6 +268,9 @@ pub(crate) struct ToolLoopResult {
     pub(crate) stop_outcome: Option<StopOutcome>,
     pub(crate) total_elapsed_s: f64,
     pub(crate) timeout_reason: Option<String>,
+    /// Summary of evidence gathered during this loop cycle,
+    /// used for cross-cycle evidence injection on restart.
+    pub(crate) evidence_progress_summary: Option<String>,
 }
 
 struct ToolLoopModelTurn {
@@ -317,7 +320,38 @@ fn final_answer_needs_retry(text: &str) -> bool {
     trimmed.is_empty() || is_tool_call_markup(trimmed) || is_intent_only_response(trimmed)
 }
 
-fn build_fallback_from_recent_tool_evidence(messages: &[ChatMessage]) -> String {
+/// Extract a brief summary of evidence gathered so far, for cross-cycle injection.
+fn build_evidence_progress_summary(messages: &[ChatMessage]) -> Option<String> {
+    let mut facts = Vec::new();
+    for msg in messages.iter().rev() {
+        if msg.role != "tool" {
+            continue;
+        }
+        let line = msg.content.lines().next()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty());
+        if let Some(l) = line {
+            facts.push(l);
+            if facts.len() >= 5 {
+                break;
+            }
+        }
+    }
+    facts.reverse();
+    if facts.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "[Previously gathered evidence]\nYou already gathered the following information in a prior attempt:\n{}\n\nDo NOT repeat these steps. Continue from where you left off.",
+            facts.iter().map(|f| format!("  • {}", f)).collect::<Vec<_>>().join("\n")
+        ))
+    }
+}
+
+fn build_fallback_from_recent_tool_evidence(
+    messages: &[ChatMessage],
+    stop_reason: Option<&StopReason>,
+) -> String {
     let mut facts = Vec::new();
     for msg in messages.iter().rev() {
         if msg.role != "tool" {
@@ -336,7 +370,25 @@ fn build_fallback_from_recent_tool_evidence(messages: &[ChatMessage]) -> String 
         }
     }
     facts.reverse();
-    if facts.is_empty() {
+
+    let budget_exhausted = matches!(
+        stop_reason,
+        Some(
+            StopReason::IterationLimitReached
+            | StopReason::StageBudgetExceeded
+            | StopReason::TaskBudgetExceeded
+            | StopReason::WallClockExceeded
+        )
+    );
+
+    if budget_exhausted && facts.is_empty() {
+        "I didn't complete this task — the iteration budget was exhausted before any tool calls completed. Try rephrasing with a narrower scope, or increase the complexity tier.".to_string()
+    } else if budget_exhausted {
+        format!(
+            "[Budget exhausted: I gathered some information but ran out of iterations before the task was complete. Here's what I found so far:]\n{}",
+            facts.iter().map(|f| format!("- {}", f)).collect::<Vec<_>>().join("\n")
+        )
+    } else if facts.is_empty() {
         "I couldn't produce a reliable final summary from the tool loop; please retry with a more specific prompt.".to_string()
     } else if facts.len() == 1 {
         format!(
@@ -550,6 +602,7 @@ async fn finalize_from_evidence_or_fallback(
     original_user_request: &str,
     messages: &[ChatMessage],
     max_tokens: u32,
+    stop_reason: Option<&StopReason>,
 ) -> String {
     let mut final_content = match request_final_answer_from_evidence(
         tui,
@@ -568,7 +621,7 @@ async fn finalize_from_evidence_or_fallback(
                 args,
                 &format!("finalization_failed_nonfatal stage=evidence error={}", e),
             );
-            build_fallback_from_recent_tool_evidence(messages)
+            build_fallback_from_recent_tool_evidence(messages, stop_reason)
         }
     };
 
@@ -584,7 +637,7 @@ async fn finalize_from_evidence_or_fallback(
                     args,
                     &format!("finalization_failed_nonfatal stage=plain_retry error={}", e),
                 );
-                build_fallback_from_recent_tool_evidence(messages)
+                build_fallback_from_recent_tool_evidence(messages, stop_reason)
             }
         };
     }
@@ -814,6 +867,7 @@ pub(crate) async fn run_tool_loop(
                 stop_outcome: None,
                 total_elapsed_s: elapsed.as_secs() as f64,
                 timeout_reason: Some(timeout_reason),
+                evidence_progress_summary: build_evidence_progress_summary(&messages),
             });
         }
 
@@ -836,6 +890,7 @@ pub(crate) async fn run_tool_loop(
                 &original_user_request,
                 &messages,
                 max_tokens,
+                Some(&outcome.reason),
             )
             .await;
             let final_trimmed = normalize_final_answer_candidate(&final_content);
@@ -860,7 +915,7 @@ pub(crate) async fn run_tool_loop(
             tui.push_stop_notice(&format!("Budget limit: {}", outcome.reason.as_str()));
             return Ok(ToolLoopResult {
                 final_answer: if final_answer_needs_retry(&final_trimmed) {
-                    build_fallback_from_recent_tool_evidence(&messages)
+                    build_fallback_from_recent_tool_evidence(&messages, Some(&outcome.reason))
                 } else {
                     final_trimmed
                 },
@@ -870,6 +925,7 @@ pub(crate) async fn run_tool_loop(
                 stop_outcome: Some(outcome),
                 total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                 timeout_reason: None,
+                evidence_progress_summary: build_evidence_progress_summary(&messages),
             });
         }
 
@@ -1032,6 +1088,7 @@ pub(crate) async fn run_tool_loop(
                     args,
                     &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
                 );
+                let stop_reason = Some(&outcome.reason);
                 let final_content = finalize_from_evidence_or_fallback(
                     args,
                     tui,
@@ -1041,13 +1098,15 @@ pub(crate) async fn run_tool_loop(
                     &original_user_request,
                     &messages,
                     max_tokens,
+                    stop_reason,
                 )
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 tui.push_stop_notice(&format!("Tool call limit: {}", outcome.reason.as_str()));
+                let evidence_summary = build_evidence_progress_summary(&messages);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
-                        build_fallback_from_recent_tool_evidence(&messages)
+                        build_fallback_from_recent_tool_evidence(&messages, stop_reason)
                     } else {
                         trimmed
                     },
@@ -1057,6 +1116,7 @@ pub(crate) async fn run_tool_loop(
                     stop_outcome: Some(outcome),
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
+                    evidence_progress_summary: evidence_summary,
                 });
             }
 
@@ -1088,6 +1148,7 @@ pub(crate) async fn run_tool_loop(
                     args,
                     "tool_loop: stagnation threshold reached; forcing finalization",
                 );
+                let stop_reason = Some(&outcome.reason);
                 let final_content = finalize_from_evidence_or_fallback(
                     args,
                     tui,
@@ -1097,13 +1158,15 @@ pub(crate) async fn run_tool_loop(
                     &original_user_request,
                     &messages,
                     max_tokens,
+                    stop_reason,
                 )
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 tui.push_stop_notice(&format!("Stagnation: {}", outcome.reason.as_str()));
+                let evidence_summary = build_evidence_progress_summary(&messages);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
-                        build_fallback_from_recent_tool_evidence(&messages)
+                        build_fallback_from_recent_tool_evidence(&messages, stop_reason)
                     } else {
                         trimmed
                     },
@@ -1113,6 +1176,7 @@ pub(crate) async fn run_tool_loop(
                     stop_outcome: Some(outcome),
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
+                    evidence_progress_summary: evidence_summary,
                 });
             } else {
                 let stagnation_info = stop_policy.stagnation_trace_info();
@@ -1452,6 +1516,7 @@ pub(crate) async fn run_tool_loop(
                             stop_outcome: None,
                             total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                             timeout_reason: None,
+                            evidence_progress_summary: None,
                         });
                     }
                 }
@@ -1578,13 +1643,14 @@ pub(crate) async fn run_tool_loop(
                     &original_user_request,
                     &messages,
                     max_tokens,
+                    None,
                 )
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 tui.push_stop_notice("Forced finalization due to repeated shell failures");
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
-                        build_fallback_from_recent_tool_evidence(&messages)
+                        build_fallback_from_recent_tool_evidence(&messages, None)
                     } else {
                         trimmed
                     },
@@ -1600,6 +1666,7 @@ pub(crate) async fn run_tool_loop(
                     }),
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
+                    evidence_progress_summary: build_evidence_progress_summary(&messages),
                 });
             }
 
@@ -1626,6 +1693,7 @@ pub(crate) async fn run_tool_loop(
                         outcome.summary
                     ),
                 );
+                let stop_reason = Some(&outcome.reason);
                 let final_content = finalize_from_evidence_or_fallback(
                     args,
                     tui,
@@ -1635,12 +1703,13 @@ pub(crate) async fn run_tool_loop(
                     &original_user_request,
                     &messages,
                     max_tokens,
+                    stop_reason,
                 )
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
-                        build_fallback_from_recent_tool_evidence(&messages)
+                        build_fallback_from_recent_tool_evidence(&messages, stop_reason)
                     } else {
                         trimmed
                     },
@@ -1650,6 +1719,7 @@ pub(crate) async fn run_tool_loop(
                     stop_outcome: Some(outcome),
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
+                    evidence_progress_summary: build_evidence_progress_summary(&messages),
                 });
             }
 
@@ -1674,6 +1744,7 @@ pub(crate) async fn run_tool_loop(
                         &original_user_request,
                         &messages,
                         max_tokens,
+                        None,
                     )
                     .await;
                     let trimmed = normalize_final_answer_candidate(&final_content);
@@ -1697,7 +1768,7 @@ pub(crate) async fn run_tool_loop(
                     let _ = crate::event_log::persist(&sess.root);
                     return Ok(ToolLoopResult {
                         final_answer: if final_answer_needs_retry(&trimmed) {
-                            build_fallback_from_recent_tool_evidence(&messages)
+                            build_fallback_from_recent_tool_evidence(&messages, Some(&outcome.reason))
                         } else {
                             trimmed
                         },
@@ -1707,6 +1778,7 @@ pub(crate) async fn run_tool_loop(
                         stop_outcome: Some(outcome),
                         total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                         timeout_reason: None,
+                        evidence_progress_summary: build_evidence_progress_summary(&messages),
                     });
                 }
             }
@@ -1731,6 +1803,7 @@ pub(crate) async fn run_tool_loop(
                     stop_outcome: None,
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
+                    evidence_progress_summary: None,
                 });
             }
         }
@@ -1912,7 +1985,7 @@ mod tests {
                 summarized: false,
             },
         ];
-        let out = build_fallback_from_recent_tool_evidence(&msgs);
+        let out = build_fallback_from_recent_tool_evidence(&msgs, None);
         assert!(out.contains("line one"));
     }
 

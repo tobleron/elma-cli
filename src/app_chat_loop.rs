@@ -811,18 +811,20 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let needs_tools = route_decision.evidence_required
             || route_decision.speech_act.choice != "CHAT"
             || route_decision.route != "CHAT";
+        // Use heuristic complexity assessment instead of hardcoded DIRECT/INVESTIGATE
+        let computed_complexity = crate::complexity_assessor::assess_complexity(&rephrased_objective);
         let complexity = ComplexityAssessment {
-            complexity: if route_decision.route == "CHAT" && !needs_tools {
-                "DIRECT"
-            } else {
-                "INVESTIGATE"
-            }
-            .to_string(),
+            complexity: computed_complexity.as_str().to_string(),
             needs_evidence: route_decision.evidence_required,
             needs_tools,
-            needs_decision: false,
-            needs_plan: false,
-            risk: "LOW".to_string(),
+            needs_decision: computed_complexity.max_iterations() >= 12,
+            needs_plan: computed_complexity.max_iterations() >= 6,
+            risk: if computed_complexity.max_iterations() >= 12 {
+                "MEDIUM"
+            } else {
+                "LOW"
+            }
+            .to_string(),
             suggested_pattern: if needs_tools {
                 "inspect_reply"
             } else {
@@ -843,23 +845,19 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             memory_id: String::new(),
         };
         let ladder = ExecutionLadderAssessment::new(
-            if route_decision.route == "CHAT" && !needs_tools {
-                ExecutionLevel::Action
-            } else {
-                ExecutionLevel::Task
+            match computed_complexity {
+                crate::complexity_assessor::Complexity::Direct => ExecutionLevel::Action,
+                crate::complexity_assessor::Complexity::Investigate => ExecutionLevel::Task,
+                crate::complexity_assessor::Complexity::Multistep => ExecutionLevel::Plan,
+                crate::complexity_assessor::Complexity::OpenEnded => ExecutionLevel::MasterPlan,
             },
-            format!("LLM-driven (source={})", route_decision.source),
+            format!("complexity_assessor (source={})", route_decision.source),
             route_decision.evidence_required,
-            false,
-            false,
-            false,
-            "LOW".to_string(),
-            if route_decision.route == "CHAT" && !needs_tools {
-                "DIRECT"
-            } else {
-                "INVESTIGATE"
-            }
-            .to_string(),
+            computed_complexity.max_iterations() >= 12,
+            computed_complexity.max_iterations() >= 12,
+            computed_complexity.max_iterations() >= 6,
+            if computed_complexity.max_iterations() >= 12 { "MEDIUM" } else { "LOW" }.to_string(),
+            computed_complexity.as_str().to_string(),
         );
         let workflow_plan: Option<WorkflowPlannerOutput> = None;
 

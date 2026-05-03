@@ -34,9 +34,49 @@ pub(crate) fn build_tool_definitions_for_context(
     }
 }
 
-/// Get dynamically loaded tools by name
-pub(crate) fn get_dynamic_tools(tool_names: &[String]) -> Vec<ToolDefinition> {
-    crate::tool_registry::get_registry().get_tools(tool_names)
+/// Generates a corrective guidance message after a tool failure.
+/// Helps small models recover by providing the correct usage pattern.
+pub(crate) fn format_tool_error_correction(tool_name: &str) -> String {
+    let schema = crate::tools::validation::get_tool_schema(tool_name);
+    match schema {
+        Some(s) => s.format_schema_narrative(),
+        None => format!("Tool '{}' failed. Check the arguments and try again.", tool_name),
+    }
+}
+
+/// Parses ls tool output to extract file paths and suggests read calls.
+/// Returns Some(text) with concrete read call suggestions, or None if no files found.
+pub(crate) fn suggest_next_calls(ls_output: &str) -> Option<String> {
+    let mut paths: Vec<&str> = Vec::new();
+
+    for line in ls_output.lines() {
+        let trimmed = line.trim();
+        // Match lines containing file size in bytes (e.g. "  main.rs  (123 B, 2d ago)")
+        if let Some(end) = trimmed.rfind("  (") {
+            let name_part = &trimmed[..end].trim();
+            // Skip directory entries (end with /) and truncated/header lines
+            if !name_part.ends_with('/')
+                && !name_part.contains("item(s)")
+                && !name_part.is_empty()
+                && paths.len() < 10
+            {
+                paths.push(name_part);
+            }
+        }
+    }
+
+    if paths.is_empty() {
+        return None;
+    }
+
+    let examples: Vec<String> = paths
+        .iter()
+        .map(|p| format!("read filePath=\"{}\"", p))
+        .collect();
+    Some(format!(
+        "Files available to read:\n- {}\n\nUse the read tool with the correct filePath parameter.",
+        examples.join("\n- ")
+    ))
 }
 
 /// Search for tools by query and return their definitions
@@ -112,15 +152,20 @@ pub(crate) async fn execute_tool_call(
                 .map(|fe| format!("{}: {}", fe.field, fe.error))
                 .collect::<Vec<_>>()
                 .join("; ");
+            let rich_content = schema.format_error_with_schema(&error_msg);
+            crate::append_trace_log_line(&format!(
+                "[TOOL_VALIDATION_ERROR] tool={} error={}",
+                tool_name, error_msg
+            ));
             return ToolExecutionResult {
                 tool_call_id: call_id,
                 tool_name,
-                content: format!("Argument validation failed: {}", error_msg),
+                content: rich_content,
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::ValidationFailed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
