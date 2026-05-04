@@ -245,6 +245,7 @@ pub(crate) use profile_sets::*;
 pub(crate) use protected_paths::*;
 pub(crate) use retry::*;
 pub(crate) use sanitize::*;
+pub(crate) use program_utils::*;
 pub(crate) use program::*;
 pub(crate) use project_guidance::*;
 pub(crate) use project_init::*;

@@ -525,11 +525,9 @@ fn glob_match(pattern: &str, name: &str) -> bool {
 }
 
 fn resolve_path(path: &str, workdir: &PathBuf) -> PathBuf {
-    let p = Path::new(path);
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        workdir.join(p)
+    match resolve_tool_path(workdir, path) {
+        Ok(p) => p,
+        Err(_) => workdir.join(path), // fallback to old behavior for preflight
     }
 }
 

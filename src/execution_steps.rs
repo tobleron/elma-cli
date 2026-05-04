@@ -542,29 +542,31 @@ fn handle_write_step(
     content: String,
     state: &mut ExecutionState,
 ) {
-    if std::path::Path::new(&path).is_absolute() {
-        state.step_results.push(StepResult {
-            id: sid.to_string(),
-            kind: kind.to_string(),
-            purpose,
-            depends_on,
-            success_condition,
-            ok: false,
-            summary: format!("absolute_path_not_allowed: {} — use workspace-relative path", path),
-            command: None,
-            raw_output: None,
-            exit_code: None,
-            output_bytes: None,
-            truncated: false,
-            timed_out: false,
-            artifact_path: None,
-            artifact_kind: None,
-            outcome_status: None,
-            outcome_reason: None,
-        });
-        return;
-    }
-    let full_path = workdir.join(&path);
+    let full_path = match resolve_tool_path(workdir, &path) {
+        Ok(p) => p,
+        Err(e) => {
+            state.step_results.push(StepResult {
+                id: sid.to_string(),
+                kind: kind.to_string(),
+                purpose: purpose.clone(),
+                depends_on: depends_on.clone(),
+                success_condition: success_condition.clone(),
+                ok: false,
+                summary: format!("path error: {}", e),
+                command: None,
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
+            });
+            return;
+        }
+    };
     let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
     if let Some(msg) = policy.blocked_message(&full_path, "write") {
         state.step_results.push(StepResult {
@@ -613,29 +615,31 @@ fn handle_delete_step(
     path: String,
     state: &mut ExecutionState,
 ) {
-    if std::path::Path::new(&path).is_absolute() {
-        state.step_results.push(StepResult {
-            id: sid.to_string(),
-            kind: kind.to_string(),
-            purpose,
-            depends_on,
-            success_condition,
-            ok: false,
-            summary: format!("absolute_path_not_allowed: {} — use workspace-relative path", path),
-            command: None,
-            raw_output: None,
-            exit_code: None,
-            output_bytes: None,
-            truncated: false,
-            timed_out: false,
-            artifact_path: None,
-            artifact_kind: None,
-            outcome_status: None,
-            outcome_reason: None,
-        });
-        return;
-    }
-    let full_path = workdir.join(&path);
+    let full_path = match resolve_tool_path(workdir, &path) {
+        Ok(p) => p,
+        Err(e) => {
+            state.step_results.push(StepResult {
+                id: sid.to_string(),
+                kind: kind.to_string(),
+                purpose: purpose.clone(),
+                depends_on: depends_on.clone(),
+                success_condition: success_condition.clone(),
+                ok: false,
+                summary: format!("path error: {}", e),
+                command: None,
+                raw_output: None,
+                exit_code: None,
+                output_bytes: None,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+                outcome_status: None,
+                outcome_reason: None,
+            });
+            return;
+        }
+    };
     let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
     if let Some(msg) = policy.blocked_message(&full_path, "delete") {
         state.step_results.push(StepResult {

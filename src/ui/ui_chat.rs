@@ -233,7 +233,6 @@ async fn chat_once_base(
     let mut is_timeout = false;
 
     for attempt in 0..3u32 {
-        eprintln!("DEBUG: attempt={} max_tokens={}", attempt + 1, effective_req.max_tokens);
         append_trace_log_line(&format!(
             "[HTTP_ATTEMPT] attempt={}/3 max_tokens={:?}",
             attempt + 1,

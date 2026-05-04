@@ -57,40 +57,42 @@ pub(crate) async fn handle_read_step(
         );
         trace(args, &format!("read path={}", tp));
 
-        let full_path = if tp.starts_with('/') && Path::new(tp).is_absolute() {
-            state.step_results.push(StepResult {
-                id: sid.clone(),
-                kind: kind.to_string(),
-                purpose,
-                depends_on,
-                success_condition,
-                ok: false,
-                summary: format!("absolute_path_not_allowed: {} — use workspace-relative path", tp),
-                command: None,
-                raw_output: None,
-                exit_code: None,
-                output_bytes: None,
-                truncated: false,
-                timed_out: false,
-                artifact_path: None,
-                artifact_kind: None,
-                outcome_status: None,
-                outcome_reason: None,
-            });
-            state.halt = true;
-            return Ok(());
-        } else {
-            let resolved = workdir.join(tp);
-            let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
-            if let Some(msg) = policy.blocked_message(&resolved, "read") {
+        let full_path = match resolve_tool_path(workdir, tp) {
+            Ok(p) => {
+                let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
+                if let Some(msg) = policy.blocked_message(&p, "read") {
+                    state.step_results.push(StepResult {
+                        id: sid.clone(),
+                        kind: kind.to_string(),
+                        purpose: purpose.clone(),
+                        depends_on: depends_on.clone(),
+                        success_condition: success_condition.clone(),
+                        ok: false,
+                        summary: msg,
+                        command: None,
+                        raw_output: None,
+                        exit_code: None,
+                        output_bytes: None,
+                        truncated: false,
+                        timed_out: false,
+                        artifact_path: None,
+                        artifact_kind: None,
+                        outcome_status: None,
+                        outcome_reason: None,
+                    });
+                    return Ok(());
+                }
+                p
+            }
+            Err(e) => {
                 state.step_results.push(StepResult {
                     id: sid.clone(),
                     kind: kind.to_string(),
                     purpose: purpose.clone(),
-                    depends_on,
-                    success_condition,
+                    depends_on: depends_on.clone(),
+                    success_condition: success_condition.clone(),
                     ok: false,
-                    summary: msg,
+                    summary: format!("path error: {}", e),
                     command: None,
                     raw_output: None,
                     exit_code: None,
@@ -105,11 +107,6 @@ pub(crate) async fn handle_read_step(
                 state.halt = true;
                 return Ok(());
             }
-            if policy.is_ignored(&resolved) {
-                trace(args, &format!("read skipped_ignored: {}", tp));
-                return Ok(());
-            }
-            resolved
         };
 
         if !full_path.exists() {

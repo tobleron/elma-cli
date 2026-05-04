@@ -4,6 +4,7 @@
 //!
 //! Provides atomic multi-file patch operations with journal-based rollback.
 
+use crate::resolve_tool_path;
 use elma_tools::{parse_patch, PatchOperation};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -155,13 +156,10 @@ impl PatchExecutor {
         if path.is_empty() {
             return Err(PatchError::ValidationError("empty path".to_string()));
         }
-        if Path::new(path).is_absolute() {
-            return Err(PatchError::ValidationError(format!(
-                "absolute path not allowed: {}",
-                path
-            )));
-        }
-        let full = self.workdir.join(path);
+        let full = match resolve_tool_path(&self.workdir, path) {
+            Ok(p) => p,
+            Err(e) => return Err(PatchError::ValidationError(format!("path error: {}", e))),
+        };
         if full.exists() {
             return Err(PatchError::ValidationError(format!(
                 "file already exists: {}",
@@ -175,13 +173,10 @@ impl PatchExecutor {
         if path.is_empty() {
             return Err(PatchError::ValidationError("empty path".to_string()));
         }
-        if Path::new(path).is_absolute() {
-            return Err(PatchError::ValidationError(format!(
-                "absolute path not allowed: {}",
-                path
-            )));
-        }
-        let full = self.workdir.join(path);
+        let full = match resolve_tool_path(&self.workdir, path) {
+            Ok(p) => p,
+            Err(e) => return Err(PatchError::ValidationError(format!("path error: {}", e))),
+        };
         if !full.exists() {
             return Err(PatchError::ValidationError(format!(
                 "file not found: {}",
@@ -195,13 +190,10 @@ impl PatchExecutor {
         if path.is_empty() {
             return Err(PatchError::ValidationError("empty path".to_string()));
         }
-        if Path::new(path).is_absolute() {
-            return Err(PatchError::ValidationError(format!(
-                "absolute path not allowed: {}",
-                path
-            )));
-        }
-        let full = self.workdir.join(path);
+        let full = match resolve_tool_path(&self.workdir, path) {
+            Ok(p) => p,
+            Err(e) => return Err(PatchError::ValidationError(format!("path error: {}", e))),
+        };
         if !full.exists() {
             return Err(PatchError::ValidationError(format!(
                 "file not found: {}",

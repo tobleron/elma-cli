@@ -27,26 +27,50 @@ pub(crate) fn edit_operation_is_supported(op: &str) -> bool {
     matches!(op.trim(), "write_file" | "replace_text" | "append_text")
 }
 
-pub(crate) fn resolve_workspace_edit_path(workdir: &Path, raw_path: &str) -> Result<PathBuf> {
+pub(crate) fn resolve_tool_path(workdir: &Path, raw_path: &str) -> Result<PathBuf> {
     use std::path::Component;
 
     let raw_path = raw_path.trim();
     if raw_path.is_empty() {
-        anyhow::bail!("edit path is empty");
+        anyhow::bail!("tool path is empty");
     }
-    let relative = Path::new(raw_path);
-    if relative.is_absolute() {
-        anyhow::bail!("absolute edit paths are not allowed");
+    let p = Path::new(raw_path);
+
+    // Accept absolute paths that are inside the workspace (convert to relative).
+    // Reject absolute paths outside the workspace.
+    if p.is_absolute() {
+        if let Ok(stripped) = p.strip_prefix(workdir) {
+            // Absolute path inside workspace → treat as relative
+            let relative = stripped;
+            if relative.components().any(|component| {
+                matches!(
+                    component,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            }) {
+                anyhow::bail!("tool path must stay inside the workspace");
+            }
+            return Ok(workdir.join(relative));
+        } else {
+            anyhow::bail!("absolute path outside workspace is not allowed");
+        }
     }
-    if relative.components().any(|component| {
+
+    // Relative path: reject traversal escapes
+    if p.components().any(|component| {
         matches!(
             component,
             Component::ParentDir | Component::RootDir | Component::Prefix(_)
         )
     }) {
-        anyhow::bail!("edit path must stay inside the workspace");
+        anyhow::bail!("tool path must stay inside the workspace");
     }
-    Ok(workdir.join(relative))
+    Ok(workdir.join(p))
+}
+
+// Keep old name as a shim so existing callers still compile during migration
+pub(crate) fn resolve_workspace_edit_path(workdir: &Path, raw_path: &str) -> Result<PathBuf> {
+    resolve_tool_path(workdir, raw_path)
 }
 
 pub(crate) fn preview_text(text: &str, max_lines: usize) -> String {

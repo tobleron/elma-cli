@@ -646,22 +646,25 @@ fn exec_ls(
 
     let target = if raw_path.is_empty() {
         workdir.clone()
-    } else if std::path::Path::new(&raw_path).is_absolute() {
-        let error_msg = "absolute_path_not_allowed: use workspace-relative path".to_string();
-        emit_tool_result(&mut tui, "ls", false, &error_msg);
-        return ToolExecutionResult {
-            tool_call_id: call_id.to_string(),
-            tool_name: "ls".to_string(),
-            content: error_msg,
-            ok: false,
-            exit_code: None,
-            timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
-            signal_killed: None,
-        };
     } else {
-        workdir.join(&raw_path)
+        match resolve_tool_path(workdir, &raw_path) {
+            Ok(p) => p,
+            Err(e) => {
+                let error_msg = format!("path error: {}", e);
+                emit_tool_result(&mut tui, "ls", false, &error_msg);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "ls".to_string(),
+                    content: error_msg,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    status: crate::tools::ToolStatus::Failed,
+                    duration_ms: 0,
+                    signal_killed: None,
+                };
+            }
+        }
     };
 
     emit_tool_start(&mut tui, "ls", &raw_path);
@@ -915,24 +918,23 @@ fn exec_observe(
         };
     }
 
-    let full = if std::path::Path::new(&path).is_relative() {
-        workdir.join(&path)
-    } else if std::path::Path::new(&path).is_absolute() {
-        let error_msg = format!("absolute_path_not_allowed: {} — use workspace-relative path", path);
-        emit_tool_result(&mut tui, "observe", false, &error_msg);
-        return ToolExecutionResult {
-            tool_call_id: call_id.to_string(),
-            tool_name: "observe".to_string(),
-            content: error_msg.to_string(),
-            ok: false,
-            exit_code: None,
-            timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
-            signal_killed: None,
-        };
-    } else {
-        workdir.join(&path)
+    let full = match resolve_tool_path(workdir, &path) {
+        Ok(p) => p,
+        Err(e) => {
+            let error_msg = format!("path error: {}", e);
+            emit_tool_result(&mut tui, "observe", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "observe".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
+                signal_killed: None,
+            };
+        }
     };
 
     emit_tool_start(&mut tui, "observe", &path);
@@ -1082,29 +1084,30 @@ fn exec_read(
     let mut errors: Vec<String> = Vec::new();
 
     for (i, tp) in paths.iter().enumerate() {
-        if std::path::Path::new(tp).is_absolute() {
-            let err = format!("absolute_path_not_allowed: {} — use workspace-relative path", tp);
-            if is_multi {
-                errors.push(err.clone());
-                all_content.push_str(&format!("\n### File {}: ERROR — {}\n", i + 1, tp));
-                continue;
-            } else {
-                emit_tool_result(&mut tui, "read", false, &err);
-                return ToolExecutionResult {
-                    tool_call_id: call_id.to_string(),
-                    tool_name: "read".to_string(),
-                    content: err,
-                    ok: false,
-                    exit_code: None,
-                    timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
-                    signal_killed: None,
-                };
+        let full = match resolve_tool_path(workdir, tp) {
+            Ok(p) => p,
+            Err(e) => {
+                let err = format!("path error: {}", e);
+                if is_multi {
+                    errors.push(err.clone());
+                    all_content.push_str(&format!("\n### File {}: ERROR — {}\n", i + 1, tp));
+                    continue;
+                } else {
+                    emit_tool_result(&mut tui, "read", false, &err);
+                    return ToolExecutionResult {
+                        tool_call_id: call_id.to_string(),
+                        tool_name: "read".to_string(),
+                        content: err,
+                        ok: false,
+                        exit_code: None,
+                        timed_out: false,
+                        status: crate::tools::ToolStatus::Failed,
+                        duration_ms: 0,
+                        signal_killed: None,
+                    };
+                }
             }
-        }
-
-        let full = workdir.join(tp);
+        };
         if !full.exists() {
             let err = format!("file_not_found: {}", tp);
             if is_multi {
@@ -1192,23 +1195,28 @@ fn exec_glob(
     emit_tool_start(&mut tui, "glob", &pattern);
 
     let base = match search_path {
-        Some(p) if p.is_absolute() => {
-            let error_msg = "absolute_path_not_allowed";
-            emit_tool_result(&mut tui, "glob", false, error_msg);
-            return ToolExecutionResult {
-                tool_call_id: call_id.to_string(),
-                tool_name: "glob".to_string(),
-                content: error_msg.to_string(),
-                ok: false,
-                exit_code: None,
-                timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
-                signal_killed: None,
-            };
+        Some(p) => {
+            match resolve_tool_path(workdir, p.to_str().unwrap_or("")) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    let error_msg = format!("path error: {}", e);
+                    emit_tool_result(&mut tui, "glob", false, &error_msg);
+                    return ToolExecutionResult {
+                        tool_call_id: call_id.to_string(),
+                        tool_name: "glob".to_string(),
+                        content: error_msg,
+                        ok: false,
+                        exit_code: None,
+                        timed_out: false,
+                        status: crate::tools::ToolStatus::Failed,
+                        duration_ms: 0,
+                        signal_killed: None,
+                    };
+                }
+            }
         }
-        Some(p) => workdir.join(p),
-        None => workdir.clone(),
+        Some(p) => Some(workdir.join(p)),
+        None => Some(workdir.clone()),
     };
 
     let walker = glob::glob_with(
@@ -1458,23 +1466,25 @@ fn exec_edit(
         };
     }
 
-    let full = workdir.join(&path);
-
-    if full.is_absolute() {
-        let error_msg = "absolute_path_not_allowed";
-        emit_tool_result(&mut tui, "edit", false, error_msg);
-        return ToolExecutionResult {
-            tool_call_id: call_id.to_string(),
-            tool_name: "edit".to_string(),
-            content: error_msg.to_string(),
-            ok: false,
-            exit_code: None,
-            timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
-            signal_killed: None,
-        };
-    }
+    // Resolve path (absolute paths within workspace are accepted and converted to relative)
+    let full = match resolve_tool_path(workdir, &path) {
+        Ok(p) => p,
+        Err(e) => {
+            let error_msg = format!("path error: {}", e);
+            emit_tool_result(&mut tui, "edit", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "edit".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    };
 
     emit_tool_start(&mut tui, "edit", &path);
 
@@ -1600,23 +1610,24 @@ fn exec_write(
         };
     }
 
-    let full = workdir.join(&path);
-
-    if full.is_absolute() {
-        let error_msg = "absolute_path_not_allowed";
-        emit_tool_result(&mut tui, "write", false, error_msg);
-        return ToolExecutionResult {
-            tool_call_id: call_id.to_string(),
-            tool_name: "write".to_string(),
-            content: error_msg.to_string(),
-            ok: false,
-            exit_code: None,
-            timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
-            signal_killed: None,
-        };
-    }
+    let full = match resolve_tool_path(workdir, &path) {
+        Ok(p) => p,
+        Err(e) => {
+            let error_msg = format!("path error: {}", e);
+            emit_tool_result(&mut tui, "write", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "write".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    };
 
     emit_tool_start(&mut tui, "write", &path);
 
@@ -1711,8 +1722,8 @@ async fn exec_search(
     }
 
     if let Some(ref p) = sp {
-        if std::path::Path::new(p).is_absolute() {
-            let error_msg = format!("absolute_path_not_allowed: {} — use workspace-relative path", p);
+        if let Err(e) = resolve_tool_path(workdir, p) {
+            let error_msg = format!("path error: {}", e);
             emit_tool_result(&mut tui, "search", false, &error_msg);
             return ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
@@ -1721,8 +1732,8 @@ async fn exec_search(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }

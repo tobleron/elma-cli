@@ -27,30 +27,32 @@ pub(crate) async fn handle_search_step(
 
     if !paths.is_empty() {
         for p in &paths {
-            if p.starts_with('/') && Path::new(p).is_absolute() {
-                state.step_results.push(StepResult {
-                    id: sid.clone(),
-                    kind: kind.to_string(),
-                    purpose,
-                    depends_on,
-                    success_condition,
-                    ok: false,
-                    summary: format!("absolute_path_not_allowed: {} — use workspace-relative path", p),
-                    command: None,
-                    raw_output: None,
-                    exit_code: None,
-                    output_bytes: None,
-                    truncated: false,
-                    timed_out: false,
-                    artifact_path: None,
-                    artifact_kind: None,
-                    outcome_status: None,
-                    outcome_reason: None,
-                });
-                state.halt = true;
-                return Ok(());
-            }
-            let resolved = workdir.join(p);
+            let resolved = match resolve_tool_path(workdir, p) {
+                Ok(path) => path,
+                Err(e) => {
+                    state.step_results.push(StepResult {
+                        id: sid.clone(),
+                        kind: kind.to_string(),
+                        purpose: purpose.clone(),
+                        depends_on: depends_on.clone(),
+                        success_condition: success_condition.clone(),
+                        ok: false,
+                        summary: format!("path error: {}", e),
+                        command: None,
+                        raw_output: None,
+                        exit_code: None,
+                        output_bytes: None,
+                        truncated: false,
+                        timed_out: false,
+                        artifact_path: None,
+                        artifact_kind: None,
+                        outcome_status: None,
+                        outcome_reason: None,
+                    });
+                    state.halt = true;
+                    return Ok(());
+                }
+            };
             let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
             if let Some(msg) = policy.blocked_message(&resolved, "search") {
                 state.step_results.push(StepResult {

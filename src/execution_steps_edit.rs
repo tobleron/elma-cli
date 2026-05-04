@@ -90,7 +90,7 @@ pub(crate) fn handle_edit_step(
         }
     };
 
-    let path = resolve_workspace_edit_path(workdir, &spec.path)?;
+    let path = resolve_tool_path(workdir, &spec.path)?;
     let policy = crate::workspace_policy::WorkspacePolicy::new(workdir);
     if let Some(msg) = policy.blocked_message(&path, "edit") {
         state.step_results.push(StepResult {
@@ -259,4 +259,378 @@ pub(crate) fn handle_edit_step(
         outcome_reason: None,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::*;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    fn setup_test_env() -> (TempDir, PathBuf, PathBuf) {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let workdir = temp_dir.path().to_path_buf();
+        let project_tmp = workdir.join("project_tmp");
+        fs::create_dir_all(&project_tmp).expect("Failed to create project_tmp");
+
+        let dummy_files = vec![
+            ("dummy.txt", "initial content here"),
+            ("code.rs", "fn main() {\n    println!(\"Hello\");\n}"),
+            ("config.toml", "[section]\nkey = \"value\""),
+            ("empty.txt", ""),
+        ];
+        for (name, content) in dummy_files {
+            let path = project_tmp.join(name);
+            fs::write(&path, content).expect(&format!("Failed to write {}", name));
+        }
+
+        (temp_dir, workdir, project_tmp)
+    }
+
+    fn mock_args() -> Args {
+        Args::try_parse_from(&["test"]).expect("Failed to parse Args")
+    }
+
+    fn mock_session_paths(workdir: &PathBuf) -> SessionPaths {
+        let artifacts_dir = workdir.join("artifacts");
+        fs::create_dir_all(&artifacts_dir).expect("Failed to create artifacts dir");
+        SessionPaths {
+            root: workdir.clone(),
+            artifacts_dir,
+        }
+    }
+
+    fn mock_execution_state() -> ExecutionState {
+        ExecutionState {
+            step_results: Vec::new(),
+            final_reply: None,
+            artifacts: HashMap::new(),
+            auto_snapshot_id: Some("test_snapshot".to_string()),
+            halt: false,
+        }
+    }
+
+    fn to_relative_path(workdir: &PathBuf, absolute_path: &PathBuf) -> String {
+        absolute_path.strip_prefix(workdir)
+            .unwrap_or(absolute_path)
+            .to_string_lossy()
+            .to_string()
+    }
+
+    #[test]
+    fn test_write_file_new() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        let file_path = project_tmp.join("new_file.txt");
+        let spec = EditSpec {
+            path: to_relative_path(&workdir, &file_path),
+            operation: "write_file".to_string(),
+            content: "hello world".to_string(),
+            find: String::new(),
+            replace: String::new(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_1".to_string(), "test".to_string(),
+            "Write new file".to_string(), vec![],
+            "File should be written".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_ok());
+        let step_result = state.step_results.first().unwrap();
+        assert!(step_result.ok);
+        assert!(step_result.summary.contains("wrote"));
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn test_write_file_overwrite() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        let file_path = project_tmp.join("dummy.txt");
+        let spec = EditSpec {
+            path: to_relative_path(&workdir, &file_path),
+            operation: "write_file".to_string(),
+            content: "overwritten content".to_string(),
+            find: String::new(),
+            replace: String::new(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_2".to_string(), "test".to_string(),
+            "Overwrite existing file".to_string(), vec![],
+            "File should be overwritten".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_ok());
+        let step_result = state.step_results.first().unwrap();
+        assert!(step_result.ok);
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "overwritten content");
+    }
+
+    #[test]
+    fn test_append_text_existing() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        let file_path = project_tmp.join("dummy.txt");
+        let spec = EditSpec {
+            path: to_relative_path(&workdir, &file_path),
+            operation: "append_text".to_string(),
+            content: "\nappended line".to_string(),
+            find: String::new(),
+            replace: String::new(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_3".to_string(), "test".to_string(),
+            "Append to existing file".to_string(), vec![],
+            "Content should be appended".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_ok());
+        let step_result = state.step_results.first().unwrap();
+        assert!(step_result.ok);
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("initial content here"));
+        assert!(content.contains("appended line"));
+    }
+
+    #[test]
+    fn test_append_text_new_file() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        let file_path = project_tmp.join("brand_new.txt");
+        let spec = EditSpec {
+            path: to_relative_path(&workdir, &file_path),
+            operation: "append_text".to_string(),
+            content: "new file content".to_string(),
+            find: String::new(),
+            replace: String::new(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_4".to_string(), "test".to_string(),
+            "Append to new file".to_string(), vec![],
+            "New file should be created".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_ok());
+        let step_result = state.step_results.first().unwrap();
+        assert!(step_result.ok);
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "new file content");
+    }
+
+    #[test]
+    fn test_replace_text_success() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        let file_path = project_tmp.join("dummy.txt");
+        let spec = EditSpec {
+            path: to_relative_path(&workdir, &file_path),
+            operation: "replace_text".to_string(),
+            content: String::new(),
+            find: "initial".to_string(),
+            replace: "updated".to_string(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_5".to_string(), "test".to_string(),
+            "Replace text".to_string(), vec![],
+            "Text should be replaced".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_ok());
+        let step_result = state.step_results.first().unwrap();
+        assert!(step_result.ok);
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("updated content here"));
+        assert!(!content.contains("initial content here"));
+    }
+
+    #[test]
+    fn test_replace_text_no_match() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        let file_path = project_tmp.join("dummy.txt");
+        let spec = EditSpec {
+            path: to_relative_path(&workdir, &file_path),
+            operation: "replace_text".to_string(),
+            content: String::new(),
+            find: "nonexistent".to_string(),
+            replace: "something".to_string(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_6".to_string(), "test".to_string(),
+            "Replace with no match".to_string(), vec![],
+            "Should fail".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("found no matches"));
+    }
+
+    #[test]
+    fn test_replace_text_empty_find() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        let file_path = project_tmp.join("dummy.txt");
+        let spec = EditSpec {
+            path: to_relative_path(&workdir, &file_path),
+            operation: "replace_text".to_string(),
+            content: String::new(),
+            find: String::new(),
+            replace: "something".to_string(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_7".to_string(), "test".to_string(),
+            "Replace with empty find".to_string(), vec![],
+            "Should fail".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("requires non-empty find"));
+    }
+
+    #[test]
+    fn test_unsupported_operation() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        let file_path = project_tmp.join("test.txt");
+        let spec = EditSpec {
+            path: to_relative_path(&workdir, &file_path),
+            operation: "invalid_op".to_string(),
+            content: String::new(),
+            find: String::new(),
+            replace: String::new(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_8".to_string(), "test".to_string(),
+            "Unsupported operation".to_string(), vec![],
+            "Should fail".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_ok());
+        let step_result = state.step_results.first().unwrap();
+        assert!(!step_result.ok);
+        assert!(step_result.summary.contains("unsupported edit operation"));
+    }
+
+    #[test]
+    fn test_absolute_path_within_workspace() {
+        let (_temp_dir, workdir, project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        // Use absolute path within workspace - should be accepted now
+        let file_path = project_tmp.join("absolute_test.txt");
+        let abs_path = file_path.to_string_lossy().to_string();
+        let spec = EditSpec {
+            path: abs_path,
+            operation: "write_file".to_string(),
+            content: "absolute path works".to_string(),
+            find: String::new(),
+            replace: String::new(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_abs".to_string(), "test".to_string(),
+            "Absolute path test".to_string(), vec![],
+            "Should succeed with absolute path".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_ok());
+        let step_result = state.step_results.first().unwrap();
+        assert!(step_result.ok);
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "absolute path works");
+    }
+
+    #[test]
+    fn test_absolute_path_outside_workspace() {
+        let (_temp_dir, workdir, _project_tmp) = setup_test_env();
+        let args = mock_args();
+        let session = mock_session_paths(&workdir);
+        let mut state = mock_execution_state();
+
+        // Use absolute path outside workspace - should be rejected
+        let spec = EditSpec {
+            path: "/etc/passwd".to_string(),
+            operation: "write_file".to_string(),
+            content: "should fail".to_string(),
+            find: String::new(),
+            replace: String::new(),
+        };
+
+        let result = handle_edit_step(
+            &args, &session, &workdir,
+            "step_outside".to_string(), "test".to_string(),
+            "Outside workspace".to_string(), vec![],
+            "Should fail".to_string(),
+            spec, &mut state,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("outside workspace"));
+    }
+
+    #[test]
+    fn test_edit_operation_is_supported() {
+        assert!(edit_operation_is_supported("write_file"));
+        assert!(edit_operation_is_supported("replace_text"));
+        assert!(edit_operation_is_supported("append_text"));
+        assert!(!edit_operation_is_supported("invalid"));
+        assert!(!edit_operation_is_supported(""));
+    }
 }
