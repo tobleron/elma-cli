@@ -28,7 +28,7 @@ impl Default for LlmRuntimeConfig {
             version: 1,
             http_timeout_s: 120,
             request_timeout_s: 120,
-            final_answer_timeout_s: 60,
+            final_answer_timeout_s: 3,
             tool_loop_timeout_s: 120,
             model_probe_timeout_s: 120,
             max_response_tokens_cap: 16384,

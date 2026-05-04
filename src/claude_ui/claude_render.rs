@@ -981,7 +981,7 @@ impl ClaudeRenderer {
         let block = ratatui::widgets::Block::default()
             .title(title)
             .borders(ratatui::widgets::Borders::ALL)
-            .border_style(Style::default().fg(theme.accent_primary.to_ratatui_color()));
+            .border_style(Style::default().fg(theme.fg_dim.to_ratatui_color()));
 
         let text = Paragraph::new(content)
             .block(block)
@@ -1284,7 +1284,7 @@ impl ClaudeRenderer {
                         let arrow = if is_sel {
                             Span::styled(
                                 "▸ ",
-                                Style::default().fg(theme.accent_primary.to_ratatui_color()),
+                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
                             )
                         } else {
                             Span::raw("  ")
@@ -1324,7 +1324,7 @@ impl ClaudeRenderer {
                         let arrow = if is_sel {
                             Span::styled(
                                 "▸ ",
-                                Style::default().fg(theme.accent_primary.to_ratatui_color()),
+                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
                             )
                         } else {
                             Span::raw("  ")
@@ -1825,7 +1825,7 @@ fn render_right_panel_info(
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
-    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
+    let accent = Style::default().fg(theme.fg_dim.to_ratatui_color());
     let secondary = Style::default().fg(theme.accent_secondary.to_ratatui_color());
     let pad = "  ";
     let text_width = area.width.saturating_sub(3) as usize;
@@ -1926,7 +1926,7 @@ fn render_right_panel_thinking(
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
-    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
+    let accent = Style::default().fg(theme.fg_dim.to_ratatui_color());
 
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
@@ -2042,7 +2042,7 @@ fn render_right_panel_thinking(
             .position(*scroll)
             .viewport_content_length(area_height);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::default().fg(theme.accent_primary.to_ratatui_color()))
+            .thumb_style(Style::default().fg(theme.fg_dim.to_ratatui_color()))
             .track_style(Style::default().fg(theme.border.to_ratatui_color()));
         f.render_stateful_widget(scrollbar, scrollbar_thumb, &mut scrollbar_state);
 
@@ -2080,7 +2080,7 @@ fn render_progress_bar_line(
     let pct = (fraction.clamp(0.0, 1.0) * 100.0) as u8;
     let filled = (fraction.clamp(0.0, 1.0) * bar_width as f64).round() as usize;
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
-    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
+    let accent = Style::default().fg(theme.fg_dim.to_ratatui_color());
     let secondary = Style::default().fg(theme.accent_secondary.to_ratatui_color());
 
     let bar_color = match label {
