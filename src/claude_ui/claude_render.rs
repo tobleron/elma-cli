@@ -707,7 +707,7 @@ impl ClaudeRenderer {
         let thinking = self.streaming.thinking.clone();
         if !thinking.is_empty() {
             let word_count = thinking.split_whitespace().count();
-            let delay_secs = (word_count as f64 / 500.0 * 60.0).clamp(2.0, 30.0);
+            let delay_secs = 3.0;
             let now = Instant::now();
             self.thinking_entries.push(ThinkingEntry {
                 content: thinking,
@@ -782,7 +782,7 @@ impl ClaudeRenderer {
             content: summary.to_string(),
             word_count,
             created_at: now,
-            collapse_deadline: now + std::time::Duration::from_secs(86400),
+            collapse_deadline: now + std::time::Duration::from_secs(18),
             collapsed: false,
             reveal_chars: 0,
             is_summary: true,
@@ -1434,6 +1434,10 @@ impl ClaudeRenderer {
                 }
             }
 
+            // Remove expired entries (deadline passed)
+            let now = Instant::now();
+            self.thinking_entries.retain(|e| now < e.collapse_deadline);
+
             // Collect visible thinking: oldest first (chronological)
             let all_thinking: Vec<&ThinkingEntry> = self
                 .thinking_entries
@@ -1832,7 +1836,8 @@ fn render_right_panel_info(
 
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
-    // ── Top: ELMA logo (bold minimalist box-drawing, centered within panel) ──
+    // ── Top: ELMA logo with alternating letter animation ──
+    // Split logo into letter groups: E(0-2) L(3-5) M(6-8) A(9-11)
     let logo = r#"┏━╸╻  ┏┳┓┏━┓
 ┣╸ ┃  ┃┃┃┣━┫
 ┗━╸┗━╸╹ ╹╹ ╹
@@ -1845,15 +1850,36 @@ fn render_right_panel_info(
         0
     };
     let logo_pad_str: String = std::iter::repeat(' ').take(logo_pad).collect();
-    for logo_line in &logo_lines {
-        let padded = format!("{}{}", logo_pad_str, logo_line);
-        all_lines.push(Line::from(vec![Span::styled(
-            padded,
-            accent,
-        )]));
+
+    // Animation: ~81 frames per letter (~2.7s at 30fps)
+    let frames_per_letter = 81usize;
+    let active_letter = (anim_frame / frames_per_letter) % 4;
+    let letter_styles = [
+        if active_letter == 0 { accent } else { dim },
+        if active_letter == 1 { accent } else { dim },
+        if active_letter == 2 { accent } else { dim },
+        if active_letter == 3 { accent } else { dim },
+    ];
+
+    for row in &logo_lines {
+        let mut spans = vec![Span::raw(logo_pad_str.clone())];
+        let chars: Vec<char> = row.chars().collect();
+        // Each letter group is 3 chars wide (E=0-2, L=3-5, M=6-8, A=9-11)
+        let groups = [
+            chars.get(0..3).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
+            chars.get(3..6).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
+            chars.get(6..9).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
+            chars.get(9..12).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
+        ];
+        for (gi, g) in groups.iter().enumerate() {
+            if !g.is_empty() {
+                spans.push(Span::styled(g.clone(), letter_styles[gi]));
+            }
+        }
+        all_lines.push(Line::from(spans));
     }
 
-    // Tagline (centered)
+    // Tagline (centered) in secondary color, dims after full ELMA cycle
     all_lines.push(Line::from(""));
     let tagline = "Local first terminal agent v0.1.0";
     let tagline_pad = if tagline.chars().count() < text_width {
@@ -1862,9 +1888,14 @@ fn render_right_panel_info(
         0
     };
     let tag_pad_str: String = std::iter::repeat(' ').take(tagline_pad).collect();
+    let tagline_style = if anim_frame >= 324 {
+        if (anim_frame / 81) % 2 == 0 { secondary } else { dim }
+    } else {
+        dim
+    };
     all_lines.push(Line::from(vec![Span::styled(
         format!("{}{}", tag_pad_str, tagline),
-        accent,
+        tagline_style,
     )]));
 
     // ── System info with thin progress bars ──
