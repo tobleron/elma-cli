@@ -1997,10 +1997,11 @@ fn render_right_panel_thinking(
     // Blank line for visual separation from model name
     all_lines.push(Line::from(""));
 
-    // Sticky header
+    // Sticky header (always visible, grey)
+    header_lines.push(Line::from(""));
     header_lines.push(Line::from(vec![Span::styled(
         "[ Thought process ]",
-        Style::default().fg(theme.accent_secondary.to_ratatui_color()),
+        Style::default().fg(theme.fg_dim.to_ratatui_color()),
     )]));
 
     // Completed thinking entries: oldest first, newest last
@@ -2080,7 +2081,7 @@ fn render_right_panel_thinking(
         } else if *scroll > max_scroll {
             *scroll = max_scroll;
         }
-        let content_height = area_height.saturating_sub(1); // header takes 1 line
+        let content_height = area_height.saturating_sub(2); // header takes 2 lines (blank + text)
         let visible: Vec<Line<'static>> = all_lines
             .iter()
             .skip(*scroll)
@@ -2128,7 +2129,9 @@ fn render_right_panel_thinking(
             .style(Style::default().bg(theme.bg.to_ratatui_color()));
         f.render_widget(panel, text_area);
     } else {
-        let panel = Paragraph::new(all_lines)
+        let mut display_lines = header_lines.clone();
+        display_lines.extend(all_lines);
+        let panel = Paragraph::new(display_lines)
             .block(
                 Block::default()
                     .borders(Borders::LEFT)
