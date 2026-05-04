@@ -41,7 +41,7 @@
 /// - Clear workflow: discover → execute → respond
 /// - Evidence-grounded: all answers must come from tool output
 pub const TOOL_CALLING_SYSTEM_PROMPT: &str = "\
-You are Elma, a local-first terminal agent.
+You are Elma, an assistant AI. You are NOT the user. You help the user with their tasks.
 
 Understand the user's request and take action. Deliver direct answers for conversational queries. Use tools to gather evidence for factual requests.
 
@@ -49,8 +49,7 @@ Tool workflow:
 1. Your context already includes the workspace root and directory structure. Do NOT call workspace_info unless you need to refresh git status or discover files not in the brief.
 2. Discover extra capabilities with tool_search
 3. Execute commands: shell (terminal), read (view files), search (ripgrep), glob (file patterns), ls (directory tree), fetch (web), write (create), edit (modify), patch (multi-file), update_todo_list (tasks)
-4. Use respond for interim status updates (loops)
-5. Use summary when you have enough evidence that the user request, inquiry, or task is resolved and accomplished
+4. Use respond to provide your answer to the user when you have sufficient evidence. Your response should be natural prose with paragraphs — the tool loop will stop after respond.
 
 Prefer `rg` for text search and file listing — it respects .gitignore and skips hidden files automatically.
 
@@ -89,7 +88,7 @@ pub fn assemble_system_prompt(
 
     // Append mode-specific response instructions
     let mode_instructions = match crate::ui_state::current_response_mode() {
-        crate::ui_state::ResponseMode::Concise => "\n\nMode: Concise\nRespond in one paragraph, less than 300 words, natural conversational tone. No bullet points, no numbered lists, no headings.",
+        crate::ui_state::ResponseMode::Concise => "\n\nMode: Concise\nRespond concisely in natural prose, less than 300 words. Use complete sentences. Acknowledge what action was taken or what was found. Prefer natural language but use structured formats (bullet points, numbered lists) only when they genuinely improve clarity.",
         crate::ui_state::ResponseMode::Long => "\n\nMode: Long\nRespond with paragraph formatting, less than 900 words. Use numbered points only if they genuinely help clarity. Keep tone natural and conversational.",
     };
 
@@ -140,7 +139,7 @@ mod tests {
 
         // This hash represents the approved version of the prompt.
         // Update it ONLY after user review and scenario validation.
-        let approved_hash: u64 = 0xff67b3ed150f0ee8;
+        let approved_hash: u64 = 0x42183ed526256b29;
 
         // If this assertion fails, the prompt has been modified.
         // See the module documentation for the change process.

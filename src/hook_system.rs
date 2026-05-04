@@ -156,7 +156,7 @@ impl ContextModifier for TrustDecayModifier {
             + 1;
         if count >= self.threshold {
             Some(format!(
-                "⚠️ Trust notice: {} caution-level commands have been executed this session. \
+                "! Trust notice: {} caution-level commands have been executed this session. \
                 Verify paths carefully before proceeding with more mutations.",
                 count
             ))
@@ -167,7 +167,7 @@ impl ContextModifier for TrustDecayModifier {
 
     fn after_error(&self, command: &str, error: &str) -> Option<String> {
         Some(format!(
-            "⚠️ Command failed: {}\nError: {}\n\n\
+            "! Command failed: {}\nError: {}\n\n\
             Verify the command syntax and paths before retrying. \
             Use `ls` or `find` to confirm files exist before mutating.",
             command, error

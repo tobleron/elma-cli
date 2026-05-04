@@ -220,7 +220,9 @@ async fn request_tool_loop_model_turn_streaming(
                             thinking_started = false;
                             tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
                             let _ = save_thinking_display(session, &thinking_accumulated);
-                            thinking_accumulated.clear();
+                            // Don't clear — we need all thinking blocks for
+                            // the thought summary. Only the captured copy at
+                            // the end is used for the summary.
                             let _ = tui.pump_ui();
                         }
                         content.push_str(&assistant_delta);
@@ -242,13 +244,14 @@ async fn request_tool_loop_model_turn_streaming(
     if thinking_started {
         tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
         let _ = save_thinking_display(session, &thinking_accumulated);
-        thinking_accumulated.clear();
         let _ = tui.pump_ui();
     }
     if content_started {
         tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished);
         let _ = tui.pump_ui();
     }
+
+    let captured_thinking = std::mem::take(&mut thinking_accumulated);
 
     Ok(ToolLoopModelTurn {
         content: content.trim().to_string(),
@@ -258,6 +261,7 @@ async fn request_tool_loop_model_turn_streaming(
         } else {
             Some(reasoning_content_full)
         },
+        thinking_content: captured_thinking,
     })
 }
 
@@ -278,6 +282,9 @@ struct ToolLoopModelTurn {
     content: String,
     tool_calls: Vec<ToolCall>,
     reasoning_content: Option<String>,
+    /// Accumulated think-block content from the model's content field.
+    /// Captured so the thought summary intel unit can process it.
+    thinking_content: String,
 }
 
 #[derive(Default)]
@@ -384,20 +391,13 @@ fn build_fallback_from_recent_tool_evidence(
 
     if budget_exhausted && facts.is_empty() {
         "I didn't complete this task — the iteration budget was exhausted before any tool calls completed. Try rephrasing with a narrower scope, or increase the complexity tier.".to_string()
-    } else if budget_exhausted {
+    } else if facts.is_empty() {
+        "I couldn't produce a reliable answer. No evidence was gathered.".to_string()
+    } else {
         format!(
-            "[Budget exhausted: I gathered some information but ran out of iterations before the task was complete. Here's what I found so far:]\n{}",
+            "[I found the following information, but the answer could not be finalized. Here's what I know:]\n{}\n",
             facts.iter().map(|f| format!("- {}", f)).collect::<Vec<_>>().join("\n")
         )
-    } else if facts.is_empty() {
-        "I couldn't produce a reliable final summary from the tool loop; please retry with a more specific prompt.".to_string()
-    } else if facts.len() == 1 {
-        format!(
-            "Based on the evidence gathered:\n{}\n\n(This is the best answer I could extract. Consider rephrasing your request.)",
-            facts[0]
-        )
-    } else {
-        format!("Based on the evidence gathered:\n- {}", facts.join("\n- "))
     }
 }
 
@@ -490,7 +490,7 @@ async fn request_final_answer_from_evidence(
         ChatMessage::simple(
             "user",
             &format!(
-                "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer concisely using only the evidence above. Use plain text only — no markdown formatting, no headings, no tables, no code blocks, no bullet lists. Do not call tools.",
+                "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer in a natural conversational tone. Use complete sentences. Acknowledge what was found or done. Ground your answer only in the evidence above. Use plain text only — no markdown formatting, no headings, no tables, no code blocks, no bullet lists. Do not call tools.",
                 original_user_request,
                 evidence_block
             ),
@@ -512,6 +512,8 @@ async fn request_final_answer_from_evidence(
 }
 
 /// Stream a final answer from the LLM, pushing content to the TUI incrementally.
+/// Uses stateful think-block tracking to prevent content leakage when a model
+/// wraps its reasoning in &lt;think&gt; tags that span multiple SSE deltas.
 async fn request_tool_loop_final_answer_streaming(
     tui: &mut crate::ui_terminal::TerminalUI,
     client: &reqwest::Client,
@@ -537,6 +539,10 @@ async fn request_tool_loop_final_answer_streaming(
     let mut byte_stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut content = String::new();
+    let mut in_think_block = false;
+    let mut pending_think_tag = String::new();
+    let mut content_started = false;
+    let mut thinking_started = false;
 
     loop {
         let chunk_opt = tokio::select! {
@@ -575,21 +581,93 @@ async fn request_tool_loop_final_answer_streaming(
                 let Some(delta) = choice.get("delta") else {
                     continue;
                 };
-                if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
-                    content.push_str(text);
-                    let display = crate::claude_ui::strip_thinking_tags(text);
-                    tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantContentDelta(
-                        display,
+                // Handle reasoning_content field (DeepSeek-style thinking)
+                let reasoning = delta
+                    .get("reasoning_content")
+                    .or_else(|| delta.get("reasoning"))
+                    .and_then(|v| v.as_str())
+                    .map(crate::claude_ui::strip_thinking_tags_preserve_spacing)
+                    .unwrap_or_default();
+                if !reasoning.is_empty() {
+                    if !thinking_started {
+                        thinking_started = true;
+                        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                        let _ = tui.pump_ui();
+                    }
+                    tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
+                        reasoning.to_string(),
                     ));
                     let _ = tui.pump_ui();
+                }
+
+                if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
+                    content.push_str(text);
+                    let (assistant_delta, thinking_delta) =
+                        crate::orchestration_helpers::process_stream_content_chunk(
+                            text,
+                            &mut in_think_block,
+                            &mut pending_think_tag,
+                        );
+                    if !thinking_delta.is_empty() {
+                        if !thinking_started {
+                            thinking_started = true;
+                            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                            let _ = tui.pump_ui();
+                        }
+                        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
+                            thinking_delta,
+                        ));
+                        let _ = tui.pump_ui();
+                    }
+                    if !assistant_delta.is_empty() {
+                        if thinking_started && !in_think_block {
+                            thinking_started = false;
+                            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+                            let _ = tui.pump_ui();
+                        }
+                        if !content_started {
+                            content_started = true;
+                        }
+                        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantContentDelta(
+                            assistant_delta,
+                        ));
+                        let _ = tui.pump_ui();
+                    }
                 }
             }
         }
     }
 
-    content.push('\n');
-    tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished);
-    let _ = tui.pump_ui();
+    // Handle any pending partial tag at stream end
+    if !pending_think_tag.is_empty() {
+        let (assistant_delta, thinking_delta) =
+            crate::orchestration_helpers::process_stream_content_chunk(
+                "",
+                &mut in_think_block,
+                &mut pending_think_tag,
+            );
+        if !assistant_delta.is_empty() {
+            content.push_str(&assistant_delta);
+        }
+        if !thinking_delta.is_empty() {
+            if !thinking_started {
+                thinking_started = true;
+                tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+            }
+            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
+                thinking_delta,
+            ));
+        }
+    }
+
+    if thinking_started {
+        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+        let _ = tui.pump_ui();
+    }
+    if content_started {
+        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished);
+        let _ = tui.pump_ui();
+    }
 
     let cleaned = crate::text_utils::strip_thinking_blocks(&content);
     Ok(cleaned.trim().to_string())
@@ -623,7 +701,21 @@ async fn finalize_from_evidence_or_fallback(
                 args,
                 &format!("finalization_failed_nonfatal stage=evidence error={}", e),
             );
-            build_fallback_from_recent_tool_evidence(messages, stop_reason)
+            // Retry with NO-streaming, simpler prompt (Task 620)
+            match request_final_answer_without_tools(
+                tui, client, chat_url, model_id, messages, max_tokens, true,
+            )
+            .await
+            {
+                Ok(content) => content,
+                Err(e2) => {
+                    trace(
+                        args,
+                        &format!("finalization_failed_nonfatal stage=retry error={}", e2),
+                    );
+                    build_fallback_from_recent_tool_evidence(messages, stop_reason)
+                }
+            }
         }
     };
 
@@ -740,7 +832,6 @@ fn tool_signal(tc: &ToolCall) -> String {
             let snippet: String = answer.chars().take(40).collect();
             format!("respond:{}", snippet)
         }
-        "summary" => String::new(), // Don't count summary toward stagnation - it stops the loop
         other => format!("{other}:{}", tc.function.arguments),
     };
     if fn_name == "respond" {
@@ -1083,6 +1174,7 @@ pub(crate) async fn run_tool_loop(
                     content: choice.message.content.clone().unwrap_or_default(),
                     tool_calls,
                     reasoning_content: choice.message.reasoning_content.clone(),
+                    thinking_content: String::new(),
                 }
             }
         };
@@ -1216,6 +1308,54 @@ pub(crate) async fn run_tool_loop(
                     summarized: false,
                 });
             }
+
+            // Task 279/622: Generate and display thought summary on auxiliary LLM
+            let combined_thinking = {
+                let mut ct = String::new();
+                if let Some(ref reasoning) = turn.reasoning_content {
+                    ct.push_str(reasoning);
+                }
+                if !turn.thinking_content.is_empty() {
+                    if !ct.is_empty() { ct.push('\n'); }
+                    ct.push_str(&turn.thinking_content);
+                }
+                ct
+            };
+            if !combined_thinking.is_empty() && combined_thinking.split_whitespace().count() > 30 {
+                let thinking_text = combined_thinking.clone();
+                if let Ok(aux_url) = Url::parse("http://192.168.1.186:8084/v1/chat/completions") {
+                    let aux_profile = crate::llm_config::auxiliary_profile("thought_summary");
+                    let prompt = format!(
+                        "Summarize this thinking in one sentence, less than 90 words, first person:\n{}",
+                        thinking_text
+                    );
+                    let req = crate::llm_config::chat_request_from_profile(
+                        &aux_profile,
+                        vec![crate::ChatMessage::simple("user", &prompt)],
+                        crate::llm_config::ChatRequestOptions {
+                            stream: Some(false),
+                            temperature: Some(0.0),
+                            max_tokens: Some(512),
+                            ..Default::default()
+                        },
+                    );
+                    if let Ok(resp) = crate::ui::ui_chat::chat_once_with_timeout(
+                        client, &aux_url, &req, 10,
+                    ).await {
+                        if let Some(choice) = resp.choices.get(0) {
+                            if let Some(ref content) = choice.message.content {
+                                let summary = crate::text_utils::strip_thinking_blocks(content);
+                                // Clean escaped quotes from JSON output
+                                let clean = summary.replace("\\\"", "\"").replace("\\n", "\n");
+                                // Remove word-count cap — let the LLM control length
+                                if !clean.trim().is_empty() {
+                                    tui.push_thought_summary(&clean);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             let mut first_tool_call = true;
             for tc in &turn.tool_calls {
                 // ── Duplicate gate: skip if this exact command succeeded earlier ──
@@ -1225,7 +1365,6 @@ pub(crate) async fn run_tool_loop(
                 // multiple times with different content.
                 let sig = tool_signal(tc);
                 if tc.function.name != "respond"
-                    && tc.function.name != "summary"
                     && tc.function.name != "workspace_info"
                     && tc.function.name != "tool_search"
                 {
@@ -1238,12 +1377,23 @@ pub(crate) async fn run_tool_loop(
                             ));
                             continue;
                         } else {
-                            // Task 537: If it failed before, allow retry but warn model
-                            trace(args, &format!("tool_loop: duplicate detected (previous failure) signal={}", sig));
-                            messages.push(ChatMessage::simple(
-                                "system",
-                                &format!("Note: Your previous attempt at '{}' failed. Only retry if you have changed the arguments or have a new strategy.", sig),
-                            ));
+                            // Task 607: Block duplicate failed calls — don't waste budget iteration
+                            trace(args, &format!("tool_loop: duplicate skipped (previous failure) signal={}", sig));
+                            let error_hint = if prev.len() > 10 {
+                                format!(
+                                    "Your previous call to this tool failed with: {}. \
+                                     Do NOT repeat the same call. Change your arguments or use a different tool.",
+                                    prev.chars().take(120).collect::<String>()
+                                )
+                            } else {
+                                format!(
+                                    "Your previous attempt at '{}' failed. Do NOT repeat it. \
+                                     Change your arguments or use a different tool.",
+                                    sig
+                                )
+                            };
+                            messages.push(ChatMessage::simple("system", &error_hint));
+                            continue; // Skip execution entirely
                         }
                     }
                 }
@@ -1288,6 +1438,77 @@ pub(crate) async fn run_tool_loop(
                                 );
                             }
                         }
+                    }
+                }
+
+                // ── Read fallback gate (Task 616) ──
+                // After 2+ consecutive read failures, auto-convert to head/cat
+                // shell command. Small models cannot construct valid read args.
+                // The fallback runs INSTEAD of the original read call — the
+                // model's read is completely suppressed and replaced with shell.
+                if tc.function.name == "read"
+                    && stop_policy.consecutive_read_failures() >= 2
+                {
+                    if let Some(fp) = (|| -> Option<String> {
+                        let parsed: serde_json::Value =
+                            serde_json::from_str(&tc.function.arguments).ok()?;
+                        parsed.get("filePath")?.as_str().map(|s| s.to_string())
+                    })() {
+                        let escaped = shlex::quote(&fp).to_string();
+                        let limit = (|| -> Option<u64> {
+                            let parsed: serde_json::Value =
+                                serde_json::from_str(&tc.function.arguments).ok()?;
+                            parsed.get("limit").and_then(|v| v.as_u64())
+                        })().unwrap_or(0);
+                        let fallback_cmd = if limit > 0 {
+                            format!("head -n {} {}", limit, escaped)
+                        } else {
+                            format!("cat {}", escaped)
+                        };
+                        trace(args, &format!("tool_loop: read→shell fallback cmd={}", fallback_cmd));
+                        let fallback_tc = ToolCall {
+                            id: tc.id.clone(),
+                            call_type: tc.call_type.clone(),
+                            function: ToolFunctionCall {
+                                name: "shell".to_string(),
+                                arguments: format!(r#"{{"command": "{}"}}"#, fallback_cmd),
+                            },
+                        };
+                        let mut result = tool_calling::execute_tool_call(
+                            args, &fallback_tc, workdir, sess, client, chat_url, user_message, Some(&mut *tui),
+                        ).await;
+
+                        // Record events for the original read call (so telemetry matches)
+                        crate::event_log::record_tool_event(
+                            crate::event_log::ToolEventType::ToolStarted, &turn_id, &tc.id, "read",
+                        );
+                        crate::event_log::record_tool_event(
+                            if result.ok { crate::event_log::ToolEventType::ToolFinished } else { crate::event_log::ToolEventType::ToolFailed },
+                            &turn_id, &tc.id, "read",
+                        );
+
+                        // Push fallback result as a tool message
+                        stop_policy.record_tool_result(tc, &result);
+                        let _ = tui.push_tool_finish(
+                            "shell", result.ok, &result.content, Some(result.duration_ms),
+                        );
+                        messages.push(ChatMessage {
+                            role: "assistant".to_string(), content: "".to_string(), name: None,
+                            tool_calls: Some(vec![tc.clone()]), tool_call_id: None, reasoning_content: None, summarized: false,
+                        });
+                        let preview = result.content.chars().take(200).collect::<String>();
+                        let sig = format!("read:{}", fp);
+                        tool_outcomes.insert(sig, (result.ok, preview));
+
+                        if result.ok {
+                            messages.push(ChatMessage {
+                                role: "tool".to_string(), content: result.content.clone(), name: Some("shell".to_string()),
+                                tool_calls: None, tool_call_id: Some(tc.id.clone()), reasoning_content: None, summarized: false,
+                            });
+                        } else {
+                            messages.push(ChatMessage::simple("system", "That attempt failed. Try a different approach."));
+                        }
+                        continue; // Skip original read execution
                     }
                 }
 
@@ -1420,7 +1641,6 @@ pub(crate) async fn run_tool_loop(
 
                 // T333: Mark real tool calls & reset respond counter
                 if tc.function.name != "respond"
-                    && tc.function.name != "summary"
                     && tc.function.name != "update_todo_list"
                 {
                     stop_policy.mark_real_tool_call();
@@ -1432,7 +1652,6 @@ pub(crate) async fn run_tool_loop(
                     && evidence_required
                     && !stop_policy.has_real_tool_calls_this_turn()
                 {
-                    // Replace respond result with correction
                     let correction = "You must collect evidence before answering.\n\
                         Use search, read, or shell to gather facts. Do not call 'respond' yet.";
                     result.content = correction.to_string();
@@ -1450,9 +1669,8 @@ pub(crate) async fn run_tool_loop(
                     {
                         messages.push(ChatMessage::simple(
                             "user",
-                            "⚠️ You have called 'respond' 3 times without collecting any evidence. \
+                            "! You have called 'respond' 3 times without collecting any evidence. \
                              You have not used search, read, shell, or any other tool to gather facts. \
-                             Your respond messages are status updates, not evidence. \
                              Call a real tool now to answer the user's question, or reply with 'I cannot answer this.'",
                         ));
                         stop_policy.reset_respond_counter();
@@ -1464,7 +1682,6 @@ pub(crate) async fn run_tool_loop(
                 }
 
                 // Task 422: Check respond content against evidence ledger
-                // Uses model-free heuristic overlap scoring — no hardcoded keyword triggers.
                 if tc.function.name == "respond"
                     && !result.content.is_empty()
                     && !stop_policy.has_real_tool_calls_this_turn()
@@ -1486,7 +1703,7 @@ pub(crate) async fn run_tool_loop(
                                 trace(args, &format!("tool_loop: respond {}", msg));
                                 tui.push_meta_event("EVIDENCE", &msg);
                                 let correction = format!(
-                                    "⚠️ Your previous response contains claims not supported by evidence. \
+                                    "! Your previous response contains claims not supported by evidence. \
                                      You must call a real tool (shell, search, read) to gather facts \
                                      before making factual statements. Do not fabricate information."
                                 );
@@ -1497,36 +1714,57 @@ pub(crate) async fn run_tool_loop(
                     }
                 }
 
-                // summary tool = return model's raw answer directly (Task 596).
-                // The model already produces human-readable markdown. Avoid a second
-                // model call that degrades the answer into robot-schema format.
-                if tc.function.name == "summary" {
+                // ── Unified respond: stop the loop when evidence was gathered ──
+                // Replaces the old summary tool. When the model calls respond and
+                // has actually gathered evidence (real tool calls this turn), treat
+                // it as a final answer and stop the tool loop. The answer flows
+                // through the normal finalization pipeline (Task 601 evidence finalizer
+                // or direct extraction for simple tasks).
+                if tc.function.name == "respond"
+                    && !result.content.is_empty()
+                    && (stop_policy.has_real_tool_calls_this_turn()
+                        || has_recent_tool_evidence(&messages))
+                {
                     let raw_content = normalize_final_answer_candidate(&result.content);
-                    if raw_content.is_empty() {
-                        trace(
+                    if !raw_content.is_empty() {
+                        // Remove the model's raw streaming assistant before
+                        // running the evidence finalizer — prevents duplicate
+                        // responses when the model streams text AND calls respond.
+                        tui.remove_last_assistant_message();
+                        // Route through evidence finalizer for grounding (Task 601)
+                        let final_content = finalize_from_evidence_or_fallback(
                             args,
-                            "tool_loop: summary returned empty answer; continuing loop",
-                        );
-                    } else {
-                        tui.push_meta_event("STOP", "Task completed via summary tool");
-                        tui.push_stop_notice("Completed via summary tool");
+                            tui,
+                            client,
+                            chat_url,
+                            model_id,
+                            &original_user_request,
+                            &messages,
+                            max_tokens,
+                            None,
+                        )
+                        .await;
+                        let trimmed_final = normalize_final_answer_candidate(&final_content);
                         return Ok(ToolLoopResult {
-                            final_answer: raw_content,
+                            final_answer: if final_answer_needs_retry(&trimmed_final) {
+                                build_fallback_from_recent_tool_evidence(&messages, None)
+                            } else {
+                                trimmed_final
+                            },
                             iterations: stop_policy.iteration(),
                             tool_calls_made: stop_policy.total_tool_calls(),
-                            stopped_by_max: true,
+                            stopped_by_max: false,
                             stop_outcome: None,
                             total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                             timeout_reason: None,
-                            evidence_progress_summary: None,
+                            evidence_progress_summary: build_evidence_progress_summary(&messages),
                         });
                     }
                 }
-                // respond always continues the loop - it's for interim status, not final answer
+                // respond without evidence continues the loop
 
                 // ── Result gate: store outcomes for dedup ──
                 let store_for_dedup = tc.function.name != "respond"
-                    && tc.function.name != "summary"
                     && tc.function.name != "workspace_info"
                     && tc.function.name != "tool_search";
                 
@@ -1821,6 +2059,10 @@ pub(crate) async fn run_tool_loop(
             // wrong answers that contradict its own tool results.
             if has_recent_tool_evidence(&messages) {
                 trace(args, "tool_loop: routing voluntary stop through evidence finalizer (Task 601)");
+                // Remove the model's raw streaming assistant — the evidence finalizer
+                // will produce the authoritative answer. Without this, the user sees
+                // both the model's raw text and the finalizer's output as two responses.
+                tui.remove_last_assistant_message();
                 let final_content = finalize_from_evidence_or_fallback(
                     args,
                     tui,
@@ -1846,7 +2088,7 @@ pub(crate) async fn run_tool_loop(
                     stop_outcome: None,
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
-                    evidence_progress_summary: None,
+                    evidence_progress_summary: build_evidence_progress_summary(&messages),
                 });
             }
             return Ok(ToolLoopResult {
@@ -1857,7 +2099,7 @@ pub(crate) async fn run_tool_loop(
                 stop_outcome: None,
                 total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                 timeout_reason: None,
-                evidence_progress_summary: None,
+                evidence_progress_summary: build_evidence_progress_summary(&messages),
             });
         }
     }

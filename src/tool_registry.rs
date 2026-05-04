@@ -71,7 +71,6 @@ mod tests {
             "patch",
             "search",
             "respond",
-            "summary",
             "update_todo_list",
             "edit",
             "write",
@@ -102,7 +101,7 @@ mod tests {
             );
         }
         for tool in registry.available_tools() {
-            if tool.function.name == "respond" || tool.function.name == "summary" {
+            if tool.function.name == "respond" {
                 continue;
             }
             assert!(

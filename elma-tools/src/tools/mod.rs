@@ -22,7 +22,6 @@ mod run_python;
 mod search;
 mod shell;
 mod stat;
-mod summary;
 mod todo;
 mod tool_search;
 mod touch;
@@ -55,7 +54,6 @@ pub(crate) fn register_all(builder: &mut crate::registry::RegistryBuilder) {
     search::register(builder);
     shell::register(builder);
     stat::register(builder);
-    summary::register(builder);
     todo::register(builder);
     tool_search::register(builder);
     touch::register(builder);

@@ -170,26 +170,8 @@ impl TerminalUI {
 
     /// Apply an autocomplete suggestion by replacing the input content.
     fn apply_autocomplete(&mut self, label: &str) {
-        if self.state.autocomplete.is_emoji {
-            // For emoji, insert the emoji character at the current cursor position.
-            // The label is like ":smile:" — we need to find the actual emoji.
-            if let Some(suggestion) = self
-                .state
-                .autocomplete
-                .matches
-                .iter()
-                .find(|s| s.label == label)
-            {
-                // Insert the emoji description (the actual emoji char).
-                for c in suggestion.description.chars() {
-                    self.input.insert_char(c);
-                }
-            }
-        } else {
-            // For slash commands, replace the entire input.
-            self.input.set_content(label);
-            self.input.move_end();
-        }
+        self.input.set_content(label);
+        self.input.move_end();
     }
 
     // --- Backward-compatible add_message ---
@@ -217,6 +199,7 @@ impl TerminalUI {
                     .map(|raw| crate::final_answer::process_final_answer_display(raw) == content)
                     .unwrap_or(false);
                 if !already_pushed {
+                    self.claude.add_output_tokens(content.len());
                     self.claude.push_message(ClaudeMessage::Assistant {
                         content: crate::claude_ui::AssistantContent::from_markdown(&content),
                     });
@@ -241,8 +224,28 @@ impl TerminalUI {
     /// Replace the content of the last assistant message in-place (Task 602).
     /// Used by continuity retry to overwrite a streamed wrong answer.
     pub(crate) fn replace_last_assistant_message(&mut self, content: String) {
+        self.claude.add_output_tokens(content.len());
         let assistant = crate::claude_ui::AssistantContent::from_markdown(&content);
         self.claude.replace_last_assistant_message(assistant);
+        // Also write the updated answer to session.md
+        if let Ok(guard) = trace_log_state().lock() {
+            if let Some(ref trace_path) = *guard {
+                if let Some(session_root) = trace_path.parent() {
+                    crate::session_write::append_session_markdown(
+                        session_root,
+                        &crate::session_write::MdEntry::Assistant { content },
+                    );
+                }
+            }
+        }
+        self.pending_draw = true;
+    }
+
+    /// Remove the last assistant message from the transcript entirely.
+    /// Used before running the evidence finalizer to prevent the model's raw
+    /// streaming answer from appearing alongside the finalized one.
+    pub(crate) fn remove_last_assistant_message(&mut self) {
+        self.claude.remove_last_assistant_message();
         self.pending_draw = true;
     }
 
@@ -282,6 +285,19 @@ impl TerminalUI {
     pub(crate) fn finish_content(&mut self) {
         self.claude.finish_content();
         self.pending_draw = true;
+    }
+
+    /// Discard accumulated streaming content without pushing it as a message.
+    /// Used before calling the evidence finalizer to prevent the model's raw
+    /// streaming text from appearing as a duplicate answer alongside the
+    /// evidence-finalized one.
+    pub(crate) fn discard_streaming_content(&mut self) {
+        self.claude.discard_streaming_content();
+    }
+
+    /// Push a thought summary to the right panel thinking section.
+    pub(crate) fn push_thought_summary(&mut self, summary: &str) {
+        self.claude.push_thought_summary(summary);
     }
 
     /// Primary event handler for Claude-style UI (Task 169)
@@ -1015,17 +1031,48 @@ impl TerminalUI {
             };
 
             if let Event::Mouse(mouse_event) = ev {
+                let in_thinking = self.claude.last_thinking_area.map_or(false, |area| {
+                    mouse_event.row >= area.y
+                        && mouse_event.row < area.y + area.height
+                        && mouse_event.column >= area.x
+                        && mouse_event.column < area.x + area.width
+                });
+                let in_scrollbar = self.claude.last_scrollbar_area.map_or(false, |area| {
+                    mouse_event.row >= area.y
+                        && mouse_event.row < area.y + area.height
+                        && mouse_event.column >= area.x
+                        && mouse_event.column < area.x + area.width
+                });
                 match mouse_event.kind {
                     MouseEventKind::ScrollDown => {
-                        self.claude.scroll_down(3);
+                        if in_thinking {
+                            self.claude.thinking_scroll_down(3);
+                        } else {
+                            self.claude.scroll_down(3);
+                        }
                         self.pending_draw = true;
                     }
                     MouseEventKind::ScrollUp => {
-                        self.claude.scroll_up(3);
+                        if in_thinking {
+                            self.claude.thinking_scroll_up(3);
+                        } else {
+                            self.claude.scroll_up(3);
+                        }
                         self.pending_draw = true;
                     }
+                    MouseEventKind::Drag(_) => {
+                        if in_scrollbar {
+                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.pending_draw = true;
+                        }
+                    }
                     _ => {
-                        self.handle_transcript_click(&mouse_event);
+                        if in_thinking || in_scrollbar {
+                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.pending_draw = true;
+                        } else {
+                            self.handle_transcript_click(&mouse_event);
+                        }
                     }
                 }
                 continue;
@@ -1834,17 +1881,49 @@ impl TerminalUI {
 
             // Handle mouse events (trackpad scroll + click to expand traces)
             if let Event::Mouse(mouse_event) = ev {
+                let in_thinking = self.claude.last_thinking_area.map_or(false, |area| {
+                    mouse_event.row >= area.y
+                        && mouse_event.row < area.y + area.height
+                        && mouse_event.column >= area.x
+                        && mouse_event.column < area.x + area.width
+                });
+                let in_scrollbar = self.claude.last_scrollbar_area.map_or(false, |area| {
+                    mouse_event.row >= area.y
+                        && mouse_event.row < area.y + area.height
+                        && mouse_event.column >= area.x
+                        && mouse_event.column < area.x + area.width
+                });
+                let in_right_panel = in_thinking || in_scrollbar;
                 match mouse_event.kind {
                     MouseEventKind::ScrollDown => {
-                        self.claude.scroll_down(3);
+                        if in_right_panel {
+                            self.claude.thinking_scroll_down(3);
+                        } else {
+                            self.claude.scroll_down(3);
+                        }
                         self.pending_draw = true;
                     }
                     MouseEventKind::ScrollUp => {
-                        self.claude.scroll_up(3);
+                        if in_right_panel {
+                            self.claude.thinking_scroll_up(3);
+                        } else {
+                            self.claude.scroll_up(3);
+                        }
                         self.pending_draw = true;
                     }
+                    MouseEventKind::Drag(_) => {
+                        if in_scrollbar {
+                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.pending_draw = true;
+                        }
+                    }
                     _ => {
-                        self.handle_transcript_click(&mouse_event);
+                        if in_right_panel {
+                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.pending_draw = true;
+                        } else {
+                            self.handle_transcript_click(&mouse_event);
+                        }
                     }
                 }
                 continue;
@@ -2119,8 +2198,6 @@ impl TerminalUI {
                     let content = self.input.content();
                     if content.starts_with('/') {
                         self.state.autocomplete.update_slash(&content);
-                    } else if content.starts_with(':') {
-                        self.state.autocomplete.update_emoji(&content);
                     } else {
                         self.state.autocomplete.deactivate();
                     }
@@ -2137,8 +2214,6 @@ impl TerminalUI {
                     let content = self.input.content();
                     if content.starts_with('/') {
                         self.state.autocomplete.update_slash(&content);
-                    } else if content.starts_with(':') {
-                        self.state.autocomplete.update_emoji(&content);
                     } else {
                         self.state.autocomplete.deactivate();
                     }
@@ -2149,8 +2224,6 @@ impl TerminalUI {
                     let content = self.input.content();
                     if content.starts_with('/') {
                         self.state.autocomplete.update_slash(&content);
-                    } else if content.starts_with(':') {
-                        self.state.autocomplete.update_emoji(&content);
                     } else {
                         self.state.autocomplete.deactivate();
                     }
@@ -2306,20 +2379,52 @@ impl TerminalUI {
                     self.pending_draw = true;
                 }
                 Event::Mouse(mouse_event) => {
-                    match mouse_event.kind {
-                        MouseEventKind::ScrollDown => {
+                    let in_thinking = self.claude.last_thinking_area.map_or(false, |area| {
+                        mouse_event.row >= area.y
+                            && mouse_event.row < area.y + area.height
+                            && mouse_event.column >= area.x
+                            && mouse_event.column < area.x + area.width
+                    });
+                    let in_scrollbar = self.claude.last_scrollbar_area.map_or(false, |area| {
+                        mouse_event.row >= area.y
+                            && mouse_event.row < area.y + area.height
+                            && mouse_event.column >= area.x
+                            && mouse_event.column < area.x + area.width
+                });
+                let in_right_panel = in_thinking || in_scrollbar;
+                match mouse_event.kind {
+                    MouseEventKind::ScrollDown => {
+                        if in_right_panel {
+                            self.claude.thinking_scroll_down(3);
+                        } else {
                             self.claude.scroll_down(3);
-                            self.pending_draw = true;
                         }
-                        MouseEventKind::ScrollUp => {
+                        self.pending_draw = true;
+                    }
+                    MouseEventKind::ScrollUp => {
+                        if in_right_panel {
+                            self.claude.thinking_scroll_up(3);
+                        } else {
                             self.claude.scroll_up(3);
+                        }
+                        self.pending_draw = true;
+                    }
+                    MouseEventKind::Drag(_) => {
+                        if in_scrollbar {
+                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
                             self.pending_draw = true;
                         }
-                        _ => {
+                    }
+                    _ => {
+                        if in_right_panel {
+                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.pending_draw = true;
+                        } else {
                             self.handle_transcript_click(&mouse_event);
                         }
                     }
                 }
+            }
                 _ => {}
             }
         }

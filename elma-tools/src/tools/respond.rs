@@ -4,7 +4,7 @@ pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(
         ToolDefinitionExt::new(
             "respond",
-            "Provide a final answer to the user.",
+            "Provide your final answer to the user. Use this when you have gathered enough evidence or the conversation is complete. The tool loop will stop after this call — your answer will be delivered directly to the user.",
             serde_json::json!({
                 "type": "object",
                 "properties": {

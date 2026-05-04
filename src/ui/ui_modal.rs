@@ -292,7 +292,7 @@ fn render_permission_gate(
     let mut lines: Vec<String> = Vec::new();
     let title_line = format!(
         " {} {} ",
-        fg_token(current_theme().warning, "🚫"),
+        fg_token(current_theme().warning, "!"),
         fg_bold_token(current_theme().warning, "Permission Required"),
     );
     lines.push(title_line);

@@ -393,11 +393,10 @@ pub fn build_tools_for_context(
     let context = context_hint.to_lowercase();
 
     let allowed_names: Vec<String> = match context.as_str() {
-        "chat" => vec!["respond".to_string(), "summary".to_string()],
+        "chat" => vec!["respond".to_string()],
         "shell" => vec![
             "read".to_string(),
             "respond".to_string(),
-            "summary".to_string(),
             "search".to_string(),
             "shell".to_string(),
             "tool_search".to_string(),
@@ -406,7 +405,6 @@ pub fn build_tools_for_context(
         "plan" => vec![
             "read".to_string(),
             "respond".to_string(),
-            "summary".to_string(),
             "search".to_string(),
             "tool_search".to_string(),
             "update_todo_list".to_string(),
@@ -414,7 +412,6 @@ pub fn build_tools_for_context(
         "decide" => vec![
             "read".to_string(),
             "respond".to_string(),
-            "summary".to_string(),
             "search".to_string(),
             "update_todo_list".to_string(),
         ],

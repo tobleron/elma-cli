@@ -238,7 +238,6 @@ pub(crate) async fn execute_tool_call(
         "write" => exec_write(&args_value, workdir, &call_id, tui),
         "search" => exec_search(&args_value, workdir, &call_id, tui).await,
         "respond" => exec_respond(&args_value, &call_id, tui),
-        "summary" => exec_summary(&args_value, &call_id, tui),
         "update_todo_list" => exec_update_todo_list(&args_value, &call_id, tui),
         "stat" => exec_stat(&args_value, workdir, &call_id, tui),
         "copy" => exec_copy(&args_value, workdir, &call_id, tui),
@@ -480,7 +479,7 @@ async fn exec_shell(
             args,
             &format!("tool_call: shell DRY-RUN PREVIEW: {}", preview),
         );
-        let preview_msg = format!("⚠️ Dry-run preview for this command:\n{}\n\nTo proceed, confirm by running the same command again. To adjust, modify the command and try again.", preview);
+        let preview_msg = format!("! Dry-run preview for this command:\n{}\n\nTo proceed, confirm by running the same command again. To adjust, modify the command and try again.", preview);
         emit_tool_result(&mut tui, "shell", true, &preview_msg);
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
@@ -557,7 +556,7 @@ async fn exec_shell(
                 if let Some(limit) = extract_line_limit(&command) {
                     if lc >= limit {
                         output_with_warning.push_str(&format!(
-                            "\n\n⚠️ [TRUNCATED] Output matches line limit ({} lines). Full output may contain more content. Increase the limit or refine your command if needed.",
+                            "\n\n! [TRUNCATED] Output matches line limit ({} lines). Full output may contain more content. Increase the limit or refine your command if needed.",
                             limit
                         ));
                     }
@@ -1835,28 +1834,6 @@ fn exec_respond(
         tool_call_id: call_id.to_string(),
         tool_name: "respond".to_string(),
         content: answer,
-        ok: true,
-        exit_code: None,
-        timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
-        signal_killed: None,
-    }
-}
-
-fn exec_summary(
-    av: &serde_json::Value,
-    call_id: &str,
-    _tui: Option<&mut crate::ui_terminal::TerminalUI>,
-) -> ToolExecutionResult {
-    let content = av["content"]
-        .as_str()
-        .map(crate::text_utils::strip_thinking_blocks)
-        .unwrap_or_default();
-    ToolExecutionResult {
-        tool_call_id: call_id.to_string(),
-        tool_name: "summary".to_string(),
-        content,
         ok: true,
         exit_code: None,
         timed_out: false,

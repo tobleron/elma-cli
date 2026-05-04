@@ -162,3 +162,22 @@ pub(crate) fn ad_hoc_profile(model: &str, name: &str) -> Profile {
         system_prompt: String::new(),
     }
 }
+
+/// Create a profile for the auxiliary LLM (e.g., thought summarizer) running
+/// on a different endpoint so it never consumes the main model's context.
+pub(crate) fn auxiliary_profile(name: &str) -> Profile {
+    let cfg = runtime_llm_config();
+    Profile {
+        version: 1,
+        name: name.to_string(),
+        base_url: "http://192.168.1.186:8084".to_string(),
+        model: "auxiliary".to_string(),
+        temperature: 0.0,
+        top_p: 1.0,
+        repeat_penalty: cfg.default_repeat_penalty,
+        reasoning_format: "none".to_string(),
+        max_tokens: 256,
+        timeout_s: cfg.request_timeout_s,
+        system_prompt: String::new(),
+    }
+}

@@ -86,7 +86,7 @@ impl StageBudget {
     pub(crate) fn from_complexity(complexity: &str) -> Self {
         let max_iterations = match complexity.to_ascii_uppercase().as_str() {
             "DIRECT" => 3,
-            "INVESTIGATE" => 6,
+            "INVESTIGATE" => 9,
             "MULTISTEP" => 12,
             "OPEN_ENDED" => 20,
             _ => 6, // Default for unknown complexity
@@ -385,7 +385,7 @@ impl StopPolicy {
         let scope = self.last_shell_scope.as_deref().unwrap_or("unknown");
         let alternatives = suggest_alternatives(strategy, error_class, scope);
         Some(format!(
-            "⚠️ Strategy Retry Detected: The same shell strategy ('{}') has failed {} times consecutively.\n\n{}
+            "! Strategy Retry Detected: The same shell strategy ('{}') has failed {} times consecutively.\n\n{}
 
 Consider: (1) using a different tool (read/search instead of shell), (2) narrowing the scope with -maxdepth or specific paths, (3) breaking the task into smaller steps, or (4) asking the user about directory structure.",
             strategy,
@@ -425,6 +425,17 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
     /// Get the count of consecutive identical errors (Task 599).
     pub(crate) fn consecutive_identical_errors(&self) -> usize {
         self.consecutive_identical_errors
+    }
+
+    /// Count consecutive read failures in the current turn (Task 616).
+    /// Used to trigger read→shell fallback when the model can't construct
+    /// valid read tool calls.
+    pub(crate) fn consecutive_read_failures(&self) -> usize {
+        self.tool_failures
+            .iter()
+            .rev()
+            .take_while(|(name, _)| name == "read")
+            .count()
     }
 
     /// Trace info about stagnation for debugging (tool + args).

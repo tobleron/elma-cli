@@ -1037,7 +1037,7 @@ fn format_extraction_summary(result: &DocumentExtractionResult) -> String {
 
 pub(crate) fn format_document_telemetry(result: &DocumentExtractionResult) -> String {
     format!(
-        "📄 Document Processed\n   Format: {}\n   Backend: {}\n   Chunks: {}\n   Status: {}",
+        "[DOC] Document Processed\n   Format: {}\n   Backend: {}\n   Chunks: {}\n   Status: {}",
         result
             .metadata
             .get("format")
@@ -1046,9 +1046,9 @@ pub(crate) fn format_document_telemetry(result: &DocumentExtractionResult) -> St
         result.backend,
         result.total_chunks,
         if result.ok {
-            "✅ Success"
+            "SUCCESS"
         } else {
-            "❌ Failed"
+            "FAILED"
         }
     )
 }
@@ -1059,7 +1059,7 @@ pub(crate) fn format_retrieval_telemetry(
     total_chunks: usize,
 ) -> String {
     format!(
-        "🔍 Retrieval Results\n   Query: {}\n   Matches: {}/{}\n   Top results shown",
+        "[SEARCH] Retrieval Results\n   Query: {}\n   Matches: {}/{}\n   Top results shown",
         query,
         results.len(),
         total_chunks

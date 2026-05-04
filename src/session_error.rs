@@ -188,7 +188,7 @@ pub(crate) fn install_panic_hook(session_root: Option<PathBuf>) {
 
         let full_message = format!("Panic at {}: {}", location, message);
 
-        eprintln!("\n❌ FATAL: {}", full_message);
+        eprintln!("\n! FATAL: {}", full_message);
 
         if let Some(ref root) = session_root {
             let error = SessionError::panic("runtime", &full_message, None);

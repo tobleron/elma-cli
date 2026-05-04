@@ -154,8 +154,9 @@ pub(crate) async fn run_tool_calling_pipeline(
     runtime.last_stop_outcome = result.stop_outcome.clone();
     runtime.last_evidence_summary = result.evidence_progress_summary.clone();
 
-    // Task 422: Clear evidence ledger at end of turn
-    crate::evidence_ledger::clear_session_ledger();
+    // Task 610: Evidence ledger clearing moved to app_chat_loop.rs after
+    // continuity and evidence contradiction checks so has_evidence is still
+    // available for continuity scoring.
 
     // Strip leaked thinking/tool_call blocks before returning to the user
     let clean_answer = crate::text_utils::strip_thinking_blocks(&result.final_answer);

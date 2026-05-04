@@ -1031,8 +1031,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             .unwrap_or(false);
         let mut final_text = final_text;
         let mut retry_happened = false;
+        // Task 611: Use model-adaptive threshold instead of hardcoded 0.85.
+        // apply_model_threshold sets 0.65 for <7B, 0.72 for 7-20B, 0.80 for >20B.
+        // Small models produce lower-confidence outputs even when correct;
+        // retrying them is wasteful and often yields tool proposals instead of text.
         if !is_direct
-            && continuity_tracker.alignment_score < 0.85
+            && continuity_tracker.needs_fallback()
             && !already_retried
         {
             let gap_reason = continuity_tracker.gap();
@@ -1075,10 +1079,27 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                     if let Some(choice) = response.choices.get(0) {
                         if let Some(ref content) = choice.message.content {
                             let improved = crate::final_answer::process_final_answer(content);
-                            if !improved.trim().is_empty() {
+                            // Task 609: Only accept retry text if it's valid user-facing content.
+                            // Small models often respond to "expand" prompts with tool proposals
+                            // instead of text — these would destroy the original pipeline answer.
+                            let trimmed = improved.trim();
+                            let is_valid_answer = trimmed.len() >= 20
+                                && !trimmed.starts_with('<')
+                                && !improved.contains("<search_files")
+                                && !improved.contains("<read ")
+                                && !improved.contains("<write ")
+                                && !improved.contains("<glob ")
+                                && !improved.contains("<shell")
+                                && !improved.contains("<bash");
+                            if is_valid_answer {
                                 final_text = improved;
                                 retry_happened = true;
                                 runtime.messages.push(ChatMessage::simple("assistant", &final_text));
+                            } else {
+                                trace(
+                                    &runtime.args,
+                                    &format!("continuity_retry_rejected: retry response was non-text/too-short ({} chars), keeping original ({} chars)", trimmed.len(), final_text.len()),
+                                );
                             }
                         }
                     }
@@ -1103,11 +1124,22 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let final_text =
             crate::final_answer::correct_evidence_contradictions(&final_text, &runtime.messages);
 
+        // Task 608: Best-effort finalization fallback — if answer is still empty
+        // after all processing and evidence exists, build a transparent answer.
+        let final_text = if final_text.trim().is_empty() && has_evidence {
+            build_best_effort_answer()
+        } else {
+            final_text
+        };
+
         // Task 392: Strip markdown for terminal display (keep original for messages/artifacts)
         let display_text = crate::final_answer::process_final_answer_display(&final_text);
 
         // Show assistant response (thinking is already stripped from final_text)
         if !final_text.is_empty() {
+            // For continuity retry, the answer was changed — replace the streamed
+            // version with the improved one. For all other paths, use add_message
+            // which handles dedup and writes to session.md.
             if retry_happened {
                 tui.replace_last_assistant_message(display_text);
             } else {
@@ -1121,6 +1153,13 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         // Clear activity indicator now that processing is complete
         tui.clear_activity();
+
+        // Task 610: Clear evidence ledger at end of turn, after continuity
+        // check and evidence contradiction correction have both consumed it.
+        // Previously this was done in orchestration_core.rs before the
+        // continuity check ran, causing has_evidence=false for all
+        // is_tool_calling_result paths and artificially low continuity scores.
+        crate::evidence_ledger::clear_session_ledger();
 
         // Estimate tokens from message content (~4 chars per token)
         let mut tokens_in: u64 = 0;
@@ -1208,7 +1247,21 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             let uid = format!("{}:{}", session_id, turn_number);
             tokio::spawn(async move {
                 let unit = crate::intel_units::TurnSummaryUnit::new(summarizer_cfg);
-                let context = crate::intel_trait::IntelContext::new(
+                let tool_summary: String = step_results_json.iter()
+                    .filter_map(|sr| {
+                        let kind = sr.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                        let ok = sr.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let summary = sr.get("summary").and_then(|v| v.as_str()).unwrap_or("");
+                        if !summary.is_empty() {
+                            Some(format!("  - {} {}: {}", if ok { "✓" } else { "✗" }, kind, summary))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let client = client;
+                let context = match crate::intel_trait::IntelContext::new(
                     user_message_clone,
                     route_decision,
                     String::new(),
@@ -1217,34 +1270,42 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                     client,
                 )
                 .with_extra("final_text", &final_text_clone)
-                .and_then(|c| c.with_extra("uid", &uid));
-                match context {
-                    Ok(ctx) => match unit.execute_with_fallback(&ctx).await {
-                        Ok(output) => {
-                            if let Ok(summary) =
-                                serde_json::from_value::<TurnSummaryOutput>(output.data)
-                            {
-                                let _ = crate::session_write::save_turn_summary(
-                                    &session_root,
-                                    turn_number,
-                                    &summary,
-                                );
-                                crate::session_write::write_summary_markdown(
-                                    &session_root,
-                                    turn_number,
-                                    &chrono::Utc::now().to_rfc3339(),
-                                    &model_id,
-                                    &session_id,
-                                    &summary.summary_narrative,
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            tracing::debug!("Turn summary failed: {}", e);
-                        }
-                    },
+                .and_then(|c| c.with_extra("uid", &uid))
+                .and_then(|c| {
+                    if !tool_summary.is_empty() {
+                        c.with_extra("tool_results", &tool_summary)
+                    } else {
+                        Ok(c)
+                    }
+                }) {
+                    Ok(ctx) => ctx,
                     Err(e) => {
-                        tracing::debug!("Turn summary context build failed: {}", e);
+                        tracing::debug!("Failed to build context: {}", e);
+                        return;
+                    }
+                };
+                match unit.execute_with_fallback(&context).await {
+                    Ok(output) => {
+                        if let Ok(summary) =
+                            serde_json::from_value::<TurnSummaryOutput>(output.data)
+                        {
+                            let _ = crate::session_write::save_turn_summary(
+                                &session_root,
+                                turn_number,
+                                &summary,
+                            );
+                            crate::session_write::write_summary_markdown(
+                                &session_root,
+                                turn_number,
+                                &chrono::Utc::now().to_rfc3339(),
+                                &model_id,
+                                &session_id,
+                                &summary.summary_narrative,
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!("Turn summary failed: {}", e);
                     }
                 }
             });
@@ -1258,4 +1319,26 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     crate::ui_state::set_tui_active(false);
     tui.cleanup()?;
     res
+}
+
+/// Task 608: Build a best-effort answer from available evidence when
+/// the normal finalization pipeline produces an empty answer.
+fn build_best_effort_answer() -> String {
+    let evidence_summary = crate::evidence_ledger::get_session_ledger()
+        .map(|l| l.compact_summary())
+        .unwrap_or_default();
+
+    if evidence_summary.is_empty()
+        || evidence_summary == "No evidence collected yet."
+    {
+        return "I wasn't able to complete this task before running out of iterations. \
+                 Unfortunately, no usable evidence was gathered."
+            .to_string();
+    }
+
+    format!(
+        "[Note: I exhausted my iteration budget before completing this task. \
+         Here's what I found so far:]\n{}",
+        evidence_summary
+    )
 }

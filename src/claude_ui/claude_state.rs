@@ -112,6 +112,34 @@ pub(crate) enum ClaudeMessage {
     Notice(UiNotice),
 }
 
+/// Word-wrap text at `width`, preserving a minimum line length. Returns
+/// one string per wrapped line. Used to pre-wrap assistant content so
+/// ratatui never wraps at column 0 (spilling outside the gutter).
+fn word_wrap_lines(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for para in text.split('\n') {
+        let mut remaining = para;
+        while remaining.chars().count() > width {
+            let mut split_at = width;
+            // Try to break at last space within width
+            if let Some(pos) = remaining[..width].rfind(' ') {
+                split_at = pos;
+            }
+            // But if no space found, break at width
+            if split_at == 0 {
+                split_at = width;
+            }
+            let left = &remaining[..split_at];
+            lines.push(left.trim_end().to_string());
+            remaining = remaining[split_at..].trim_start();
+        }
+        if !remaining.is_empty() {
+            lines.push(remaining.to_string());
+        }
+    }
+    lines
+}
+
 impl ClaudeMessage {
     pub(crate) fn to_ratatui_lines(&self, expanded: bool, width: usize) -> Vec<Line<'static>> {
         let theme = current_theme();
@@ -162,23 +190,36 @@ impl ClaudeMessage {
                 ])]
             }
             ClaudeMessage::Assistant { content } => {
-                let content_width = width.saturating_sub(4).max(12);
+                // Gutter uses 3 visual chars (|_ + space). Reserve 6 for safety
+                // so ratatui never needs to wrap a content line at column 0.
+                let gutter = 6;
+                let content_width = width.saturating_sub(gutter).max(10);
                 let content_lines = render_assistant_content(content, content_width);
                 let mut lines = Vec::new();
                 for (i, content_line) in content_lines.into_iter().enumerate() {
-                    if i == 0 {
-                        let mut spans = vec![Span::styled(
-                            "\\_",
-                            Style::default()
-                                .fg(theme.accent_primary.to_ratatui_color())
-                                .add_modifier(Modifier::BOLD),
-                        )];
-                        spans.push(Span::raw(" ")); // gutter gap
-                        spans.extend(content_line.spans.into_iter());
-                        lines.push(Line::from(spans));
+                    let prefix_style = if i == 0 {
+                        Style::default()
+                            .fg(theme.accent_primary.to_ratatui_color())
+                            .add_modifier(Modifier::BOLD)
                     } else {
-                        let mut spans = vec![Span::raw("  ")]; // 2-char gutter
-                        spans.extend(content_line.spans.into_iter());
+                        Style::default()
+                            .fg(theme.fg_dim.to_ratatui_color())
+                    };
+                    let gutter_text = if i == 0 { "|_" } else { "| " };
+                    // Pre-wrap: build the full line text, wrap at width-gutter, then
+                    // attach gutter prefix to each wrapped line so ratatui never wraps.
+                    let full_text: String = content_line.spans.iter()
+                        .map(|s| s.content.as_ref()).collect::<Vec<_>>().join("");
+                    let wrapped = word_wrap_lines(&full_text, width.max(20) as usize);
+                    for wline in &wrapped {
+                        let mut spans = vec![
+                            Span::styled(gutter_text, prefix_style),
+                            Span::raw(" "),
+                        ];
+                        spans.push(Span::styled(
+                            wline.clone(),
+                            content_line.spans.first().map(|s| s.style).unwrap_or_default(),
+                        ));
                         lines.push(Line::from(spans));
                     }
                 }
@@ -241,13 +282,7 @@ impl ClaudeMessage {
                             ),
                         ]));
                     }
-                    lines.push(Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(
-                            "(ctrl+o to collapse)",
-                            Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                        ),
-                    ]));
+                    // Click or ctrl+o to toggle collapse — handled by hit-test, no inline hint
                     lines
                 } else {
                     vec![Line::from(vec![
@@ -426,22 +461,49 @@ impl ClaudeMessage {
                 let is_expanded = expanded || !*collapsed;
                 let chevron = if is_expanded { "▾" } else { "▸" };
 
+                // Compute indent for command continuation lines
+                // "▸ ✓ shell " header
+                let indent_chars = 4 + name.chars().count();
+                let indent_str: String = " ".repeat(indent_chars);
+
+                // Pre-wrap long commands so continuation lines are indented
+                let mut cmd_lines: Vec<String> = Vec::new();
+                {
+                    let max_line = 60usize; // heuristic wrap width
+                    let mut remaining = command.clone();
+                    while remaining.len() > max_line {
+                        let split_at = remaining[..max_line].rfind(' ').unwrap_or(max_line);
+                        cmd_lines.push(remaining[..split_at].to_string());
+                        remaining = remaining[split_at..].trim().to_string();
+                    }
+                    if !remaining.is_empty() {
+                        cmd_lines.push(remaining);
+                    }
+                }
+                if cmd_lines.is_empty() {
+                    cmd_lines.push(command.clone());
+                }
+
+                // First line: prefix + first command segment
                 let mut lines = vec![Line::from(vec![
-                    Span::styled(
-                        chevron,
-                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                    ),
+                    Span::styled(chevron, Style::default().fg(theme.fg_dim.to_ratatui_color())),
                     Span::raw(" "),
                     Span::styled(symbol, symbol_style),
                     Span::raw(" "),
                     Span::styled(name.clone(), Style::default().add_modifier(Modifier::BOLD)),
                     Span::raw(" "),
                     Span::styled(
-                        command.clone(),
+                        cmd_lines.remove(0),
                         Style::default().fg(theme.fg_dim.to_ratatui_color()),
                     ),
                 ])];
-
+                // Continuation lines: indented
+                for cl in cmd_lines {
+                    lines.push(Line::from(vec![Span::styled(
+                        format!("{}{}", indent_str, cl),
+                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                    )]));
+                }
                 if let ToolTraceStatus::Completed {
                     success,
                     output,
@@ -623,9 +685,9 @@ impl ClaudeMessage {
                 let rendered = render_markdown_to_ansi(&content.raw_markdown);
                 let mut md_lines = rendered.lines();
                 let first = md_lines.next().unwrap_or_default();
-                let mut lines = vec![format!("● {}", first)];
+                let mut lines = vec![format!("|_ {}", first)];
                 for line in md_lines {
-                    lines.push(format!("  {}", line));
+                    lines.push(format!("|  {}", line));
                 }
                 lines
             }
@@ -659,7 +721,6 @@ impl ClaudeMessage {
                     for line in content.lines() {
                         lines.push(format!("    {}", dim(line)));
                     }
-                    lines.push(format!("    {}", dim("(ctrl+o to collapse)")));
                     lines
                 } else {
                     vec![format!(
@@ -1048,6 +1109,18 @@ impl ClaudeTranscript {
                 *c = content;
                 return;
             }
+        }
+    }
+
+    /// Remove the last assistant message from the transcript entirely.
+    /// Used before running the evidence finalizer to prevent the model's
+    /// raw streaming answer from appearing alongside the finalized one.
+    pub(crate) fn remove_last_assistant_message(&mut self) {
+        if let Some(pos) = self.messages.iter().rev().position(|msg| {
+            matches!(msg, ClaudeMessage::Assistant { .. })
+        }) {
+            let idx = self.messages.len() - 1 - pos;
+            self.messages.remove(idx);
         }
     }
 

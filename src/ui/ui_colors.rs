@@ -172,11 +172,11 @@ mod tests {
 
     #[test]
     fn test_all_color_functions_use_theme_tokens() {
-        // These now use theme tokens from ui_theme.rs (Red/Cyan default)
+        // These now use theme tokens from ui_theme.rs (Red/Magenta default)
         // elma_accent = red (primary accent)
         assert!(elma_accent("x").contains("\x1b[38;2;230;60;60m"));
-        // info_cyan = cyan (secondary accent)
-        assert!(info_cyan("x").contains("\x1b[38;2;0;255;255m"));
+        // info_cyan = magenta (secondary accent)
+        assert!(info_cyan("x").contains("\x1b[38;2;200;50;180m"));
         // error_red = red
         assert!(error_red("x").contains("\x1b[38;2;255;0;0m"));
         // warn_yellow = yellow

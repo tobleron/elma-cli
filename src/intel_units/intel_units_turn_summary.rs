@@ -58,12 +58,25 @@ impl IntelUnit for TurnSummaryUnit {
             .extra("uid")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
+        let tool_results = context
+            .extra("tool_results")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty());
+
+        // Task 619: Include tool result summary so the model can report
+        // accurately whether operations actually succeeded or failed.
+        let tool_block = if let Some(tr) = tool_results {
+            format!("\n\nTool results:\n{}", tr)
+        } else {
+            String::new()
+        };
 
         let prompt = format!(
             "Summarize this conversation turn in ONE concise sentence (under 100 words). \
-             Say what the user asked and what the outcome was.\n\n\
+             Say what the user asked and what the outcome was. Be honest about whether \
+             the action succeeded or failed.\n\n\
              User asked: {user_message}\n\
-             Outcome: {final_text}"
+             Outcome: {final_text}{tool_block}"
         );
 
         let raw = execute_intel_text_from_user_content(&context.client, &self.profile, prompt).await?;

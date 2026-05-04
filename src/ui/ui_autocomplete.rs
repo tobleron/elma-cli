@@ -1,8 +1,8 @@
 //! @efficiency-role: ui-component
 //!
-//! Slash command and emoji autocomplete dropdowns.
+//! Slash command autocomplete dropdowns.
 //!
-//! Renders a list of matching commands/emojis as styled lines
+//! Renders a list of matching commands as styled lines
 //! positioned above the input line in the footer.
 
 use crate::ui_colors::*;
@@ -29,8 +29,6 @@ pub(crate) struct AutocompleteState {
     pub matches: Vec<AutocompleteSuggestion>,
     /// Index of the currently selected suggestion.
     pub selected: usize,
-    /// Whether this is an emoji picker (true) or slash commands (false).
-    pub is_emoji: bool,
 }
 
 impl AutocompleteState {
@@ -42,7 +40,6 @@ impl AutocompleteState {
     pub(crate) fn update_slash(&mut self, input: &str) {
         if input.starts_with('/') {
             self.active = true;
-            self.is_emoji = false;
             self.prefix = input.to_string();
             self.matches = filter_slash_commands(input);
             self.selected = 0;
@@ -51,18 +48,7 @@ impl AutocompleteState {
         }
     }
 
-    /// Check if input starts an emoji prefix and update matches.
-    pub(crate) fn update_emoji(&mut self, input: &str) {
-        if input.starts_with(':') {
-            self.active = true;
-            self.is_emoji = true;
-            self.prefix = input.to_string();
-            self.matches = filter_emojis(input);
-            self.selected = 0;
-        } else {
-            self.active = false;
-        }
-    }
+
 
     /// Deactivate the dropdown.
     pub(crate) fn deactivate(&mut self) {
@@ -124,200 +110,7 @@ fn filter_slash_commands(prefix: &str) -> Vec<AutocompleteSuggestion> {
         .collect()
 }
 
-// ============================================================================
-// Emoji shortcodes (subset of most common ~200)
-// ============================================================================
 
-const EMOJIS: &[(&str, &str)] = &[
-    (":smile:", "😄"),
-    (":laughing:", "😆"),
-    (":blush:", "😊"),
-    (":smiley:", "😃"),
-    (":heart:", "❤️"),
-    (":thumbsup:", "👍"),
-    (":thumbsdown:", "👎"),
-    (":fire:", "🔥"),
-    (":star:", "⭐"),
-    (":rocket:", "🚀"),
-    (":check:", "✅"),
-    (":cross:", "❌"),
-    (":warning:", "⚠️"),
-    (":bulb:", "💡"),
-    (":book:", "📖"),
-    (":memo:", "📝"),
-    (":eyes:", "👀"),
-    (":wave:", "👋"),
-    (":clap:", "👏"),
-    (":pray:", "🙏"),
-    (":thinking:", "🤔"),
-    (":ok_hand:", "👌"),
-    (":point_up:", "☝️"),
-    (":point_down:", "👇"),
-    (":tada:", "🎉"),
-    (":gift:", "🎁"),
-    (":birthday:", "🎂"),
-    (":coffee:", "☕"),
-    (":beer:", "🍺"),
-    (":pizza:", "🍕"),
-    (":apple:", "🍎"),
-    (":sun:", "☀️"),
-    (":moon:", "🌙"),
-    (":cloud:", "☁️"),
-    (":rainbow:", "🌈"),
-    (":snowflake:", "❄️"),
-    (":dog:", "🐶"),
-    (":cat:", "🐱"),
-    (":bird:", "🐦"),
-    (":fish:", "🐟"),
-    (":bug:", "🐛"),
-    (":100:", "💯"),
-    (":zap:", "⚡"),
-    (":boom:", "💥"),
-    (":trophy:", "🏆"),
-    (":medal:", "🏅"),
-    (":dart:", "🎯"),
-    (":key:", "🔑"),
-    (":lock:", "🔒"),
-    (":unlock:", "🔓"),
-    (":hammer:", "🔨"),
-    (":wrench:", "🔧"),
-    (":computer:", "💻"),
-    (":phone:", "📱"),
-    (":email:", "📧"),
-    (":inbox:", "📥"),
-    (":link:", "🔗"),
-    (":chart:", "📊"),
-    (":package:", "📦"),
-    (":clock:", "🕐"),
-    (":alarm:", "⏰"),
-    (":hourglass:", "⏳"),
-    (":stopwatch:", "⏱️"),
-    (":flag:", "🚩"),
-    (":construction:", "🚧"),
-    (":recycle:", "♻️"),
-    (":gem:", "💎"),
-    (":crystal:", "💎"),
-    (":shield:", "🛡️"),
-    (":anchor:", "⚓"),
-    (":globe:", "🌍"),
-    (":earth:", "🌍"),
-    (":sunrise:", "🌅"),
-    (":sunset:", "🌇"),
-    (":mountain:", "⛰️"),
-    (":tree:", "🌳"),
-    (":seedling:", "🌱"),
-    (":flower:", "🌸"),
-    (":rose:", "🌹"),
-    (":cherry:", "🍒"),
-    (":lemon:", "🍋"),
-    (":banana:", "🍌"),
-    (":grapes:", "🍇"),
-    (":watermelon:", "🍉"),
-    (":cookie:", "🍪"),
-    (":chocolate:", "🍫"),
-    (":candy:", "🍬"),
-    (":cake:", "🍰"),
-    (":soccer:", "⚽"),
-    (":basketball:", "🏀"),
-    (":football:", "🏈"),
-    (":baseball:", "⚾"),
-    (":tennis:", "🎾"),
-    (":bowling:", "🎳"),
-    (":golf:", "⛳"),
-    (":dart_board:", "🎯"),
-    (":gamepad:", "🎮"),
-    (":joystick:", "🕹️"),
-    (":dice:", "🎲"),
-    (":puzzle:", "🧩"),
-    (":muscle:", "💪"),
-    (":brain:", "🧠"),
-    (":handshake:", "🤝"),
-    (":peace:", "✌️"),
-    (":victory:", "✌️"),
-    (":middle_finger:", "🖕"),
-    (":rock:", "🤘"),
-    (":call:", "🤙"),
-    (":writing:", "✍️"),
-    (":nail_care:", "💅"),
-    (":selfie:", "🤳"),
-    (":dancer:", "💃"),
-    (":runner:", "🏃"),
-    (":walking:", "🚶"),
-    (":cyclist:", "🚴"),
-    (":swimmer:", "🏊"),
-    (":surfer:", "🏄"),
-    (":bath:", "🛁"),
-    (":bed:", "🛏️"),
-    (":couch:", "🛋️"),
-    (":toilet:", "🚽"),
-    (":shower:", "🚿"),
-    (":bathtub:", "🛁"),
-    (":razor:", "🪒"),
-    (":syringe:", "💉"),
-    (":pill:", "💊"),
-    (":stethoscope:", "🩺"),
-    (":microscope:", "🔬"),
-    (":telescope:", "🔭"),
-    (":satellite:", "🛰️"),
-    (":candle:", "🕯️"),
-    (":scroll:", "📜"),
-    (":calendar:", "📅"),
-    (":card:", "📇"),
-    (":clipboard:", "📋"),
-    (":file:", "📄"),
-    (":folder:", "📁"),
-    (":newspaper:", "📰"),
-    (":notebook:", "📓"),
-    (":ledger:", "📒"),
-    (":receipt:", "🧾"),
-    (":bank:", "🏦"),
-    (":hospital:", "🏥"),
-    (":hotel:", "🏨"),
-    (":store:", "🏪"),
-    (":school:", "🏫"),
-    (":factory:", "🏭"),
-    (":tower:", "🗼"),
-    (":castle:", "🏰"),
-    (":church:", "⛪"),
-    (":mosque:", "🕌"),
-    (":synagogue:", "🕍"),
-    (":shinto:", "⛩️"),
-    (":kaaba:", "🕋"),
-    (":fountain:", "⛲"),
-    (":tent:", "⛺"),
-    (":foggy:", "🌁"),
-    (":night:", "🌃"),
-    (":bridge:", "🌉"),
-    (":hotsprings:", "♨️"),
-    (":carousel:", "🎠"),
-    (":ferris_wheel:", "🎡"),
-    (":roller_coaster:", "🎢"),
-    (":circus:", "🎪"),
-    (":art:", "🎨"),
-    (":slot_machine:", "🎰"),
-    (":steam:", "🛁"),
-];
-
-fn filter_emojis(prefix: &str) -> Vec<AutocompleteSuggestion> {
-    let prefix_lower = prefix.to_lowercase();
-    // Strip leading ':' for matching.
-    let search = prefix_lower.strip_prefix(':').unwrap_or(&prefix_lower);
-    EMOJIS
-        .iter()
-        .filter(|(code, _)| {
-            let code_name = code
-                .strip_prefix(':')
-                .and_then(|s| s.strip_suffix(':'))
-                .unwrap_or(code);
-            code_name.starts_with(search)
-        })
-        .take(20) // Limit dropdown size.
-        .map(|(code, emoji)| AutocompleteSuggestion {
-            label: code.to_string(),
-            description: emoji.to_string(),
-        })
-        .collect()
-}
 
 // ============================================================================
 // Dropdown rendering
@@ -342,11 +135,7 @@ pub(crate) fn render_autocomplete(
     let mut lines: Vec<String> = Vec::new();
 
     // Header
-    let header_text = if state.is_emoji {
-        format!(" {} ", fg_bold(AQUA.0, AQUA.1, AQUA.2, "Emoji"))
-    } else {
-        format!(" {} ", fg_bold(AQUA.0, AQUA.1, AQUA.2, "Commands"))
-    };
+    let header_text = format!(" {} ", fg_bold(AQUA.0, AQUA.1, AQUA.2, "Commands"));
     lines.push(header_text);
     lines.push(String::new());
 

@@ -33,6 +33,24 @@ fn is_response_truncated(text: &str) -> bool {
         return true;
     }
 
+    // Check if the text ends mid-sentence (no proper ending punctuation)
+    // Common endings: . ! ? " ') ] }
+    // Also check for common cut-off patterns like "as" at the end
+    if let Some(last_char) = trimmed.chars().last() {
+        let ends_properly = last_char == '.'
+            || last_char == '!'
+            || last_char == '?'
+            || last_char == '"'
+            || last_char == '\''
+            || last_char == ')'
+            || last_char == ']'
+            || last_char == '}';
+        
+        if !ends_properly {
+            return true;
+        }
+    }
+
     false
 }
 
@@ -147,6 +165,14 @@ async fn attempt_chat_request(
             append_reasoning_audit_record(effective_req, &parsed);
             maybe_display_reasoning_trace(&parsed);
             append_trace_log_line(&format!("[HTTP_SUCCESS] parsed response successfully"));
+            
+            // Log finish_reason for debugging
+            if let Some(ref choice) = parsed.choices.first() {
+                if let Some(ref fr) = choice.finish_reason {
+                    append_trace_log_line(&format!("[HTTP_FINISH] finish_reason={}", fr));
+                }
+            }
+            
             AttemptOutcome::Success(parsed)
         }
         Ok(Err(e)) => {
@@ -207,39 +233,41 @@ async fn chat_once_base(
     let mut is_timeout = false;
 
     for attempt in 0..3u32 {
-        append_trace_log_line(&format!("[HTTP_ATTEMPT] attempt={}/3", attempt + 1));
+        eprintln!("DEBUG: attempt={} max_tokens={}", attempt + 1, effective_req.max_tokens);
+        append_trace_log_line(&format!(
+            "[HTTP_ATTEMPT] attempt={}/3 max_tokens={:?}",
+            attempt + 1,
+            effective_req.max_tokens
+        ));
 
         match attempt_chat_request(client, chat_url, &effective_req, timeout_secs).await {
             AttemptOutcome::Success(mut resp) => {
-                // Check if response is truncated and retry if needed
-                if attempt < 2 {
-                    // Only retry on attempts 0 and 1
-                    // If the model stopped naturally (finish_reason="stop"),
-                    // the response is complete regardless of last character.
-                    let finish_reason = resp
-                        .choices
-                        .first()
-                        .and_then(|c| c.finish_reason.as_deref());
-                    let truncated = if finish_reason == Some("stop") {
-                        false
-                    } else {
-                        resp.choices
-                            .first()
-                            .and_then(|c| c.message.content.as_ref())
-                            .map(|content| is_response_truncated(content))
-                            .unwrap_or(false)
-                    };
+                // Always check if the response appears truncated
+                let truncated = resp
+                    .choices
+                    .first()
+                    .and_then(|c| c.message.content.as_ref())
+                    .map(|content| is_response_truncated(content))
+                    .unwrap_or(false);
 
-                    if truncated {
-                        append_trace_log_line("[HTTP_RETRY] response appears truncated, retrying with increased max_tokens...");
-                        // Retry with increased max_tokens
-                        let mut retry_req = effective_req.clone();
-                        retry_req.max_tokens = retry_req.max_tokens.saturating_mul(2).min(4096);
+                if truncated {
+                    append_trace_log_line(&format!(
+                        "[HTTP_RETRY] response appears truncated (attempt {}/3), retrying with increased max_tokens...",
+                        attempt + 1
+                    ));
+                    // Retry with increased max_tokens (only on attempts 0 and 1)
+                    if attempt < 2 {
+                        // Update effective_req directly so the next iteration uses it
+                        effective_req.max_tokens =
+                            effective_req.max_tokens.saturating_mul(2).min(4096);
                         // Also try without grammar if it was injected
-                        retry_req.grammar = None;
+                        effective_req.grammar = None;
 
                         tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
                         continue;
+                    } else {
+                        // Last attempt - log warning but return what we have
+                        append_trace_log_line("[HTTP_WARN] response truncated on last attempt, returning as-is");
                     }
                 }
                 return Ok(resp);

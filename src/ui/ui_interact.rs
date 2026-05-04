@@ -110,7 +110,7 @@ pub(crate) fn confirm_tool_execution(command: &str) -> bool {
     }
 
     eprintln!();
-    eprintln!("  ⚠️  Destructive command detected:");
+    eprintln!("  !  Destructive command detected:");
     eprintln!("     {}", command);
     eprintln!();
 

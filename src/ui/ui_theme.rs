@@ -30,7 +30,7 @@ pub(crate) struct Theme {
     pub fg_dim: ColorToken,
     /// Primary accent (Red in default theme)
     pub accent_primary: ColorToken,
-    /// Complementary accent (Cyan in default theme)
+    /// Complementary accent (Magenta in default theme)
     pub accent_secondary: ColorToken,
     /// Success states (green)
     pub success: ColorToken,
@@ -46,13 +46,13 @@ pub(crate) struct Theme {
     pub bg_footer: ColorToken,
 }
 
-/// Elma default theme: black/white/grey + Red/Cyan
+/// Elma default theme: black/white/grey + Red/Magenta
 pub(crate) fn default_theme() -> Theme {
     Theme {
         fg: ColorToken(255, 255, 255),             // White
         fg_dim: ColorToken(128, 128, 128),         // Grey
         accent_primary: ColorToken(230, 60, 60),   // Red
-        accent_secondary: ColorToken(0, 255, 255), // Cyan
+        accent_secondary: ColorToken(200, 50, 180), // Magenta
         success: ColorToken(0, 255, 0),            // Green
         error: ColorToken(255, 0, 0),              // Red
         warning: ColorToken(255, 255, 0),          // Yellow
@@ -89,9 +89,7 @@ pub(crate) const BLOCKQUOTE_BAR: &str = "▎";
 pub(crate) const HR: &str = "─";
 pub(crate) const MIDDOT: &str = "·";
 pub(crate) const LIGHTNING: &str = "⚡";
-pub(crate) const LOCK: &str = "🔒";
-pub(crate) const CRAB: &str = "🦀";
-pub(crate) const HOURGLASS: &str = "⏳";
+pub(crate) const HOURGLASS: &str = "\u{23F3}";
 pub(crate) const CODE_HEADER_LEFT: &str = "├─";
 pub(crate) const CODE_HEADER_RIGHT: &str = "─┤";
 pub(crate) const CODE_FOOTER: &str = "╰";
@@ -185,7 +183,7 @@ pub(crate) fn accent_primary(text: &str) -> String {
     fg_token(current_theme().accent_primary, text)
 }
 
-/// Info cyan → accent_secondary (Cyan)
+/// Info magenta → accent_secondary (Magenta)
 pub(crate) fn info_cyan(text: &str) -> String {
     fg_token(current_theme().accent_secondary, text)
 }
@@ -304,7 +302,7 @@ mod tests {
         assert_eq!(theme.fg, ColorToken(255, 255, 255)); // White
         assert_eq!(theme.fg_dim, ColorToken(128, 128, 128)); // Grey
         assert_eq!(theme.accent_primary, ColorToken(230, 60, 60)); // Red
-        assert_eq!(theme.accent_secondary, ColorToken(0, 255, 255)); // Cyan
+        assert_eq!(theme.accent_secondary, ColorToken(200, 50, 180)); // Magenta
         assert_eq!(theme.success, ColorToken(0, 255, 0)); // Green
         assert_eq!(theme.error, ColorToken(255, 0, 0)); // Red
         assert_eq!(theme.warning, ColorToken(255, 255, 0)); // Yellow
@@ -321,9 +319,9 @@ mod tests {
         assert!(result.contains("test"));
         assert!(result.ends_with("\x1b[0m"));
 
-        // info_cyan should use accent_secondary (Cyan)
+        // info_cyan should use accent_secondary (Magenta)
         let result = info_cyan("test");
-        assert!(result.contains("\x1b[38;2;0;255;255m")); // Cyan
+        assert!(result.contains("\x1b[38;2;200;50;180m")); // Magenta
         assert!(result.contains("test"));
         assert!(result.ends_with("\x1b[0m"));
     }
