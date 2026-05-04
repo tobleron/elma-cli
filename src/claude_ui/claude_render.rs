@@ -1825,7 +1825,7 @@ fn render_right_panel_info(
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
-    let accent = Style::default().fg(theme.fg_dim.to_ratatui_color());
+    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
     let secondary = Style::default().fg(theme.accent_secondary.to_ratatui_color());
     let pad = "  ";
     let text_width = area.width.saturating_sub(3) as usize;
@@ -1926,7 +1926,7 @@ fn render_right_panel_thinking(
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
-    let accent = Style::default().fg(theme.fg_dim.to_ratatui_color());
+    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
 
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
@@ -2080,7 +2080,7 @@ fn render_progress_bar_line(
     let pct = (fraction.clamp(0.0, 1.0) * 100.0) as u8;
     let filled = (fraction.clamp(0.0, 1.0) * bar_width as f64).round() as usize;
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
-    let accent = Style::default().fg(theme.fg_dim.to_ratatui_color());
+    let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
     let secondary = Style::default().fg(theme.accent_secondary.to_ratatui_color());
 
     let bar_color = match label {

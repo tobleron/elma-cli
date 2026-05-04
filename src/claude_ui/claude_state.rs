@@ -197,14 +197,8 @@ impl ClaudeMessage {
                 let content_lines = render_assistant_content(content, content_width);
                 let mut lines = Vec::new();
                 for (i, content_line) in content_lines.into_iter().enumerate() {
-                    let prefix_style = if i == 0 {
-                        Style::default()
-                            .fg(theme.accent_primary.to_ratatui_color())
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default()
-                            .fg(theme.fg_dim.to_ratatui_color())
-                    };
+                    let prefix_style = Style::default()
+                        .fg(theme.fg_dim.to_ratatui_color());
                     let gutter_text = if i == 0 { "|_" } else { "| " };
                     // Pre-wrap: build the full line text, wrap at width-gutter, then
                     // attach gutter prefix to each wrapped line so ratatui never wraps.
