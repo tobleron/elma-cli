@@ -1326,7 +1326,7 @@ pub(crate) async fn run_tool_loop(
                 if let Ok(aux_url) = Url::parse("http://192.168.1.186:8084/v1/chat/completions") {
                     let aux_profile = crate::llm_config::auxiliary_profile("thought_summary");
                     let prompt = format!(
-                        "Summarize this thinking in one sentence, less than 90 words, first person:\n{}",
+                        "Summarize this thinking in one sentence, less than 90 words, third person (describe what the user asked):\n{}",
                         thinking_text
                     );
                     let req = crate::llm_config::chat_request_from_profile(

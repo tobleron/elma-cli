@@ -1854,31 +1854,29 @@ fn render_right_panel_info(
     };
     let logo_pad_str: String = std::iter::repeat(' ').take(logo_pad).collect();
 
-    // Animation modes:
-    // - Processing: slow ELMA cycle (81 frames/letter ≈ 2.7s)
-    // - Startup (first ~81 frames): fast cycle once
-    // - Idle: all grey
-    let (active_letter, frames_per_letter) = if is_processing {
-        // Slow cycle while processing
-        ((anim_frame / 81) % 4, 81usize)
-    } else if anim_frame < 81 {
-        // Fast startup animation (one quick cycle)
-        ((anim_frame / 10) % 4, 10usize)
+    // Animation: sequential one-at-a-time highlighting
+    // Startup: each ELMA letter gets colored once, then slogan words get colored once
+    // Processing: ELMA cycles slowly, slogan dim
+    // Response: slogan words get colored once as finishing gesture
+    let elma_highlight = if is_processing {
+        // Slow cycle while processing (81 frames ≈ 2.7s per letter)
+        (anim_frame / 81) % 4
+    } else if anim_frame >= 5 && anim_frame < 45 {
+        // Startup: each letter colored once, 10 frames each
+        (anim_frame - 5) / 10
     } else {
-        // Idle: letter 4 = all dim (out of range → all dim)
-        (4, 1usize)
+        5 // out of range → all dim
     };
     let letter_styles = [
-        if active_letter == 0 { accent } else { dim },
-        if active_letter == 1 { accent } else { dim },
-        if active_letter == 2 { accent } else { dim },
-        if active_letter == 3 { accent } else { dim },
+        if elma_highlight == 0 { accent } else { dim },
+        if elma_highlight == 1 { accent } else { dim },
+        if elma_highlight == 2 { accent } else { dim },
+        if elma_highlight == 3 { accent } else { dim },
     ];
 
     for row in &logo_lines {
         let mut spans = vec![Span::raw(logo_pad_str.clone())];
         let chars: Vec<char> = row.chars().collect();
-        // Each letter group is 3 chars wide (E=0-2, L=3-5, M=6-8, A=9-11)
         let groups = [
             chars.get(0..3).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
             chars.get(3..6).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
@@ -1893,28 +1891,41 @@ fn render_right_panel_info(
         all_lines.push(Line::from(spans));
     }
 
-    // Tagline (centered) in secondary color, dim when processing
+    // Tagline (centered) in secondary color
     all_lines.push(Line::from(""));
     let tagline = "Local first terminal agent v0.1.0";
+    let tagline_words: Vec<&str> = tagline.split_whitespace().collect();
     let tagline_pad = if tagline.chars().count() < text_width {
         (text_width - tagline.chars().count()) / 2
     } else {
         0
     };
     let tag_pad_str: String = std::iter::repeat(' ').take(tagline_pad).collect();
-    let tagline_style = if is_processing {
-        dim
-    } else if anim_frame < 81 {
-        if (anim_frame / 10) % 2 == 0 { secondary } else { dim }
-    } else if output_tokens > 0 {
-        if (anim_frame / 6) % 2 == 0 { secondary } else { dim }
+
+    // Determine which tagline word is highlighted (Some = secondary, None = dim)
+    let tagline_highlight = if is_processing {
+        None
+    } else if anim_frame >= 50 && anim_frame < 100 {
+        // Startup: each word colored once, 10 frames each
+        Some(((anim_frame - 50) / 10).min(tagline_words.len() - 1))
+    } else if !is_processing && output_tokens > 0 && anim_frame >= 100 {
+        // Response received: each word colored once as finishing gesture
+        let phase = (anim_frame - 100) / 10;
+        if phase < tagline_words.len() && phase < 10 {
+            Some(phase)
+        } else {
+            None
+        }
     } else {
-        dim
+        None
     };
-    all_lines.push(Line::from(vec![Span::styled(
-        format!("{}{}", tag_pad_str, tagline),
-        tagline_style,
-    )]));
+
+    let mut tagline_spans = vec![Span::raw(tag_pad_str)];
+    for (wi, word) in tagline_words.iter().enumerate() {
+        let style = if tagline_highlight == Some(wi) { secondary } else { dim };
+        tagline_spans.push(Span::styled(format!("{} ", word), style));
+    }
+    all_lines.push(Line::from(tagline_spans));
 
     // ── System info with thin progress bars ──
     all_lines.push(Line::from(""));
