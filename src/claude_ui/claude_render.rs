@@ -414,6 +414,13 @@ impl ClaudeRenderer {
         self.output_token_count = self.output_token_count.saturating_add(chars / 4 + 1);
     }
 
+    /// Increment output token count by delta chars (used during streaming)
+    pub(crate) fn inc_output_tokens(&mut self, delta_chars: usize) {
+        if delta_chars > 0 {
+            self.output_token_count = self.output_token_count.saturating_add((delta_chars / 3).max(1));
+        }
+    }
+
     pub(crate) fn set_transcript_expanded(&mut self, expanded: bool) {
         self.transcript.expanded = expanded;
     }
@@ -1944,10 +1951,10 @@ fn render_right_panel_info(
     all_lines.push(Line::from(""));
     all_lines.push(Line::from(vec![
         Span::raw(format!("{pad}")),
-        Span::styled("↓", secondary),
+        Span::styled("↓ ", secondary),
         Span::styled(format!("in {}", fmt_tokens(input_tokens)), secondary),
         Span::raw(format!("  ")),
-        Span::styled("↑", secondary),
+        Span::styled("↑ ", secondary),
         Span::styled(format!("out {}", fmt_tokens(output_tokens)), secondary),
     ]));
 
