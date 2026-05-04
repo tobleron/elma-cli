@@ -492,7 +492,7 @@ async fn request_final_answer_from_evidence(
         ChatMessage::simple(
             "user",
             &format!(
-                "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer in a natural conversational tone. Use complete sentences. Acknowledge what was found or done. Ground your answer only in the evidence above. Use plain text only — no markdown formatting, no headings, no tables, no code blocks, no bullet lists. Do not call tools.",
+                "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer in a natural conversational tone. Use complete sentences. Acknowledge what was found or done. Ground your answer only in the evidence above. Use clean terminal-friendly formatting. Prefer simple lists and short sections over walls of text. Do not call tools.",
                 original_user_request,
                 evidence_block
             ),
@@ -761,7 +761,7 @@ async fn request_final_answer_without_tools(
     if force_plain_text {
         req_messages.push(ChatMessage::simple(
             "user",
-            "Return plain terminal text only. No markdown formatting, no headings, no tables, no code blocks, no bullet lists. Do not emit XML/JSON tool calls or function-call markup.",
+            "Use clean terminal-friendly formatting. Prefer simple lists and short sections over walls of text. Do not emit XML/JSON tool calls or function-call markup.",
         ));
     }
     let profile = ad_hoc_profile(model_id, "tool_loop_plain_finalizer");

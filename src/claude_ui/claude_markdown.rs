@@ -1079,13 +1079,23 @@ fn parse_assistant_blocks(text: &str) -> Vec<AssistantBlock> {
         }
 
         let mut block_lines = vec![line.to_string()];
+        let current_is_list = starts_with_list_item(line);
         i += 1;
         while i < lines.len()
             && !lines[i].trim().is_empty()
             && parse_fence_language(lines[i]).is_none()
             && !is_rule_line(lines[i].trim_end())
         {
-            block_lines.push(lines[i].trim_end().to_string());
+            let next_line = lines[i].trim_end();
+            // Split at heading boundaries
+            if starts_with_heading(next_line) {
+                break;
+            }
+            // Split when a list item appears after a non-list block
+            if !current_is_list && starts_with_list_item(next_line) {
+                break;
+            }
+            block_lines.push(next_line.to_string());
             i += 1;
         }
         let block_text = block_lines.join("\n").trim().to_string();
@@ -1110,6 +1120,41 @@ fn is_shell_language(lang: &str) -> bool {
     matches!(lang, "" | "bash" | "sh" | "shell" | "zsh" | "fish")
 }
 
+fn starts_with_heading(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let hash_count = trimmed.chars().take_while(|c| *c == '#').count();
+    hash_count >= 1 && hash_count <= 6
+        && trimmed.len() > hash_count
+        && trimmed.chars().nth(hash_count) == Some(' ')
+}
+
+fn starts_with_list_item(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("- ")
+        || trimmed.starts_with("+ ")
+    {
+        return true;
+    }
+    // * item but NOT **bold** (two asterisks without space)
+    if let Some(rest) = trimmed.strip_prefix("* ") {
+        // "* " at index 0 and NOT preceded by another * (i.e., not "**ing**")
+        if trimmed.len() > 2
+            && !trimmed.starts_with("**")
+        {
+            return true;
+        }
+        return true;
+    }
+    // Ordered list: "1. ", "123. " with space
+    let chars: Vec<char> = trimmed.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if !chars.is_empty() {
+        let rest = &trimmed[chars.len()..];
+        rest.starts_with(". ")
+    } else {
+        false
+    }
+}
+
 fn is_rule_line(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.len() >= 3
@@ -1120,16 +1165,7 @@ fn is_rule_line(line: &str) -> bool {
 
 fn classify_markdown_block(text: &str) -> AssistantBlock {
     let first = text.lines().next().unwrap_or_default().trim_start();
-    if first.starts_with("- ")
-        || first.starts_with("* ")
-        || first.starts_with("+ ")
-        || first
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .count()
-            .gt(&0)
-            && first.contains(". ")
-    {
+    if starts_with_list_item(first) {
         AssistantBlock::List(text.to_string())
     } else if first.starts_with(">") {
         AssistantBlock::Callout(text.to_string())
