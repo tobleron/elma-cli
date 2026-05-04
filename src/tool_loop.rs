@@ -1344,10 +1344,10 @@ pub(crate) async fn run_tool_loop(
                     ).await {
                         if let Some(choice) = resp.choices.get(0) {
                             if let Some(ref content) = choice.message.content {
-                                let summary = crate::text_utils::strip_thinking_blocks(content);
-                                // Clean escaped quotes from JSON output
-                                let clean = summary.replace("\\\"", "\"").replace("\\n", "\n");
-                                // Remove word-count cap — let the LLM control length
+                                let stripped = crate::text_utils::strip_thinking_blocks(content);
+                                // Fall back to raw content if stripping removes everything
+                                let text = if stripped.trim().is_empty() { content } else { &stripped };
+                                let clean = text.replace("\\\"", "\"").replace("\\n", "\n");
                                 if !clean.trim().is_empty() {
                                     tui.push_thought_summary(&clean);
                                 }
