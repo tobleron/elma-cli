@@ -1856,14 +1856,14 @@ fn render_right_panel_info(
 
     // Animation: sequential one-at-a-time highlighting
     // Startup: each ELMA letter gets colored once, then slogan words get colored once
-    // Processing: ELMA cycles slowly, slogan dim
+    // Processing: ELMA cycles, slogan dim
     // Response: slogan words get colored once as finishing gesture
     let elma_highlight = if is_processing {
-        // Slow cycle while processing (81 frames ≈ 2.7s per letter)
-        (anim_frame / 81) % 4
-    } else if anim_frame >= 5 && anim_frame < 45 {
-        // Startup: each letter colored once, 10 frames each
-        (anim_frame - 5) / 10
+        // Cycle while processing (30 frames ≈ 1s per letter)
+        (anim_frame / 30) % 4
+    } else if anim_frame >= 3 && anim_frame < 23 {
+        // Startup: each letter colored once, 5 frames each
+        (anim_frame - 3) / 5
     } else {
         5 // out of range → all dim
     };
@@ -1902,27 +1902,19 @@ fn render_right_panel_info(
     };
     let tag_pad_str: String = std::iter::repeat(' ').take(tagline_pad).collect();
 
-    // Determine which tagline word is highlighted (Some = secondary, None = dim)
-    let tagline_highlight = if is_processing {
-        None
-    } else if anim_frame >= 50 && anim_frame < 100 {
-        // Startup: each word colored once, 10 frames each
-        Some(((anim_frame - 50) / 10).min(tagline_words.len() - 1))
-    } else if !is_processing && output_tokens > 0 && anim_frame >= 100 {
-        // Response received: each word colored once as finishing gesture
-        let phase = (anim_frame - 100) / 10;
-        if phase < tagline_words.len() && phase < 10 {
-            Some(phase)
-        } else {
-            None
-        }
+    // Tagline cycles through words one at a time, same pattern as ELMA
+    let active_word = if is_processing {
+        None // dim while processing
+    } else if anim_frame < 25 {
+        None // wait after startup
     } else {
-        None
+        // Cycle through words one at a time, 12 frames each
+        Some(((anim_frame - 25) / 12) % tagline_words.len())
     };
 
     let mut tagline_spans = vec![Span::raw(tag_pad_str)];
     for (wi, word) in tagline_words.iter().enumerate() {
-        let style = if tagline_highlight == Some(wi) { secondary } else { dim };
+        let style = if active_word == Some(wi) { secondary } else { dim };
         tagline_spans.push(Span::styled(format!("{} ", word), style));
     }
     all_lines.push(Line::from(tagline_spans));
