@@ -578,7 +578,7 @@ impl ClaudeRenderer {
                 // The transcript thinking row starts when real reasoning begins.
             }
             UiEvent::UserSubmitted(content) => {
-                self.input_token_count = content.len() / 4;
+                self.input_token_count = (content.len() / 2).max(1);
                 self.output_token_count = 0;
                 self.push_message(ClaudeMessage::User { content });
             }
@@ -1859,15 +1859,14 @@ fn render_right_panel_info(
     let logo_pad_str: String = std::iter::repeat(' ').take(logo_pad).collect();
 
     // Animation: sequential one-at-a-time highlighting
-    // Startup: each ELMA letter gets colored once, then slogan words get colored once
     // Processing: ELMA cycles, slogan dim
-    // Response: slogan words get colored once as finishing gesture
+    // Response: slogan letters cycle fast as finishing gesture
     let elma_highlight = if is_processing {
-        // Cycle while processing (30 frames ≈ 1s per letter)
-        (anim_frame / 30) % 4
-    } else if anim_frame >= 3 && anim_frame < 23 {
-        // Startup: each letter colored once, 5 frames each
-        (anim_frame - 3) / 5
+        // Cycle while processing (20 frames ≈ 0.67s per letter)
+        (anim_frame / 20) % 4
+    } else if anim_frame >= 2 && anim_frame < 10 {
+        // Startup: each letter colored once, 2 frames each
+        (anim_frame - 2) / 2
     } else {
         5 // out of range → all dim
     };
@@ -1895,10 +1894,10 @@ fn render_right_panel_info(
         all_lines.push(Line::from(spans));
     }
 
-    // Tagline (centered) in secondary color
+    // Tagline (centered) in secondary color, cycles by character
     all_lines.push(Line::from(""));
     let tagline = "Local first terminal agent v0.1.0";
-    let tagline_words: Vec<&str> = tagline.split_whitespace().collect();
+    let tagline_chars: Vec<String> = tagline.chars().map(|c| c.to_string()).collect();
     let tagline_pad = if tagline.chars().count() < text_width {
         (text_width - tagline.chars().count()) / 2
     } else {
@@ -1906,20 +1905,17 @@ fn render_right_panel_info(
     };
     let tag_pad_str: String = std::iter::repeat(' ').take(tagline_pad).collect();
 
-    // Tagline cycles through words one at a time, same pattern as ELMA
-    let active_word = if is_processing {
-        None // dim while processing
-    } else if anim_frame < 25 {
-        None // wait after startup
+    // Tagline cycles through characters one at a time, 3 frames per char
+    let active_char = if is_processing {
+        None
     } else {
-        // Cycle through words one at a time, 12 frames each
-        Some(((anim_frame - 25) / 12) % tagline_words.len())
+        Some((anim_frame / 3) % tagline_chars.len())
     };
 
     let mut tagline_spans = vec![Span::raw(tag_pad_str)];
-    for (wi, word) in tagline_words.iter().enumerate() {
-        let style = if active_word == Some(wi) { secondary } else { dim };
-        tagline_spans.push(Span::styled(format!("{} ", word), style));
+    for (ci, ch) in tagline_chars.iter().enumerate() {
+        let style = if active_char == Some(ci) { secondary } else { dim };
+        tagline_spans.push(Span::styled(ch.clone(), style));
     }
     all_lines.push(Line::from(tagline_spans));
 
