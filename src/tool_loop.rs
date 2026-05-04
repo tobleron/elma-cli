@@ -518,9 +518,16 @@ async fn request_tool_loop_final_answer_streaming(
     tui: &mut crate::ui_terminal::TerminalUI,
     client: &reqwest::Client,
     chat_url: &Url,
-    mut req: ChatCompletionRequest,
+    req: ChatCompletionRequest,
     timeout_s: u64,
 ) -> Result<String> {
+    // Estimate input tokens from request messages
+    let input_estimate: usize = req.messages.iter()
+        .map(|m| m.content.len() / 2)
+        .sum::<usize>()
+        .max(1);
+    tui.set_token_counts(input_estimate, 0);
+    let mut req = req;
     req.stream = true;
 
     let response = client

@@ -775,7 +775,10 @@ impl ClaudeRenderer {
     /// streams in gradually. The original thought disappears; the summary
     /// reveals character by character each frame.
     pub(crate) fn push_thought_summary(&mut self, summary: &str) {
-        self.thinking_entries.pop();
+        // Collapse all existing thoughts so only summary shows (thoughts expire at 3s)
+        for entry in &mut self.thinking_entries {
+            entry.collapsed = true;
+        }
         let word_count = summary.split_whitespace().count();
         let now = Instant::now();
         let entry = ThinkingEntry {
@@ -1859,16 +1862,16 @@ fn render_right_panel_info(
     let logo_pad_str: String = std::iter::repeat(' ').take(logo_pad).collect();
 
     // Animation: sequential one-at-a-time highlighting
-    // Processing: ELMA cycles, slogan dim
-    // Response: slogan letters cycle fast as finishing gesture
+    // Processing: ELMA cycles fast with 3s gap between cycles (90 frames)
+    // Startup: quick burst
     let elma_highlight = if is_processing {
-        // Cycle while processing (20 frames ≈ 0.67s per letter)
-        (anim_frame / 20) % 4
+        // Fast cycle (5 frames per letter = 20 per cycle), wait 90 frames between cycles
+        let phase = anim_frame % 110; // 20 frames cycle + 90 frames gap
+        if phase < 20 { (phase / 5) % 4 } else { 5 }
     } else if anim_frame >= 2 && anim_frame < 10 {
-        // Startup: each letter colored once, 2 frames each
         (anim_frame - 2) / 2
     } else {
-        5 // out of range → all dim
+        5
     };
     let letter_styles = [
         if elma_highlight == 0 { accent } else { dim },
@@ -1905,12 +1908,8 @@ fn render_right_panel_info(
     };
     let tag_pad_str: String = std::iter::repeat(' ').take(tagline_pad).collect();
 
-    // Tagline cycles through characters one at a time, 3 frames per char
-    let active_char = if is_processing {
-        None
-    } else {
-        Some((anim_frame / 3) % tagline_chars.len())
-    };
+    // Tagline cycles through characters continuously, 3 frames per char
+    let active_char = Some((anim_frame / 3) % tagline_chars.len());
 
     let mut tagline_spans = vec![Span::raw(tag_pad_str)];
     for (ci, ch) in tagline_chars.iter().enumerate() {

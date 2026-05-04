@@ -582,7 +582,7 @@ pub(crate) fn parse_markdown(text: &str) -> Vec<RenderBlock> {
         blocks.push(RenderBlock::Paragraph(vec![Line::from(vec![
             Span::styled(
                 text.to_string(),
-                Style::default().fg(theme.fg.to_ratatui_color()),
+                Style::default().fg(theme.fg_dim.to_ratatui_color()),
             ),
         ])]));
     }
@@ -835,7 +835,7 @@ pub(crate) fn render_markdown_ratatui_with_width(text: &str, width: usize) -> Ve
 }
 
 fn get_current_style(bold: bool, italic: bool, strikethrough: bool, theme: &Theme) -> Style {
-    let mut style = Style::default().fg(theme.fg.to_ratatui_color());
+    let mut style = Style::default().fg(theme.fg_dim.to_ratatui_color());
     if bold {
         style = style.add_modifier(Modifier::BOLD);
     }
