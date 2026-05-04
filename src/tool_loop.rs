@@ -1321,7 +1321,7 @@ pub(crate) async fn run_tool_loop(
                 }
                 ct
             };
-            if !combined_thinking.is_empty() && combined_thinking.split_whitespace().count() > 30 {
+            if !combined_thinking.is_empty() {
                 let thinking_text = combined_thinking.clone();
                 if let Ok(aux_url) = Url::parse("http://192.168.1.186:8084/v1/chat/completions") {
                     let aux_profile = crate::llm_config::auxiliary_profile("thought_summary");

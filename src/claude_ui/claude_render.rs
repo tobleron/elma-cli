@@ -1462,6 +1462,7 @@ impl ClaudeRenderer {
             let info_area = panel_chunks[0];
             let thinking_area = if show_reasoning { panel_chunks[1] } else { Rect::default() };
 
+            let is_processing = self.streaming.is_streaming_thinking || self.streaming.is_streaming_content;
             render_right_panel_info(
                 info_area,
                 f,
@@ -1469,6 +1470,7 @@ impl ClaudeRenderer {
                 self.anim_frame,
                 self.input_token_count,
                 self.output_token_count,
+                is_processing,
             );
 
             // Render thinking section only if ctrl+t (reasoning) is active
@@ -1826,6 +1828,7 @@ fn render_right_panel_info(
     anim_frame: usize,
     input_tokens: usize,
     output_tokens: usize,
+    is_processing: bool,
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
@@ -1851,9 +1854,20 @@ fn render_right_panel_info(
     };
     let logo_pad_str: String = std::iter::repeat(' ').take(logo_pad).collect();
 
-    // Animation: ~81 frames per letter (~2.7s at 30fps)
-    let frames_per_letter = 81usize;
-    let active_letter = (anim_frame / frames_per_letter) % 4;
+    // Animation modes:
+    // - Processing: slow ELMA cycle (81 frames/letter ≈ 2.7s)
+    // - Startup (first ~81 frames): fast cycle once
+    // - Idle: all grey
+    let (active_letter, frames_per_letter) = if is_processing {
+        // Slow cycle while processing
+        ((anim_frame / 81) % 4, 81usize)
+    } else if anim_frame < 81 {
+        // Fast startup animation (one quick cycle)
+        ((anim_frame / 10) % 4, 10usize)
+    } else {
+        // Idle: letter 4 = all dim (out of range → all dim)
+        (4, 1usize)
+    };
     let letter_styles = [
         if active_letter == 0 { accent } else { dim },
         if active_letter == 1 { accent } else { dim },
@@ -1879,7 +1893,7 @@ fn render_right_panel_info(
         all_lines.push(Line::from(spans));
     }
 
-    // Tagline (centered) in secondary color, dims after full ELMA cycle
+    // Tagline (centered) in secondary color, dim when processing
     all_lines.push(Line::from(""));
     let tagline = "Local first terminal agent v0.1.0";
     let tagline_pad = if tagline.chars().count() < text_width {
@@ -1888,8 +1902,12 @@ fn render_right_panel_info(
         0
     };
     let tag_pad_str: String = std::iter::repeat(' ').take(tagline_pad).collect();
-    let tagline_style = if anim_frame >= 324 {
-        if (anim_frame / 81) % 2 == 0 { secondary } else { dim }
+    let tagline_style = if is_processing {
+        dim
+    } else if anim_frame < 81 {
+        if (anim_frame / 10) % 2 == 0 { secondary } else { dim }
+    } else if output_tokens > 0 {
+        if (anim_frame / 6) % 2 == 0 { secondary } else { dim }
     } else {
         dim
     };
