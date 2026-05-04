@@ -72,11 +72,14 @@ impl IntelUnit for TurnSummaryUnit {
         };
 
         let prompt = format!(
-            "Summarize this conversation turn in ONE concise sentence (under 100 words). \
-             Say what the user asked and what the outcome was. Be honest about whether \
-             the action succeeded or failed.\n\n\
-             User asked: {user_message}\n\
-             Outcome: {final_text}{tool_block}"
+            "Summarize THIS conversation turn in ONE concise sentence (under 100 words). \
+             Focus ONLY on what happened in THIS turn, not previous turns.\n\
+             Say what the user asked in THIS turn and what the outcome was.\n\
+             Be precise about timing: use 'just' or 'now' for current turn actions.\n\
+             Be honest about whether the action succeeded or failed.\n\n\
+             User asked in THIS turn: {user_message}\n\
+             Tools executed in THIS turn: {tool_block}\n\
+             Final response in THIS turn: {final_text}"
         );
 
         let raw = execute_intel_text_from_user_content(&context.client, &self.profile, prompt).await?;
