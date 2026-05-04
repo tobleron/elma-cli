@@ -789,6 +789,10 @@ impl ClaudeRenderer {
         };
         self.thinking_entries.push(entry);
         self.thinking_scroll = usize::MAX;
+        // Auto-show reasoning panel so summary is visible
+        if !crate::ui_state::is_reasoning_visible() {
+            crate::ui_state::set_show_reasoning(true);
+        }
     }
 
     pub(crate) fn is_streaming(&self) -> bool {
