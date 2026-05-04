@@ -630,7 +630,7 @@ impl ClaudeRenderer {
                 } else {
                     output.clone()
                 };
-                let truncated = terminal_tool_output_preview(&trace_output);
+                let truncated = terminal_tool_output_preview(&name, &trace_output);
                 self.transcript.update_last_tool_trace(
                     &name,
                     crate::claude_ui::claude_state::ToolTraceStatus::Completed {
@@ -2749,7 +2749,7 @@ pub(crate) fn claude_message_to_transcript_line(msg: &ClaudeMessage) -> String {
             duration_ms,
         } => {
             // Truncated output — full tool results live in artifacts/
-            let truncated = terminal_tool_output_preview(output);
+            let truncated = terminal_tool_output_preview(&name, output);
             format!(
                 "✓ Tool result ({}): success={} duration_ms={:?}\n{}\n\n",
                 name, success, duration_ms, truncated
@@ -2771,7 +2771,7 @@ pub(crate) fn claude_message_to_transcript_line(msg: &ClaudeMessage) -> String {
                     output,
                     duration_ms,
                 } => {
-                    let truncated = terminal_tool_output_preview(output);
+                    let truncated = terminal_tool_output_preview(&name, output);
                     out.push_str(&format!(
                         "status: completed success={} duration_ms={:?}\n{}\n\n",
                         success, duration_ms, truncated
@@ -2808,9 +2808,24 @@ pub(crate) fn claude_message_to_transcript_line(msg: &ClaudeMessage) -> String {
 
 /// Character limit for transcript tool output preview.
 const TRANSCRIPT_OUTPUT_LIMIT: usize = 1024;
+const SHELL_OUTPUT_LINES: usize = 6; // Visual truncation for shell commands like `cat`
 
 /// Truncate tool output for terminal transcript to prevent memory spikes.
-fn terminal_tool_output_preview(output: &str) -> String {
+/// For shell tool, show only first N lines visually (context still gets full output).
+fn terminal_tool_output_preview(name: &str, output: &str) -> String {
+    // Visual truncation for shell tool: show only first 6 lines
+    if name == "shell" {
+        let lines: Vec<&str> = output.lines().collect();
+        if lines.len() > SHELL_OUTPUT_LINES {
+            let preview_lines = lines[..SHELL_OUTPUT_LINES].join("\n");
+            return format!(
+                "{}\n… [+{} lines truncated for display]",
+                preview_lines,
+                lines.len() - SHELL_OUTPUT_LINES
+            );
+        }
+    }
+    // Default: truncate by character count
     let preview: String = output.chars().take(TRANSCRIPT_OUTPUT_LIMIT).collect();
     if output.len() > TRANSCRIPT_OUTPUT_LIMIT {
         format!(
@@ -2871,7 +2886,7 @@ fn condense_workspace_info_for_transcript(output: &str) -> String {
 fn transcript_safe_output(name: &str, output: &str) -> String {
     if name == "workspace_info" {
         let condensed = condense_workspace_info_for_transcript(output);
-        terminal_tool_output_preview(&condensed)
+        terminal_tool_output_preview(name, &condensed)
     } else if name == "shell" {
         let limit = 2000usize;
         let preview: String = output.chars().take(limit).collect();
@@ -2884,6 +2899,6 @@ fn transcript_safe_output(name: &str, output: &str) -> String {
             preview
         }
     } else {
-        terminal_tool_output_preview(output)
+        terminal_tool_output_preview(name, output)
     }
 }
