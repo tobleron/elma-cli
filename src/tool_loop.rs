@@ -121,6 +121,7 @@ async fn request_tool_loop_model_turn_streaming(
     let mut tool_call_parts: BTreeMap<usize, StreamingToolCallPart> = BTreeMap::new();
     let mut thinking_started = false;
     let mut content_started = false;
+    let mut content_raw = String::new(); // Raw content with think tags preserved
     let mut in_think_block = false;
     let mut pending_think_tag = String::new();
     let mut thinking_accumulated = String::new();
@@ -194,6 +195,7 @@ async fn request_tool_loop_model_turn_streaming(
                 }
 
                 if let Some(raw_content) = delta.get("content").and_then(|v| v.as_str()) {
+                    content_raw.push_str(raw_content);
                     let (assistant_delta, thinking_delta) =
                         crate::orchestration_helpers::process_stream_content_chunk(
                             raw_content,
@@ -255,6 +257,7 @@ async fn request_tool_loop_model_turn_streaming(
 
     Ok(ToolLoopModelTurn {
         content: content.trim().to_string(),
+        content_raw: content_raw.trim().to_string(),
         tool_calls: finish_streaming_tool_calls(tool_call_parts),
         reasoning_content: if reasoning_content_full.is_empty() {
             None
@@ -280,10 +283,9 @@ pub(crate) struct ToolLoopResult {
 
 struct ToolLoopModelTurn {
     content: String,
+    content_raw: String,
     tool_calls: Vec<ToolCall>,
     reasoning_content: Option<String>,
-    /// Accumulated think-block content from the model's content field.
-    /// Captured so the thought summary intel unit can process it.
     thinking_content: String,
 }
 
@@ -1179,6 +1181,7 @@ pub(crate) async fn run_tool_loop(
                 }
                 ToolLoopModelTurn {
                     content: choice.message.content.clone().unwrap_or_default(),
+                    content_raw: choice.message.content.clone().unwrap_or_default(),
                     tool_calls,
                     reasoning_content: choice.message.reasoning_content.clone(),
                     thinking_content: String::new(),
@@ -1326,11 +1329,11 @@ pub(crate) async fn run_tool_loop(
                     if !ct.is_empty() { ct.push('\n'); }
                     ct.push_str(&turn.thinking_content);
                 }
-                // Fallback: extract think-block content from model response
-                if ct.trim().is_empty() && !content.is_empty() {
-                    if let Some(start) = content.find("<think>") {
-                        if let Some(end) = content.find("</think>") {
-                            ct.push_str(&content[start + 7..end]);
+                // Fallback: extract think-block from raw content (preserves tags)
+                if ct.trim().is_empty() && !turn.content_raw.is_empty() {
+                    if let Some(start) = turn.content_raw.find("<think>") {
+                        if let Some(end) = turn.content_raw.rfind("</think>") {
+                            ct.push_str(&turn.content_raw[start + 7..end]);
                         }
                     }
                 }

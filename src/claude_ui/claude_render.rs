@@ -1937,19 +1937,19 @@ fn render_right_panel_info(
         ]));
     }
 
-    // ── Token progress bars (animated, under system info) ──
+    // ── Token counters (animated, in complementary color) ──
+    fn fmt_tokens(n: usize) -> String {
+        if n >= 1000 { format!("{:.1}k", n as f64 / 1000.0) } else { n.to_string() }
+    }
     all_lines.push(Line::from(""));
-    let input_max = 4096usize; // typical context size for local models
-    let output_max = 32768usize;
-    let input_fraction = (input_tokens.min(input_max) as f64) / (input_max as f64);
-    let output_fraction = (output_tokens.min(output_max) as f64) / (output_max as f64);
-    let bar_width_tok = (text_width.saturating_sub(12)).max(8).min(30);
-    all_lines.push(render_progress_bar_line(
-        "↓in", input_fraction, bar_width_tok, anim_frame, theme, pad,
-    ));
-    all_lines.push(render_progress_bar_line(
-        "↑out", output_fraction, bar_width_tok, anim_frame.wrapping_add(3), theme, pad,
-    ));
+    all_lines.push(Line::from(vec![
+        Span::raw(format!("{pad}")),
+        Span::styled("↓", secondary),
+        Span::styled(format!("in {}", fmt_tokens(input_tokens)), secondary),
+        Span::raw(format!("  ")),
+        Span::styled("↑", secondary),
+        Span::styled(format!("out {}", fmt_tokens(output_tokens)), secondary),
+    ]));
 
     // Model name (under token counter, just above thinking)
     if let Some(ref fm) = footer_model {
@@ -2143,7 +2143,7 @@ fn render_progress_bar_line(
     let secondary = Style::default().fg(theme.accent_secondary.to_ratatui_color());
 
     let bar_color = match label {
-        "CPU" => accent,
+        "CPU" => secondary,
         "MEM" => secondary,
         _ => accent,
     };
