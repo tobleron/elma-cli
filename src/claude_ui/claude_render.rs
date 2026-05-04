@@ -1991,15 +1991,16 @@ fn render_right_panel_thinking(
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
     let accent = Style::default().fg(theme.accent_primary.to_ratatui_color());
 
+    let mut header_lines: Vec<Line<'static>> = Vec::new();
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
     // Blank line for visual separation from model name
     all_lines.push(Line::from(""));
 
-    // Separator header — shown only once at top
-    all_lines.push(Line::from(vec![Span::styled(
-        "── Thinking ──",
-        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+    // Sticky header
+    header_lines.push(Line::from(vec![Span::styled(
+        "[ Thought process ]",
+        Style::default().fg(theme.accent_secondary.to_ratatui_color()),
     )]));
 
     // Completed thinking entries: oldest first, newest last
@@ -2007,7 +2008,6 @@ fn render_right_panel_thinking(
         // Summary entries always show full text, never collapse
         if entry.is_summary {
             let max_w = (area.width.saturating_sub(4) as usize).max(10);
-            // Only show characters up to reveal_chars (streaming effect)
             let visible: String = entry.content.chars().take(entry.reveal_chars).collect();
             let wrapped = wrap_text_at_width(&visible, max_w);
             for (li, wline) in wrapped.iter().enumerate() {
@@ -2017,6 +2017,7 @@ fn render_right_panel_thinking(
                     Span::styled(wline.clone(), accent),
                 ]));
             }
+            all_lines.push(Line::from("")); // spacing between summaries
             continue;
         }
 
@@ -2079,12 +2080,17 @@ fn render_right_panel_thinking(
         } else if *scroll > max_scroll {
             *scroll = max_scroll;
         }
+        let content_height = area_height.saturating_sub(1); // header takes 1 line
         let visible: Vec<Line<'static>> = all_lines
             .iter()
             .skip(*scroll)
-            .take(area_height)
+            .take(content_height)
             .cloned()
             .collect();
+
+        // Prepend sticky header to visible content
+        let mut display_lines = header_lines.clone();
+        display_lines.extend(visible);
 
         let thinking_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -2112,7 +2118,7 @@ fn render_right_panel_thinking(
             .track_style(Style::default().fg(theme.border.to_ratatui_color()));
         f.render_stateful_widget(scrollbar, scrollbar_thumb, &mut scrollbar_state);
 
-        let panel = Paragraph::new(visible)
+        let panel = Paragraph::new(display_lines)
             .block(
                 Block::default()
                     .borders(Borders::LEFT)
