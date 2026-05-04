@@ -406,6 +406,10 @@ impl ClaudeRenderer {
         self.output_token_count = output;
     }
 
+    pub(crate) fn update_input_tokens(&mut self, input: usize) {
+        self.input_token_count = input;
+    }
+
     pub(crate) fn add_output_tokens(&mut self, chars: usize) {
         self.output_token_count = self.output_token_count.saturating_add(chars / 4 + 1);
     }
@@ -1935,9 +1939,10 @@ fn render_right_panel_info(
 
     // ── Token progress bars (animated, under system info) ──
     all_lines.push(Line::from(""));
-    let token_max = 32768usize; // heuristic max for bar scaling
-    let input_fraction = (input_tokens.min(token_max) as f64) / (token_max as f64);
-    let output_fraction = (output_tokens.min(token_max) as f64) / (token_max as f64);
+    let input_max = 4096usize; // typical context size for local models
+    let output_max = 32768usize;
+    let input_fraction = (input_tokens.min(input_max) as f64) / (input_max as f64);
+    let output_fraction = (output_tokens.min(output_max) as f64) / (output_max as f64);
     let bar_width_tok = (text_width.saturating_sub(12)).max(8).min(30);
     all_lines.push(render_progress_bar_line(
         "↓in", input_fraction, bar_width_tok, anim_frame, theme, pad,

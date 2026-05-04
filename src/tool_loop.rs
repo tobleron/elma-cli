@@ -521,12 +521,12 @@ async fn request_tool_loop_final_answer_streaming(
     req: ChatCompletionRequest,
     timeout_s: u64,
 ) -> Result<String> {
-    // Estimate input tokens from request messages
+    // Estimate input tokens from request messages (excluding output for now)
     let input_estimate: usize = req.messages.iter()
         .map(|m| m.content.len() / 2)
         .sum::<usize>()
         .max(1);
-    tui.set_token_counts(input_estimate, 0);
+    tui.update_input_tokens(input_estimate);
     let mut req = req;
     req.stream = true;
 
@@ -1325,6 +1325,14 @@ pub(crate) async fn run_tool_loop(
                 if !turn.thinking_content.is_empty() {
                     if !ct.is_empty() { ct.push('\n'); }
                     ct.push_str(&turn.thinking_content);
+                }
+                // Fallback: extract think-block content from model response
+                if ct.trim().is_empty() && !content.is_empty() {
+                    if let Some(start) = content.find("<think>") {
+                        if let Some(end) = content.find("</think>") {
+                            ct.push_str(&content[start + 7..end]);
+                        }
+                    }
                 }
                 ct
             };

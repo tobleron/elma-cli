@@ -383,6 +383,10 @@ impl TerminalUI {
         self.claude.set_token_counts(input, output);
     }
 
+    pub(crate) fn update_input_tokens(&mut self, input: usize) {
+        self.claude.update_input_tokens(input);
+    }
+
     pub(crate) fn update_context_tokens(&mut self, tokens: u64) {
         self.state.footer.context_current = tokens;
         self.pending_draw = true;
