@@ -199,7 +199,7 @@ impl ClaudeMessage {
                 for (i, content_line) in content_lines.into_iter().enumerate() {
                     let prefix_style = Style::default()
                         .fg(theme.fg_dim.to_ratatui_color());
-                    let gutter_text = if i == 0 { "|_" } else { "| " };
+                    let gutter_text = if i == 0 { "| " } else { "| " };
                     // Pre-wrap: build the full line text, wrap at width-gutter, then
                     // attach gutter prefix to each wrapped line so ratatui never wraps.
                     let full_text: String = content_line.spans.iter()

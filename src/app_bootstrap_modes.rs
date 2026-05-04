@@ -146,59 +146,7 @@ pub(crate) fn emit_startup_banner(
     _session: &SessionPaths,
     _tuned: bool,
 ) {
-    display_logo_splash();
     eprintln!("elma · model: {}", model_id);
-}
-
-/// Display the ELMA logo splash using jp2a with a 2-second timeout.
-/// Output is centered on the terminal.
-fn display_logo_splash() {
-    let logo_path = Path::new("logo/elma_square.png");
-    if !logo_path.exists() {
-        return;
-    }
-    if which::which("jp2a").is_err() {
-        return;
-    }
-
-    let (term_w, _) = match term_size() {
-        Some(dims) => dims,
-        None => return,
-    };
-
-    match std::process::Command::new("jp2a")
-        .args(["--color", "--height=47"])
-        .arg(logo_path)
-        .output()
-    {
-        Ok(output) => {
-            if !output.status.success() {
-                return;
-            }
-            let text = String::from_utf8_lossy(&output.stdout);
-            let lines: Vec<&str> = text.lines().collect();
-            if lines.is_empty() || lines.len() > 100 {
-                return;
-            }
-
-            // Print a blank line, then centered logo, then blank line
-            eprintln!();
-            for line in &lines {
-                let stripped = strip_ansi_escapes::strip(line.as_bytes())
-                    .ok()
-                    .and_then(|bytes| String::from_utf8(bytes).ok())
-                    .unwrap_or_else(|| line.to_string());
-                let visible_len = stripped.chars().count();
-                let padding = term_w.saturating_sub(visible_len) / 2;
-                eprintln!("{:>padding$}{}", "", line);
-            }
-            eprintln!();
-
-            // Brief pause so user can see it (non-blocking, just sleeps)
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
-        Err(_) => {}
-    }
 }
 
 /// Get terminal dimensions as (width, height) in characters.

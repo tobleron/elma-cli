@@ -1958,31 +1958,31 @@ fn render_right_panel_thinking(
         }
 
         if entry.collapsed {
-            // Collapsed: show first wrapped line until summary arrives
+            // Collapsed thought: grey (dim) until summary arrives
             let max_w = (area.width.saturating_sub(4) as usize).max(10);
             let first_line = entry.content.lines().next().unwrap_or(&entry.content);
             let wrapped = wrap_text_at_width(first_line, max_w);
             if let Some(wline) = wrapped.first() {
                 all_lines.push(Line::from(vec![
-                    Span::styled("* ", accent),
-                    Span::styled(wline.clone(), accent),
+                    Span::styled("* ", dim),
+                    Span::styled(wline.clone(), dim),
                 ]));
             }
         } else {
-            // Active thought: show full content, wrapping text
+            // Active thought: grey (dim), show full content
             let max_w = (area.width.saturating_sub(4) as usize).max(10);
             let wrapped = wrap_text_at_width(&entry.content, max_w);
             for (li, wline) in wrapped.iter().enumerate() {
                 let bullet = if li == 0 { "⌄ " } else { "  " };
                 all_lines.push(Line::from(vec![
-                    Span::styled(bullet, accent),
-                    Span::styled(wline.clone(), accent),
+                    Span::styled(bullet, dim),
+                    Span::styled(wline.clone(), dim),
                 ]));
             }
         }
     }
 
-    // Live streaming thinking — at the bottom (newest)
+    // Live streaming thinking — grey (dim) at bottom
     if is_streaming && !live_text.is_empty() {
         all_lines.push(Line::from(""));
         let max_w = (area.width.saturating_sub(4) as usize).max(10);
@@ -1990,8 +1990,8 @@ fn render_right_panel_thinking(
         for (li, wline) in wrapped.iter().enumerate() {
             let bullet = if li == 0 { "* " } else { "  " };
             all_lines.push(Line::from(vec![
-                Span::styled(bullet, accent),
-                Span::styled(wline.clone(), accent),
+                Span::styled(bullet, dim),
+                Span::styled(wline.clone(), dim),
             ]));
         }
     }
@@ -2010,7 +2010,10 @@ fn render_right_panel_thinking(
 
     if total_lines > area_height {
         let max_scroll = total_lines.saturating_sub(area_height);
-        if *scroll > max_scroll {
+        // Auto-scroll to bottom when streaming
+        if is_streaming {
+            *scroll = max_scroll;
+        } else if *scroll > max_scroll {
             *scroll = max_scroll;
         }
         let visible: Vec<Line<'static>> = all_lines

@@ -51,8 +51,8 @@ pub(crate) fn default_theme() -> Theme {
     Theme {
         fg: ColorToken(255, 255, 255),             // White
         fg_dim: ColorToken(128, 128, 128),         // Grey
-        accent_primary: ColorToken(230, 60, 60),   // Red
-        accent_secondary: ColorToken(200, 50, 180), // Magenta
+        accent_primary: ColorToken(0, 220, 80),     // Clean shell green
+        accent_secondary: ColorToken(0, 200, 140),  // Deep teal green
         success: ColorToken(0, 255, 0),            // Green
         error: ColorToken(255, 0, 0),              // Red
         warning: ColorToken(255, 255, 0),          // Yellow
@@ -301,8 +301,8 @@ mod tests {
         let theme = default_theme();
         assert_eq!(theme.fg, ColorToken(255, 255, 255)); // White
         assert_eq!(theme.fg_dim, ColorToken(128, 128, 128)); // Grey
-        assert_eq!(theme.accent_primary, ColorToken(230, 60, 60)); // Red
-        assert_eq!(theme.accent_secondary, ColorToken(200, 50, 180)); // Magenta
+        assert_eq!(theme.accent_primary, ColorToken(0, 220, 80)); // Green
+        assert_eq!(theme.accent_secondary, ColorToken(0, 200, 140)); // Deep teal
         assert_eq!(theme.success, ColorToken(0, 255, 0)); // Green
         assert_eq!(theme.error, ColorToken(255, 0, 0)); // Red
         assert_eq!(theme.warning, ColorToken(255, 255, 0)); // Yellow
@@ -313,15 +313,15 @@ mod tests {
 
     #[test]
     fn test_theme_functions_use_tokens() {
-        // elma_accent should use accent_primary (Red)
+        // elma_accent should use accent_primary (green)
         let result = elma_accent("test");
-        assert!(result.contains("\x1b[38;2;230;60;60m")); // Red
+        assert!(result.contains("\x1b[38;2;0;220;80m")); // Green
         assert!(result.contains("test"));
         assert!(result.ends_with("\x1b[0m"));
 
-        // info_cyan should use accent_secondary (Magenta)
+        // info_cyan should use accent_secondary (deep teal)
         let result = info_cyan("test");
-        assert!(result.contains("\x1b[38;2;200;50;180m")); // Magenta
+        assert!(result.contains("\x1b[38;2;0;200;140m")); // Deep teal
         assert!(result.contains("test"));
         assert!(result.ends_with("\x1b[0m"));
     }
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn test_current_theme_returns_default() {
         let theme = current_theme();
-        assert_eq!(theme.accent_primary, ColorToken(230, 60, 60));
+        assert_eq!(theme.accent_primary, ColorToken(0, 220, 80));
 
     }
 }
