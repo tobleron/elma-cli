@@ -3,7 +3,9 @@
 //! Provides CPU and memory usage estimates using platform-specific
 //! commands (sysctl on macOS, /proc on Linux).
 
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::thread;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
@@ -17,11 +19,12 @@ pub(crate) struct SystemSnapshot {
     pub sampled_at: Instant,
 }
 
-/// Cached system monitor, refreshed at most once per second.
-static SNAPSHOT: std::sync::LazyLock<Mutex<Option<(SystemSnapshot, Instant)>>> =
-    std::sync::LazyLock::new(|| Mutex::new(None));
+static BACKGROUND_RUNNING: AtomicBool = AtomicBool::new(false);
 
-const CACHE_TTL: Duration = Duration::from_secs(1);
+fn background_cache() -> &'static Mutex<Option<SystemSnapshot>> {
+    static CACHE: OnceLock<Mutex<Option<SystemSnapshot>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
 
 fn num_cpus() -> u32 {
     std::thread::available_parallelism()
@@ -57,21 +60,25 @@ fn collect_snapshot() -> Option<SystemSnapshot> {
 }
 
 pub(crate) fn get_snapshot() -> Option<SystemSnapshot> {
-    let now = Instant::now();
-    {
-        let cached = SNAPSHOT.lock().unwrap();
-        if let Some((snap, ts)) = cached.as_ref() {
-            if now.duration_since(*ts) < CACHE_TTL {
-                return Some(snap.clone());
+    let cache = background_cache();
+    let guard = cache.lock().ok()?;
+    guard.clone()
+}
+
+pub(crate) fn start_background_monitor() {
+    if BACKGROUND_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    thread::spawn(|| {
+        loop {
+            let snapshot = collect_snapshot();
+            let cache = background_cache();
+            if let Ok(mut guard) = cache.lock() {
+                *guard = snapshot;
             }
+            thread::sleep(Duration::from_secs(1));
         }
-    }
-    if let Some(snap) = collect_snapshot() {
-        *SNAPSHOT.lock().unwrap() = Some((snap.clone(), now));
-        Some(snap)
-    } else {
-        None
-    }
+    });
 }
 
 #[cfg(target_os = "macos")]
@@ -253,12 +260,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_snapshot_caching() {
-        let a = get_snapshot();
-        let b = get_snapshot();
-        // Same snapshot object within cache TTL
-        if let (Some(a), Some(b)) = (a, b) {
-            assert!((a.sampled_at - b.sampled_at) < Duration::from_secs(1));
+    fn test_collect_snapshot() {
+        let snap = collect_snapshot();
+        // Should return Some on supported platforms; on unsupported returns None
+        if let Some(s) = snap {
+            assert!(s.mem_total_gb > 0.0);
+            assert!(s.num_cpus > 0);
+            assert!(s.process_mem_mb >= 0.0);
         }
+    }
+
+    #[test]
+    fn test_get_snapshot_empty_before_start() {
+        // Before background monitor is started, get_snapshot returns None
+        assert!(get_snapshot().is_none());
     }
 }

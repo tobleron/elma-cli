@@ -57,6 +57,7 @@ TASK_WIRING_UNUSED_CRATES.md
 !_tasks/pending/632_async_transcript_disk_writes_PENDING.md
 !_tasks/pending/633_cap_message_memory_growth_PENDING.md
 !_tasks/pending/634_reduce_permission_prompt_polling_PENDING.md
+!_tasks/active/*.md
 dup2
 findings.txt
 fix_*.py

@@ -908,7 +908,7 @@ impl UiNoticeKind {
 // Transcript (Claude Code-style)
 // ============================================================================
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct ClaudeTranscript {
     pub messages: Vec<ClaudeMessage>,
     pub expanded: bool,
@@ -921,6 +921,35 @@ pub(crate) struct ClaudeTranscript {
     pub divider_index: Option<usize>,
     /// Y-position snapshot at first scroll-away
     pub divider_y: Option<usize>,
+    // Rendering cache
+    cached_width: usize,
+    cached_lines: Vec<Line<'static>>,
+    cached_mapping: Vec<usize>,
+    pub(crate) dirty: bool,
+    // Cached unseen assistant count
+    pub(crate) unseen_assistant_count: usize,
+    pub(crate) is_at_bottom: bool,
+}
+
+impl Default for ClaudeTranscript {
+    fn default() -> Self {
+        Self {
+            messages: Vec::new(),
+            expanded: false,
+            scroll_offset: 0,
+            live_thinking_index: None,
+            thinking_collapse_deadline: None,
+            thinking_expanded_index: None,
+            divider_index: None,
+            divider_y: None,
+            cached_width: 0,
+            cached_lines: Vec::new(),
+            cached_mapping: Vec::new(),
+            dirty: true,
+            unseen_assistant_count: 0,
+            is_at_bottom: true,
+        }
+    }
 }
 
 impl ClaudeTranscript {
@@ -942,7 +971,19 @@ impl ClaudeTranscript {
                 }
             }
         }
+        self.dirty = true;
+        // Increment unseen count when scrolled away from bottom
+        if self.scroll_offset > 0 {
+            if matches!(msg, ClaudeMessage::Assistant { .. } | ClaudeMessage::Thinking { .. }) {
+                self.unseen_assistant_count = self.unseen_assistant_count.saturating_add(1);
+            }
+        }
         self.messages.push(msg);
+        // Soft cap at 500 messages — remove oldest 100 when exceeded
+        if self.messages.len() > 500 {
+            let excess = self.messages.len() - 500;
+            self.messages.drain(0..excess.min(self.messages.len()));
+        }
         // Only auto-scroll to bottom on conversational messages (user/assistant).
         // Tool output and thinking should not disrupt the user's scroll position.
         match self.messages.last() {
@@ -964,6 +1005,7 @@ impl ClaudeTranscript {
                 return;
             }
         }
+        self.dirty = true;
         self.thinking_collapse_deadline = None;
         self.thinking_expanded_index = None;
         self.messages.push(ClaudeMessage::Thinking {
@@ -982,6 +1024,7 @@ impl ClaudeTranscript {
         if self.live_thinking_index.is_none() || self.thinking_collapse_deadline.is_some() {
             self.start_live_thinking();
         }
+        self.dirty = true;
         if let Some(index) = self.live_thinking_index {
             if let Some(ClaudeMessage::Thinking {
                 content,
@@ -1002,6 +1045,7 @@ impl ClaudeTranscript {
             {
                 *is_streaming = false;
             }
+            self.dirty = true;
             let word_count = match self.messages.get(index) {
                 Some(ClaudeMessage::Thinking { word_count, .. }) => *word_count,
                 _ => 0,
@@ -1061,6 +1105,7 @@ impl ClaudeTranscript {
                 self.divider_index = Some(self.messages.len().saturating_sub(1));
             }
         }
+        self.dirty = true;
     }
 
     pub(crate) fn scroll_down(&mut self, lines: usize) {
@@ -1070,10 +1115,12 @@ impl ClaudeTranscript {
             self.divider_index = None;
             self.divider_y = None;
         }
+        self.dirty = true;
     }
 
     /// Find the last running ToolTrace with matching name and update its status.
     pub(crate) fn update_last_tool_trace(&mut self, name: &str, status: ToolTraceStatus) {
+        self.dirty = true;
         for msg in self.messages.iter_mut().rev() {
             if let ClaudeMessage::ToolTrace {
                 name: n,
@@ -1095,6 +1142,7 @@ impl ClaudeTranscript {
     /// Used by continuity retry to overwrite a streamed wrong answer
     /// instead of pushing a second duplicate message (Task 602).
     pub(crate) fn replace_last_assistant_message(&mut self, content: AssistantContent) {
+        self.dirty = true;
         for msg in self.messages.iter_mut().rev() {
             if let ClaudeMessage::Assistant {
                 content: ref mut c,
@@ -1110,6 +1158,7 @@ impl ClaudeTranscript {
     /// Used before running the evidence finalizer to prevent the model's
     /// raw streaming answer from appearing alongside the finalized one.
     pub(crate) fn remove_last_assistant_message(&mut self) {
+        self.dirty = true;
         if let Some(pos) = self.messages.iter().rev().position(|msg| {
             matches!(msg, ClaudeMessage::Assistant { .. })
         }) {
@@ -1122,37 +1171,43 @@ impl ClaudeTranscript {
         self.scroll_offset = 0;
         self.divider_index = None;
         self.divider_y = None;
+        self.unseen_assistant_count = 0;
+        self.dirty = true;
     }
 
-    /// Get the last user message content (for sticky header)
+    /// Get the last user message content (for sticky header) — truncated to first line, max 120 chars
     pub(crate) fn last_user_message(&self) -> Option<String> {
         self.messages.iter().rev().find_map(|m| {
             if let ClaudeMessage::User { content } = m {
-                Some(content.clone())
+                let preview = content.lines().next().unwrap_or(content);
+                let truncated = if preview.len() > 120 {
+                    let mut end = 120;
+                    while !preview.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    format!("{}...", &preview[..end])
+                } else {
+                    preview.to_string()
+                };
+                Some(truncated)
             } else {
                 None
             }
         })
     }
 
-    /// Count unseen assistant turns from divider_index to end
+    /// Count unseen assistant turns — uses cached field
     pub(crate) fn count_unseen_assistant_turns(&self) -> usize {
-        let idx = self.divider_index.unwrap_or(0);
-        self.messages
-            .iter()
-            .skip(idx)
-            .filter(|m| {
-                matches!(
-                    m,
-                    ClaudeMessage::Assistant { .. } | ClaudeMessage::Thinking { .. }
-                )
-            })
-            .count()
+        self.unseen_assistant_count
     }
 
     /// Returns rendered lines plus a parallel vector mapping each line to its
     /// source message index (for click-to-expand and other hit-testing).
-    pub(crate) fn render_ratatui(&self, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
+    pub(crate) fn render_ratatui(&mut self, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
+        if !self.dirty && self.cached_width == width {
+            return (self.cached_lines.clone(), self.cached_mapping.clone());
+        }
+
         let mut lines = Vec::new();
         let mut mapping = Vec::new();
 
@@ -1201,11 +1256,17 @@ impl ClaudeTranscript {
 
             i += 1;
         }
+
+        self.cached_width = width;
+        self.cached_lines = lines.clone();
+        self.cached_mapping = mapping.clone();
+        self.dirty = false;
         (lines, mapping)
     }
 
     /// Toggle collapse/expand for a ToolTrace or Thinking at the given message index.
     pub(crate) fn toggle_trace_collapse(&mut self, message_index: usize) {
+        self.dirty = true;
         if let Some(msg) = self.messages.get_mut(message_index) {
             match msg {
                 ClaudeMessage::ToolTrace { collapsed, .. } => {

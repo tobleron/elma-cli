@@ -32,7 +32,7 @@ where
     loop {
         tokio::select! {
             result = &mut future => return result,
-            _ = tokio::time::sleep(std::time::Duration::from_millis(40)) => {
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
                 tui.process_pending_input_events();
                 tui.pump_ui()?;
                 if let Some(queued) = tui.poll_busy_submission()? {

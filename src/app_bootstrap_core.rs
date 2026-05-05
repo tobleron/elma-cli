@@ -281,6 +281,9 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     // Task 460: Initialize background task manager
     background_task::init_task_manager(background_task::BackgroundTaskConfig::default());
 
+    // Task 629: Start background system monitor
+    crate::system_monitor::start_background_monitor();
+
     emit_startup_banner(
         &args,
         &chat_url,

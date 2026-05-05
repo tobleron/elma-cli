@@ -71,6 +71,9 @@ pub(crate) struct TerminalUI {
     transcript_token_estimate: u64,
     // Session root directory for persisting transcript/history inside the session folder
     session_root: Option<PathBuf>,
+    // Rate limiting for draw()
+    last_draw_time: Instant,
+    min_frame_interval: Duration,
 }
 
 #[cfg(unix)]
@@ -155,6 +158,8 @@ impl TerminalUI {
             selected_background_task: None,
             mouse_capture_enabled: false,
             session_root,
+            last_draw_time: Instant::now(),
+            min_frame_interval: Duration::from_millis(40),
         })
     }
 
@@ -338,7 +343,7 @@ impl TerminalUI {
                     });
                     return granted;
                 }
-                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
+                _ = tokio::time::sleep(std::time::Duration::from_millis(200)) => {
                     // Pump UI while waiting for permission response
                     if self.raw_mode {
                         let _ = self.draw();
@@ -854,9 +859,11 @@ impl TerminalUI {
     }
 
     fn draw(&mut self) -> io::Result<()> {
-        if !self.pending_draw {
+        let now = Instant::now();
+        if !self.pending_draw && now - self.last_draw_time < self.min_frame_interval {
             return Ok(());
         }
+        self.last_draw_time = now;
         self.pending_draw = false;
 
         let (cols, rows) = size()?;
@@ -900,8 +907,8 @@ impl TerminalUI {
 
         // Estimate the current model budget (base from last update + streaming)
         let streaming_tokens =
-            crate::token_counter::count_tokens(&self.claude.streaming.thinking) as u64
-            + crate::token_counter::count_tokens(&self.claude.streaming.content) as u64;
+            (self.claude.streaming.thinking.len() / 4
+             + self.claude.streaming.content.len() / 4) as u64;
         let model_context_tokens_estimate = self.state.footer.context_current + streaming_tokens;
         let transcript_tokens_estimate = self.transcript_token_estimate;
 
@@ -1009,11 +1016,10 @@ impl TerminalUI {
             return read_line_non_interactive();
         }
         loop {
-            self.draw()?;
-
             let ev = if let Ok(ev) = self.event_rx.try_recv() {
                 ev
             } else {
+                self.draw()?;
                 let redraw_deadline = self.claude.next_redraw_deadline();
                 if let Some(deadline) = redraw_deadline {
                     let now = Instant::now();

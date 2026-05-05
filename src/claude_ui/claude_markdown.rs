@@ -15,10 +15,11 @@ use syntect::parsing::SyntaxSet;
 static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
 static THEME_SET: OnceLock<ThemeSet> = OnceLock::new();
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AssistantContent {
     pub raw_markdown: String,
     pub blocks: Vec<AssistantBlock>,
+    pub precomputed_blocks: Option<Vec<RenderBlock>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,9 +72,11 @@ impl AssistantContent {
     pub(crate) fn from_markdown(text: &str) -> Self {
         let normalized = normalize_terminal_markdown(text);
         let blocks = parse_assistant_blocks(&normalized);
+        let precomputed = Some(parse_markdown(&normalized));
         Self {
             raw_markdown: normalized,
             blocks,
+            precomputed_blocks: precomputed,
         }
     }
 }
@@ -827,6 +830,13 @@ fn collapse_blank_runs(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
 
 pub(crate) fn render_markdown_ratatui(text: &str) -> Vec<Line<'static>> {
     render_markdown_ratatui_with_width(text, 80)
+}
+
+pub(crate) fn render_markdown_ratatui_with_precomputed(
+    blocks: &[RenderBlock],
+    width: usize,
+) -> Vec<Line<'static>> {
+    render_blocks_to_lines(blocks, current_theme(), width)
 }
 
 pub(crate) fn render_markdown_ratatui_with_width(text: &str, width: usize) -> Vec<Line<'static>> {

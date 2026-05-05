@@ -14,7 +14,6 @@ use super::claude_state::{
 };
 use super::claude_stream::StreamingUI;
 use crate::markdown_ansi::render_markdown_inline_to_ansi;
-use crate::system_monitor;
 use crate::ui_autocomplete;
 use crate::ui_state::trace_log_state;
 use crate::ui_theme::*;
@@ -102,6 +101,15 @@ pub(crate) struct ClaudeRenderer {
     output_token_count: usize,
     // Latest budget/stop notice text for thinking panel footer
     last_notice_text: Option<String>,
+    // Cached input wrapping (Task 631)
+    cached_input_key: (String, usize),
+    cached_wrapped_input: Vec<String>,
+    // Async transcript disk write buffer (Task 632)
+    transcript_buffer: Vec<String>,
+    markdown_buffer: Vec<crate::session_write::MdEntry>,
+    last_flush: Instant,
+    // Pre-computed logo groups (Task 630C)
+    logo_groups: Vec<[&'static str; 4]>,
 }
 
 /// A thinking/chain-of-thought entry for the right panel.
@@ -155,6 +163,16 @@ impl ClaudeRenderer {
             input_token_count: 0,
             output_token_count: 0,
             last_notice_text: None,
+            cached_input_key: (String::new(), 0),
+            cached_wrapped_input: Vec::new(),
+            transcript_buffer: Vec::new(),
+            markdown_buffer: Vec::new(),
+            last_flush: Instant::now(),
+            logo_groups: vec![
+                ["┏━╸", "╻  ", "┏┳┓", "┏━┓"],
+                ["┣╸ ", "┃  ", "┃┃┃", "┣━┫"],
+                ["┗━╸", "┗━╸", "╹ ╹", "╹ ╹"],
+            ],
         }
     }
 
@@ -175,106 +193,130 @@ impl ClaudeRenderer {
         if let ClaudeMessage::System { ref content } = msg {
             self.last_notice_text = Some(content.clone());
         }
-        let m = msg.clone();
+
+        // Generate transcript data before consuming msg
+        let transcript_line = claude_message_to_transcript_line(&msg);
+        use crate::session_write::MdEntry;
+        let entry = match &msg {
+            ClaudeMessage::User { content } => MdEntry::User {
+                content: content.clone(),
+            },
+            ClaudeMessage::Assistant { content } => MdEntry::Assistant {
+                content: content.raw_markdown.clone(),
+            },
+            ClaudeMessage::Thinking { content, .. } => MdEntry::Thinking {
+                content: content.clone(),
+            },
+            ClaudeMessage::ToolStart { name, input } => MdEntry::ToolStart {
+                name: name.clone(),
+                input: format!("{:?}", input),
+            },
+            ClaudeMessage::ToolProgress { name, message } => MdEntry::ToolProgress {
+                name: name.clone(),
+                message: message.clone(),
+            },
+            ClaudeMessage::ToolResult {
+                name,
+                success,
+                output,
+                duration_ms,
+            } => MdEntry::ToolResult {
+                name: name.clone(),
+                success: *success,
+                output: output.clone(),
+                duration_ms: *duration_ms,
+            },
+            ClaudeMessage::ToolTrace {
+                name,
+                command,
+                status,
+                ..
+            } => match status {
+                crate::claude_ui::claude_state::ToolTraceStatus::Running => MdEntry::Meta {
+                    label: name.clone(),
+                    detail: format!("running: {}", command),
+                },
+                crate::claude_ui::claude_state::ToolTraceStatus::Completed {
+                    success,
+                    output,
+                    ..
+                } => MdEntry::ToolResult {
+                    name: name.clone(),
+                    success: *success,
+                    output: output.clone(),
+                    duration_ms: None,
+                },
+            },
+            ClaudeMessage::PermissionRequest { command, reason } => MdEntry::Meta {
+                label: "permission".into(),
+                detail: format!("{} reason={:?}", command, reason),
+            },
+            ClaudeMessage::CompactBoundary => MdEntry::Meta {
+                label: "compact".into(),
+                detail: String::new(),
+            },
+            ClaudeMessage::CompactSummary {
+                message_count,
+                context_preview,
+            } => MdEntry::Meta {
+                label: "compact".into(),
+                detail: format!(
+                    "{} messages, preview={:?}",
+                    message_count, context_preview
+                ),
+            },
+            ClaudeMessage::System { content } => MdEntry::Meta {
+                label: "system".into(),
+                detail: content.clone(),
+            },
+            ClaudeMessage::Notice(notice) => MdEntry::Meta {
+                label: "notice".into(),
+                detail: format!("{:?} {}", notice.kind, notice.content),
+            },
+        };
+
         self.transcript.push(msg);
 
-        // Append to session.md and terminal_transcript.txt if we can derive the session root
+        // Buffer for async disk flush instead of immediate write
+        self.transcript_buffer.push(transcript_line);
+        self.markdown_buffer.push(entry);
+
+        // Flush every 10 lines or every 500ms
+        if self.transcript_buffer.len() >= 10
+            || self.last_flush.elapsed() >= Duration::from_millis(500)
+        {
+            self.flush_transcript_buffer();
+        }
+    }
+
+    fn flush_transcript_buffer(&mut self) {
+        if self.transcript_buffer.is_empty() {
+            return;
+        }
         if let Ok(guard) = trace_log_state().lock() {
             if let Some(ref trace_path) = *guard {
                 if let Some(session_root) = trace_path.parent() {
-                    // Generate transcript line before m is consumed by the match
-                    let transcript_line = claude_message_to_transcript_line(&m);
                     use crate::session_write::{
-                        append_session_markdown, append_terminal_transcript, MdEntry,
+                        append_session_markdown, append_terminal_transcript,
                     };
-                    let entry = match &m {
-                        ClaudeMessage::User { content } => MdEntry::User {
-                            content: content.clone(),
-                        },
-                        ClaudeMessage::Assistant { content } => MdEntry::Assistant {
-                            content: content.raw_markdown.clone(),
-                        },
-                        ClaudeMessage::Thinking { content, .. } => MdEntry::Thinking {
-                            content: content.clone(),
-                        },
-                        ClaudeMessage::ToolStart { name, input } => MdEntry::ToolStart {
-                            name: name.clone(),
-                            input: format!("{:?}", input),
-                        },
-                        ClaudeMessage::ToolProgress { name, message } => MdEntry::ToolProgress {
-                            name: name.clone(),
-                            message: message.clone(),
-                        },
-                        ClaudeMessage::ToolResult {
-                            name,
-                            success,
-                            output,
-                            duration_ms,
-                        } => MdEntry::ToolResult {
-                            name: name.clone(),
-                            success: *success,
-                            output: output.clone(),
-                            duration_ms: *duration_ms,
-                        },
-                        ClaudeMessage::ToolTrace {
-                            name,
-                            command,
-                            status,
-                            ..
-                        } => match status {
-                            crate::claude_ui::claude_state::ToolTraceStatus::Running => {
-                                MdEntry::Meta {
-                                    label: name.clone(),
-                                    detail: format!("running: {}", command),
-                                }
-                            }
-                            crate::claude_ui::claude_state::ToolTraceStatus::Completed {
-                                success,
-                                output,
-                                ..
-                            } => MdEntry::ToolResult {
-                                name: name.clone(),
-                                success: *success,
-                                output: output.clone(),
-                                duration_ms: None,
-                            },
-                        },
-                        ClaudeMessage::PermissionRequest { command, reason } => MdEntry::Meta {
-                            label: "permission".into(),
-                            detail: format!("{} reason={:?}", command, reason),
-                        },
-                        ClaudeMessage::CompactBoundary => MdEntry::Meta {
-                            label: "compact".into(),
-                            detail: String::new(),
-                        },
-                        ClaudeMessage::CompactSummary {
-                            message_count,
-                            context_preview,
-                        } => MdEntry::Meta {
-                            label: "compact".into(),
-                            detail: format!(
-                                "{} messages, preview={:?}",
-                                message_count, context_preview
-                            ),
-                        },
-                        ClaudeMessage::System { content } => MdEntry::Meta {
-                            label: "system".into(),
-                            detail: content.clone(),
-                        },
-                        ClaudeMessage::Notice(notice) => MdEntry::Meta {
-                            label: "notice".into(),
-                            detail: format!("{:?} {}", notice.kind, notice.content),
-                        },
-                    };
-                    append_session_markdown(session_root, &entry);
-                    append_terminal_transcript(session_root, &transcript_line);
+                    let lines: Vec<String> = self.transcript_buffer.drain(..).collect();
+                    let entries: Vec<crate::session_write::MdEntry> =
+                        self.markdown_buffer.drain(..).collect();
+                    for line in &lines {
+                        append_terminal_transcript(session_root, line);
+                    }
+                    for entry in &entries {
+                        append_session_markdown(session_root, &entry);
+                    }
                 }
             }
         }
+        self.last_flush = Instant::now();
     }
 
     pub(crate) fn clear_transcript(&mut self) {
         self.transcript.messages.clear();
+        self.transcript.dirty = true;
     }
 
     pub(crate) fn set_input(&mut self, lines: Vec<String>) {
@@ -1074,7 +1116,12 @@ impl ClaudeRenderer {
         // 4. Input (fixed at bottom, dynamically sized based on wrapped lines)
         // 5. Footer (3 rows: margin top, content, margin bottom)
         let input_display_width = main_area.width.saturating_sub(6) as usize;
-        let wrapped_input = wrap_input_lines(&self.input_lines, input_display_width);
+        let input_key = (self.input_lines.join("\n"), input_display_width);
+        if input_key.0 != self.cached_input_key.0 || input_key.1 != self.cached_input_key.1 {
+            self.cached_wrapped_input = wrap_input_lines(&self.input_lines, input_display_width);
+            self.cached_input_key = input_key;
+        }
+        let wrapped_input = &self.cached_wrapped_input;
         let input_height = wrapped_input.len().min(10) as u16;
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -1199,10 +1246,10 @@ impl ClaudeRenderer {
                 .min(max_offset)
         };
 
-        // Store hit-testing state for click-to-expand tool traces
+        // Store hit-testing state for click-to-expand tool traces (visible portion only)
         self.last_content_area = Some(content_area);
         self.last_start_line = start_line;
-        self.last_line_mapping = all_mapping.clone();
+        self.last_line_mapping = all_mapping.into_iter().skip(start_line).take(height).collect();
 
         // Slice visible lines from the transcript
         let visible_lines: Vec<Line<'static>> = all_lines
@@ -1439,28 +1486,17 @@ impl ClaudeRenderer {
 
         // Render right-side info panel with thinking threads
         if panel_width > 0 {
-            // Auto-collapse entries whose deadline has passed, and
-            // increment reveal for streaming summary entries
+            // Auto-collapse entries, increment reveal, and remove expired in one pass
             let now = Instant::now();
-            for entry in &mut self.thinking_entries {
+            self.thinking_entries.retain_mut(|entry| {
                 if entry.collapse_deadline <= now {
                     entry.collapsed = true;
                 }
-                // Stream summary text in gradually (~8 chars per frame)
                 if entry.reveal_chars < entry.content.len() {
                     entry.reveal_chars = (entry.reveal_chars + 8).min(entry.content.len());
                 }
-            }
-
-            // Remove expired entries (deadline passed)
-            let now = Instant::now();
-            self.thinking_entries.retain(|e| now < e.collapse_deadline);
-
-            // Collect visible thinking: oldest first (chronological)
-            let all_thinking: Vec<&ThinkingEntry> = self
-                .thinking_entries
-                .iter()
-                .collect();
+                now < entry.collapse_deadline
+            });
 
             // Split panel into top info section + bottom thinking section
             let show_reasoning = crate::ui_state::is_reasoning_visible();
@@ -1489,6 +1525,7 @@ impl ClaudeRenderer {
                 self.input_token_count,
                 self.output_token_count,
                 is_processing,
+                &self.logo_groups,
             );
 
             // Render thinking section only if ctrl+t (reasoning) is active
@@ -1498,7 +1535,7 @@ impl ClaudeRenderer {
                 render_right_panel_thinking(
                     thinking_area,
                     f,
-                    &all_thinking,
+                    &self.thinking_entries,
                     self.anim_frame,
                     &mut self.thinking_scroll,
                     self.streaming.is_streaming_thinking,
@@ -1847,6 +1884,7 @@ fn render_right_panel_info(
     input_tokens: usize,
     output_tokens: usize,
     is_processing: bool,
+    logo_groups: &[[&'static str; 4]],
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
@@ -1858,13 +1896,8 @@ fn render_right_panel_info(
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
     // ── Top: ELMA logo with alternating letter animation ──
-    // Split logo into letter groups: E(0-2) L(3-5) M(6-8) A(9-11)
-    let logo = r#"┏━╸╻  ┏┳┓┏━┓
-┣╸ ┃  ┃┃┃┣━┫
-┗━╸┗━╸╹ ╹╹ ╹
-"#;
-    let logo_lines: Vec<&str> = logo.lines().collect();
-    let logo_width = logo_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    // Logo pre-computed into fixed 3-char groups: E L M A
+    let logo_width = logo_groups[0].iter().map(|g| g.chars().count()).sum::<usize>();
     let logo_pad = if logo_width < text_width {
         (text_width - logo_width) / 2
     } else {
@@ -1891,19 +1924,10 @@ fn render_right_panel_info(
         if elma_highlight == 3 { accent } else { dim },
     ];
 
-    for row in &logo_lines {
+    for row in logo_groups {
         let mut spans = vec![Span::raw(logo_pad_str.clone())];
-        let chars: Vec<char> = row.chars().collect();
-        let groups = [
-            chars.get(0..3).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
-            chars.get(3..6).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
-            chars.get(6..9).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
-            chars.get(9..12).map(|c| c.iter().collect::<String>()).unwrap_or_default(),
-        ];
-        for (gi, g) in groups.iter().enumerate() {
-            if !g.is_empty() {
-                spans.push(Span::styled(g.clone(), letter_styles[gi]));
-            }
+        for (gi, g) in row.iter().enumerate() {
+            spans.push(Span::styled(*g, letter_styles[gi]));
         }
         all_lines.push(Line::from(spans));
     }
@@ -1929,20 +1953,7 @@ fn render_right_panel_info(
     }
     all_lines.push(Line::from(tagline_spans));
 
-    // ── System info with thin progress bars ──
-    all_lines.push(Line::from(""));
-    if let Some(snap) = system_monitor::get_snapshot() {
-        let bar_width = (text_width.saturating_sub(12)).max(8).min(30);
-        all_lines.push(render_progress_bar_line(
-            "CPU", snap.cpu_pct / 100.0, bar_width, anim_frame, theme, pad,
-        ));
-        all_lines.push(render_progress_bar_line(
-            "MEM", snap.mem_pct / 100.0, bar_width, anim_frame.wrapping_add(3), theme, pad,
-        ));
-        all_lines.push(Line::from(vec![
-            Span::styled(format!("{}COR {} cores", pad, snap.num_cpus), dim),
-        ]));
-    }
+    // ── Token counters (animated, in complementary color) ──
 
     // ── Token counters (animated, in complementary color) ──
     fn fmt_tokens(n: usize) -> String {
@@ -1977,7 +1988,7 @@ fn render_right_panel_info(
 fn render_right_panel_thinking(
     area: Rect,
     f: &mut Frame,
-    entries: &[&ThinkingEntry],
+    entries: &[ThinkingEntry],
     anim_frame: usize,
     scroll: &mut usize,
     is_streaming: bool,
@@ -2409,6 +2420,12 @@ fn discover_workspace_files(workdir: &PathBuf, query: &str) -> Vec<String> {
     results.sort();
     results.truncate(30);
     results
+}
+
+impl Drop for ClaudeRenderer {
+    fn drop(&mut self) {
+        self.flush_transcript_buffer();
+    }
 }
 
 impl Default for ClaudeRenderer {
