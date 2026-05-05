@@ -961,18 +961,11 @@ pub(crate) fn render_assistant_content(
 }
 
 fn needs_block_separator(prev: &AssistantBlock, current: &AssistantBlock) -> bool {
-    matches!(
+    // Always separate different block types with a blank line.
+    // Consecutive paragraphs can flow together without spacing.
+    !matches!(
         (prev, current),
-        (AssistantBlock::Rule, _)
-            | (_, AssistantBlock::Rule)
-            | (AssistantBlock::CodeBlock { .. }, _)
-            | (_, AssistantBlock::CodeBlock { .. })
-            | (AssistantBlock::CommandSuggestion { .. }, _)
-            | (_, AssistantBlock::CommandSuggestion { .. })
-            | (AssistantBlock::Table(_), _)
-            | (_, AssistantBlock::Table(_))
-            | (AssistantBlock::Callout(_), _)
-            | (_, AssistantBlock::Callout(_))
+        (AssistantBlock::Paragraph(_), AssistantBlock::Paragraph(_))
     )
 }
 
