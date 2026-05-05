@@ -59,6 +59,7 @@ TASK_WIRING_UNUSED_CRATES.md
 !_tasks/pending/634_reduce_permission_prompt_polling_PENDING.md
 !_tasks/active/*.md
 dup2
+.trash/
 findings.txt
 fix_*.py
 probe_*.sh
