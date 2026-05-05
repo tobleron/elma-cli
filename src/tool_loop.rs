@@ -1189,6 +1189,62 @@ pub(crate) async fn run_tool_loop(
             }
         };
         let content = turn.content;
+
+        // Task 279/622: Generate and display thought summary on auxiliary LLM
+        let combined_thinking = {
+            let mut ct = String::new();
+            if let Some(ref reasoning) = turn.reasoning_content {
+                ct.push_str(reasoning);
+            }
+            if !turn.thinking_content.is_empty() {
+                if !ct.is_empty() { ct.push('\n'); }
+                ct.push_str(&turn.thinking_content);
+            }
+            // Fallback: extract think-block from raw content (preserves tags)
+            if ct.trim().is_empty() && !turn.content_raw.is_empty() {
+                if let Some(start) = turn.content_raw.find("<think>") {
+                    if let Some(end) = turn.content_raw.rfind("</think>") {
+                        ct.push_str(&turn.content_raw[start + 7..end]);
+                    }
+                }
+            }
+            ct
+        };
+        if !combined_thinking.is_empty() {
+            let thinking_text = combined_thinking.clone();
+            if let Ok(aux_url) = Url::parse("http://192.168.1.186:8084/v1/chat/completions") {
+                let aux_profile = crate::llm_config::auxiliary_profile("thought_summary");
+                let prompt = format!(
+                    "Summarize this thinking in one sentence, less than 90 words, third person (describe what the user asked):\n{}",
+                    thinking_text
+                );
+                let req = crate::llm_config::chat_request_from_profile(
+                    &aux_profile,
+                    vec![crate::ChatMessage::simple("user", &prompt)],
+                    crate::llm_config::ChatRequestOptions {
+                        stream: Some(false),
+                        temperature: Some(0.0),
+                        max_tokens: Some(512),
+                        ..Default::default()
+                    },
+                );
+                if let Ok(resp) = crate::ui::ui_chat::chat_once_with_timeout(
+                    client, &aux_url, &req, 10,
+                ).await {
+                    if let Some(choice) = resp.choices.get(0) {
+                        if let Some(ref content) = choice.message.content {
+                            let stripped = crate::text_utils::strip_thinking_blocks(content);
+                            let text = if stripped.trim().is_empty() { content } else { &stripped };
+                            let clean = text.replace("\\\"", "\"").replace("\\n", "\n");
+                            if !clean.trim().is_empty() {
+                                tui.push_thought_summary(&clean);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if !turn.tool_calls.is_empty() {
             // Track tool calls through stop policy
             if let Some(outcome) = stop_policy.record_tool_calls(&turn.tool_calls) {
@@ -1319,61 +1375,6 @@ pub(crate) async fn run_tool_loop(
                 });
             }
 
-            // Task 279/622: Generate and display thought summary on auxiliary LLM
-            let combined_thinking = {
-                let mut ct = String::new();
-                if let Some(ref reasoning) = turn.reasoning_content {
-                    ct.push_str(reasoning);
-                }
-                if !turn.thinking_content.is_empty() {
-                    if !ct.is_empty() { ct.push('\n'); }
-                    ct.push_str(&turn.thinking_content);
-                }
-                // Fallback: extract think-block from raw content (preserves tags)
-                if ct.trim().is_empty() && !turn.content_raw.is_empty() {
-                    if let Some(start) = turn.content_raw.find("<think>") {
-                        if let Some(end) = turn.content_raw.rfind("</think>") {
-                            ct.push_str(&turn.content_raw[start + 7..end]);
-                        }
-                    }
-                }
-                ct
-            };
-            if !combined_thinking.is_empty() {
-                let thinking_text = combined_thinking.clone();
-                if let Ok(aux_url) = Url::parse("http://192.168.1.186:8084/v1/chat/completions") {
-                    let aux_profile = crate::llm_config::auxiliary_profile("thought_summary");
-                    let prompt = format!(
-                        "Summarize this thinking in one sentence, less than 90 words, third person (describe what the user asked):\n{}",
-                        thinking_text
-                    );
-                    let req = crate::llm_config::chat_request_from_profile(
-                        &aux_profile,
-                        vec![crate::ChatMessage::simple("user", &prompt)],
-                        crate::llm_config::ChatRequestOptions {
-                            stream: Some(false),
-                            temperature: Some(0.0),
-                            max_tokens: Some(512),
-                            ..Default::default()
-                        },
-                    );
-                    if let Ok(resp) = crate::ui::ui_chat::chat_once_with_timeout(
-                        client, &aux_url, &req, 10,
-                    ).await {
-                        if let Some(choice) = resp.choices.get(0) {
-                            if let Some(ref content) = choice.message.content {
-                                let stripped = crate::text_utils::strip_thinking_blocks(content);
-                                // Fall back to raw content if stripping removes everything
-                                let text = if stripped.trim().is_empty() { content } else { &stripped };
-                                let clean = text.replace("\\\"", "\"").replace("\\n", "\n");
-                                if !clean.trim().is_empty() {
-                                    tui.push_thought_summary(&clean);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             let mut first_tool_call = true;
             for tc in &turn.tool_calls {
                 // ── Duplicate gate: skip if this exact command succeeded earlier ──
