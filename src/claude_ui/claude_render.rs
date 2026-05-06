@@ -1307,7 +1307,7 @@ impl ClaudeRenderer {
         let mut input_content = Vec::new();
         let prefix_width = 2;
         let text_width = input_area.width.saturating_sub(prefix_width as u16) as usize;
-        let display_wrapped = wrap_input_lines(&self.input_lines, text_width.max(10));
+        let display_wrapped = self.cached_wrapped_input.clone();
         for line in &display_wrapped {
             input_content.push(Line::from(vec![Span::raw(line.clone())]));
         }
@@ -1343,6 +1343,7 @@ impl ClaudeRenderer {
             let mut picker_lines = match &self.picker_state {
                 PickerState::Slash { query: _, selected } => {
                     let filtered = self.filtered_slash_commands();
+                let filtered = self.filtered_slash_commands();
                     let mut lines = Vec::new();
                     for (i, cmd) in filtered.iter().enumerate().take(8) {
                         let is_sel = i == *selected;
@@ -1429,8 +1430,8 @@ impl ClaudeRenderer {
                 f.render_widget(picker_block, picker_area);
             }
         }
-
         self.clear_expired_prompt_hint();
+
 
         // Footer is 3 rows: margin-top, content, margin-bottom
         let footer_chunks = Layout::default()

@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 const MAX_INLINE_CAPTURE_BYTES: u64 = 1024 * 1024;
 const MAX_ARTIFACT_BYTES: u64 = 8 * 1024 * 1024;
-const MAX_WALL_SECS: u64 = 20;
+const MAX_WALL_SECS: u64 = 60;
 
 pub(crate) fn should_classify_artifacts(
     complexity: &ComplexityAssessment,
@@ -317,54 +317,46 @@ pub(crate) async fn run_shell_persistent(
     cmd: &str,
     workdir: &PathBuf,
 ) -> Result<ShellExecutionResult> {
-    let shell_mutex = crate::persistent_shell::get_shell(workdir)?;
-    let mut shell = shell_mutex
-        .lock()
-        .map_err(|_| anyhow::anyhow!("Shell mutex poisoned"))?;
-
-    let start = Instant::now();
-    let (exit_code, output) = shell.execute(cmd, MAX_WALL_SECS)?;
-    let duration = start.elapsed();
-
-    let bytes_written = output.len() as u64;
-    let inline_text = sanitize_pty_transcript(output.as_bytes());
-
-    Ok(ShellExecutionResult {
-        exit_code,
-        inline_text,
-        bytes_written,
-        truncated: false, // Persistent shell handles long output via marker
-        timed_out: duration.as_secs() >= MAX_WALL_SECS,
-        artifact_path: None,
-        artifact_kind: None,
-    })
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    let elapsed = std::sync::atomic::AtomicU64::new(0);
+    run_shell_persistent_blocking(cmd, workdir, &cancelled, &elapsed)
 }
 
 pub(crate) fn run_shell_persistent_sync(
     cmd: &str,
     workdir: &PathBuf,
 ) -> Result<ShellExecutionResult> {
-    let shell_mutex = crate::persistent_shell::get_shell(workdir)?;
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    let elapsed = std::sync::atomic::AtomicU64::new(0);
+    run_shell_persistent_blocking(cmd, workdir, &cancelled, &elapsed)
+}
+
+pub(crate) fn run_shell_persistent_blocking(
+    cmd: &str,
+    workdir: &PathBuf,
+    cancelled: &std::sync::atomic::AtomicBool,
+    elapsed_secs: &std::sync::atomic::AtomicU64,
+) -> Result<ShellExecutionResult> {
+    let shell_mutex = crate::persistent_shell::get_shell(workdir)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
     let mut shell = shell_mutex
         .lock()
         .map_err(|_| anyhow::anyhow!("Shell mutex poisoned"))?;
-
-    let start = Instant::now();
-    let (exit_code, output) = shell.execute(cmd, MAX_WALL_SECS)?;
-    let duration = start.elapsed();
-
-    let bytes_written = output.len() as u64;
-    let inline_text = sanitize_pty_transcript(output.as_bytes());
-
-    Ok(ShellExecutionResult {
-        exit_code,
-        inline_text,
-        bytes_written,
-        truncated: false,
-        timed_out: duration.as_secs() >= MAX_WALL_SECS,
-        artifact_path: None,
-        artifact_kind: None,
-    })
+    match shell.execute_ext(cmd, 30, cancelled, elapsed_secs) {
+        Ok((exit_code, output)) => {
+            let inline_text = sanitize_pty_transcript(output.as_bytes());
+            Ok(ShellExecutionResult {
+                exit_code,
+                inline_text,
+                bytes_written: output.len() as u64,
+                truncated: false,
+                timed_out: false,
+                artifact_path: None,
+                artifact_kind: None,
+            })
+        }
+        Err(e) => Err(e),
+    }
 }
 
 struct PtyCapture {

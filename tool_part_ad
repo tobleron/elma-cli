@@ -1,0 +1,784 @@
+            let lines = t.todo_render_lines();
+            if lines.is_empty() {
+                "No tasks".to_string()
+            } else {
+                lines.join("\n")
+            }
+        }
+        (_, None) => "Todo updates require interactive TUI mode".to_string(),
+        _ => format!("Unknown action: {}", action),
+    };
+
+    if let Some(t) = tui.as_mut() {
+        t.add_claude_message(crate::claude_ui::ClaudeMessage::ToolResult {
+            name: "update_todo_list".to_string(),
+            success: !content.starts_with("Error:"),
+            output: content.clone(),
+            duration_ms: None,
+        });
+    }
+
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "update_todo_list".to_string(),
+        ok: !content.starts_with("Error:"),
+        content,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_stat(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "stat", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "stat".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+    if !full_path.exists() {
+        let error_msg = format!("Error: path not found: {}", path);
+        emit_tool_result(&mut tui, "stat", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "stat".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let metadata = match std::fs::metadata(&full_path) {
+        Ok(m) => m,
+        Err(e) => {
+            let error_msg = format!("Error: {}", e);
+            emit_tool_result(&mut tui, "stat", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "stat".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let file_type = if metadata.is_dir() { "directory" } else if metadata.is_file() { "file" } else { "other" };
+    let size = metadata.len();
+    let modified = metadata.modified()
+        .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).ok())
+        .ok()
+        .flatten();
+
+    let content = format!(
+        "Type: {}\nSize: {} bytes\nModified: {}",
+        file_type,
+        size,
+        modified.map(|s| s.to_string()).unwrap_or_else(|| "unknown".to_string())
+    );
+
+    emit_tool_result(&mut tui, "stat", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "stat".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_copy(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let source = av["source"].as_str().unwrap_or("");
+    let destination = av["destination"].as_str().unwrap_or("");
+
+    if source.is_empty() || destination.is_empty() {
+        let error_msg = "Error: source and destination required".to_string();
+        emit_tool_result(&mut tui, "copy", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "copy".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let src = workdir.join(source);
+    let dst = workdir.join(destination);
+
+    if !src.exists() {
+        let error_msg = format!("Error: source not found: {}", source);
+        emit_tool_result(&mut tui, "copy", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "copy".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "copy", &format!("{} -> {}", source, destination));
+
+    fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            let ty = entry.file_type()?;
+            let dest_path = dst.join(entry.file_name());
+            if ty.is_dir() {
+                copy_dir_recursive(&entry.path(), &dest_path)?;
+            } else {
+                std::fs::copy(entry.path(), dest_path)?;
+            }
+        }
+        Ok(())
+    }
+
+    let result = if src.is_dir() {
+        copy_dir_recursive(&src, &dst)
+    } else {
+        std::fs::copy(&src, &dst).map(|_| ())
+    };
+
+    let content = match &result {
+        Ok(_) => format!("Copied {} to {}", source, destination),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "copy", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "copy".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_move(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let source = av["source"].as_str().unwrap_or("");
+    let destination = av["destination"].as_str().unwrap_or("");
+
+    if source.is_empty() || destination.is_empty() {
+        let error_msg = "Error: source and destination required".to_string();
+        emit_tool_result(&mut tui, "move", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "move".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let src = workdir.join(source);
+    let dst = workdir.join(destination);
+
+    if !src.exists() {
+        let error_msg = format!("Error: source not found: {}", source);
+        emit_tool_result(&mut tui, "move", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "move".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "move", &format!("{} -> {}", source, destination));
+
+    let result = std::fs::rename(&src, &dst);
+    let content = match &result {
+        Ok(_) => format!("Moved {} to {}", source, destination),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "move", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "move".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_mkdir(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+    let parents = av["parents"].as_bool().unwrap_or(true);
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "mkdir", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "mkdir".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+    emit_tool_start(&mut tui, "mkdir", path);
+
+    let result = if parents {
+        std::fs::create_dir_all(&full_path)
+    } else {
+        std::fs::create_dir(&full_path)
+    };
+
+    let content = match &result {
+        Ok(_) => format!("Created directory: {}", path),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "mkdir", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "mkdir".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_trash(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "trash", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "trash".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+
+    if !full_path.exists() {
+        let error_msg = format!("Error: path not found: {}", path);
+        emit_tool_result(&mut tui, "trash", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "trash".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "trash", path);
+
+    let trash_dir = workdir.join(".trash");
+    let _ = std::fs::create_dir_all(&trash_dir);
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let trash_path = trash_dir.join(format!("{}_{}", timestamp, path.replace("/", "_")));
+
+    let result = std::fs::rename(&full_path, &trash_path);
+    let content = match &result {
+        Ok(_) => format!("Moved to trash: {}", path),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "trash", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "trash".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_touch(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "touch", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "touch".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+    emit_tool_start(&mut tui, "touch", path);
+
+    let result = std::fs::write(&full_path, "");
+    let content = match &result {
+        Ok(_) => format!("Touched: {}", path),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    let ok = result.is_ok();
+    emit_tool_result(&mut tui, "touch", ok, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "touch".to_string(),
+        content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_file_size(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "file_size", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "file_size".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+
+    if !full_path.exists() {
+        let error_msg = format!("Error: path not found: {}", path);
+        emit_tool_result(&mut tui, "file_size", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "file_size".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    fn dir_size(p: &std::path::Path) -> u64 {
+        let mut size = 0u64;
+        if let Ok(entries) = std::fs::read_dir(p) {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    if meta.is_file() {
+                        size += meta.len();
+                    } else if meta.is_dir() {
+                        size += dir_size(&entry.path());
+                    }
+                }
+            }
+        }
+        size
+    }
+
+    let size = if full_path.is_dir() {
+        dir_size(&full_path)
+    } else {
+        std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0)
+    };
+
+    let content = format!("Size: {} bytes", size);
+    emit_tool_result(&mut tui, "file_size", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "file_size".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_workspace_info(
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    emit_tool_start(&mut tui, "workspace_info", "");
+    let mut info = String::new();
+
+    info.push_str(&format!("## Workspace Root\n{}\n\n", workdir.display()));
+
+    info.push_str("## Directory Structure\n");
+    if let Ok(entries) = std::fs::read_dir(workdir) {
+        let mut items: Vec<String> = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if name.starts_with('.') || name == "target" || name == "node_modules"
+                || name == "dist" || name == "build"
+            {
+                continue;
+            }
+            let marker = if path.is_dir() { "/" } else { "" };
+            if path.is_dir() {
+                let mut sub_items = String::new();
+                if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                    let mut subs: Vec<String> = sub_entries
+                        .flatten()
+                        .filter_map(|e| {
+                            let sp = e.path();
+                            let sn = sp.file_name()?.to_string_lossy().to_string();
+                            if sn.starts_with('.') { return None; }
+                            let sm = if sp.is_dir() { "/" } else { "" };
+                            Some(format!("    {}{}", sn, sm))
+                        })
+                        .take(20)
+                        .collect();
+                    subs.sort();
+                    if !subs.is_empty() {
+                        sub_items = format!("\n{}", subs.join("\n"));
+                    }
+                }
+                items.push(format!("  {}{}{}", name, marker, sub_items));
+            } else {
+                items.push(format!("  {}{}", name, marker));
+            }
+            if items.len() >= 100 { break; }
+        }
+        items.sort();
+        info.push_str(&items.join("\n"));
+    }
+    info.push_str("\n\n");
+
+    info.push_str("## Project Type\n");
+    let checks: &[(&str, &str)] = &[
+        ("Cargo.toml", "Rust"),
+        ("package.json", "Node.js/JavaScript/TypeScript"),
+        ("pyproject.toml", "Python"),
+        ("setup.py", "Python"),
+        ("go.mod", "Go"),
+        ("Makefile", "Make-based project"),
+        ("CMakeLists.txt", "CMake/C++"),
+        ("Gemfile", "Ruby"),
+        ("composer.json", "PHP"),
+        ("pom.xml", "Java/Maven"),
+        ("build.gradle", "Java/Gradle"),
+        ("requirements.txt", "Python"),
+        ("Dockerfile", "Docker container"),
+        ("docker-compose.yml", "Docker Compose"),
+        (".github/workflows", "GitHub Actions CI"),
+    ];
+    let mut found = false;
+    for (file, label) in checks {
+        if workdir.join(file).exists() {
+            info.push_str(&format!("- {} ({})\n", label, file));
+            found = true;
+        }
+    }
+    if !found {
+        info.push_str("- Generic (no recognized project file)\n");
+    }
+
+    if workdir.join(".git").exists() {
+        info.push_str("\n## Git Status\n");
+        let branch = std::process::Command::new("git")
+            .args(["-C", &workdir.display().to_string(), "branch", "--show-current"])
+            .output();
+        if let Ok(out) = branch {
+            let b = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !b.is_empty() {
+                info.push_str(&format!("Branch: {}\n", b));
+            }
+        }
+        let status = std::process::Command::new("git")
+            .args(["-C", &workdir.display().to_string(), "status", "--short"])
+            .output();
+        if let Ok(out) = status {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let lines: Vec<&str> = text.lines().collect();
+            if lines.is_empty() {
+                info.push_str("Working tree clean\n");
+            } else {
+                let modified = lines.iter().filter(|l| l.starts_with(" M") || l.starts_with("M ")).count();
+                let untracked = lines.iter().filter(|l| l.starts_with("??")).count();
+                let staged = lines.iter().filter(|l| l.starts_with("M ") || l.starts_with("A ")).count();
+                info.push_str(&format!(
+                    "{} staged, {} modified, {} untracked files\n",
+                    staged, modified, untracked
+                ));
+                info.push_str("Recent changes:\n");
+                for line in lines.iter().take(20) {
+                    info.push_str(&format!("  {}\n", line));
+                }
+                if lines.len() > 20 {
+                    info.push_str(&format!("  ... and {} more\n", lines.len() - 20));
+                }
+            }
+        }
+    }
+
+    let guidance_files = [
+        ("AGENTS.md", 1600usize),
+        ("_tasks/TASKS.md", 1200),
+    ];
+    let mut guidance_section = String::new();
+    for (rel_path, max_chars) in &guidance_files {
+        let full_path = workdir.join(rel_path);
+        if full_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&full_path) {
+                let trimmed: String = content.chars().take(*max_chars).collect();
+                guidance_section.push_str(&format!(
+                    "\n### {}\n```\n{}\n```\n",
+                    rel_path, trimmed
+                ));
+                if content.chars().count() > *max_chars {
+                    guidance_section.push_str("...(truncated)\n");
+                }
+            }
+        }
+    }
+    let active_dir = workdir.join("_tasks").join("active");
+    if active_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&active_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().map(|e| e == "md").unwrap_or(false) {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        let trimmed: String = content.chars().take(800).collect();
+                        let name = path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        guidance_section.push_str(&format!(
+                            "\n### Active task: {}\n```\n{}\n```\n",
+                            name, trimmed
+                        ));
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    if !guidance_section.is_empty() {
+        info.push_str("\n## Project Guidance\n");
+        info.push_str(&guidance_section);
+    }
+
+    emit_tool_result(&mut tui, "workspace_info", true, &info);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "workspace_info".to_string(),
+        content: info,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_exists(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("");
+    let check_type = av["type"].as_str().unwrap_or("any");
+
+    if path.is_empty() {
+        let error_msg = "Error: path required".to_string();
+        emit_tool_result(&mut tui, "exists", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "exists".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let full_path = workdir.join(path);
+    let exists = full_path.exists();
+
+    let content = if !exists {
+        "exists: false".to_string()
+    } else {
+        let actual_type = if full_path.is_dir() { "dir" } else if full_path.is_file() { "file" } else { "other" };
+        let wanted_type = check_type;
+        let matches = wanted_type == "any" || wanted_type == actual_type;
+        format!("exists: true, type: {}, matches: {}", actual_type, matches)
+    };
+
+    emit_tool_result(&mut tui, "exists", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "exists".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+/// Task 538: Helper to extract line limits from shell commands (e.g. head -N, tail -N)
+fn extract_line_limit(command: &str) -> Option<usize> {
+    // Check for | head -N, | head -n N, | tail -N, | tail -n N
+    let patterns = [
+        r"\|\s*head\s*-n\s*(\d+)",
+        r"\|\s*head\s*-(\d+)",
+        r"\|\s*tail\s*-n\s*(\d+)",
+        r"\|\s*tail\s*-(\d+)",
+    ];
+    
+    for p in patterns {
+        if let Ok(re) = regex::Regex::new(p) {
+            if let Some(caps) = re.captures(command) {
+                if let Some(m) = caps.get(1) {
+                    if let Ok(limit) = m.as_str().parse::<usize>() {
+                        return Some(limit);
+                    }
+                }
+            }
+        }
+    }
+    None
+}

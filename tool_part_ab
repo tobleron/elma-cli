@@ -1,0 +1,1000 @@
+
+    let full = match resolve_tool_path(workdir, &path) {
+        Ok(p) => p,
+        Err(e) => {
+            let error_msg = format!("path error: {}", e);
+            emit_tool_result(&mut tui, "observe", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "observe".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    };
+
+    emit_tool_start(&mut tui, "observe", &path);
+
+    let md = match std::fs::symlink_metadata(&full) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let content = format!(
+                "path: {}\nexists: false",
+                full.display()
+            );
+            emit_tool_result(&mut tui, "observe", true, &content);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "observe".to_string(),
+                content,
+                ok: true,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+        Err(e) => {
+            let error_msg = format!("Error inspecting {}: {}", full.display(), e);
+            emit_tool_result(&mut tui, "observe", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "observe".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    };
+
+    let file_type_str = if md.file_type().is_symlink() {
+        "symlink"
+    } else if md.file_type().is_dir() {
+        "directory"
+    } else if md.file_type().is_file() {
+        "file"
+    } else {
+        "other"
+    };
+
+    let mut lines: Vec<String> = Vec::new();
+    lines.push(format!("path: {}", full.display()));
+    lines.push(format!("exists: true"));
+    lines.push(format!("type: {}", file_type_str));
+    lines.push(format!("size: {}", md.len()));
+    if let Ok(mtime) = md.modified() {
+        match mtime.duration_since(std::time::UNIX_EPOCH) {
+            Ok(d) => lines.push(format!("modified: {}", d.as_secs())),
+            Err(_) => {}
+        }
+    }
+    #[cfg(unix)]
+    lines.push(format!("permissions: {:o}", std::os::unix::fs::MetadataExt::mode(&md) & 0o777));
+    #[cfg(not(unix))]
+    lines.push(format!("permissions: {:?}", md.permissions()));
+    lines.push(format!("readonly: {}", md.permissions().readonly()));
+
+    // Symlink target
+    let mut is_symlink = false;
+    if md.file_type().is_symlink() {
+        is_symlink = true;
+        match std::fs::read_link(&full) {
+            Ok(target) => {
+                lines.push(format!("symlink_target: {}", target.display()));
+            }
+            Err(_) => {
+                lines.push("symlink_target: <unreadable>".to_string());
+            }
+        }
+    }
+
+    // Directory child count
+    if file_type_str == "directory" {
+        match std::fs::read_dir(&full) {
+            Ok(entries) => {
+                let count = entries.filter_map(|e| e.ok()).count();
+                lines.push(format!("child_count: {}", count));
+            }
+            Err(_) => {}
+        }
+    }
+
+    let content = lines.join("\n");
+    emit_tool_result(&mut tui, "observe", true, &content);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "observe".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_read(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let paths: Vec<String> = if let Some(arr) = av["paths"].as_array() {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        let single = av["path"].as_str().unwrap_or("").to_string();
+        if single.is_empty() {
+            Vec::new()
+        } else {
+            vec![single]
+        }
+    };
+
+    if paths.is_empty() {
+        let error_msg = "Error: no path or paths provided".to_string();
+        emit_tool_result(&mut tui, "read", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "read".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let is_multi = paths.len() > 1;
+    let mut all_content = String::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    for (i, tp) in paths.iter().enumerate() {
+        let full = match resolve_tool_path(workdir, tp) {
+            Ok(p) => p,
+            Err(e) => {
+                let err = format!("path error: {}", e);
+                if is_multi {
+                    errors.push(err.clone());
+                    all_content.push_str(&format!("\n### File {}: ERROR — {}\n", i + 1, tp));
+                    continue;
+                } else {
+                    emit_tool_result(&mut tui, "read", false, &err);
+                    return ToolExecutionResult {
+                        tool_call_id: call_id.to_string(),
+                        tool_name: "read".to_string(),
+                        content: err,
+                        ok: false,
+                        exit_code: None,
+                        timed_out: false,
+                        status: crate::tools::ToolStatus::Failed,
+                        duration_ms: 0,
+                        signal_killed: None,
+                    };
+                }
+            }
+        };
+        if !full.exists() {
+            let err = format!("file_not_found: {}", tp);
+            if is_multi {
+                errors.push(err.clone());
+                all_content.push_str(&format!("\n### File {}: ERROR — {}\n", i + 1, tp));
+                continue;
+            } else {
+                emit_tool_result(&mut tui, "read", false, &err);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "read".to_string(),
+                    content: err,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                    signal_killed: None,
+                };
+            }
+        }
+
+        match crate::document_adapter::read_file_smart(&full) {
+            Ok((content, header)) => {
+                let file_block = if is_multi {
+                    format!("### File {}: {}\n{}\n\n{}", i + 1, tp, header, content)
+                } else {
+                    format!("{}\n{}", header, content)
+                };
+                all_content.push_str(&file_block);
+                if i < paths.len() - 1 {
+                    all_content.push_str("\n\n");
+                }
+            }
+            Err(e) => {
+                let err = format!("Error reading {}: {}", tp, e);
+                if is_multi {
+                    errors.push(err.clone());
+                    all_content.push_str(&format!("\n### File {}: ERROR — {}\n", i + 1, tp));
+                } else {
+                    emit_tool_result(&mut tui, "read", false, &err);
+                    return ToolExecutionResult {
+                        tool_call_id: call_id.to_string(),
+                        tool_name: "read".to_string(),
+                        content: err,
+                        ok: false,
+                        exit_code: None,
+                        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                        signal_killed: None,
+                    };
+                }
+            }
+        }
+    }
+
+    let ok = errors.is_empty();
+    emit_tool_start(&mut tui, "read", &paths[0]);
+    emit_tool_progress(&mut tui, "read", "reading file(s)");
+    emit_tool_result(&mut tui, "read", ok, &all_content);
+
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "read".to_string(),
+        content: all_content,
+        ok,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_glob(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let pattern = av["pattern"].as_str().unwrap_or("*").to_string();
+    let search_path = av["path"].as_str().map(PathBuf::from);
+
+    emit_tool_start(&mut tui, "glob", &pattern);
+
+    let base = match search_path {
+        Some(p) => {
+            match resolve_tool_path(workdir, p.to_str().unwrap_or("")) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    let error_msg = format!("path error: {}", e);
+                    emit_tool_result(&mut tui, "glob", false, &error_msg);
+                    return ToolExecutionResult {
+                        tool_call_id: call_id.to_string(),
+                        tool_name: "glob".to_string(),
+                        content: error_msg,
+                        ok: false,
+                        exit_code: None,
+                        timed_out: false,
+                        status: crate::tools::ToolStatus::Failed,
+                        duration_ms: 0,
+                        signal_killed: None,
+                    };
+                }
+            }
+        }
+        Some(p) => Some(workdir.join(p)),
+        None => Some(workdir.clone()),
+    };
+
+    let walker = glob::glob_with(
+        &pattern,
+        glob::MatchOptions {
+            case_sensitive: false,
+            require_literal_separator: false,
+            require_literal_leading_dot: false,
+        },
+    );
+
+    let mut results = Vec::new();
+    let mut count = 0;
+    let max_results = 100;
+
+    if let Ok(walker) = walker {
+        for entry in walker.filter_map(|e| e.ok()) {
+            if count >= max_results {
+                break;
+            }
+            let relative = entry
+                .strip_prefix(workdir)
+                .unwrap_or(&entry)
+                .display()
+                .to_string();
+            results.push(relative);
+            count += 1;
+        }
+    }
+
+    let output = if results.is_empty() {
+        "No files found matching pattern".to_string()
+    } else {
+        results.join("\n")
+    };
+
+    emit_tool_result(&mut tui, "glob", !results.is_empty(), &output);
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "glob".to_string(),
+        content: output,
+        ok: !results.is_empty(),
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn verify_syntax(path: &str, workdir: &PathBuf) -> Result<(), String> {
+    if path.ends_with(".rs") {
+        let mut curr = workdir.clone();
+        let mut found_cargo = false;
+        for _ in 0..5 {
+            if curr.join("Cargo.toml").exists() {
+                found_cargo = true;
+                break;
+            }
+            if let Some(parent) = curr.parent() {
+                curr = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
+        
+        if found_cargo {
+            let output = std::process::Command::new("cargo")
+                .arg("check")
+                .arg("--message-format=short")
+                .current_dir(&curr)
+                .output();
+            
+            match output {
+                Ok(out) if !out.status.success() => {
+                    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                    let combined = format!("{}\n{}", stdout, stderr);
+                    return Err(format!("Cargo check failed after mutation:\n{}", combined.trim()));
+                }
+                Err(e) => return Err(format!("Failed to run cargo check: {}", e)),
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+fn exec_patch(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let patch_content = av["patch"].as_str().unwrap_or("").to_string();
+    if patch_content.is_empty() {
+        let error_msg = "Error: patch content is empty";
+        emit_tool_result(&mut tui, "patch", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "patch".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    emit_tool_start(&mut tui, "patch", "(multi-file patch)");
+
+    use elma_tools::{parse_patch, PatchOperation};
+
+    match parse_patch(&patch_content) {
+        Ok(parsed) => {
+            let mut results = Vec::new();
+            let mut all_ok = true;
+
+            for op in &parsed.operations {
+                let (path, result_msg) = match op {
+                    PatchOperation::AddFile { path, content } => {
+                        let full = workdir.join(path);
+                        match std::fs::create_dir_all(full.parent().unwrap_or(&full)) {
+                            Ok(_) => match std::fs::write(&full, content) {
+                                Ok(_) => (path.clone(), "added".to_string()),
+                                Err(e) => {
+                                    all_ok = false;
+                                    (path.clone(), format!("write failed: {}", e))
+                                }
+                            },
+                            Err(e) => {
+                                all_ok = false;
+                                (path.clone(), format!("dir create failed: {}", e))
+                            }
+                        }
+                    }
+                    PatchOperation::DeleteFile { path } => {
+                        let full = workdir.join(path);
+                        match std::fs::remove_file(&full) {
+                            Ok(_) => (path.clone(), "deleted".to_string()),
+                            Err(e) => {
+                                all_ok = false;
+                                (path.clone(), format!("delete failed: {}", e))
+                            }
+                        }
+                    }
+                    PatchOperation::UpdateFile { path, old_string, new_string } => {
+                        let full = workdir.join(path);
+                        match std::fs::read_to_string(&full) {
+                            Ok(original) => {
+                                if let Some(pos) = original.find(old_string) {
+                                    let mut updated = original.clone();
+                                    updated.replace_range(pos..pos + old_string.len(), new_string);
+                                    match std::fs::write(&full, &updated) {
+                                        Ok(_) => (path.clone(), "updated".to_string()),
+                                        Err(e) => {
+                                            all_ok = false;
+                                            (path.clone(), format!("write failed: {}", e))
+                                        }
+                                    }
+                                } else {
+                                    all_ok = false;
+                                    (path.clone(), "old_string not found".to_string())
+                                }
+                            }
+                            Err(e) => {
+                                all_ok = false;
+                                (path.clone(), format!("read failed: {}", e))
+                            }
+                        }
+                    }
+                };
+                results.push(format!("{}: {}", path, result_msg));
+            }
+
+            // Task 543: Verify syntax if any Rust files were touched
+            for op in &parsed.operations {
+                let p = match op {
+                    PatchOperation::AddFile { path, .. } => path,
+                    PatchOperation::UpdateFile { path, .. } => path,
+                    PatchOperation::DeleteFile { .. } => continue,
+                };
+                if let Err(e) = verify_syntax(p, workdir) {
+                    all_ok = false;
+                    results.push(format!("Verification failed: {}", e));
+                    break;
+                }
+            }
+
+            let output = results.join("\n");
+            emit_tool_result(&mut tui, "patch", all_ok, &output);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "patch".to_string(),
+                content: output,
+                ok: all_ok,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Error parsing patch: {}", e);
+            emit_tool_result(&mut tui, "patch", false, &error_msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "patch".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            }
+        }
+    }
+}
+
+fn exec_edit(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("").to_string();
+    let old_string = av["old_string"].as_str().unwrap_or("").to_string();
+    let new_string = av["new_string"].as_str().unwrap_or("").to_string();
+
+    if path.is_empty() {
+        let error_msg = "Error: path is required".to_string();
+        emit_tool_result(&mut tui, "edit", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "edit".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    // Resolve path (absolute paths within workspace are accepted and converted to relative)
+    let full = match resolve_tool_path(workdir, &path) {
+        Ok(p) => p,
+        Err(e) => {
+            let error_msg = format!("path error: {}", e);
+            emit_tool_result(&mut tui, "edit", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "edit".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    };
+
+    emit_tool_start(&mut tui, "edit", &path);
+
+    let content = match std::fs::read_to_string(&full) {
+        Ok(c) => c,
+        Err(e) => {
+            let error_msg = format!("Error reading file: {}", e);
+            emit_tool_result(&mut tui, "edit", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "edit".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    };
+
+    if !old_string.is_empty() {
+        if let Some(pos) = content.find(&old_string) {
+            let mut updated = content.clone();
+            updated.replace_range(pos..pos + old_string.len(), &new_string);
+            if let Err(e) = std::fs::write(&full, &updated) {
+                let error_msg = format!("Error writing file: {}", e);
+                emit_tool_result(&mut tui, "edit", false, &error_msg);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "edit".to_string(),
+                    content: error_msg.to_string(),
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                    signal_killed: None,
+                };
+            }
+            // Task 543: Verify syntax
+            if let Err(e) = verify_syntax(&path, workdir) {
+                emit_tool_result(&mut tui, "edit", false, &e);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "edit".to_string(),
+                    content: e,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                    signal_killed: None,
+                };
+            }
+            emit_tool_result(&mut tui, "edit", true, "edited");
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "edit".to_string(),
+                content: "edited".to_string(),
+                ok: true,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            }
+        } else {
+            let error_msg = "old_string not found in file".to_string();
+            emit_tool_result(&mut tui, "edit", false, &error_msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "edit".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            }
+        }
+    } else {
+        let error_msg = "old_string is required".to_string();
+        emit_tool_result(&mut tui, "edit", false, &error_msg);
+        ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "edit".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        }
+    }
+}
+
+fn exec_write(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let path = av["path"].as_str().unwrap_or("").to_string();
+    let content = av["content"].as_str().unwrap_or("").to_string();
+
+    if path.is_empty() {
+        let error_msg = "Error: path is required".to_string();
+        emit_tool_result(&mut tui, "write", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "write".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let full = match resolve_tool_path(workdir, &path) {
+        Ok(p) => p,
+        Err(e) => {
+            let error_msg = format!("path error: {}", e);
+            emit_tool_result(&mut tui, "write", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "write".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    };
+
+    emit_tool_start(&mut tui, "write", &path);
+
+    if let Some(parent) = full.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            let error_msg = format!("Error creating directory: {}", e);
+            emit_tool_result(&mut tui, "write", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "write".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    }
+
+    match std::fs::write(&full, &content) {
+        Ok(_) => {
+            // Task 543: Verify syntax
+            if let Err(e) = verify_syntax(&path, workdir) {
+                emit_tool_result(&mut tui, "write", false, &e);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "write".to_string(),
+                    content: e,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                    signal_killed: None,
+                };
+            }
+            emit_tool_result(&mut tui, "write", true, "written");
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "write".to_string(),
+                content: "written".to_string(),
+                ok: true,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Error writing file: {}", e);
+            emit_tool_result(&mut tui, "write", false, &error_msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "write".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            }
+        }
+    }
+}
+
+async fn exec_search(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let pattern = av["pattern"].as_str().unwrap_or("").to_string();
+    let sp = av["path"].as_str().map(String::from);
+    if pattern.is_empty() {
+        let error_msg = "Error: empty search pattern".to_string();
+        emit_tool_result(&mut tui, "search", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "search".to_string(),
+            content: error_msg.to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    if let Some(ref p) = sp {
+        if let Err(e) = resolve_tool_path(workdir, p) {
+            let error_msg = format!("path error: {}", e);
+            emit_tool_result(&mut tui, "search", false, &error_msg);
+            return ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "search".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
+                signal_killed: None,
+            };
+        }
+    }
+
+    let mut cmd = std::process::Command::new("rg");
+    cmd.arg("-i")
+        .arg("--line-number")
+        .arg("--no-heading")
+        .arg("--color=never");
+
+    // Task 454: Honor literal_text and include schema fields
+    let literal_text = av["literal_text"].as_bool().unwrap_or(false);
+    if literal_text {
+        cmd.arg("-F"); // Fixed string (literal) search
+    }
+    cmd.arg(&pattern);
+
+    if let Some(include) = av["include"].as_str() {
+        if !include.is_empty() {
+            cmd.arg("--glob").arg(include);
+        }
+    } else {
+        // Task 542: Exclude _knowledge_base by default to avoid noise in audits
+        cmd.arg("--glob").arg("!_knowledge_base/**");
+    }
+
+    if let Some(p) = &sp {
+        let search_path = workdir.join(p);
+        if search_path.exists() {
+            cmd.arg(&search_path);
+        }
+    } else {
+        cmd.arg(workdir);
+    }
+
+    emit_tool_start(&mut tui, "search", &format!("rg pattern={}", pattern));
+    emit_tool_progress(&mut tui, "search", "running ripgrep");
+
+    match cmd.output() {
+        Ok(output) => {
+            let exit_code = output.status.code().unwrap_or(0);
+            let success = exit_code == 0 || exit_code == 1;
+            let mut content = if exit_code == 0 {
+                String::from_utf8_lossy(&output.stdout).to_string()
+            } else if exit_code == 1 {
+                format!("No matches found for: {}", pattern)
+            } else {
+                format!(
+                    "Search failed (exit {}):\n{}",
+                    exit_code,
+                    String::from_utf8_lossy(&output.stderr)
+                )
+            };
+
+            // Task 542: Add annotation if matches include _knowledge_base
+            if content.contains("_knowledge_base/") {
+                let kb_count = content.lines().filter(|l| l.contains("_knowledge_base/")).count();
+                let total_count = content.lines().count();
+                content.push_str(&format!(
+                    "\n\nℹ️ NOTE: {} of {} matches are in _knowledge_base/ (third-party reference code). Exclude these from risk analysis of Elma's own codebase.",
+                    kb_count, total_count
+                ));
+            }
+
+            emit_tool_result(&mut tui, "search", success, &content);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "search".to_string(),
+                content,
+                ok: success,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Search error: {}", e);
+            emit_tool_result(&mut tui, "search", false, &error_msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "search".to_string(),
+                content: error_msg.to_string(),
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+                signal_killed: None,
+            }
+        }
+    }
+}
+
+fn exec_respond(
+    av: &serde_json::Value,
+    call_id: &str,
+    _tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let answer = av["answer"]
+        .as_str()
+        .or_else(|| av["content"].as_str())
+        .or_else(|| av["text"].as_str())
+        .map(crate::text_utils::strip_thinking_blocks)
+        .unwrap_or_default();
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "respond".to_string(),
+        content: answer,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_tool_search(
+    av: &serde_json::Value,
+    call_id: &str,
+    _tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let query = av["query"].as_str().unwrap_or("").to_string();
+    if query.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "tool_search".to_string(),
+            content: "Error: query is required".to_string(),
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let tools = search_tools(&query);
+    if tools.is_empty() {
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "tool_search".to_string(),
+            content: format!("No tools found matching: '{}'", query),
+            ok: true,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    // Mark tools as discovered so they become available in future requests
+    let tool_names = search_tool_names(&query);
+    crate::tool_registry::mark_discovered(&tool_names);
+
+    // Format tool definitions as JSON for the model
+    let tools_json = serde_json::to_string_pretty(&tools).unwrap_or_default();
+    let content = format!(
+        "Found {} tool(s) matching '{}':\n\n{}\n\nThese tools are now loaded and available for use. You can call them directly in your next response.",
+        tools.len(),
+        query,
+        tools_json
+    );
+
+    ToolExecutionResult {
+        tool_call_id: call_id.to_string(),
+        tool_name: "tool_search".to_string(),
+        content,
+        ok: true,
+        exit_code: None,
+        timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+// --- Repo Map Tool (Task 463) ---
+

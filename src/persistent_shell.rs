@@ -6,10 +6,23 @@
 //! and provide state persistence (cd, export) across tool calls.
 
 use crate::*;
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+const IDLE_TIMEOUT_SECS: u64 = 30;
+
+/// Events sent from the reader thread to the main execution loop.
+enum ReaderEvent {
+    /// A line of output was read.
+    Line(String),
+    /// Command completed: marker found with exit code + recovered reader.
+    Done(i32, BufReader<Box<dyn Read + Send>>),
+    /// Read error or EOF + recovered reader.
+    Error(String, BufReader<Box<dyn Read + Send>>),
+}
 
 /// Strip ANSI escape sequences and control characters from shell output.
 /// This is a safety net — the primary defense is using /bin/sh with
@@ -33,6 +46,7 @@ pub(crate) struct PersistentShell {
     marker: String,
     workdir: PathBuf,
     dead: bool, // Set true when timeout/EOF indicates shell may be dead
+    child: Option<Box<dyn Child + Send>>,
 }
 
 impl PersistentShell {
@@ -67,7 +81,7 @@ impl PersistentShell {
         }
         builder.cwd(workdir);
 
-        let mut _child = pair
+        let child = pair
             .slave
             .spawn_command(builder)
             .map_err(|e| anyhow::anyhow!("Failed to spawn shell: {}", e))?;
@@ -86,6 +100,7 @@ impl PersistentShell {
             marker,
             workdir: workdir.clone(),
             dead: false,
+            child: Some(child),
         };
 
         shell.flush_initial_noise()?;
@@ -131,7 +146,29 @@ impl PersistentShell {
         Ok(())
     }
 
-    pub(crate) fn execute(&mut self, cmd: &str, timeout_secs: u64) -> Result<(i32, String)> {
+    /// Backward-compatible wrapper (no progress tracking). Tests use this.
+    pub(crate) fn execute(&mut self, cmd: &str, idle_timeout_secs: u64) -> Result<(i32, String)> {
+        let cancelled = AtomicBool::new(false);
+        let elapsed = AtomicU64::new(0);
+        self.execute_ext(cmd, idle_timeout_secs, &cancelled, &elapsed)
+    }
+
+    /// Execute a shell command with idle-based timeout.
+    ///
+    /// Unlike a wall-clock timeout, this only kills the process when no output
+    /// has been received for `idle_timeout_secs`. A command that is actively
+    /// producing output (build logs, iterating files) will never time out.
+    ///
+    /// `cancelled` — set to true from another thread to abort execution.
+    /// `elapsed_secs` — updated approximately every output line with wall-clock
+    /// seconds since the command started.
+    pub(crate) fn execute_ext(
+        &mut self,
+        cmd: &str,
+        idle_timeout_secs: u64,
+        cancelled: &AtomicBool,
+        elapsed_secs: &AtomicU64,
+    ) -> Result<(i32, String)> {
         // If shell is marked dead from a previous timeout/EOF, recreate it
         if self.dead {
             self.recreate()?;
@@ -146,11 +183,8 @@ impl PersistentShell {
         self.master.write_all(full_cmd.as_bytes())?;
         self.master.flush()?;
 
-        // Move the reader into a worker thread so blocking read_line() does
-        // not freeze the main thread, and so we get a real timeout.
-        // We MUST use the SAME reader for every command; creating a new
-        // cloned reader per command causes a race between BufReaders on the
-        // same PTY FD and produces garbage/missing output.
+        // Move the reader into a worker thread that sends incremental events.
+        // The main thread accumulates lines and enforces idle timeout.
         let reader = std::mem::replace(
             &mut self.reader,
             BufReader::new(Box::new(std::io::empty()) as Box<dyn Read + Send>),
@@ -159,17 +193,16 @@ impl PersistentShell {
         let (tx, rx) = std::sync::mpsc::channel();
 
         std::thread::spawn(move || {
-            let mut output = String::new();
             let mut line = String::new();
             let mut buf_reader = reader;
             loop {
                 line.clear();
                 match buf_reader.read_line(&mut line) {
                     Ok(0) => {
-                        let _ = tx.send(Err((
-                            anyhow::anyhow!("Shell EOF before finding marker"),
+                        let _ = tx.send(ReaderEvent::Error(
+                            "Shell EOF before finding marker".to_string(),
                             buf_reader,
-                        )));
+                        ));
                         return;
                     }
                     Ok(_) => {
@@ -179,50 +212,98 @@ impl PersistentShell {
                                 .nth(1)
                                 .and_then(|s| s.trim().parse::<i32>().ok())
                                 .unwrap_or(0);
-                            let _ = tx.send(Ok((exit_code, output.trim().to_string(), buf_reader)));
+                            let _ = tx.send(ReaderEvent::Done(exit_code, buf_reader));
                             return;
                         }
-                        output.push_str(&line);
+                        let _ = tx.send(ReaderEvent::Line(line.clone()));
                     }
                     Err(e) => {
-                        let _ = tx.send(Err((
-                            anyhow::anyhow!("Shell read error: {}", e),
+                        let _ = tx.send(ReaderEvent::Error(
+                            format!("Shell read error: {}", e),
                             buf_reader,
-                        )));
+                        ));
                         return;
                     }
                 }
             }
         });
 
-        match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
-            Ok(Ok((exit_code, output, buf_reader))) => {
-                self.reader = buf_reader;
-                Ok((exit_code, sanitize_shell_output(&output)))
-            }
-            Ok(Err((e, buf_reader))) => {
-                self.reader = buf_reader;
-                // EOF means the shell process died — mark for recreation
-                if e.to_string().contains("EOF") {
-                    self.dead = true;
+        let start = Instant::now();
+        let mut output = String::new();
+        loop {
+            match rx.recv_timeout(Duration::from_secs(idle_timeout_secs)) {
+                Ok(ReaderEvent::Line(line)) => {
+                    output.push_str(&line);
+                    elapsed_secs.store(start.elapsed().as_secs(), Ordering::Relaxed);
+                    if cancelled.load(Ordering::Relaxed) {
+                        if let Some(ref mut c) = self.child {
+                            let _ = c.kill();
+                            let _ = c.wait();
+                        }
+                        let elapsed = start.elapsed().as_secs();
+                        let d = elapsed / 86400;
+                        let h = (elapsed % 86400) / 3600;
+                        let m = (elapsed % 3600) / 60;
+                        let s = elapsed % 60;
+                        let elapsed_str = format!(
+                            "{}{}{}{}s",
+                            if d > 0 { format!("{}d ", d) } else { String::new() },
+                            if h > 0 { format!("{}h ", h) } else { String::new() },
+                            if m > 0 { format!("{}m ", m) } else { String::new() },
+                            s
+                        );
+                        self.dead = true;
+                        return Err(anyhow::anyhow!(
+                            "Shell command cancelled by user after {}",
+                            elapsed_str,
+                        ));
+                    }
                 }
-                Err(e)
+                Ok(ReaderEvent::Done(exit_code, buf_reader)) => {
+                    elapsed_secs.store(start.elapsed().as_secs(), Ordering::Relaxed);
+                    self.reader = buf_reader;
+                    return Ok((exit_code, sanitize_shell_output(&output)));
+                }
+                Ok(ReaderEvent::Error(msg, buf_reader)) => {
+                    self.reader = buf_reader;
+                    if msg.contains("EOF") {
+                        self.dead = true;
+                    }
+                    return Err(anyhow::anyhow!("{}", msg));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Idle timeout — no output received for idle_timeout_secs.
+                    // Reader thread is still running; the reader is abandoned
+                    // (replaced by empty() in the next execute call).
+                    if let Some(ref mut c) = self.child {
+                        let _ = c.kill();
+                        let _ = c.wait();
+                    }
+                    let total = start.elapsed().as_secs();
+                    let d = total / 86400;
+                    let h = (total % 86400) / 3600;
+                    let m = (total % 3600) / 60;
+                    let s = total % 60;
+                    let total_str = format!(
+                        "{}{}{}{}s",
+                        if d > 0 { format!("{}d ", d) } else { String::new() },
+                        if h > 0 { format!("{}h ", h) } else { String::new() },
+                        if m > 0 { format!("{}m ", m) } else { String::new() },
+                        s
+                    );
+                    self.dead = true;
+                    return Err(anyhow::anyhow!(
+                        "Shell command idle timeout after {}s of no output ({} total) — the command may be stalled. Try a safer approach.",
+                        idle_timeout_secs,
+                        total_str,
+                    ));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(anyhow::anyhow!(
+                        "Shell reader thread disconnected unexpectedly"
+                    ));
+                }
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // Timeout: the reader thread is still running and holds the real reader.
-                // We've already swapped in std::io::empty() as a placeholder.
-                // The shell process may still be running but we can't recover the reader
-                // without waiting for the thread to finish or killing the process.
-                // Mark as dead so next execute() recreates the shell.
-                self.dead = true;
-                Err(anyhow::anyhow!(
-                    "Shell command timed out after {}s — the command is likely scanning too many files or blocking. Try a narrower search (add -maxdepth, specific paths), use ripgrep (rg) instead of find, or break the task into smaller steps.",
-                    timeout_secs
-                ))
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(anyhow::anyhow!(
-                "Shell reader thread disconnected unexpectedly"
-            )),
         }
     }
 
@@ -253,7 +334,7 @@ impl PersistentShell {
         }
         builder.cwd(&self.workdir);
 
-        let mut _child = pair
+        let child = pair
             .slave
             .spawn_command(builder)
             .map_err(|e| anyhow::anyhow!("Failed to spawn shell: {}", e))?;
@@ -270,6 +351,7 @@ impl PersistentShell {
         self.reader = BufReader::new(reader);
         self.marker = marker;
         self.dead = false;
+        self.child = Some(child);
 
         self.flush_initial_noise()?;
 
@@ -385,11 +467,11 @@ mod tests {
         // First: issue a command that will timeout (sleep 30s with 2s timeout)
         let result = shell.execute("sleep 30", 2);
         assert!(result.is_err(), "Expected timeout error");
-        let err = result.unwrap_err();
+        let err_str = result.unwrap_err().to_string();
         assert!(
-            err.to_string().contains("timed out"),
+            err_str.contains("idle timeout") || err_str.contains("timed out"),
             "Expected timeout error, got: {}",
-            err
+            err_str
         );
 
         // Second: immediately issue a fast command — should auto-recover

@@ -2,6 +2,9 @@
 //! Tool Calling Registry — dispatcher for all tool executors.
 
 use crate::*;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 // ToolExecutionResult lives in crate::tools::types; re-export for backward compat.
 pub(crate) use crate::tools::types::ToolExecutionResult;
@@ -346,6 +349,9 @@ async fn exec_shell(
     trace(args, &format!("tool_call: shell command={}", command));
 
     emit_tool_start(&mut tui, "shell", &command);
+    if let Some(ref mut t) = tui {
+        let _ = t.pump_ui();
+    }
     emit_tool_progress(&mut tui, "shell", "running safety preflight");
 
     // Task 116: Preflight validation before execution
@@ -494,9 +500,6 @@ async fn exec_shell(
         };
     }
 
-    // Replace spinner with TUI update for execution.
-    emit_tool_progress(&mut tui, "shell", "executing command");
-
     // Task 458: Snapshot before risky shell commands
     if matches!(preflight.risk, shell_preflight::RiskLevel::Caution | shell_preflight::RiskLevel::Dangerous(_)) {
         match crate::snapshot::create_workspace_snapshot(
@@ -514,14 +517,92 @@ async fn exec_shell(
         }
     }
 
-    match run_shell_persistent(&command, workdir).await {
+    // Use idle-based timeout + live progress + Ctrl+K cancellation.
+    // Shell runs on a blocking thread; the async context polls progress
+    // and checks for user cancellation.
+    let elapsed_secs = Arc::new(AtomicU64::new(0));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let c2 = cancelled.clone();
+    let e2 = elapsed_secs.clone();
+
+    let cmd = command.clone();
+    let wd = workdir.clone();
+    let mut handle = tokio::task::spawn_blocking(move || {
+        crate::program_utils::run_shell_persistent_blocking(&cmd, &wd, &*c2, &*e2)
+    });
+
+    let shell_result: Result<crate::ShellExecutionResult> = loop {
+        tokio::select! {
+            result = &mut handle => {
+                match result {
+                    Ok(r) => break r,
+                    Err(join_err) => {
+                        break Err(anyhow::anyhow!("Shell task panicked: {}", join_err));
+                    }
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                let secs = elapsed_secs.load(Ordering::Relaxed);
+                if secs > 0 {
+                    let d = secs / 86400;
+                    let h = (secs % 86400) / 3600;
+                    let m = (secs % 3600) / 60;
+                    let s = secs % 60;
+                    let elapsed_str = format!(
+                        "{}{}{}{}s",
+                        if d > 0 { format!("{}d ", d) } else { String::new() },
+                        if h > 0 { format!("{}h ", h) } else { String::new() },
+                        if m > 0 { format!("{}m ", m) } else { String::new() },
+                        s
+                    );
+                    if let Some(t) = tui.as_mut() {
+                        t.handle_ui_event(crate::claude_ui::UiEvent::ToolProgress {
+                            name: "shell".to_string(),
+                            message: format!("running ({})", elapsed_str),
+                        });
+                        let _ = t.pump_ui();
+                    }
+                }
+                #[cfg(not(windows))]
+                if crossterm::event::poll(Duration::from_millis(0)).unwrap_or(false) {
+                    if let Ok(crossterm::event::Event::Key(key)) = crossterm::event::read() {
+                        if key.code == crossterm::event::KeyCode::Char('k')
+                            && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        {
+                            cancelled.store(true, Ordering::SeqCst);
+                            let d = secs / 86400;
+                            let h = (secs % 86400) / 3600;
+                            let m = (secs % 3600) / 60;
+                            let s = secs % 60;
+                            let cancel_str = format!(
+                                "{}{}{}{}s",
+                                if d > 0 { format!("{}d ", d) } else { String::new() },
+                                if h > 0 { format!("{}h ", h) } else { String::new() },
+                                if m > 0 { format!("{}m ", m) } else { String::new() },
+                                s
+                            );
+                            if let Some(t) = tui.as_mut() {
+                                t.handle_ui_event(crate::claude_ui::UiEvent::ToolProgress {
+                                    name: "shell".to_string(),
+                                    message: format!("cancelling ({})", cancel_str),
+                                });
+                                let _ = t.pump_ui();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    // Process the result
+    return match shell_result {
         Ok(er) => {
             let success = er.exit_code == 0;
-            if let Some(t) = tui.as_mut() {}
 
             // Record the command in budget (after successful execution)
             budget.record_command(&preflight.risk);
-            // Confirm the command (won't show dry-run again if model re-runs it)
+            // Confirm the command
             shell_preflight::confirm_command(&command);
             trace(
                 args,
@@ -549,7 +630,7 @@ async fn exec_shell(
 
             let output = &er.inline_text;
             let lc = output.lines().count();
-            
+
             // Task 538: Detect silent truncation by head/tail/limiters
             let mut output_with_warning = output.clone();
             if er.exit_code == 0 {
@@ -575,11 +656,9 @@ async fn exec_shell(
                 args,
                 &format!("tool_call: shell exit_code={} lines={}", er.exit_code, lc),
             );
-            // Return full output — truncation is handled by tool_result_storage budget
             let content = if er.exit_code == 0 {
                 output_with_warning
             } else {
-                // Run context modifier errors for failed commands
                 let error_msgs = hooks.run_context_modifier_errors(&command, output);
                 let error_context = if error_msgs.is_empty() {
                     String::new()
@@ -610,7 +689,9 @@ async fn exec_shell(
             let error_msg = format!("Shell execution error: {}", e);
             emit_tool_result(&mut tui, "shell", false, &error_msg);
             let _ = save_tool_display(session, "shell", &command, &error_msg, false);
-            let is_timeout = error_msg.to_ascii_lowercase().contains("timed out");
+            let is_timeout = error_msg.to_ascii_lowercase().contains("timed out")
+                || error_msg.to_ascii_lowercase().contains("idle timeout")
+                || error_msg.to_ascii_lowercase().contains("cancelled");
             ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
                 tool_name: "shell".to_string(),
@@ -624,7 +705,7 @@ async fn exec_shell(
                 duration_ms: 0,
             }
         }
-    }
+    };
 }
 
 fn exec_ls(
