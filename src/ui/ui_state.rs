@@ -41,7 +41,10 @@ static RESPONSE_MODE: OnceLock<Mutex<ResponseMode>> = OnceLock::new();
 
 /// Set the current response mode.
 pub(crate) fn set_response_mode(mode: ResponseMode) {
-    if let Ok(mut slot) = RESPONSE_MODE.get_or_init(|| Mutex::new(ResponseMode::Concise)).lock() {
+    if let Ok(mut slot) = RESPONSE_MODE
+        .get_or_init(|| Mutex::new(ResponseMode::Concise))
+        .lock()
+    {
         *slot = mode;
     }
 }
@@ -60,7 +63,10 @@ static ACCESS_MODE: OnceLock<Mutex<AccessMode>> = OnceLock::new();
 
 /// Set the current access mode.
 pub(crate) fn set_access_mode(mode: AccessMode) {
-    if let Ok(mut slot) = ACCESS_MODE.get_or_init(|| Mutex::new(AccessMode::Review)).lock() {
+    if let Ok(mut slot) = ACCESS_MODE
+        .get_or_init(|| Mutex::new(AccessMode::Review))
+        .lock()
+    {
         *slot = mode;
     }
 }

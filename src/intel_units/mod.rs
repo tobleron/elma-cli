@@ -6,54 +6,54 @@
 //! Re-exports from sub-modules for backward compatibility.
 
 mod intel_units_advanced;
+mod intel_units_batch_planner; // Task 501: Context-budget batch planner
 mod intel_units_capability;
 mod intel_units_claim_mapper;
-mod intel_units_classifier;
 mod intel_units_clarification; // Task 452: Clarification and completion tools
+mod intel_units_classifier;
 mod intel_units_continuity;
 mod intel_units_core;
+mod intel_units_document_summarizer;
 mod intel_units_evidence_quality;
 mod intel_units_evidence_staleness;
-mod intel_units_final_cleaner;
 mod intel_units_evidence_sufficiency;
-mod intel_units_goal_consistency;
+mod intel_units_final_cleaner;
 mod intel_units_final_summary;
+mod intel_units_goal_consistency;
 mod intel_units_graph_assessment;
 mod intel_units_intent;
 pub(crate) mod intel_units_maestro;
 mod intel_units_repair;
 mod intel_units_responder;
 pub(crate) mod intel_units_task_management; // Task 494: Task creation intel unit
-mod intel_units_batch_planner; // Task 501: Context-budget batch planner
-mod intel_units_turn_summary;
 mod intel_units_thought_summary; // Task 622: Thought summary (auxiliary LLM)
-mod intel_units_document_summarizer; // Task 623: Document summarizer (scaffold)
+mod intel_units_turn_summary; // Task 623: Document summarizer (scaffold)
 
 // Re-export maestro types for external use
 pub(crate) use intel_units_maestro::{MaestroInstruction, MaestroOutput, MaestroUnit};
 
 // Re-export all intel units for backward compatibility
 pub(crate) use intel_units_advanced::*;
+pub(crate) use intel_units_batch_planner::*;
 pub(crate) use intel_units_capability::*;
 pub(crate) use intel_units_claim_mapper::*;
-pub(crate) use intel_units_classifier::*;
 pub(crate) use intel_units_clarification::*; // Task 452
+pub(crate) use intel_units_classifier::*;
 pub(crate) use intel_units_continuity::*;
 pub(crate) use intel_units_core::*;
+pub(crate) use intel_units_document_summarizer::*; // Task 623
 pub(crate) use intel_units_evidence_quality::*;
 pub(crate) use intel_units_evidence_staleness::*;
-pub(crate) use intel_units_final_cleaner::*;
 pub(crate) use intel_units_evidence_sufficiency::*;
+pub(crate) use intel_units_final_cleaner::*;
 pub(crate) use intel_units_final_summary::*;
 pub(crate) use intel_units_goal_consistency::*;
 pub(crate) use intel_units_graph_assessment::*;
 pub(crate) use intel_units_intent::*;
 pub(crate) use intel_units_repair::*;
 pub(crate) use intel_units_responder::*;
-pub(crate) use intel_units_turn_summary::*;
 pub(crate) use intel_units_thought_summary::*; // Task 622
-pub(crate) use intel_units_document_summarizer::*; // Task 623
-pub(crate) use intel_units_batch_planner::*; // Task 501
+pub(crate) use intel_units_turn_summary::*; // Task 501
 
 use crate::intel_trait::*;
 use crate::*;

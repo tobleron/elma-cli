@@ -131,7 +131,10 @@ pub(crate) fn find_tools_for_capability(
     });
 
     results.truncate(max_results);
-    results.into_iter().map(|t| t.to_tool_definition()).collect()
+    results
+        .into_iter()
+        .map(|t| t.to_tool_definition())
+        .collect()
 }
 
 /// Attempt to discover and load tools for a capability need.
@@ -143,7 +146,10 @@ pub(crate) async fn auto_discover_tools(
     user_message: &str,
 ) -> Vec<elma_tools::ToolDefinition> {
     let unit = CapabilityDiscoveryUnit::new(profile.clone());
-    match unit.discover_capability(client, chat_url, user_message).await {
+    match unit
+        .discover_capability(client, chat_url, user_message)
+        .await
+    {
         Ok(cap) => {
             let tools = find_tools_for_capability(&cap.capability, 5);
             if !tools.is_empty() {

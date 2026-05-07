@@ -2,12 +2,12 @@
 //! Tool Loop — continuous execution loop using native tool calling.
 
 use crate::auto_compact::{
-    apply_compact, apply_compact_with_summarizer, CompactTracker, DEFAULT_COMPACT_BUFFER_TOKENS,
-    DEFAULT_CONTEXT_WINDOW_TOKENS,
+    CompactTracker, DEFAULT_COMPACT_BUFFER_TOKENS, DEFAULT_CONTEXT_WINDOW_TOKENS, apply_compact,
+    apply_compact_with_summarizer,
 };
 use crate::event_log;
 use crate::tool_calling::build_tool_definitions;
-use crate::tool_result_storage::{apply_tool_result_budget, DEFAULT_MAX_RESULT_SIZE_CHARS};
+use crate::tool_result_storage::{DEFAULT_MAX_RESULT_SIZE_CHARS, apply_tool_result_budget};
 use crate::ui_state::{
     get_total_intel_failures, increment_intel_failure_count, reset_intel_failure_counts,
 };
@@ -337,7 +337,10 @@ fn build_evidence_progress_summary(messages: &[ChatMessage]) -> Option<String> {
         if msg.role != "tool" {
             continue;
         }
-        let line = msg.content.lines().next()
+        let line = msg
+            .content
+            .lines()
+            .next()
             .map(|l| l.trim().to_string())
             .filter(|l| !l.is_empty());
         if let Some(l) = line {
@@ -353,7 +356,11 @@ fn build_evidence_progress_summary(messages: &[ChatMessage]) -> Option<String> {
     } else {
         Some(format!(
             "[Previously gathered evidence]\nYou already gathered the following information in a prior attempt:\n{}\n\nDo NOT repeat these steps. Continue from where you left off.",
-            facts.iter().map(|f| format!("  • {}", f)).collect::<Vec<_>>().join("\n")
+            facts
+                .iter()
+                .map(|f| format!("  • {}", f))
+                .collect::<Vec<_>>()
+                .join("\n")
         ))
     }
 }
@@ -385,9 +392,9 @@ fn build_fallback_from_recent_tool_evidence(
         stop_reason,
         Some(
             StopReason::IterationLimitReached
-            | StopReason::StageBudgetExceeded
-            | StopReason::TaskBudgetExceeded
-            | StopReason::WallClockExceeded
+                | StopReason::StageBudgetExceeded
+                | StopReason::TaskBudgetExceeded
+                | StopReason::WallClockExceeded
         )
     );
 
@@ -398,7 +405,11 @@ fn build_fallback_from_recent_tool_evidence(
     } else {
         format!(
             "[I found the following information, but the answer could not be finalized. Here's what I know:]\n{}\n",
-            facts.iter().map(|f| format!("- {}", f)).collect::<Vec<_>>().join("\n")
+            facts
+                .iter()
+                .map(|f| format!("- {}", f))
+                .collect::<Vec<_>>()
+                .join("\n")
         )
     }
 }
@@ -488,16 +499,13 @@ async fn request_final_answer_from_evidence(
 ) -> Result<String> {
     let evidence_block = build_bounded_final_evidence(messages);
 
-    let clean_messages = vec![
-        ChatMessage::simple(
-            "user",
-            &format!(
-                "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer in a natural conversational tone. Use complete sentences. Acknowledge what was found or done. Ground your answer only in the evidence above. Use clean terminal-friendly formatting. Prefer simple lists and short sections over walls of text. Do not call tools.",
-                original_user_request,
-                evidence_block
-            ),
+    let clean_messages = vec![ChatMessage::simple(
+        "user",
+        &format!(
+            "{}\n\n--- Evidence gathered so far ---\n{}\n--- End evidence ---\n\nAnswer in a natural conversational tone. Use complete sentences. Acknowledge what was found or done. Ground your answer only in the evidence above. Use clean terminal-friendly formatting. Prefer simple lists and short sections over walls of text. Do not call tools.",
+            original_user_request, evidence_block
         ),
-    ];
+    )];
 
     let profile = ad_hoc_profile(model_id, "tool_loop_evidence_finalizer");
     let req = chat_request_from_profile(
@@ -510,7 +518,14 @@ async fn request_final_answer_from_evidence(
             ..ChatRequestOptions::deterministic(max_tokens)
         },
     );
-    request_tool_loop_final_answer_streaming(tui, client, chat_url, req, runtime_llm_config().final_answer_timeout_s).await
+    request_tool_loop_final_answer_streaming(
+        tui,
+        client,
+        chat_url,
+        req,
+        runtime_llm_config().final_answer_timeout_s,
+    )
+    .await
 }
 
 /// Stream a final answer from the LLM, pushing content to the TUI incrementally.
@@ -524,7 +539,9 @@ async fn request_tool_loop_final_answer_streaming(
     timeout_s: u64,
 ) -> Result<String> {
     // Estimate input tokens from request messages (excluding output for now)
-    let input_estimate: usize = req.messages.iter()
+    let input_estimate: usize = req
+        .messages
+        .iter()
         .map(|m| m.content.len() / 2)
         .sum::<usize>()
         .max(1);
@@ -663,9 +680,7 @@ async fn request_tool_loop_final_answer_streaming(
                 thinking_started = true;
                 tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
             }
-            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
-                thinking_delta,
-            ));
+            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(thinking_delta));
         }
     }
 
@@ -690,9 +705,48 @@ async fn finalize_from_evidence_or_fallback(
     model_id: &str,
     original_user_request: &str,
     messages: &[ChatMessage],
+    workdir: &Path,
     max_tokens: u32,
     stop_reason: Option<&StopReason>,
 ) -> String {
+    // Task 704: Stage 1 — Synthesize missing required artifacts from evidence FIRST
+    let missing_artifacts = crate::artifact_verifier::find_missing_artifacts(workdir);
+    if !missing_artifacts.is_empty() {
+        trace(
+            args,
+            &format!(
+                "finalization_stage=artifact_synthesis count={}",
+                missing_artifacts.len()
+            ),
+        );
+        synthesize_missing_artifacts(
+            args,
+            tui,
+            client,
+            chat_url,
+            model_id,
+            messages,
+            workdir,
+            &missing_artifacts,
+            stop_reason,
+        )
+        .await;
+    }
+
+    let required_artifacts = crate::artifact_verifier::get_required_artifacts();
+    let all_complete = crate::artifact_verifier::are_all_artifacts_complete(workdir);
+    let missing_after = crate::artifact_verifier::find_missing_artifacts(workdir);
+    if !required_artifacts.is_empty() && all_complete {
+        trace(args, "finalization_stage=deterministic_artifact_completion");
+        return build_required_artifact_completion_answer(&required_artifacts);
+    }
+    if !required_artifacts.is_empty() && missing_after.is_empty() && !all_complete {
+        // All paths exist but some are partial (evidence recovery)
+        trace(args, "finalization_stage=partial_artifact_completion artifact_state=partial_evidence_recovery");
+        return build_partial_artifact_completion_answer(&required_artifacts, workdir);
+    }
+
+    // Task 704: Stage 2 — Produce final answer with compact model packet
     let mut final_content = match request_final_answer_from_evidence(
         tui,
         client,
@@ -710,9 +764,31 @@ async fn finalize_from_evidence_or_fallback(
                 args,
                 &format!("finalization_failed_nonfatal stage=evidence error={}", e),
             );
-            // Retry with NO-streaming, simpler prompt (Task 620)
+            // Single retry with compact packet
+            let compact_packet = crate::turn_context_packet::build_turn_context_packet(
+                original_user_request,
+                "Provide final answer",
+                &[],
+                &[],
+                &[],
+                "finalization_retry",
+            );
+            let packet_msg =
+                crate::turn_context_packet::render_turn_context_packet(&compact_packet);
+            let compact_prompt = format!(
+                "Provide a final answer based on the evidence gathered.\n\n{}",
+                packet_msg
+            );
+            let mut retry_msgs = messages.to_vec();
+            retry_msgs.push(ChatMessage::simple("user", &compact_prompt));
             match request_final_answer_without_tools(
-                tui, client, chat_url, model_id, messages, max_tokens, true,
+                tui,
+                client,
+                chat_url,
+                model_id,
+                &retry_msgs,
+                max_tokens,
+                true,
             )
             .await
             {
@@ -745,7 +821,331 @@ async fn finalize_from_evidence_or_fallback(
         };
     }
 
-    final_content
+    // Task 704: Stage 3 — Verify claims and persist artifacts
+    let mut verified =
+        crate::finalization_verifier::verify_final_answer(&final_content, messages, workdir);
+    persist_missing_required_artifacts(args, workdir, &verified);
+    let missing = crate::artifact_verifier::find_missing_artifacts(workdir);
+    if !missing.is_empty() {
+        trace(
+            args,
+            &format!(
+                "finalization_missing_artifacts count={} paths={}",
+                missing.len(),
+                missing
+                    .iter()
+                    .map(|(path, _)| path.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        );
+        verified.push_str(&crate::artifact_verifier::build_missing_artifact_notice(
+            &missing,
+        ));
+    }
+
+    verified
+}
+
+fn build_required_artifact_completion_answer(required_artifacts: &[String]) -> String {
+    let mut answer =
+        String::from("Completed the requested artifact work.\n\nCreated or updated:\n");
+    for artifact in required_artifacts {
+        answer.push_str(&format!("- `{}`\n", artifact));
+    }
+    answer
+}
+
+fn build_partial_artifact_completion_answer(
+    required_artifacts: &[String],
+    workdir: &Path,
+) -> String {
+    let mut answer = String::from(
+        "Partial completion: Some deliverables exist but could not be fully substantiated.\n\n",
+    );
+    for artifact in required_artifacts {
+        let full_path = workdir.join(artifact);
+        if !full_path.exists() {
+            answer.push_str(&format!("- `{}` (missing)\n", artifact));
+        } else if crate::artifact_verifier::is_evidence_recovery_file(&full_path) {
+            answer.push_str(&format!(
+                "- `{}` (evidence recovery — contains raw tool output, not a substantive report)\n",
+                artifact
+            ));
+        } else if crate::artifact_verifier::is_empty_file(&full_path) {
+            answer.push_str(&format!("- `{}` (empty)\n", artifact));
+        } else {
+            answer.push_str(&format!("- `{}`\n", artifact));
+        }
+    }
+    answer.push_str(
+        "\nNote: The tool-call budget was exhausted before all artifacts could be fully completed. \
+         The deliverables above marked as 'evidence recovery' contain collected tool evidence \
+         rather than a synthesized report.",
+    );
+    answer
+}
+
+/// Task 704: Synthesize missing required artifacts from gathered evidence.
+/// Called before finalization so the evidence gate doesn't block on claims
+/// that reference written files.
+async fn synthesize_missing_artifacts(
+    args: &Args,
+    tui: &mut crate::ui_terminal::TerminalUI,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    model_id: &str,
+    messages: &[ChatMessage],
+    workdir: &Path,
+    missing: &[(String, PathBuf)],
+    stop_reason: Option<&StopReason>,
+) {
+    for (artifact_name, full_path) in missing {
+        if full_path.exists() {
+            crate::artifact_verifier::mark_artifact_verified(artifact_name);
+            continue;
+        }
+        trace(
+            args,
+            &format!("artifact_synth_attempt path={}", artifact_name),
+        );
+        if let Some(parent) = full_path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                trace(
+                    args,
+                    &format!("artifact_synth_failed mkdir {}: {}", parent.display(), e),
+                );
+                continue;
+            }
+        }
+        // Use a compact model call to synthesize the artifact content from evidence
+        let synth_prompt = format!(
+            "Write the content for file `{}`. Use the tool evidence from the conversation.\n\
+             Output ONLY the file content — no explanations, no markdown wrappers.",
+            artifact_name
+        );
+        let mut synth_msgs: Vec<ChatMessage> = messages
+            .iter()
+            .filter(|m| m.role == "user" || m.role == "tool")
+            .cloned()
+            .collect();
+        // Keep original user request
+        if let Some(first) = messages.first() {
+            synth_msgs.insert(0, first.clone());
+        }
+        synth_msgs.push(ChatMessage::simple("user", &synth_prompt));
+
+        let profile = crate::llm_config::ad_hoc_profile(model_id, "artifact_synthesis");
+        let req = crate::llm_config::chat_request_from_profile(
+            &profile,
+            synth_msgs,
+            crate::llm_config::ChatRequestOptions {
+                max_tokens: Some(2048),
+                stream: Some(false),
+                temperature: Some(0.1),
+                ..Default::default()
+            },
+        );
+        let mut wrote_artifact = false;
+        crate::append_trace_log_line("[ARTIFACT_SYNTH] retry_budget=1 max_attempts=1");
+        match crate::ui::ui_chat::chat_once_with_timeout_single(client, chat_url, &req, 15).await {
+            Ok(resp) => {
+                if let Some(choice) = resp.choices.get(0) {
+                    if let Some(ref content) = choice.message.content {
+                        let stripped = crate::text_utils::strip_thinking_blocks(content);
+                        let (sanitized, _) = crate::final_answer::sanitize_final_answer(&stripped);
+                        if !sanitized.trim().is_empty() {
+                            if let Err(e) = std::fs::write(full_path, sanitized.trim()) {
+                                trace(
+                                    args,
+                                    &format!(
+                                        "artifact_synth_failed write {}: {}",
+                                        artifact_name, e
+                                    ),
+                                );
+                            } else {
+                                trace(
+                                    args,
+                                    &format!("artifact_synthesized path={}", artifact_name),
+                                );
+                                crate::artifact_verifier::mark_artifact_verified(artifact_name);
+                                wrote_artifact = true;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                trace(
+                    args,
+                    &format!("artifact_synth_failed api {}: {}", artifact_name, e),
+                );
+            }
+        }
+        if !wrote_artifact {
+            crate::append_trace_log_line(&format!(
+                "[ARTIFACT_SYNTH] fallback_reason=model_failed path={} artifact_state=evidence_recovery",
+                artifact_name
+            ));
+            let fallback =
+                build_artifact_fallback_from_tool_evidence(artifact_name, messages, stop_reason);
+            if let Err(e) = std::fs::write(full_path, fallback.trim()) {
+                trace(
+                    args,
+                    &format!(
+                        "artifact_synth_failed write {}: {} artifact_state=not_completed",
+                        artifact_name, e
+                    ),
+                );
+            } else {
+                trace(
+                    args,
+                    &format!("artifact_synth_fallback_written path={} artifact_state=evidence_recovery", artifact_name),
+                );
+                crate::artifact_verifier::mark_artifact_verified(artifact_name);
+            }
+        } else {
+            crate::append_trace_log_line(&format!(
+                "[ARTIFACT_SYNTH] path={} artifact_state=model_authored",
+                artifact_name
+            ));
+        }
+    }
+}
+
+fn build_artifact_fallback_from_tool_evidence(
+    artifact_name: &str,
+    messages: &[ChatMessage],
+    stop_reason: Option<&StopReason>,
+) -> String {
+    // Extract user objective from first user message
+    let user_objective = messages
+        .iter()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.chars().take(500).collect::<String>())
+        .unwrap_or_default();
+
+    // Extract evidence with file paths and line numbers
+    let evidence: Vec<(String, String)> = messages
+        .iter()
+        .rev()
+        .filter(|m| m.role == "tool")
+        .take(12)
+        .filter_map(|m| {
+            let name = m.name.as_deref().unwrap_or("tool").to_string();
+            let preview = m.content.chars().take(2000).collect::<String>();
+            Some((name, preview.trim().to_string()))
+        })
+        .collect();
+
+    let stop_reason_note = match stop_reason {
+        Some(reason) => format!("Stop reason: `{}`", reason.as_str()),
+        None => "Stop reason: unknown".to_string(),
+    };
+
+    // Extract file paths from tool evidence
+    let file_refs: Vec<String> = messages
+        .iter()
+        .filter(|m| m.role == "tool")
+        .flat_map(|m| {
+            m.content
+                .lines()
+                .filter(|l| {
+                    let t = l.trim();
+                    !t.is_empty()
+                        && (t.contains('/') || t.contains(".rs") || t.contains(".md")
+                            || t.contains(".toml") || t.contains(".json") || t.contains(".py"))
+                        && (t.chars().filter(|&c| c == '/').count() == 1
+                            || t.starts_with("src/")
+                            || t.starts_with("tests/")
+                            || t.starts_with("config/")
+                            || t.starts_with("docs/"))
+                        && !t.starts_with("error")
+                        && !t.starts_with("[")
+                        && !t.starts_with("Tool result")
+                })
+                .take(10)
+                .map(|l| l.trim().to_string())
+        })
+        .collect::<Vec<_>>();
+
+    let evidence_block = if evidence.is_empty() {
+        "No tool evidence was available when this fallback artifact was generated.".to_string()
+    } else {
+        evidence
+            .iter()
+            .map(|(name, content)| {
+                format!("## Tool Evidence: {}\n\n{}", name, content)
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n")
+    };
+
+    let files_section = if file_refs.is_empty() {
+        String::new()
+    } else {
+        let mut seen: Vec<&str> = Vec::new();
+        let unique: Vec<&str> = file_refs.iter().map(|s| s.as_str()).filter(|p| {
+            if seen.contains(p) { false } else { seen.push(p); true }
+        }).collect();
+        format!(
+            "\n\n## Files Referenced in Evidence\n\n{}\n",
+            unique.iter().map(|p| format!("- `{}`", p)).collect::<Vec<_>>().join("\n")
+        )
+    };
+
+    format!(
+        "# Recovered Artifact: {}\n\n\
+         Artifact state: **evidence-recovery** — model-based synthesis did not produce complete content.\n\
+         This file was generated from captured tool evidence.\n\n\
+         ## Direct Answer to Objective\n\n\
+         The objective was: {}\n\n\
+         Based on the evidence gathered below, specific findings with file paths and line numbers \
+         are listed where available. Where evidence is insufficient, this is explicitly noted.\n\n\
+         ## Session Context\n\n\
+         {}{}\n\n\
+         ## Evidence\n\n\
+         {}\n",
+        artifact_name,
+        user_objective,
+        stop_reason_note,
+        files_section,
+        evidence_block,
+    )
+}
+
+fn persist_missing_required_artifacts(args: &Args, workdir: &Path, content: &str) {
+    let missing = crate::artifact_verifier::find_missing_artifacts(workdir);
+    if missing.is_empty() || content.trim().is_empty() {
+        return;
+    }
+
+    for (artifact, full_path) in missing {
+        if let Some(parent) = full_path.parent() {
+            if let Err(err) = std::fs::create_dir_all(parent) {
+                trace(
+                    args,
+                    &format!(
+                        "artifact_persist_failed path={} stage=mkdir error={}",
+                        artifact, err
+                    ),
+                );
+                continue;
+            }
+        }
+
+        if let Err(err) = std::fs::write(&full_path, content.trim()) {
+            trace(
+                args,
+                &format!(
+                    "artifact_persist_failed path={} stage=write error={}",
+                    artifact, err
+                ),
+            );
+        } else {
+            trace(args, &format!("artifact_persisted path={}", artifact));
+        }
+    }
 }
 
 async fn request_final_answer_without_tools(
@@ -806,6 +1206,7 @@ fn tool_signal(tc: &ToolCall) -> String {
             .to_string(),
         "read" => parsed
             .get("path")
+            .or_else(|| parsed.get("filePath"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .trim()
@@ -847,7 +1248,10 @@ fn tool_signal(tc: &ToolCall) -> String {
         return key;
     }
     if fn_name == "shell" {
-        format!("{fn_name}:{}", crate::text_utils::normalize_shell_signal(&key))
+        format!(
+            "{fn_name}:{}",
+            crate::text_utils::normalize_shell_signal(&key)
+        )
     } else {
         format!("{fn_name}:{key}")
     }
@@ -876,6 +1280,20 @@ pub(crate) async fn run_tool_loop(
     let total_timeout = Duration::from_secs(45 * 60); // 45 minutes
     let loop_start = Instant::now();
     let original_user_request = user_message.to_string();
+    crate::artifact_verifier::init_artifact_tracking();
+    crate::tool_repair::reset_empty_read_validation_failures();
+    let required_artifacts =
+        crate::artifact_verifier::extract_required_artifacts_from_request(&original_user_request);
+    if !required_artifacts.is_empty() {
+        crate::artifact_verifier::require_artifacts(&required_artifacts);
+        trace(
+            args,
+            &format!(
+                "artifact_tracking: required={}",
+                required_artifacts.join(",")
+            ),
+        );
+    }
     trace(
         args,
         &format!(
@@ -902,7 +1320,13 @@ pub(crate) async fn run_tool_loop(
     // Track tool outcomes keyed by normalized signal.
     // Used to skip duplicate tool calls and keep their results from previous execution.
     // Maps signal -> (success, preview_content)
-    let mut tool_outcomes: std::collections::HashMap<String, (bool, String)> = std::collections::HashMap::new();
+    let mut tool_outcomes: std::collections::HashMap<String, (bool, String)> =
+        std::collections::HashMap::new();
+    // Task 689: Tool outcome history and per-tool failure circuit for argument repair
+    let mut outcome_history = crate::tool_repair::ToolOutcomeHistory::default();
+    let mut failure_circuit = crate::tool_repair::ToolFailureCircuit::new();
+    // Task 695: Track consecutive empty read calls per turn for blocking
+    let mut empty_read_count: usize = 0;
 
     let mut update_context_estimate =
         |msgs: &[ChatMessage], tui: &mut crate::ui_terminal::TerminalUI| {
@@ -916,6 +1340,56 @@ pub(crate) async fn run_tool_loop(
     update_context_estimate(&messages, tui);
 
     let mut turn_counter: usize = 0;
+    // Task 687: Track continuation count for budget recovery
+    let mut continuation_count: u32 = 0;
+    const MAX_CONTINUATIONS: u32 = 3;
+
+    /// Helper to build a continuation message from gathered evidence,
+    /// allowing the tool loop to continue after budget exhaustion.
+    fn build_continuation_message(
+        messages: &[ChatMessage],
+        original_intent: &str,
+        continuation_num: u32,
+        max_continuations: u32,
+        session_root: &std::path::Path,
+    ) -> String {
+        // Task 701: Build a minimal turn context packet for the continuation
+        let has_evidence = messages
+            .iter()
+            .filter(|m| m.role == "tool")
+            .any(|m| !m.content.is_empty());
+        let failed_tools: Vec<String> = messages
+            .iter()
+            .filter(|m| m.role == "tool" && m.content.contains("error"))
+            .map(|m| m.name.as_deref().unwrap_or("tool").to_string())
+            .collect();
+        let successful_tools: Vec<String> = messages
+            .iter()
+            .filter(|m| m.role == "tool" && !m.content.contains("error"))
+            .map(|m| m.name.as_deref().unwrap_or("tool").to_string())
+            .collect();
+
+        let packet = crate::turn_context_packet::build_turn_context_packet(
+            original_intent,
+            if has_evidence {
+                "Continue from existing evidence"
+            } else {
+                original_intent
+            },
+            &crate::artifact_verifier::get_required_artifacts(),
+            &successful_tools,
+            &failed_tools,
+            "budget_exceeded",
+        );
+
+        crate::turn_context_packet::persist_turn_context_packet(session_root, &packet);
+
+        crate::turn_context_packet::build_continuation_from_packet(
+            &packet,
+            continuation_num,
+            max_continuations,
+        )
+    }
 
     loop {
         turn_counter += 1;
@@ -979,6 +1453,114 @@ pub(crate) async fn run_tool_loop(
                 args,
                 &format!("tool_loop: stopping reason={}", outcome.reason.as_str()),
             );
+
+            // Task 687: Check if budget exhaustion is recoverable with continuation.
+            let has_evidence = has_recent_tool_evidence(&messages);
+            let is_recoverable = outcome.reason.is_budget_recoverable();
+            let can_continue = is_recoverable
+                && has_evidence
+                && continuation_count < MAX_CONTINUATIONS
+                && !complexity.eq_ignore_ascii_case("DIRECT");
+
+            // Task 699: Check if mutation was requested but not performed.
+            let mutation_type =
+                crate::mutation_contract::detect_mutating_request(&original_user_request);
+            let mutation_needed =
+                mutation_type.is_some() && !crate::mutation_contract::mutation_performed();
+            let has_required_artifact_deliverable =
+                !crate::artifact_verifier::get_required_artifacts().is_empty();
+
+            if mutation_needed
+                && !has_required_artifact_deliverable
+                && continuation_count < MAX_CONTINUATIONS
+            {
+                continuation_count += 1;
+                let msg = crate::mutation_contract::build_mutation_required_message(
+                    mutation_type.as_deref().unwrap_or("unknown"),
+                );
+                messages.push(ChatMessage::simple("user", &msg));
+                tui.push_stop_notice(
+                    "Mutation required: continuing until mutating tool call is made",
+                );
+                trace(args, "tool_loop: mutation enforced continuation");
+                let new_budget = StageBudget::from_complexity(complexity);
+                stop_policy = StopPolicy::new(new_budget);
+                failure_circuit.clear();
+                continue;
+            } else if mutation_needed && has_required_artifact_deliverable {
+                trace(
+                    args,
+                    "tool_loop: mutation enforcement deferred to required artifact finalization",
+                );
+            }
+
+            if can_continue && !has_required_artifact_deliverable {
+                continuation_count += 1;
+                let cont_msg = build_continuation_message(
+                    &messages,
+                    &original_user_request,
+                    continuation_count,
+                    MAX_CONTINUATIONS,
+                    &sess.root,
+                );
+                messages.push(ChatMessage::simple("user", &cont_msg));
+                tui.push_stop_notice(&format!(
+                    "Budget continued ({}/{}): meaningful progress detected",
+                    continuation_count, MAX_CONTINUATIONS
+                ));
+                trace(
+                    args,
+                    &format!(
+                        "tool_loop: budget continuation {}/{} after {} iterations",
+                        continuation_count,
+                        MAX_CONTINUATIONS,
+                        stop_policy.iteration()
+                    ),
+                );
+                let new_budget = StageBudget::from_complexity(complexity);
+                stop_policy = StopPolicy::new(new_budget);
+                failure_circuit.clear();
+                continue;
+            } else if can_continue && has_required_artifact_deliverable {
+                // Task 722: Check artifact quality/state, not just path existence.
+                // If artifacts are still missing OR exist as partial/evidence-recovery,
+                // give a bounded continuation focused on completing the deliverables.
+                let all_complete = crate::artifact_verifier::are_all_artifacts_complete(workdir);
+                let incomplete = crate::artifact_verifier::find_incomplete_artifacts(workdir);
+                if !all_complete && !incomplete.is_empty() && continuation_count < MAX_CONTINUATIONS {
+                    continuation_count += 1;
+                    let cont_msg = format!(
+                        "You reached the tool-call budget but the following required deliverables are still incomplete:\n{}\n\n\
+                         Continue working to complete these deliverables. Focus on completing them directly.",
+                        incomplete.iter().map(|(name, _, state)| {
+                            format!("- `{}` ({})", name, state)
+                        }).collect::<Vec<_>>().join("\n")
+                    );
+                    messages.push(ChatMessage::simple("user", &cont_msg));
+                    tui.push_stop_notice(&format!(
+                        "Artifact continuation ({}/{}): completing incomplete deliverables",
+                        continuation_count, MAX_CONTINUATIONS
+                    ));
+                    trace(
+                        args,
+                        &format!(
+                            "tool_loop: artifact continuation {}/{} ({} incomplete artifacts)",
+                            continuation_count,
+                            MAX_CONTINUATIONS,
+                            incomplete.len()
+                        ),
+                    );
+                    let new_budget = StageBudget::from_complexity(complexity);
+                    stop_policy = StopPolicy::new(new_budget);
+                    failure_circuit.clear();
+                    continue;
+                }
+                trace(
+                    args,
+                    "tool_loop: budget continuation deferred to required artifact finalization (all artifacts complete or continuations exhausted)",
+                );
+            }
+
             messages.push(ChatMessage::simple(
                 "user",
                 "You've reached the maximum number of tool calls. Please provide your final answer.",
@@ -991,6 +1573,7 @@ pub(crate) async fn run_tool_loop(
                 model_id,
                 &original_user_request,
                 &messages,
+                workdir,
                 max_tokens,
                 Some(&outcome.reason),
             )
@@ -1014,7 +1597,23 @@ pub(crate) async fn run_tool_loop(
             );
             crate::event_log::clear_current_turn();
             let _ = crate::event_log::persist(&sess.root);
-            tui.push_stop_notice(&format!("Budget limit: {}", outcome.reason.as_str()));
+            // Task 718: Tag as partial if required artifacts are missing after finalization
+            let missing_after = crate::artifact_verifier::find_missing_artifacts(workdir);
+            if !missing_after.is_empty() {
+                trace(
+                    args,
+                    &format!(
+                        "tool_loop: partial completion — {} required artifacts still missing after finalization",
+                        missing_after.len()
+                    ),
+                );
+                tui.push_stop_notice(&format!(
+                    "Partial completion: {} deliverables not completed",
+                    missing_after.len()
+                ));
+            } else {
+                tui.push_stop_notice(&format!("Budget limit: {}", outcome.reason.as_str()));
+            }
             return Ok(ToolLoopResult {
                 final_answer: if final_answer_needs_retry(&final_trimmed) {
                     build_fallback_from_recent_tool_evidence(&messages, Some(&outcome.reason))
@@ -1197,7 +1796,9 @@ pub(crate) async fn run_tool_loop(
                 ct.push_str(reasoning);
             }
             if !turn.thinking_content.is_empty() {
-                if !ct.is_empty() { ct.push('\n'); }
+                if !ct.is_empty() {
+                    ct.push('\n');
+                }
                 ct.push_str(&turn.thinking_content);
             }
             // Fallback: extract think-block from raw content (preserves tags)
@@ -1211,36 +1812,59 @@ pub(crate) async fn run_tool_loop(
             ct
         };
         if !combined_thinking.is_empty() {
-            let thinking_text = combined_thinking.clone();
-            if let Ok(aux_url) = Url::parse("http://192.168.1.186:8084/v1/chat/completions") {
-                let aux_profile = crate::llm_config::auxiliary_profile("thought_summary");
-                let prompt = format!(
-                    "Summarize this thinking in one sentence, less than 90 words, third person (describe what the user asked):\n{}",
-                    thinking_text
-                );
-                let req = crate::llm_config::chat_request_from_profile(
-                    &aux_profile,
-                    vec![crate::ChatMessage::simple("user", &prompt)],
-                    crate::llm_config::ChatRequestOptions {
-                        stream: Some(false),
-                        temperature: Some(0.0),
-                        max_tokens: Some(512),
-                        ..Default::default()
-                    },
-                );
-                if let Ok(resp) = crate::ui::ui_chat::chat_once_with_timeout(
-                    client, &aux_url, &req, 10,
-                ).await {
-                    if let Some(choice) = resp.choices.get(0) {
-                        if let Some(ref content) = choice.message.content {
-                            let stripped = crate::text_utils::strip_thinking_blocks(content);
-                            let text = if stripped.trim().is_empty() { content } else { &stripped };
-                            let clean = text.replace("\\\"", "\"").replace("\\n", "\n");
-                            if !clean.trim().is_empty() {
-                                tui.push_thought_summary(&clean);
+            // Task 707: Early return when auxiliary helper is disabled — no summary request,
+            // no placeholder rows, no timeout noise.
+            match crate::llm_config::auxiliary_chat_url() {
+                Ok(Some(aux_url)) => {
+                    let aux_profile = crate::llm_config::auxiliary_profile("thought_summary");
+                    let prompt = format!(
+                        "Summarize this thinking in one sentence, less than 90 words, third person (describe what the user asked):\n{}",
+                        combined_thinking
+                    );
+                    let req = crate::llm_config::chat_request_from_profile(
+                        &aux_profile,
+                        vec![crate::ChatMessage::simple("user", &prompt)],
+                        crate::llm_config::ChatRequestOptions {
+                            stream: Some(false),
+                            temperature: Some(0.0),
+                            max_tokens: Some(512),
+                            ..Default::default()
+                        },
+                    );
+                    if let Ok(resp) = crate::ui::ui_chat::chat_once_with_timeout(
+                        client,
+                        &aux_url,
+                        &req,
+                        aux_profile.timeout_s,
+                    )
+                    .await
+                    {
+                        if let Some(choice) = resp.choices.get(0) {
+                            if let Some(ref content) = choice.message.content {
+                                let stripped = crate::text_utils::strip_thinking_blocks(content);
+                                let text = if stripped.trim().is_empty() {
+                                    content
+                                } else {
+                                    &stripped
+                                };
+                                let clean = text.replace("\\\"", "\"").replace("\\n", "\n");
+                                if !clean.trim().is_empty() {
+                                    tui.push_thought_summary(&clean);
+                                }
                             }
                         }
                     }
+                }
+                Ok(None) => {
+                    // Task 707: Explicit trace event when auxiliary helper is configured but disabled.
+                    // No placeholder, no timeout — just a concise trace.
+                    trace(args, "auxiliary_helper_disabled");
+                }
+                Err(error) => {
+                    trace(
+                        args,
+                        &format!("auxiliary_llm_disabled_or_invalid error={error:#}"),
+                    );
                 }
             }
         }
@@ -1261,6 +1885,7 @@ pub(crate) async fn run_tool_loop(
                     model_id,
                     &original_user_request,
                     &messages,
+                    workdir,
                     max_tokens,
                     stop_reason,
                 )
@@ -1321,6 +1946,7 @@ pub(crate) async fn run_tool_loop(
                     model_id,
                     &original_user_request,
                     &messages,
+                    workdir,
                     max_tokens,
                     stop_reason,
                 )
@@ -1346,10 +1972,7 @@ pub(crate) async fn run_tool_loop(
                 let stagnation_info = stop_policy.stagnation_trace_info();
                 trace(
                     args,
-                    &format!(
-                        "tool_loop: {} (no new tool signal)",
-                        stagnation_info
-                    ),
+                    &format!("tool_loop: {} (no new tool signal)", stagnation_info),
                 );
                 // Task 540: Surface stagnation warning to transcript if persistent
                 if stop_policy.stagnation_runs() >= 3 {
@@ -1389,30 +2012,76 @@ pub(crate) async fn run_tool_loop(
                 {
                     if let Some((ok, prev)) = tool_outcomes.get(&sig) {
                         if *ok {
-                            trace(args, &format!("tool_loop: duplicate skipped (already succeeded) signal={}", sig));
+                            trace(
+                                args,
+                                &format!(
+                                    "tool_loop: duplicate skipped (already succeeded) signal={}",
+                                    sig
+                                ),
+                            );
                             messages.push(ChatMessage::simple(
                                 "system",
                                 &format!("Already completed earlier — same result: {}", prev),
                             ));
                             continue;
                         } else {
-                            // Task 607: Block duplicate failed calls — don't waste budget iteration
-                            trace(args, &format!("tool_loop: duplicate skipped (previous failure) signal={}", sig));
-                            let error_hint = if prev.len() > 10 {
-                                format!(
-                                    "Your previous call to this tool failed with: {}. \
-                                     Do NOT repeat the same call. Change your arguments or use a different tool.",
-                                    prev.chars().take(120).collect::<String>()
+                            let is_empty_read_retry = sig == "read:"
+                                && crate::tool_repair::extract_path_from_args(
+                                    &tc.function.arguments,
                                 )
+                                .is_empty();
+                            if is_empty_read_retry {
+                                let search_paths = outcome_history.get_existing_search_paths(3);
+                                let trace_note = if search_paths.is_empty() {
+                                    "empty_read_suppressed no_candidate_exists".to_string()
+                                } else {
+                                    format!(
+                                        "empty_read_repaired_from_evidence candidates=[{}]",
+                                        search_paths.join(", ")
+                                    )
+                                };
+                                trace(
+                                    args,
+                                    &format!(
+                                        "tool_loop: {} signal={}",
+                                        trace_note, sig
+                                    ),
+                                );
+                                let hint = if search_paths.is_empty() {
+                                    "The same empty read call already failed. No valid file paths found in recent evidence. Use 'glob' or 'search' to discover files first.".to_string()
+                                } else {
+                                    format!(
+                                        "The same empty read call already failed. Use 'read' with one of: {}",
+                                        search_paths.join(", ")
+                                    )
+                                };
+                                messages.push(ChatMessage::simple("system", &hint));
+                                continue; // Skip execution — empty read strategy shift
                             } else {
-                                format!(
-                                    "Your previous attempt at '{}' failed. Do NOT repeat it. \
-                                     Change your arguments or use a different tool.",
-                                    sig
-                                )
-                            };
-                            messages.push(ChatMessage::simple("system", &error_hint));
-                            continue; // Skip execution entirely
+                                // Task 607: Block duplicate failed calls — don't waste budget iteration
+                                trace(
+                                    args,
+                                    &format!(
+                                        "tool_loop: duplicate skipped (previous failure) signal={}",
+                                        sig
+                                    ),
+                                );
+                                let error_hint = if prev.len() > 10 {
+                                    format!(
+                                        "Your previous call to this tool failed with: {}. \
+                                         Do NOT repeat the same call. Change your arguments or use a different tool.",
+                                        prev.chars().take(120).collect::<String>()
+                                    )
+                                } else {
+                                    format!(
+                                        "Your previous attempt at '{}' failed. Do NOT repeat it. \
+                                         Change your arguments or use a different tool.",
+                                        sig
+                                    )
+                                };
+                                messages.push(ChatMessage::simple("system", &error_hint));
+                                continue; // Skip execution entirely
+                            }
                         }
                     }
                 }
@@ -1460,14 +2129,150 @@ pub(crate) async fn run_tool_loop(
                     }
                 }
 
+                // ── Per-tool failure circuit check (Task 689) ──
+                if failure_circuit.is_open(&tc.function.name) {
+                    trace(
+                        args,
+                        &format!(
+                            "tool_loop: circuit open for {}, injecting strategy shift",
+                            tc.function.name
+                        ),
+                    );
+                    if tc.function.name == "shell" {
+                        messages.push(ChatMessage::simple(
+                            "system",
+                            "The shell tool circuit is open. Do not call shell again for this objective. Use non-shell tools if they can complete the work, otherwise provide a bounded failure report with the exact blocker.",
+                        ));
+                        continue;
+                    }
+                    let shift_msg = format!(
+                        "Tool '{}' has failed repeatedly. \
+                         Stop using it and switch to a completely different approach. \
+                         Try: shell cat/head for reading files, or a different search strategy.",
+                        tc.function.name
+                    );
+                    messages.push(ChatMessage::simple("system", &shift_msg));
+                    let repaired_tc = ToolCall {
+                        id: tc.id.clone(),
+                        call_type: tc.call_type.clone(),
+                        function: ToolFunctionCall {
+                            name: "shell".to_string(),
+                            arguments: format!(
+                                r#"{{"command": "echo '{}'; echo 'Switching strategy per circuit breaker.'"}}"#,
+                                tc.function.name
+                            ),
+                        },
+                    };
+                    let result = tool_calling::execute_tool_call(
+                        args,
+                        &repaired_tc,
+                        workdir,
+                        sess,
+                        client,
+                        chat_url,
+                        user_message,
+                        Some(&mut *tui),
+                    )
+                    .await;
+                    messages.push(ChatMessage::simple(
+                        "system",
+                        &format!(
+                            "Used shell fallback because tool '{}' circuit is open.",
+                            tc.function.name
+                        ),
+                    ));
+                    continue;
+                }
+
+                // ── Context-aware argument repair (Task 689) ──
+                // Before passing the tool call to the executor, try to repair
+                // missing path fields from previous successful tool outcomes.
+                let tc = {
+                    let repaired_json = crate::tool_repair::repair_tool_call_args(
+                        &tc.function.name,
+                        &tc.function.arguments,
+                        &outcome_history,
+                    );
+                    match repaired_json {
+                        Some(new_args) => ToolCall {
+                            id: tc.id.clone(),
+                            call_type: tc.call_type.clone(),
+                            function: ToolFunctionCall {
+                                name: tc.function.name.clone(),
+                                arguments: new_args,
+                            },
+                        },
+                        None => tc.clone(),
+                    }
+                };
+
+                // ── Empty read blocking (Task 695) ──
+                // Block repeated empty read calls and redirect to shell cat.
+                if crate::tool_repair::should_block_empty_read(
+                    &tc.function.name,
+                    &tc.function.arguments,
+                    empty_read_count,
+                ) {
+                    let search_path = outcome_history.last_search_path().map(|s| s.to_string());
+                    let hint = crate::tool_repair::empty_read_fallback_hint(search_path.as_deref());
+                    trace(
+                        args,
+                        &format!("tool_loop: blocked empty read (count={})", empty_read_count),
+                    );
+                    messages.push(ChatMessage::simple("system", &hint));
+                    // Try fallback: convert to shell cat if we have a candidate path
+                    if let Some(candidate) = search_path
+                        .or_else(|| outcome_history.last_written_path().map(|s| s.to_string()))
+                    {
+                        let escaped = shlex::quote(&candidate).to_string();
+                        let fallback_cmd = format!("cat {}", escaped);
+                        let fallback_tc = ToolCall {
+                            id: tc.id.clone(),
+                            call_type: tc.call_type.clone(),
+                            function: ToolFunctionCall {
+                                name: "shell".to_string(),
+                                arguments: format!(r#"{{"command": "{}"}}"#, fallback_cmd),
+                            },
+                        };
+                        let fallback_result = tool_calling::execute_tool_call(
+                            args,
+                            &fallback_tc,
+                            workdir,
+                            sess,
+                            client,
+                            chat_url,
+                            user_message,
+                            Some(&mut *tui),
+                        )
+                        .await;
+                        if fallback_result.ok {
+                            messages.push(ChatMessage {
+                                role: "tool".to_string(),
+                                content: fallback_result.content.clone(),
+                                name: Some("shell".to_string()),
+                                tool_calls: None,
+                                tool_call_id: Some(tc.id.clone()),
+                                reasoning_content: None,
+                                summarized: false,
+                            });
+                        }
+                    }
+                    empty_read_count += 1;
+                    continue;
+                }
+                // Track empty read calls for blocking
+                if tc.function.name == "read"
+                    && crate::tool_repair::extract_path_from_args(&tc.function.arguments).is_empty()
+                {
+                    empty_read_count += 1;
+                }
+
                 // ── Read fallback gate (Task 616) ──
                 // After 2+ consecutive read failures, auto-convert to head/cat
                 // shell command. Small models cannot construct valid read args.
                 // The fallback runs INSTEAD of the original read call — the
                 // model's read is completely suppressed and replaced with shell.
-                if tc.function.name == "read"
-                    && stop_policy.consecutive_read_failures() >= 2
-                {
+                if tc.function.name == "read" && stop_policy.consecutive_read_failures() >= 2 {
                     if let Some(fp) = (|| -> Option<String> {
                         let parsed: serde_json::Value =
                             serde_json::from_str(&tc.function.arguments).ok()?;
@@ -1478,13 +2283,17 @@ pub(crate) async fn run_tool_loop(
                             let parsed: serde_json::Value =
                                 serde_json::from_str(&tc.function.arguments).ok()?;
                             parsed.get("limit").and_then(|v| v.as_u64())
-                        })().unwrap_or(0);
+                        })()
+                        .unwrap_or(0);
                         let fallback_cmd = if limit > 0 {
                             format!("head -n {} {}", limit, escaped)
                         } else {
                             format!("cat {}", escaped)
                         };
-                        trace(args, &format!("tool_loop: read→shell fallback cmd={}", fallback_cmd));
+                        trace(
+                            args,
+                            &format!("tool_loop: read→shell fallback cmd={}", fallback_cmd),
+                        );
                         let fallback_tc = ToolCall {
                             id: tc.id.clone(),
                             call_type: tc.call_type.clone(),
@@ -1494,26 +2303,51 @@ pub(crate) async fn run_tool_loop(
                             },
                         };
                         let mut result = tool_calling::execute_tool_call(
-                            args, &fallback_tc, workdir, sess, client, chat_url, user_message, Some(&mut *tui),
-                        ).await;
+                            args,
+                            &fallback_tc,
+                            workdir,
+                            sess,
+                            client,
+                            chat_url,
+                            user_message,
+                            Some(&mut *tui),
+                        )
+                        .await;
 
                         // Record events for the original read call (so telemetry matches)
                         crate::event_log::record_tool_event(
-                            crate::event_log::ToolEventType::ToolStarted, &turn_id, &tc.id, "read",
+                            crate::event_log::ToolEventType::ToolStarted,
+                            &turn_id,
+                            &tc.id,
+                            "read",
                         );
                         crate::event_log::record_tool_event(
-                            if result.ok { crate::event_log::ToolEventType::ToolFinished } else { crate::event_log::ToolEventType::ToolFailed },
-                            &turn_id, &tc.id, "read",
+                            if result.ok {
+                                crate::event_log::ToolEventType::ToolFinished
+                            } else {
+                                crate::event_log::ToolEventType::ToolFailed
+                            },
+                            &turn_id,
+                            &tc.id,
+                            "read",
                         );
 
                         // Push fallback result as a tool message
-                        stop_policy.record_tool_result(tc, &result);
+                        stop_policy.record_tool_result(&tc, &result);
                         let _ = tui.push_tool_finish(
-                            "shell", result.ok, &result.content, Some(result.duration_ms),
+                            "shell",
+                            result.ok,
+                            &result.content,
+                            Some(result.duration_ms),
                         );
                         messages.push(ChatMessage {
-                            role: "assistant".to_string(), content: "".to_string(), name: None,
-                            tool_calls: Some(vec![tc.clone()]), tool_call_id: None, reasoning_content: None, summarized: false,
+                            role: "assistant".to_string(),
+                            content: "".to_string(),
+                            name: None,
+                            tool_calls: Some(vec![tc.clone()]),
+                            tool_call_id: None,
+                            reasoning_content: None,
+                            summarized: false,
                         });
                         let preview = result.content.chars().take(200).collect::<String>();
                         let sig = format!("read:{}", fp);
@@ -1521,11 +2355,19 @@ pub(crate) async fn run_tool_loop(
 
                         if result.ok {
                             messages.push(ChatMessage {
-                                role: "tool".to_string(), content: result.content.clone(), name: Some("shell".to_string()),
-                                tool_calls: None, tool_call_id: Some(tc.id.clone()), reasoning_content: None, summarized: false,
+                                role: "tool".to_string(),
+                                content: result.content.clone(),
+                                name: Some("shell".to_string()),
+                                tool_calls: None,
+                                tool_call_id: Some(tc.id.clone()),
+                                reasoning_content: None,
+                                summarized: false,
                             });
                         } else {
-                            messages.push(ChatMessage::simple("system", "That attempt failed. Try a different approach."));
+                            messages.push(ChatMessage::simple(
+                                "system",
+                                "That attempt failed. Try a different approach.",
+                            ));
                         }
                         continue; // Skip original read execution
                     }
@@ -1541,7 +2383,7 @@ pub(crate) async fn run_tool_loop(
 
                 let mut result = tool_calling::execute_tool_call(
                     args,
-                    tc,
+                    &tc,
                     workdir,
                     sess,
                     client,
@@ -1640,12 +2482,13 @@ pub(crate) async fn run_tool_loop(
                     });
                 }
 
-                stop_policy.record_tool_result(tc, &result);
+                stop_policy.record_tool_result(&tc, &result);
 
                 // Task 599: Preemptive strategy shift for first read/exists failure.
                 // Small models cannot parse validation error messages. After the
                 // first failure with a missing required field, immediately suggest
                 // the correct usage instead of waiting for 3 identical errors.
+                // Task 708: Also handle empty read stagnation from schema packet.
                 if !result.ok && result.content.contains("required field") {
                     let fail_count = stop_policy.consecutive_identical_errors();
                     if fail_count == 1 {
@@ -1658,10 +2501,21 @@ pub(crate) async fn run_tool_loop(
                     }
                 }
 
-                // T333: Mark real tool calls & reset respond counter
-                if tc.function.name != "respond"
-                    && tc.function.name != "update_todo_list"
+                // Task 708: If empty read validation stagnation detected, force strategy shift
+                if tc.function.name == "read"
+                    && !result.ok
+                    && crate::tool_repair::is_empty_read_validation_stagnation()
                 {
+                    let stagnation_hint = format!(
+                        "The read tool has failed multiple times with missing filePath. \
+                         Stop using read. Use 'shell cat' or 'shell head' instead."
+                    );
+                    messages.push(ChatMessage::simple("system", &stagnation_hint));
+                    crate::tool_repair::reset_empty_read_validation_failures();
+                }
+
+                // T333: Mark real tool calls & reset respond counter
+                if tc.function.name != "respond" && tc.function.name != "update_todo_list" {
                     stop_policy.mark_real_tool_call();
                     stop_policy.reset_respond_counter();
                 }
@@ -1759,6 +2613,7 @@ pub(crate) async fn run_tool_loop(
                             model_id,
                             &original_user_request,
                             &messages,
+                            workdir,
                             max_tokens,
                             None,
                         )
@@ -1786,14 +2641,34 @@ pub(crate) async fn run_tool_loop(
                 let store_for_dedup = tc.function.name != "respond"
                     && tc.function.name != "workspace_info"
                     && tc.function.name != "tool_search";
-                
+
                 if store_for_dedup {
                     let preview = result.content.chars().take(200).collect::<String>();
                     tool_outcomes.insert(sig, (result.ok, preview));
                 }
 
+                // Task 689: Record in outcome history and failure circuit
+                outcome_history.record(&tc.function.name, &tc.function.arguments, result.ok);
+                // Task 695: Also record paths from tool result content for evidence-derived repair
                 if result.ok {
+                    outcome_history.record_from_result(
+                        &tc.function.name,
+                        &result.content,
+                        result.ok,
+                    );
+                }
+                // Task 699: Track mutating tool calls
+                if result.ok && crate::mutation_contract::is_mutating_tool(&tc.function.name) {
+                    crate::mutation_contract::mark_mutation_performed();
+                }
+                if result.ok {
+                    failure_circuit.record_success(&tc.function.name);
+                } else {
+                    let error_signal = result.content.chars().take(120).collect::<String>();
+                    failure_circuit.record_failure(&tc.function.name, &error_signal);
+                }
 
+                if result.ok {
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
                         content: "".to_string(),
@@ -1885,14 +2760,20 @@ pub(crate) async fn run_tool_loop(
                     let shift = "The 'read' tool has failed 3+ times with the same error. \
                         Stop using 'read' and use 'shell cat <path>' instead to read files. \
                         Example: shell command='cat docs/ARCHITECTURE.md'";
-                    trace(args, &format!("tool_loop: identical-error loop detected for read"));
+                    trace(
+                        args,
+                        &format!("tool_loop: identical-error loop detected for read"),
+                    );
                     messages.push(ChatMessage::simple("user", shift));
                 } else {
                     let shift = format!(
                         "Tool '{}' has failed 3+ times with the same error. Stop using it and try a completely different approach.",
                         last_tool
                     );
-                    trace(args, &format!("tool_loop: identical-error loop detected for {}", last_tool));
+                    trace(
+                        args,
+                        &format!("tool_loop: identical-error loop detected for {}", last_tool),
+                    );
                     messages.push(ChatMessage::simple("user", &shift));
                 }
             }
@@ -1920,6 +2801,7 @@ pub(crate) async fn run_tool_loop(
                     model_id,
                     &original_user_request,
                     &messages,
+                    workdir,
                     max_tokens,
                     None,
                 )
@@ -1980,6 +2862,7 @@ pub(crate) async fn run_tool_loop(
                     model_id,
                     &original_user_request,
                     &messages,
+                    workdir,
                     max_tokens,
                     stop_reason,
                 )
@@ -2021,6 +2904,7 @@ pub(crate) async fn run_tool_loop(
                         model_id,
                         &original_user_request,
                         &messages,
+                        workdir,
                         max_tokens,
                         None,
                     )
@@ -2046,7 +2930,10 @@ pub(crate) async fn run_tool_loop(
                     let _ = crate::event_log::persist(&sess.root);
                     return Ok(ToolLoopResult {
                         final_answer: if final_answer_needs_retry(&trimmed) {
-                            build_fallback_from_recent_tool_evidence(&messages, Some(&outcome.reason))
+                            build_fallback_from_recent_tool_evidence(
+                                &messages,
+                                Some(&outcome.reason),
+                            )
                         } else {
                             trimmed
                         },
@@ -2068,7 +2955,10 @@ pub(crate) async fn run_tool_loop(
             let trimmed = content.trim();
             if is_intent_only_response(&trimmed) && !has_recent_tool_evidence(&messages) {
                 // Force continuation to gather actual evidence instead of accepting intent-only answer
-                trace(args, "tool_loop: detected intent-only response without evidence, continuing to gather proof");
+                trace(
+                    args,
+                    "tool_loop: detected intent-only response without evidence, continuing to gather proof",
+                );
                 // Push a user nudge to force action
                 messages.push(ChatMessage::simple("user", "You haven't executed any tools yet. Please execute the necessary tools to answer my request accurately."));
                 continue;
@@ -2077,7 +2967,10 @@ pub(crate) async fn run_tool_loop(
             // instead of using raw model output. The small model often produces
             // wrong answers that contradict its own tool results.
             if has_recent_tool_evidence(&messages) {
-                trace(args, "tool_loop: routing voluntary stop through evidence finalizer (Task 601)");
+                trace(
+                    args,
+                    "tool_loop: routing voluntary stop through evidence finalizer (Task 601)",
+                );
                 // Remove the model's raw streaming assistant — the evidence finalizer
                 // will produce the authoritative answer. Without this, the user sees
                 // both the model's raw text and the finalizer's output as two responses.
@@ -2090,6 +2983,7 @@ pub(crate) async fn run_tool_loop(
                     model_id,
                     &original_user_request,
                     &messages,
+                    workdir,
                     max_tokens,
                     None,
                 )
@@ -2279,8 +3173,10 @@ mod tests {
 
     #[test]
     fn normalizes_shell_signal_session_ids() {
-        let a = crate::text_utils::normalize_shell_signal("ls sessions/s_1776868918_801751000/shell/");
-        let b = crate::text_utils::normalize_shell_signal("ls sessions/s_1775151941_439997000/shell/");
+        let a =
+            crate::text_utils::normalize_shell_signal("ls sessions/s_1776868918_801751000/shell/");
+        let b =
+            crate::text_utils::normalize_shell_signal("ls sessions/s_1775151941_439997000/shell/");
         assert_eq!(a, b);
         assert!(a.contains("s_SESSION"));
     }
@@ -2424,5 +3320,3 @@ mod tests {
         assert_eq!(tool_signal(&tc1), tool_signal(&tc2));
     }
 }
-
-

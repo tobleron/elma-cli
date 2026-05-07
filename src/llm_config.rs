@@ -15,6 +15,14 @@ pub(crate) struct LlmRuntimeConfig {
     pub(crate) final_answer_timeout_s: u64,
     pub(crate) tool_loop_timeout_s: u64,
     pub(crate) model_probe_timeout_s: u64,
+    #[serde(default = "default_auxiliary_enabled")]
+    pub(crate) auxiliary_enabled: bool,
+    #[serde(default = "default_auxiliary_base_url")]
+    pub(crate) auxiliary_base_url: String,
+    #[serde(default = "default_auxiliary_model")]
+    pub(crate) auxiliary_model: String,
+    #[serde(default = "default_auxiliary_timeout_s")]
+    pub(crate) auxiliary_timeout_s: u64,
     pub(crate) max_response_tokens_cap: u32,
     pub(crate) tool_loop_max_tokens_cap: u32,
     pub(crate) model_probe_logprobs_n_probs: u32,
@@ -31,6 +39,10 @@ impl Default for LlmRuntimeConfig {
             final_answer_timeout_s: 3,
             tool_loop_timeout_s: 120,
             model_probe_timeout_s: 120,
+            auxiliary_enabled: default_auxiliary_enabled(),
+            auxiliary_base_url: default_auxiliary_base_url(),
+            auxiliary_model: default_auxiliary_model(),
+            auxiliary_timeout_s: default_auxiliary_timeout_s(),
             max_response_tokens_cap: 16384,
             tool_loop_max_tokens_cap: 16384,
             model_probe_logprobs_n_probs: 8,
@@ -38,6 +50,22 @@ impl Default for LlmRuntimeConfig {
             default_repeat_penalty: 1.0,
         }
     }
+}
+
+fn default_auxiliary_enabled() -> bool {
+    false
+}
+
+fn default_auxiliary_base_url() -> String {
+    "http://192.168.1.186:8084".to_string()
+}
+
+fn default_auxiliary_model() -> String {
+    "auxiliary".to_string()
+}
+
+fn default_auxiliary_timeout_s() -> u64 {
+    10
 }
 
 #[derive(Debug, Clone, Default)]
@@ -106,6 +134,17 @@ pub(crate) fn load_or_create_runtime_llm_config(config_root: &Path) -> Result<Ll
     Ok(config)
 }
 
+pub(crate) fn save_runtime_llm_config(config_root: &Path, config: &LlmRuntimeConfig) -> Result<()> {
+    let path = runtime_config_path(config_root);
+    let s = toml::to_string_pretty(config).context("Failed to serialize runtime config")?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    std::fs::write(&path, s.as_bytes())
+        .with_context(|| format!("Failed to write runtime config at {}", path.display()))?;
+    Ok(())
+}
+
 pub(crate) fn chat_request_from_profile(
     profile: &Profile,
     messages: Vec<ChatMessage>,
@@ -170,14 +209,28 @@ pub(crate) fn auxiliary_profile(name: &str) -> Profile {
     Profile {
         version: 1,
         name: name.to_string(),
-        base_url: "http://192.168.1.186:8084".to_string(),
-        model: "auxiliary".to_string(),
+        base_url: cfg.auxiliary_base_url.clone(),
+        model: cfg.auxiliary_model.clone(),
         temperature: 0.0,
         top_p: 1.0,
         repeat_penalty: cfg.default_repeat_penalty,
         reasoning_format: "none".to_string(),
         max_tokens: 256,
-        timeout_s: cfg.request_timeout_s,
+        timeout_s: cfg.auxiliary_timeout_s,
         system_prompt: String::new(),
     }
+}
+
+pub(crate) fn auxiliary_chat_url() -> Result<Option<Url>> {
+    let cfg = runtime_llm_config();
+    if !cfg.auxiliary_enabled {
+        return Ok(None);
+    }
+
+    let base =
+        Url::parse(cfg.auxiliary_base_url.trim()).context("Invalid runtime.auxiliary_base_url")?;
+    let chat_url = base
+        .join("/v1/chat/completions")
+        .context("Failed to build auxiliary /v1/chat/completions URL")?;
+    Ok(Some(chat_url))
 }

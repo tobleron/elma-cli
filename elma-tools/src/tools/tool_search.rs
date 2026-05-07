@@ -1,4 +1,4 @@
-use crate::registry::{RegistryBuilder, ToolDefinitionExt, ToolPolicy, ToolRisk, ExecutorState};
+use crate::registry::{ExecutorState, RegistryBuilder, ToolDefinitionExt, ToolPolicy, ToolRisk};
 
 pub(crate) fn register(builder: &mut RegistryBuilder) {
     builder.insert(

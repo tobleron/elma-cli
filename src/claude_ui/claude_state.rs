@@ -197,22 +197,27 @@ impl ClaudeMessage {
                 let content_lines = render_assistant_content(content, content_width);
                 let mut lines = Vec::new();
                 for (i, content_line) in content_lines.into_iter().enumerate() {
-                    let prefix_style = Style::default()
-                        .fg(theme.fg_dim.to_ratatui_color());
+                    let prefix_style = Style::default().fg(theme.fg_dim.to_ratatui_color());
                     let gutter_text = if i == 0 { "| " } else { "| " };
                     // Pre-wrap: build the full line text, wrap at width-gutter, then
                     // attach gutter prefix to each wrapped line so ratatui never wraps.
-                    let full_text: String = content_line.spans.iter()
-                        .map(|s| s.content.as_ref()).collect::<Vec<_>>().join("");
+                    let full_text: String = content_line
+                        .spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<Vec<_>>()
+                        .join("");
                     let wrapped = word_wrap_lines(&full_text, width.max(20) as usize);
                     for wline in &wrapped {
-                        let mut spans = vec![
-                            Span::styled(gutter_text, prefix_style),
-                            Span::raw(" "),
-                        ];
+                        let mut spans =
+                            vec![Span::styled(gutter_text, prefix_style), Span::raw(" ")];
                         spans.push(Span::styled(
                             wline.clone(),
-                            content_line.spans.first().map(|s| s.style).unwrap_or_default(),
+                            content_line
+                                .spans
+                                .first()
+                                .map(|s| s.style)
+                                .unwrap_or_default(),
                         ));
                         lines.push(Line::from(spans));
                     }
@@ -480,7 +485,10 @@ impl ClaudeMessage {
 
                 // First line: prefix + first command segment
                 let mut lines = vec![Line::from(vec![
-                    Span::styled(chevron, Style::default().fg(theme.fg_dim.to_ratatui_color())),
+                    Span::styled(
+                        chevron,
+                        Style::default().fg(theme.fg_dim.to_ratatui_color()),
+                    ),
                     Span::raw(" "),
                     Span::styled(symbol, symbol_style),
                     Span::raw(" "),
@@ -974,7 +982,10 @@ impl ClaudeTranscript {
         self.dirty = true;
         // Increment unseen count when scrolled away from bottom
         if self.scroll_offset > 0 {
-            if matches!(msg, ClaudeMessage::Assistant { .. } | ClaudeMessage::Thinking { .. }) {
+            if matches!(
+                msg,
+                ClaudeMessage::Assistant { .. } | ClaudeMessage::Thinking { .. }
+            ) {
                 self.unseen_assistant_count = self.unseen_assistant_count.saturating_add(1);
             }
         }
@@ -1144,10 +1155,7 @@ impl ClaudeTranscript {
     pub(crate) fn replace_last_assistant_message(&mut self, content: AssistantContent) {
         self.dirty = true;
         for msg in self.messages.iter_mut().rev() {
-            if let ClaudeMessage::Assistant {
-                content: ref mut c,
-            } = msg
-            {
+            if let ClaudeMessage::Assistant { content: ref mut c } = msg {
                 *c = content;
                 return;
             }
@@ -1159,9 +1167,12 @@ impl ClaudeTranscript {
     /// raw streaming answer from appearing alongside the finalized one.
     pub(crate) fn remove_last_assistant_message(&mut self) {
         self.dirty = true;
-        if let Some(pos) = self.messages.iter().rev().position(|msg| {
-            matches!(msg, ClaudeMessage::Assistant { .. })
-        }) {
+        if let Some(pos) = self
+            .messages
+            .iter()
+            .rev()
+            .position(|msg| matches!(msg, ClaudeMessage::Assistant { .. }))
+        {
             let idx = self.messages.len() - 1 - pos;
             self.messages.remove(idx);
         }
@@ -1216,10 +1227,12 @@ impl ClaudeTranscript {
             let msg = &self.messages[i];
 
             // Thinking, System, and Notice messages live in right panel — not transcript
-            if matches!(msg, ClaudeMessage::Thinking { .. }
-                | ClaudeMessage::System { .. }
-                | ClaudeMessage::Notice(_))
-            {
+            if matches!(
+                msg,
+                ClaudeMessage::Thinking { .. }
+                    | ClaudeMessage::System { .. }
+                    | ClaudeMessage::Notice(_)
+            ) {
                 i += 1;
                 continue;
             }
@@ -1294,10 +1307,12 @@ impl ClaudeTranscript {
         let mut lines = Vec::new();
         for (i, msg) in self.messages.iter().enumerate() {
             // Thinking, System, and Notice messages live in right panel — not transcript
-            if matches!(msg, ClaudeMessage::Thinking { .. }
-                | ClaudeMessage::System { .. }
-                | ClaudeMessage::Notice(_))
-            {
+            if matches!(
+                msg,
+                ClaudeMessage::Thinking { .. }
+                    | ClaudeMessage::System { .. }
+                    | ClaudeMessage::Notice(_)
+            ) {
                 continue;
             }
             lines.extend(msg.to_lines(self.thinking_expanded_for_index(i)));

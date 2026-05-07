@@ -71,26 +71,15 @@ async fn apply_policy_fallback(
         }
         _ => {
             if route_decision.route.eq_ignore_ascii_case("SHELL") {
-                if looks_like_natural_language_edit_request(line) {
-                    Some((
-                        "edit_path_probe_policy_fallback",
-                        build_edit_path_probe_program,
-                    ))
-                } else {
-                    Some((
-                        "shell_path_probe_policy_fallback",
-                        build_shell_path_probe_program,
-                    ))
-                }
+                Some((
+                    "shell_path_probe_policy_fallback",
+                    build_shell_path_probe_program,
+                ))
             } else if route_decision.route.eq_ignore_ascii_case("DECIDE") {
-                if request_looks_like_scoped_list_request(line) {
-                    Some(("shell_list_policy_fallback", build_shell_path_probe_program))
-                } else {
-                    Some((
-                        "decide_path_probe_policy_fallback",
-                        build_decide_path_probe_program,
-                    ))
-                }
+                Some((
+                    "decide_path_probe_policy_fallback",
+                    build_decide_path_probe_program,
+                ))
             } else {
                 None
             }
@@ -319,7 +308,7 @@ async fn handle_chat_command(
                 return handled!();
             }
             if let Some(a) = line.strip_prefix("/api") {
-                handle_api_config(runtime, a)?;
+                handle_api_config(runtime, a).await?;
                 return handled!();
             }
             Ok(true)
@@ -480,11 +469,7 @@ pub(crate) async fn execute_tool(
 fn trace_workflow_plan(args: &Args, plan: &WorkflowPlannerOutput) {
     fn fmt(s: &str) -> &str {
         let s = s.trim();
-        if s.is_empty() {
-            "-"
-        } else {
-            s
-        }
+        if s.is_empty() { "-" } else { s }
     }
     trace(
         args,
@@ -588,7 +573,12 @@ async fn run_reflection_loop(
         attempts += 1;
         if attempts < 3 {
             temp = (temp + 0.2).min(0.8);
-            trace(&runtime.args, &format!("program_regenerate orchestrator_temp={temp} reason=reflection_confidence_below_51_percent"));
+            trace(
+                &runtime.args,
+                &format!(
+                    "program_regenerate orchestrator_temp={temp} reason=reflection_confidence_below_51_percent"
+                ),
+            );
             program = build_program_with_temp(
                 runtime,
                 line,
@@ -746,9 +736,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Tool discovery and execution (Task 015: Autonomous Tool Discovery)
         if runtime.tool_registry.needs_discovery() {
             if let Ok(registry) = tool_discovery::discover_workspace_tools(&runtime.repo) {
-                let tool_count = registry.available_tools().len();
+                let ws_count = registry.available_tools().len();
                 runtime.tool_registry = registry;
-                tui.push_meta_event("TOOLS", &format!("discovered {} tool(s)", tool_count));
+                tui.push_meta_event("TOOLS", &format!("workspace_tools={} available={}+ tools via tool_search", ws_count, crate::tool_registry::default_tool_count()));
             }
         }
 
@@ -813,7 +803,8 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             || route_decision.speech_act.choice != "CHAT"
             || route_decision.route != "CHAT";
         // Use heuristic complexity assessment instead of hardcoded DIRECT/INVESTIGATE
-        let computed_complexity = crate::complexity_assessor::assess_complexity(&rephrased_objective);
+        let computed_complexity =
+            crate::complexity_assessor::assess_complexity(&rephrased_objective);
         let complexity = ComplexityAssessment {
             complexity: computed_complexity.as_str().to_string(),
             needs_evidence: route_decision.evidence_required,
@@ -857,7 +848,12 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             computed_complexity.max_iterations() >= 12,
             computed_complexity.max_iterations() >= 12,
             computed_complexity.max_iterations() >= 6,
-            if computed_complexity.max_iterations() >= 12 { "MEDIUM" } else { "LOW" }.to_string(),
+            if computed_complexity.max_iterations() >= 12 {
+                "MEDIUM"
+            } else {
+                "LOW"
+            }
+            .to_string(),
             computed_complexity.as_str().to_string(),
         );
         let workflow_plan: Option<WorkflowPlannerOutput> = None;
@@ -1035,10 +1031,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // apply_model_threshold sets 0.65 for <7B, 0.72 for 7-20B, 0.80 for >20B.
         // Small models produce lower-confidence outputs even when correct;
         // retrying them is wasteful and often yields tool proposals instead of text.
-        if !is_direct
-            && continuity_tracker.needs_fallback()
-            && !already_retried
-        {
+        if !is_direct && continuity_tracker.needs_fallback() && !already_retried {
             let gap_reason = continuity_tracker.gap();
             let evidence_count = crate::evidence_ledger::get_session_ledger()
                 .map(|l| l.entries_count())
@@ -1055,7 +1048,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 and findings.",
                 line, evidence_count, gap_reason
             );
-            runtime.messages.push(ChatMessage::simple("user", &retry_msg));
+            runtime
+                .messages
+                .push(ChatMessage::simple("user", &retry_msg));
 
             // Lightweight text-only request with full conversation as context
             let profile = crate::llm_config::ad_hoc_profile(&runtime.model_id, "continuity_retry");
@@ -1094,11 +1089,17 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                             if is_valid_answer {
                                 final_text = improved;
                                 retry_happened = true;
-                                runtime.messages.push(ChatMessage::simple("assistant", &final_text));
+                                runtime
+                                    .messages
+                                    .push(ChatMessage::simple("assistant", &final_text));
                             } else {
                                 trace(
                                     &runtime.args,
-                                    &format!("continuity_retry_rejected: retry response was non-text/too-short ({} chars), keeping original ({} chars)", trimmed.len(), final_text.len()),
+                                    &format!(
+                                        "continuity_retry_rejected: retry response was non-text/too-short ({} chars), keeping original ({} chars)",
+                                        trimmed.len(),
+                                        final_text.len()
+                                    ),
                                 );
                             }
                         }
@@ -1247,13 +1248,19 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             let uid = format!("{}:{}", session_id, turn_number);
             tokio::spawn(async move {
                 let unit = crate::intel_units::TurnSummaryUnit::new(summarizer_cfg);
-                let tool_summary: String = step_results_json.iter()
+                let tool_summary: String = step_results_json
+                    .iter()
                     .filter_map(|sr| {
                         let kind = sr.get("kind").and_then(|v| v.as_str()).unwrap_or("");
                         let ok = sr.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                         let summary = sr.get("summary").and_then(|v| v.as_str()).unwrap_or("");
                         if !summary.is_empty() {
-                            Some(format!("  - {} {}: {}", if ok { "✓" } else { "✗" }, kind, summary))
+                            Some(format!(
+                                "  - {} {}: {}",
+                                if ok { "✓" } else { "✗" },
+                                kind,
+                                summary
+                            ))
                         } else {
                             None
                         }
@@ -1328,9 +1335,7 @@ fn build_best_effort_answer() -> String {
         .map(|l| l.compact_summary())
         .unwrap_or_default();
 
-    if evidence_summary.is_empty()
-        || evidence_summary == "No evidence collected yet."
-    {
+    if evidence_summary.is_empty() || evidence_summary == "No evidence collected yet." {
         return "I wasn't able to complete this task before running out of iterations. \
                  Unfortunately, no usable evidence was gathered."
             .to_string();

@@ -1,0 +1,1 @@
+Create a backup of the current project state by copying all source files to a timestamped directory in project_tmp, then verify the backup by comparing file counts and checking that no files were missed in the process.

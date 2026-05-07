@@ -172,7 +172,7 @@ Check:
 - Invalid parameter names
 - Wrong paths
 - Bad glob patterns
-- Broken JSON/TOML/DSL payloads
+- Broken JSON/TOML/tool-call payloads
 - Repeated identical failed calls
 - Tool result ignored by later reasoning
 - Tool output too large and unsummarized
@@ -296,7 +296,7 @@ Because elma-cli is intended to work reliably with small local models, check:
 - Did the prompt require too much implicit reasoning?
 - Were instructions too long or ambiguous?
 - Could deterministic preprocessing have reduced model burden?
-- Could a schema, enum, DSL, grammar, or validator have prevented failure?
+- Could a schema, enum, grammar, tool-argument contract, or validator have prevented failure?
 - Did the model need to remember too much across cycles?
 - Were tool names or arguments too semantically similar?
 - Was output format too fragile?
@@ -321,7 +321,7 @@ Examples:
 - session timeline builder
 - model response sanitizer
 - structured event log
-- compact DSL migration
+- strict JSON/tool-calling migration
 - large file refactor
 - integration tests for common session failures
 

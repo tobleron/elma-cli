@@ -36,24 +36,8 @@ pub(crate) fn resolve_tool_path(workdir: &Path, raw_path: &str) -> Result<PathBu
     }
     let p = Path::new(raw_path);
 
-    // Accept absolute paths that are inside the workspace (convert to relative).
-    // Reject absolute paths outside the workspace.
     if p.is_absolute() {
-        if let Ok(stripped) = p.strip_prefix(workdir) {
-            // Absolute path inside workspace → treat as relative
-            let relative = stripped;
-            if relative.components().any(|component| {
-                matches!(
-                    component,
-                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
-                )
-            }) {
-                anyhow::bail!("tool path must stay inside the workspace");
-            }
-            return Ok(workdir.join(relative));
-        } else {
-            anyhow::bail!("absolute path outside workspace is not allowed");
-        }
+        anyhow::bail!("absolute tool paths are not allowed; use a workspace-relative path");
     }
 
     // Relative path: reject traversal escapes
@@ -337,8 +321,8 @@ pub(crate) fn run_shell_persistent_blocking(
     cancelled: &std::sync::atomic::AtomicBool,
     elapsed_secs: &std::sync::atomic::AtomicU64,
 ) -> Result<ShellExecutionResult> {
-    let shell_mutex = crate::persistent_shell::get_shell(workdir)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let shell_mutex =
+        crate::persistent_shell::get_shell(workdir).map_err(|e| anyhow::anyhow!("{}", e))?;
     let mut shell = shell_mutex
         .lock()
         .map_err(|_| anyhow::anyhow!("Shell mutex poisoned"))?;

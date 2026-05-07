@@ -74,15 +74,15 @@ impl IntelUnit for ThoughtSummaryUnit {
              Thinking:\n{thinking}"
         );
 
-        let raw = execute_intel_text_from_user_content(
-            &context.client,
-            &self.profile,
-            prompt,
-        )
-        .await?;
+        let raw =
+            execute_intel_text_from_user_content(&context.client, &self.profile, prompt).await?;
 
         let raw = crate::text_utils::strip_thinking_blocks(&raw);
-        let summary: String = raw.split_whitespace().take(70).collect::<Vec<_>>().join(" ");
+        let summary: String = raw
+            .split_whitespace()
+            .take(70)
+            .collect::<Vec<_>>()
+            .join(" ");
 
         Ok(IntelOutput::success(
             self.name(),

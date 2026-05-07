@@ -59,6 +59,44 @@ impl StopReason {
             StopReason::UserInterrupted => "user_interrupted",
         }
     }
+
+    /// Whether this stop reason indicates a recoverable budget exhaustion
+    /// that can be continued from (Task 687 / Task 698).
+    pub(crate) fn is_budget_recoverable(&self) -> bool {
+        matches!(
+            self,
+            StopReason::IterationLimitReached
+                | StopReason::StageBudgetExceeded
+                | StopReason::TaskBudgetExceeded
+                | StopReason::RespondAbuse
+        )
+    }
+
+    /// Whether this stop reason indicates stagnation or failure that
+    /// should trigger a new approach rather than continuation.
+    pub(crate) fn is_stagnation_failure(&self) -> bool {
+        matches!(
+            self,
+            StopReason::RepeatedToolFailure
+                | StopReason::RepeatedNoNewEvidence
+                | StopReason::RepeatedSameCommand
+                | StopReason::RepeatedSameConclusion
+                | StopReason::RespondOnlyStagnation
+                | StopReason::ModelProgressStalled
+        )
+    }
+
+    /// Whether this stop reason suggests the model is stuck on malformed calls
+    /// and needs a strategy switch (Task 698).
+    pub(crate) fn needs_strategy_switch(&self) -> bool {
+        matches!(
+            self,
+            StopReason::RepeatedToolFailure
+                | StopReason::RepeatedNoNewEvidence
+                | StopReason::RepeatedSameCommand
+                | StopReason::RespondOnlyStagnation
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -777,7 +815,7 @@ mod tests {
     #[test]
     fn default_budget_matches_legacy_constants() {
         let b = StageBudget::default();
-        assert_eq!(b.max_iterations, 0); // 0 = unlimited
+        assert_eq!(b.max_iterations, 20);
         assert_eq!(b.max_stagnation_cycles, 8);
     }
 
@@ -1309,7 +1347,10 @@ mod tests {
 
     #[test]
     fn regression_chat_loop_should_trigger_respond_abuse() {
-        let budget = StageBudget { max_stagnation_cycles: 10, ..Default::default() };
+        let budget = StageBudget {
+            max_stagnation_cycles: 10,
+            ..Default::default()
+        };
         let mut policy = StopPolicy::new(budget);
         // Simulate 5 respond-only turns
         for _ in 0..4 {
@@ -1322,14 +1363,38 @@ mod tests {
 
     #[test]
     fn regression_read_read_respond_workflow_does_not_stop() {
-        let budget = StageBudget { max_stagnation_cycles: 8, ..Default::default() };
+        let budget = StageBudget {
+            max_stagnation_cycles: 8,
+            ..Default::default()
+        };
         let mut policy = StopPolicy::new(budget);
 
         // Simulate: 3 normal tool calls (read, read, respond) — should not stop
         let calls = vec![
-            ToolCall { id: "c1".to_string(), call_type: "function".to_string(), function: ToolFunctionCall { name: "read".to_string(), arguments: r#"{"path":"a"}"#.to_string() } },
-            ToolCall { id: "c2".to_string(), call_type: "function".to_string(), function: ToolFunctionCall { name: "read".to_string(), arguments: r#"{"path":"b"}"#.to_string() } },
-            ToolCall { id: "c3".to_string(), call_type: "function".to_string(), function: ToolFunctionCall { name: "respond".to_string(), arguments: r#"{"content":"done"}"#.to_string() } },
+            ToolCall {
+                id: "c1".to_string(),
+                call_type: "function".to_string(),
+                function: ToolFunctionCall {
+                    name: "read".to_string(),
+                    arguments: r#"{"path":"a"}"#.to_string(),
+                },
+            },
+            ToolCall {
+                id: "c2".to_string(),
+                call_type: "function".to_string(),
+                function: ToolFunctionCall {
+                    name: "read".to_string(),
+                    arguments: r#"{"path":"b"}"#.to_string(),
+                },
+            },
+            ToolCall {
+                id: "c3".to_string(),
+                call_type: "function".to_string(),
+                function: ToolFunctionCall {
+                    name: "respond".to_string(),
+                    arguments: r#"{"content":"done"}"#.to_string(),
+                },
+            },
         ];
 
         // Each call registers as a new signal
@@ -1374,7 +1439,10 @@ mod tests {
 
     #[test]
     fn regression_exact_repeat_commands_should_stagnate() {
-        let budget = StageBudget { max_stagnation_cycles: 3, ..Default::default() };
+        let budget = StageBudget {
+            max_stagnation_cycles: 3,
+            ..Default::default()
+        };
         let mut policy = StopPolicy::new(budget);
 
         // Same command repeated
@@ -1420,12 +1488,18 @@ mod tests {
 
     #[test]
     fn regression_wall_clock_budget_stops_after_timeout() {
-        let budget = StageBudget { max_wall_clock_s: 1, ..Default::default() };
+        let budget = StageBudget {
+            max_wall_clock_s: 1,
+            ..Default::default()
+        };
         let mut policy = StopPolicy::new(budget);
         // Set start_time to a past time to simulate wall clock expiry
         policy.start_time = std::time::Instant::now() - std::time::Duration::from_secs(2);
         let outcome = policy.start_iteration();
-        assert!(outcome.is_some(), "wall clock budget should trigger stop when exceeded");
+        assert!(
+            outcome.is_some(),
+            "wall clock budget should trigger stop when exceeded"
+        );
         assert_eq!(outcome.unwrap().reason.as_str(), "wall_clock_exceeded");
     }
 }

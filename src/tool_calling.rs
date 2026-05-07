@@ -2,22 +2,34 @@
 //! Tool Calling Registry — dispatcher for all tool executors.
 
 use crate::*;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 // ToolExecutionResult lives in crate::tools::types; re-export for backward compat.
 pub(crate) use crate::tools::types::ToolExecutionResult;
 
 /// Take a snapshot before a mutating operation. Best-effort (errors are traced, not returned).
-fn snapshot_before_mutation(args: &Args, session: &SessionPaths, workdir: &Path, tool: &str, target: &str) {
+fn snapshot_before_mutation(
+    args: &Args,
+    session: &SessionPaths,
+    workdir: &Path,
+    tool: &str,
+    target: &str,
+) {
     let _ = crate::snapshot::create_workspace_snapshot(
         session,
         workdir,
         &format!("pre-{} snapshot before: {}", tool, target),
         true,
-    ).map(|s| trace(args, &format!("snapshot_saved id={} for {}", s.snapshot_id, tool)))
-     .map_err(|e| trace(args, &format!("snapshot_failed for {}: {}", tool, e)));
+    )
+    .map(|s| {
+        trace(
+            args,
+            &format!("snapshot_saved id={} for {}", s.snapshot_id, tool),
+        )
+    })
+    .map_err(|e| trace(args, &format!("snapshot_failed for {}: {}", tool, e)));
 }
 
 /// Build initial tool definitions - only non-deployed tools (default tools)
@@ -55,7 +67,10 @@ pub(crate) fn format_tool_error_correction(tool_name: &str) -> String {
                 base
             }
         }
-        None => format!("Tool '{}' failed. Check the arguments and try again.", tool_name),
+        None => format!(
+            "Tool '{}' failed. Check the arguments and try again.",
+            tool_name
+        ),
     }
 }
 
@@ -145,38 +160,55 @@ pub(crate) async fn execute_tool_call(
                     return ToolExecutionResult {
                         tool_call_id: call_id,
                         tool_name,
-                        content: format!("Error parsing arguments after repair attempt: {}", detail),
+                        content: format!(
+                            "Error parsing arguments after repair attempt: {}",
+                            detail
+                        ),
                         ok: false,
                         exit_code: None,
                         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                        status: crate::tools::ToolStatus::Failed,
+                        duration_ms: 0,
                         signal_killed: None,
-                    }
+                    };
                 }
             }
         }
     };
 
+    // Normalize common aliases before schema validation.
+    let args_value = canonicalize_tool_args(&tool_name, args_value);
+
     // Task 586: Pre-execution arg repair for read and exists tools.
     // If the model called read/exists without filePath/path, try to extract from raw args.
     let args_value = {
         let needs_repair = if tool_name == "read" {
-            args_value.get("filePath").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty())
+            args_value
+                .get("filePath")
+                .and_then(|v| v.as_str())
+                .map_or(true, |s| s.is_empty())
         } else if tool_name == "exists" {
-            args_value.get("path").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty())
+            args_value
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map_or(true, |s| s.is_empty())
         } else {
             false
         };
         if needs_repair {
             let raw = &tool_call.function.arguments;
-            let path_re = regex::Regex::new(r#"["']([a-zA-Z0-9_./\\-]+(?:\.[a-zA-Z0-9]+)?)["']"#).unwrap();
+            let path_re =
+                regex::Regex::new(r#"["']([a-zA-Z0-9_./\\-]+(?:\.[a-zA-Z0-9]+)?)["']"#).unwrap();
             if let Some(cap) = path_re.captures(raw) {
                 let extracted = cap.get(1).unwrap().as_str().to_string();
                 if extracted.contains('.') || extracted.contains('/') {
                     if let Some(obj) = args_value.as_object() {
                         let mut map = obj.clone();
-                        let key = if tool_name == "read" { "filePath" } else { "path" };
+                        let key = if tool_name == "read" {
+                            "filePath"
+                        } else {
+                            "path"
+                        };
                         map.insert(key.to_string(), serde_json::Value::String(extracted));
                         if let Ok(repaired) = serde_json::to_value(map) {
                             crate::append_trace_log_line(&format!(
@@ -205,7 +237,8 @@ pub(crate) async fn execute_tool_call(
     if let Some(schema) = crate::tools::validation::get_tool_schema(&tool_name) {
         let validation = schema.validate(&args_value);
         if !validation.ok {
-            let error_msg = validation.field_errors
+            let error_msg = validation
+                .field_errors
                 .iter()
                 .map(|fe| format!("{}: {}", fe.field, fe.error))
                 .collect::<Vec<_>>()
@@ -215,10 +248,28 @@ pub(crate) async fn execute_tool_call(
                 "[TOOL_VALIDATION_ERROR] tool={} error={}",
                 tool_name, error_msg
             ));
+
+            // Task 708: For read missing filePath, emit compact correction packet
+            // instead of verbose JSON schema dump. The history-based arg repair
+            // already ran in the loop; if we're here, no candidate path was found.
+            let enriched_content = if crate::tool_repair::is_read_missing_filepath_error(
+                &tool_name,
+                &error_msg,
+            ) {
+                let count = crate::tool_repair::record_empty_read_validation_failure();
+                crate::append_trace_log_line(&format!(
+                    "[TOOL_VALIDATION_ERROR] tool=read repair_source=schema_packet count={}",
+                    count
+                ));
+                crate::tool_repair::build_read_schema_correction_packet(&error_msg, &[])
+            } else {
+                rich_content
+            };
+
             return ToolExecutionResult {
                 tool_call_id: call_id,
                 tool_name,
-                content: rich_content,
+                content: enriched_content,
                 ok: false,
                 exit_code: None,
                 timed_out: false,
@@ -243,6 +294,7 @@ pub(crate) async fn execute_tool_call(
         "respond" => exec_respond(&args_value, &call_id, tui),
         "update_todo_list" => exec_update_todo_list(&args_value, &call_id, tui),
         "stat" => exec_stat(&args_value, workdir, &call_id, tui),
+        "backup" => exec_backup(&args_value, workdir, &call_id, tui),
         "copy" => exec_copy(&args_value, workdir, &call_id, tui),
         "move" => exec_move(&args_value, workdir, &call_id, tui),
         "mkdir" => exec_mkdir(&args_value, workdir, &call_id, tui),
@@ -264,14 +316,31 @@ pub(crate) async fn execute_tool_call(
             crate::append_trace_log_line(&format!(
                 "[TOOL_UNKNOWN] name={:?} args={}",
                 unknown,
-                &tool_call.function.arguments.chars().take(200).collect::<String>()
+                &tool_call
+                    .function
+                    .arguments
+                    .chars()
+                    .take(200)
+                    .collect::<String>()
             ));
             let hint = if unknown.contains("read") || unknown.contains("Read") {
                 format!("Unknown tool: {}. Did you mean 'read'?", unknown)
-            } else if ["list", "ls", "dir", "cat", "head", "tail", "find", "grep", "echo", "sh", "bash", "zsh", "which", "where"].contains(&unknown) {
+            } else if [
+                "list", "ls", "dir", "cat", "head", "tail", "find", "grep", "echo", "sh", "bash",
+                "zsh", "which", "where",
+            ]
+            .contains(&unknown)
+            {
                 format!("Unknown tool: {}. Did you mean 'shell'?", unknown)
-            } else if unknown.contains("search") || unknown.contains("Search") || unknown.contains("grep") || unknown == "rg" {
-                format!("Unknown tool: {}. Did you mean 'search' or 'shell' with grep?", unknown)
+            } else if unknown.contains("search")
+                || unknown.contains("Search")
+                || unknown.contains("grep")
+                || unknown == "rg"
+            {
+                format!(
+                    "Unknown tool: {}. Did you mean 'search' or 'shell' with grep?",
+                    unknown
+                )
             } else if unknown.contains("glob") || unknown.contains("Glob") {
                 format!("Unknown tool: {}. Did you mean 'glob'?", unknown)
             } else {
@@ -284,12 +353,116 @@ pub(crate) async fn execute_tool_call(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
     }
+}
+
+fn canonicalize_tool_args(tool_name: &str, mut args_value: serde_json::Value) -> serde_json::Value {
+    if tool_name == "read" {
+        if let Some(obj) = args_value.as_object_mut() {
+            let has_file_path = obj
+                .get("filePath")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            let has_path = obj
+                .get("path")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            if !has_file_path && has_path {
+                if let Some(alias_path) = obj
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| s.to_string())
+                {
+                    obj.insert(
+                        "filePath".to_string(),
+                        serde_json::Value::String(alias_path.clone()),
+                    );
+                    crate::append_trace_log_line(&format!(
+                        "[TOOL_ARG_CANONICALIZE] read: path -> filePath ({})",
+                        alias_path
+                    ));
+                }
+            } else if has_file_path && !has_path {
+                if let Some(file_path) = obj
+                    .get("filePath")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| s.to_string())
+                {
+                    obj.insert(
+                        "path".to_string(),
+                        serde_json::Value::String(file_path.clone()),
+                    );
+                    crate::append_trace_log_line(&format!(
+                        "[TOOL_ARG_CANONICALIZE] read: filePath -> path ({})",
+                        file_path
+                    ));
+                }
+            }
+            let has_paths = obj
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .and_then(|paths| paths.first())
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            let has_file_path = obj
+                .get("filePath")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            if has_paths && !has_file_path {
+                if let Some(first_path) = obj
+                    .get("paths")
+                    .and_then(|v| v.as_array())
+                    .and_then(|paths| paths.first())
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| s.to_string())
+                {
+                    obj.insert(
+                        "filePath".to_string(),
+                        serde_json::Value::String(first_path.clone()),
+                    );
+                    crate::append_trace_log_line(&format!(
+                        "[TOOL_ARG_CANONICALIZE] read: paths[0] -> filePath ({})",
+                        first_path
+                    ));
+                }
+            }
+        }
+    } else if tool_name == "exists" {
+        if let Some(obj) = args_value.as_object_mut() {
+            let has_path = obj
+                .get("path")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            let first_paths_entry = obj
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .and_then(|paths| paths.first())
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.to_string());
+            if !has_path {
+                if let Some(first_path) = first_paths_entry {
+                    obj.insert(
+                        "path".to_string(),
+                        serde_json::Value::String(first_path.clone()),
+                    );
+                    crate::append_trace_log_line(&format!(
+                        "[TOOL_ARG_CANONICALIZE] exists: paths[0] -> path ({})",
+                        first_path
+                    ));
+                }
+            }
+        }
+    }
+    args_value
 }
 
 fn emit_tool_progress(
@@ -364,7 +537,10 @@ async fn exec_shell(
             args,
             &format!("tool_call: shell PREFLIGHT BLOCKED: {}", guidance),
         );
-        let error_msg = format!("Command blocked:\n{}\n\nThe safety preflight detected an issue with this command.\nFix the issue and try again.", guidance);
+        let error_msg = format!(
+            "Command blocked:\n{}\n\nThe safety preflight detected an issue with this command.\nFix the issue and try again.",
+            guidance
+        );
         emit_tool_result(&mut tui, "shell", false, &error_msg);
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
@@ -395,8 +571,8 @@ async fn exec_shell(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -485,7 +661,10 @@ async fn exec_shell(
             args,
             &format!("tool_call: shell DRY-RUN PREVIEW: {}", preview),
         );
-        let preview_msg = format!("! Dry-run preview for this command:\n{}\n\nTo proceed, confirm by running the same command again. To adjust, modify the command and try again.", preview);
+        let preview_msg = format!(
+            "! Dry-run preview for this command:\n{}\n\nTo proceed, confirm by running the same command again. To adjust, modify the command and try again.",
+            preview
+        );
         emit_tool_result(&mut tui, "shell", true, &preview_msg);
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
@@ -501,7 +680,10 @@ async fn exec_shell(
     }
 
     // Task 458: Snapshot before risky shell commands
-    if matches!(preflight.risk, shell_preflight::RiskLevel::Caution | shell_preflight::RiskLevel::Dangerous(_)) {
+    if matches!(
+        preflight.risk,
+        shell_preflight::RiskLevel::Caution | shell_preflight::RiskLevel::Dangerous(_)
+    ) {
         match crate::snapshot::create_workspace_snapshot(
             session,
             workdir,
@@ -509,7 +691,13 @@ async fn exec_shell(
             true,
         ) {
             Ok(snapshot) => {
-                trace(args, &format!("snapshot_saved id={} for risky shell command", snapshot.snapshot_id));
+                trace(
+                    args,
+                    &format!(
+                        "snapshot_saved id={} for risky shell command",
+                        snapshot.snapshot_id
+                    ),
+                );
             }
             Err(e) => {
                 trace(args, &format!("snapshot_failed: {}", e));
@@ -677,8 +865,11 @@ async fn exec_shell(
                 tool_name: "shell".to_string(),
                 content,
                 ok: er.exit_code == 0,
-                status: if er.exit_code == 0 { crate::tools::ToolStatus::Success }
-                        else { crate::tools::ToolStatus::ExecutionError },
+                status: if er.exit_code == 0 {
+                    crate::tools::ToolStatus::Success
+                } else {
+                    crate::tools::ToolStatus::ExecutionError
+                },
                 exit_code: Some(er.exit_code),
                 timed_out: er.timed_out,
                 signal_killed: None,
@@ -696,8 +887,11 @@ async fn exec_shell(
                 tool_call_id: call_id.to_string(),
                 tool_name: "shell".to_string(),
                 content: error_msg.to_string(),
-                status: if is_timeout { crate::tools::ToolStatus::TimedOut }
-                        else { crate::tools::ToolStatus::ExecutionError },
+                status: if is_timeout {
+                    crate::tools::ToolStatus::TimedOut
+                } else {
+                    crate::tools::ToolStatus::ExecutionError
+                },
                 ok: false,
                 exit_code: None,
                 timed_out: is_timeout,
@@ -762,15 +956,17 @@ fn exec_ls(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
     };
 
     if md.is_file() {
-        let modified = md.modified().ok()
+        let modified = md
+            .modified()
+            .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| format_time(d.as_secs()))
             .unwrap_or_default();
@@ -840,7 +1036,10 @@ fn exec_ls(
     }
 
     if truncated {
-        lines.push(format!("... and {} more entries", total_count.saturating_sub(max_entries)));
+        lines.push(format!(
+            "... and {} more entries",
+            total_count.saturating_sub(max_entries)
+        ));
     }
 
     let content = lines.join("\n");
@@ -852,8 +1051,8 @@ fn exec_ls(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -914,7 +1113,8 @@ fn collect_entries(
             Err(_) => continue,
         };
 
-        let modified_secs = md.modified()
+        let modified_secs = md
+            .modified()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs())
@@ -1023,10 +1223,7 @@ fn exec_observe(
     let md = match std::fs::symlink_metadata(&full) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let content = format!(
-                "path: {}\nexists: false",
-                full.display()
-            );
+            let content = format!("path: {}\nexists: false", full.display());
             emit_tool_result(&mut tui, "observe", true, &content);
             return ToolExecutionResult {
                 tool_call_id: call_id.to_string(),
@@ -1035,8 +1232,8 @@ fn exec_observe(
                 ok: true,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1050,8 +1247,8 @@ fn exec_observe(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1079,7 +1276,10 @@ fn exec_observe(
         }
     }
     #[cfg(unix)]
-    lines.push(format!("permissions: {:o}", std::os::unix::fs::MetadataExt::mode(&md) & 0o777));
+    lines.push(format!(
+        "permissions: {:o}",
+        std::os::unix::fs::MetadataExt::mode(&md) & 0o777
+    ));
     #[cfg(not(unix))]
     lines.push(format!("permissions: {:?}", md.permissions()));
     lines.push(format!("readonly: {}", md.permissions().readonly()));
@@ -1118,8 +1318,8 @@ fn exec_observe(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1136,7 +1336,11 @@ fn exec_read(
             .filter(|s| !s.is_empty())
             .collect()
     } else {
-        let single = av["path"].as_str().unwrap_or("").to_string();
+        let single = av["path"]
+            .as_str()
+            .or_else(|| av["filePath"].as_str())
+            .unwrap_or("")
+            .to_string();
         if single.is_empty() {
             Vec::new()
         } else {
@@ -1204,8 +1408,8 @@ fn exec_read(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                    status: crate::tools::ToolStatus::Failed,
+                    duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -1237,8 +1441,8 @@ fn exec_read(
                         ok: false,
                         exit_code: None,
                         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                        status: crate::tools::ToolStatus::Failed,
+                        duration_ms: 0,
                         signal_killed: None,
                     };
                 }
@@ -1258,8 +1462,8 @@ fn exec_read(
         ok,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1276,26 +1480,24 @@ fn exec_glob(
     emit_tool_start(&mut tui, "glob", &pattern);
 
     let base = match search_path {
-        Some(p) => {
-            match resolve_tool_path(workdir, p.to_str().unwrap_or("")) {
-                Ok(p) => Some(p),
-                Err(e) => {
-                    let error_msg = format!("path error: {}", e);
-                    emit_tool_result(&mut tui, "glob", false, &error_msg);
-                    return ToolExecutionResult {
-                        tool_call_id: call_id.to_string(),
-                        tool_name: "glob".to_string(),
-                        content: error_msg,
-                        ok: false,
-                        exit_code: None,
-                        timed_out: false,
-                        status: crate::tools::ToolStatus::Failed,
-                        duration_ms: 0,
-                        signal_killed: None,
-                    };
-                }
+        Some(p) => match resolve_tool_path(workdir, p.to_str().unwrap_or("")) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                let error_msg = format!("path error: {}", e);
+                emit_tool_result(&mut tui, "glob", false, &error_msg);
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "glob".to_string(),
+                    content: error_msg,
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    status: crate::tools::ToolStatus::Failed,
+                    duration_ms: 0,
+                    signal_killed: None,
+                };
             }
-        }
+        },
         Some(p) => Some(workdir.join(p)),
         None => Some(workdir.clone()),
     };
@@ -1342,8 +1544,8 @@ fn exec_glob(
         ok: !results.is_empty(),
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1363,20 +1565,23 @@ fn verify_syntax(path: &str, workdir: &PathBuf) -> Result<(), String> {
                 break;
             }
         }
-        
+
         if found_cargo {
             let output = std::process::Command::new("cargo")
                 .arg("check")
                 .arg("--message-format=short")
                 .current_dir(&curr)
                 .output();
-            
+
             match output {
                 Ok(out) if !out.status.success() => {
                     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
                     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
                     let combined = format!("{}\n{}", stdout, stderr);
-                    return Err(format!("Cargo check failed after mutation:\n{}", combined.trim()));
+                    return Err(format!(
+                        "Cargo check failed after mutation:\n{}",
+                        combined.trim()
+                    ));
                 }
                 Err(e) => return Err(format!("Failed to run cargo check: {}", e)),
                 _ => {}
@@ -1411,7 +1616,7 @@ fn exec_patch(
 
     emit_tool_start(&mut tui, "patch", "(multi-file patch)");
 
-    use elma_tools::{parse_patch, PatchOperation};
+    use elma_tools::{PatchOperation, parse_patch};
 
     match parse_patch(&patch_content) {
         Ok(parsed) => {
@@ -1446,7 +1651,11 @@ fn exec_patch(
                             }
                         }
                     }
-                    PatchOperation::UpdateFile { path, old_string, new_string } => {
+                    PatchOperation::UpdateFile {
+                        path,
+                        old_string,
+                        new_string,
+                    } => {
                         let full = workdir.join(path);
                         match std::fs::read_to_string(&full) {
                             Ok(original) => {
@@ -1498,8 +1707,8 @@ fn exec_patch(
                 ok: all_ok,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1513,8 +1722,8 @@ fn exec_patch(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1581,8 +1790,8 @@ fn exec_edit(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1602,8 +1811,8 @@ fn exec_edit(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                    status: crate::tools::ToolStatus::Failed,
+                    duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -1617,8 +1826,8 @@ fn exec_edit(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                    status: crate::tools::ToolStatus::Failed,
+                    duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -1630,8 +1839,8 @@ fn exec_edit(
                 ok: true,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         } else {
@@ -1644,8 +1853,8 @@ fn exec_edit(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1723,8 +1932,8 @@ fn exec_write(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -1742,8 +1951,8 @@ fn exec_write(
                     ok: false,
                     exit_code: None,
                     timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                    status: crate::tools::ToolStatus::Failed,
+                    duration_ms: 0,
                     signal_killed: None,
                 };
             }
@@ -1755,8 +1964,8 @@ fn exec_write(
                 ok: true,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1770,8 +1979,8 @@ fn exec_write(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1824,7 +2033,11 @@ async fn exec_search(
     cmd.arg("-i")
         .arg("--line-number")
         .arg("--no-heading")
-        .arg("--color=never");
+        .arg("--color=never")
+        .arg("--max-filesize")
+        .arg("1M")
+        .arg("--max-count")
+        .arg("200");
 
     // Task 454: Honor literal_text and include schema fields
     let literal_text = av["literal_text"].as_bool().unwrap_or(false);
@@ -1837,9 +2050,10 @@ async fn exec_search(
         if !include.is_empty() {
             cmd.arg("--glob").arg(include);
         }
-    } else {
-        // Task 542: Exclude _knowledge_base by default to avoid noise in audits
-        cmd.arg("--glob").arg("!_knowledge_base/**");
+    } else if should_apply_default_search_exclusions(workdir, sp.as_deref()) {
+        for glob in default_search_exclusion_globs() {
+            cmd.arg("--glob").arg(glob);
+        }
     }
 
     if let Some(p) = &sp {
@@ -1872,13 +2086,18 @@ async fn exec_search(
 
             // Task 542: Add annotation if matches include _knowledge_base
             if content.contains("_knowledge_base/") {
-                let kb_count = content.lines().filter(|l| l.contains("_knowledge_base/")).count();
+                let kb_count = content
+                    .lines()
+                    .filter(|l| l.contains("_knowledge_base/"))
+                    .count();
                 let total_count = content.lines().count();
                 content.push_str(&format!(
                     "\n\nℹ️ NOTE: {} of {} matches are in _knowledge_base/ (third-party reference code). Exclude these from risk analysis of Elma's own codebase.",
                     kb_count, total_count
                 ));
             }
+
+            content = cap_search_output(&content);
 
             emit_tool_result(&mut tui, "search", success, &content);
             ToolExecutionResult {
@@ -1888,8 +2107,8 @@ async fn exec_search(
                 ok: success,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -1903,12 +2122,54 @@ async fn exec_search(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
     }
+}
+
+const SEARCH_OUTPUT_CAP_CHARS: usize = 300_000;
+const SEARCH_OUTPUT_PREVIEW_CHARS: usize = 120_000;
+
+fn cap_search_output(content: &str) -> String {
+    if content.len() <= SEARCH_OUTPUT_CAP_CHARS {
+        return content.to_string();
+    }
+
+    let preview = content
+        .chars()
+        .take(SEARCH_OUTPUT_PREVIEW_CHARS)
+        .collect::<String>();
+    let total_lines = content.lines().count();
+    let preview_lines = preview.lines().count();
+    format!(
+        "{}\n\n[search output truncated: original_chars={}, original_lines={}, shown_chars={}, shown_lines={}. Narrow the path or pattern for more detail.]",
+        preview.trim_end(),
+        content.len(),
+        total_lines,
+        preview.len(),
+        preview_lines
+    )
+}
+
+fn should_apply_default_search_exclusions(workdir: &PathBuf, requested_path: Option<&str>) -> bool {
+    let Some(path) = requested_path else {
+        return true;
+    };
+    if path.trim().is_empty() || path == "." {
+        return true;
+    }
+    let resolved = workdir.join(path);
+    !crate::workspace_policy::WorkspacePolicy::path_is_default_excluded(&resolved)
+}
+
+fn default_search_exclusion_globs() -> Vec<String> {
+    crate::workspace_policy::DEFAULT_EXCLUDED_PATHS
+        .iter()
+        .map(|path| format!("!{}/**", path))
+        .collect()
 }
 
 fn exec_respond(
@@ -1929,8 +2190,8 @@ fn exec_respond(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -1990,8 +2251,8 @@ fn exec_tool_search(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2011,10 +2272,7 @@ async fn exec_repo_map(
 
     let (output, tokens_used) = repo_map::build_repo_map(workdir, token_budget, max_files);
 
-    let content = format!(
-        "{}",
-        output
-    );
+    let content = format!("{}", output);
 
     emit_tool_result(&mut tui, "repo_map", true, &content);
     ToolExecutionResult {
@@ -2024,8 +2282,8 @@ async fn exec_repo_map(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2061,8 +2319,8 @@ async fn exec_git_inspect(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2101,8 +2359,8 @@ async fn exec_git_inspect(
                 ok,
                 exit_code: Some(exit_code),
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -2116,8 +2374,8 @@ async fn exec_git_inspect(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -2174,8 +2432,8 @@ async fn exec_run_python(
                 ok,
                 exit_code: Some(exit_code),
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -2189,8 +2447,8 @@ async fn exec_run_python(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -2245,8 +2503,8 @@ async fn exec_run_node(
                 ok,
                 exit_code: Some(exit_code),
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -2260,8 +2518,8 @@ async fn exec_run_node(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             }
         }
@@ -2306,8 +2564,8 @@ async fn exec_job_start(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2327,8 +2585,8 @@ async fn exec_job_start(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2336,13 +2594,20 @@ async fn exec_job_start(
 
     emit_tool_start(&mut tui, "job_start", &command);
 
-    let id = match task_manager.create_task(
-        if name.is_empty() { "background_job".to_string() } else { name },
-        command.clone(),
-        workdir.clone(),
-        memory_limit_mb,
-        timeout_seconds,
-    ).await {
+    let id = match task_manager
+        .create_task(
+            if name.is_empty() {
+                "background_job".to_string()
+            } else {
+                name
+            },
+            command.clone(),
+            workdir.clone(),
+            memory_limit_mb,
+            timeout_seconds,
+        )
+        .await
+    {
         Ok(id) => id,
         Err(e) => {
             let msg = format!("Failed to create task: {}", e);
@@ -2354,8 +2619,8 @@ async fn exec_job_start(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2386,8 +2651,8 @@ async fn exec_job_start(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2423,8 +2688,8 @@ async fn exec_job_status(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2444,8 +2709,8 @@ async fn exec_job_status(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2470,8 +2735,8 @@ async fn exec_job_status(
         ok: true,
         exit_code: task.exit_code,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2507,8 +2772,8 @@ async fn exec_job_output(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2528,8 +2793,8 @@ async fn exec_job_output(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2555,8 +2820,8 @@ async fn exec_job_output(
         ok: true,
         exit_code: task.exit_code,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2592,8 +2857,8 @@ async fn exec_job_stop(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2626,8 +2891,8 @@ async fn exec_job_stop(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2666,8 +2931,8 @@ async fn exec_fetch(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2678,7 +2943,10 @@ async fn exec_fetch(
         return ToolExecutionResult {
             tool_call_id: call_id.to_string(),
             tool_name: "fetch".to_string(),
-            content: format!("Error: only http and https schemes are allowed, got '{}'", scheme),
+            content: format!(
+                "Error: only http and https schemes are allowed, got '{}'",
+                scheme
+            ),
             ok: false,
             exit_code: None,
             timed_out: false,
@@ -2712,8 +2980,8 @@ async fn exec_fetch(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2748,8 +3016,8 @@ async fn exec_fetch(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
@@ -2758,19 +3026,18 @@ async fn exec_fetch(
     let capped = &raw_bytes[..raw_bytes.len().min(100_000)];
 
     let content = match format.as_str() {
-        "markdown" => {
-            html2text::from_read(capped, 120).unwrap_or_else(|_| String::from_utf8_lossy(capped).to_string())
-        }
-        "html" => {
-            String::from_utf8_lossy(capped).to_string()
-        }
-        _ => {
-            String::from_utf8_lossy(capped).to_string()
-        }
+        "markdown" => html2text::from_read(capped, 120)
+            .unwrap_or_else(|_| String::from_utf8_lossy(capped).to_string()),
+        "html" => String::from_utf8_lossy(capped).to_string(),
+        _ => String::from_utf8_lossy(capped).to_string(),
     };
 
     let truncated = if raw_bytes.len() > 100_000 {
-        format!("{}\n\n[Content truncated at 100KB — fetched {} bytes total]", content, raw_bytes.len())
+        format!(
+            "{}\n\n[Content truncated at 100KB — fetched {} bytes total]",
+            content,
+            raw_bytes.len()
+        )
     } else {
         content
     };
@@ -2783,8 +3050,8 @@ async fn exec_fetch(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -2814,9 +3081,10 @@ mod tests {
 
     #[test]
     fn observe_nonexistent_path_returns_exists_false() {
-        let wd = std::env::temp_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let wd = dir.path().to_path_buf();
         let result = exec_observe(
-            &serde_json::json!({"path": "/nonexistent_path_xyzabc123"}),
+            &serde_json::json!({"path": "nonexistent_path_xyzabc123"}),
             &wd,
             "o2",
             None,
@@ -2827,49 +3095,33 @@ mod tests {
 
     #[test]
     fn observe_file_returns_metadata() {
-        let dir = std::env::temp_dir().join("observe_test_file");
-        let _ = std::fs::create_dir_all(&dir);
-        let file_path = dir.join("test.txt");
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.txt");
         let mut f = std::fs::File::create(&file_path).unwrap();
         f.write_all(b"hello world").unwrap();
         f.flush().unwrap();
 
-        let wd = std::env::temp_dir();
-        let result = exec_observe(
-            &serde_json::json!({"path": file_path.to_str().unwrap()}),
-            &wd,
-            "o3",
-            None,
-        );
+        let wd = dir.path().to_path_buf();
+        let result = exec_observe(&serde_json::json!({"path": "test.txt"}), &wd, "o3", None);
         assert!(result.ok, "result: {}", result.content);
         assert!(result.content.contains("exists: true"));
         assert!(result.content.contains("type: file"));
         assert!(result.content.contains("size: 11"));
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn observe_directory_shows_child_count() {
-        let dir = std::env::temp_dir().join("observe_test_dir");
-        let _ = std::fs::create_dir_all(&dir);
-        std::fs::write(dir.join("a.txt"), "a").unwrap();
-        std::fs::write(dir.join("b.txt"), "b").unwrap();
-        std::fs::write(dir.join("c.txt"), "c").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b").unwrap();
+        std::fs::write(dir.path().join("c.txt"), "c").unwrap();
 
-        let wd = std::env::temp_dir();
-        let result = exec_observe(
-            &serde_json::json!({"path": dir.to_str().unwrap()}),
-            &wd,
-            "o4",
-            None,
-        );
+        let wd = dir.path().to_path_buf();
+        let result = exec_observe(&serde_json::json!({"path": "."}), &wd, "o4", None);
         assert!(result.ok, "result: {}", result.content);
         assert!(result.content.contains("exists: true"));
         assert!(result.content.contains("type: directory"));
         assert!(result.content.contains("child_count: 3"));
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2893,10 +3145,9 @@ mod tests {
 
     #[test]
     fn observe_symlink_shows_target() {
-        let dir = std::env::temp_dir().join("observe_test_sym");
-        let _ = std::fs::create_dir_all(&dir);
-        let target = dir.join("target.txt");
-        let link = dir.join("link.txt");
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        let link = dir.path().join("link.txt");
         std::fs::write(&target, "symlink target content").unwrap();
         #[cfg(unix)]
         {
@@ -2907,17 +3158,49 @@ mod tests {
             std::fs::hard_link(&target, &link).unwrap();
         }
 
-        let wd = PathBuf::from("/tmp");
-        let result = exec_observe(
-            &serde_json::json!({"path": link.to_str().unwrap()}),
-            &wd,
-            "o6",
-            None,
-        );
+        let wd = dir.path().to_path_buf();
+        let result = exec_observe(&serde_json::json!({"path": "link.txt"}), &wd, "o6", None);
         assert!(result.ok, "result: {}", result.content);
         assert!(result.content.contains("type: symlink"));
+    }
 
-        let _ = std::fs::remove_dir_all(&dir);
+    #[test]
+    fn default_search_exclusions_cover_generated_dirs() {
+        let globs = default_search_exclusion_globs();
+        assert!(globs.contains(&"!sessions/**".to_string()));
+        assert!(globs.contains(&"!project_tmp/**".to_string()));
+        assert!(globs.contains(&"!target/**".to_string()));
+        assert!(globs.contains(&"!_knowledge_base/**".to_string()));
+    }
+
+    #[test]
+    fn search_defaults_apply_for_workspace_scope() {
+        let wd = PathBuf::from("/tmp/elma-test");
+        assert!(should_apply_default_search_exclusions(&wd, None));
+        assert!(should_apply_default_search_exclusions(&wd, Some(".")));
+        assert!(should_apply_default_search_exclusions(&wd, Some("src")));
+    }
+
+    #[test]
+    fn search_defaults_do_not_apply_when_user_targets_generated_dir() {
+        let wd = PathBuf::from("/tmp/elma-test");
+        assert!(!should_apply_default_search_exclusions(
+            &wd,
+            Some("project_tmp")
+        ));
+        assert!(!should_apply_default_search_exclusions(
+            &wd,
+            Some("sessions/s_123/session.md")
+        ));
+    }
+
+    #[test]
+    fn cap_search_output_bounds_large_results() {
+        let content = "match line\n".repeat(60_000);
+        let capped = cap_search_output(&content);
+        assert!(capped.len() < content.len());
+        assert!(capped.contains("search output truncated"));
+        assert!(capped.len() <= SEARCH_OUTPUT_PREVIEW_CHARS + 220);
     }
 }
 
@@ -3025,8 +3308,8 @@ fn exec_update_todo_list(
         content,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3083,17 +3366,28 @@ fn exec_stat(
                 ok: false,
                 exit_code: None,
                 timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: 0,
                 signal_killed: None,
             };
         }
     };
 
-    let file_type = if metadata.is_dir() { "directory" } else if metadata.is_file() { "file" } else { "other" };
+    let file_type = if metadata.is_dir() {
+        "directory"
+    } else if metadata.is_file() {
+        "file"
+    } else {
+        "other"
+    };
     let size = metadata.len();
-    let modified = metadata.modified()
-        .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).ok())
+    let modified = metadata
+        .modified()
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .ok()
+        })
         .ok()
         .flatten();
 
@@ -3101,7 +3395,9 @@ fn exec_stat(
         "Type: {}\nSize: {} bytes\nModified: {}",
         file_type,
         size,
-        modified.map(|s| s.to_string()).unwrap_or_else(|| "unknown".to_string())
+        modified
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "unknown".to_string())
     );
 
     emit_tool_result(&mut tui, "stat", true, &content);
@@ -3112,8 +3408,8 @@ fn exec_stat(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3199,9 +3495,224 @@ fn exec_copy(
         ok,
         exit_code: None,
         timed_out: false,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
+        signal_killed: None,
+    }
+}
+
+fn exec_backup(
+    av: &serde_json::Value,
+    workdir: &PathBuf,
+    call_id: &str,
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
+) -> ToolExecutionResult {
+    let mut source_dir = av["source_dir"].as_str().unwrap_or("");
+    let dest_dir = av["dest_dir"].as_str().unwrap_or("");
+
+    if source_dir.is_empty() || dest_dir.is_empty() {
+        let error_msg = "Error: source_dir and dest_dir are required".to_string();
+        emit_tool_result(&mut tui, "backup", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "backup".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
             status: crate::tools::ToolStatus::Failed,
             duration_ms: 0,
-        signal_killed: None,
+            signal_killed: None,
+        };
+    }
+
+    if (source_dir == "." || source_dir == "./") && workdir.join("src").is_dir() {
+        crate::append_trace_log_line(
+            "[BACKUP] root source remapped to src for source-file backup contract",
+        );
+        source_dir = "src";
+    }
+
+    // Check dest_dir for future-dated timestamps
+    let today = chrono::Local::now();
+    if let Some(date_str) = dest_dir
+        .split(|c: char| !c.is_ascii_digit())
+        .find(|s| s.len() == 8 && s.as_bytes().iter().all(|b| b.is_ascii_digit()))
+    {
+        if let Ok(parsed) = chrono::NaiveDate::parse_from_str(date_str, "%Y%m%d") {
+            let days_ahead = parsed.signed_duration_since(today.date_naive()).num_days();
+            if days_ahead > 1 {
+                crate::append_trace_log_line(&format!(
+                    "[BACKUP] future-dated destination detected: {} ({} days ahead), using current-date path",
+                    date_str, days_ahead
+                ));
+                // Replace the future date with today's date in the dest_dir
+                let today_str = today.format("%Y%m%d").to_string();
+                let corrected = dest_dir.replace(date_str, &today_str);
+                crate::append_trace_log_line(&format!(
+                    "[BACKUP] corrected dest_dir to: {}",
+                    corrected
+                ));
+                return ToolExecutionResult {
+                    tool_call_id: call_id.to_string(),
+                    tool_name: "backup".to_string(),
+                    content: format!(
+                        "Error: destination path contains a future date ({}). Use a current-date path for backups.",
+                        date_str
+                    ),
+                    ok: false,
+                    exit_code: None,
+                    timed_out: false,
+                    status: crate::tools::ToolStatus::Failed,
+                    duration_ms: 0,
+                    signal_killed: None,
+                };
+            }
+        }
+    }
+
+    let src = workdir.join(source_dir);
+    if !src.exists() {
+        let error_msg = format!("Error: source directory not found: {}", source_dir);
+        emit_tool_result(&mut tui, "backup", false, &error_msg);
+        return ToolExecutionResult {
+            tool_call_id: call_id.to_string(),
+            tool_name: "backup".to_string(),
+            content: error_msg,
+            ok: false,
+            exit_code: None,
+            timed_out: false,
+            status: crate::tools::ToolStatus::Failed,
+            duration_ms: 0,
+            signal_killed: None,
+        };
+    }
+
+    let include_patterns: Vec<String> = av["include_patterns"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_else(|| vec!["**/*.rs".to_string()]);
+
+    let exclude_patterns: Vec<String> = av["exclude_patterns"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let verify = av["verify"].as_bool().unwrap_or(true);
+
+    let dest = workdir.join(dest_dir);
+
+    emit_tool_start(
+        &mut tui,
+        "backup",
+        &format!("{} -> {}", source_dir, dest_dir),
+    );
+
+    let start = std::time::Instant::now();
+
+    match crate::safe_operations::run_backup_operation(
+        &src,
+        &dest,
+        &include_patterns,
+        &exclude_patterns,
+    ) {
+        Ok(result) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let ok = result.completed;
+
+            let manifest_count = 1u64;
+            let verification_ok = result.errors.is_empty() && result.completed;
+
+            let mut detail = format!(
+                "Backup summary:\n\
+                 source_files_matched={}\n\
+                 payload_files_copied={}\n\
+                 manifest_files_created={}\n\
+                 errors={}\n\
+                 verification_ok={}\n\n\
+                 Source: {}\n\
+                 Destination: {}\n\
+                 Manifest: {}",
+                result.source_match_count,
+                result.files_copied,
+                manifest_count,
+                result.errors.len(),
+                verification_ok,
+                result.source_dir.display(),
+                result.dest_dir.display(),
+                result.manifest_path.display(),
+            );
+
+            if !result.errors.is_empty() {
+                detail.push_str(&format!(
+                    "\nErrors:\n  {}",
+                    result.errors.join("\n  ")
+                ));
+            }
+
+            if verify && verification_ok && result.source_match_count != result.files_copied {
+                detail.push_str(&format!(
+                    "\nNote: {} files matched but {} copied ({} missing)",
+                    result.source_match_count,
+                    result.files_copied,
+                    result.source_match_count.saturating_sub(result.files_copied)
+                ));
+            }
+
+            crate::append_trace_log_line(&format!(
+                "[BACKUP] source={} dest={} matched={} copied={} manifest_files={} errors={} verification_ok={}",
+                source_dir,
+                dest_dir,
+                result.source_match_count,
+                result.files_copied,
+                manifest_count,
+                result.errors.len(),
+                verification_ok,
+            ));
+
+            emit_tool_result(&mut tui, "backup", ok, &detail);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "backup".to_string(),
+                content: detail,
+                ok,
+                exit_code: None,
+                timed_out: false,
+                status: if ok {
+                    crate::tools::ToolStatus::Success
+                } else {
+                    crate::tools::ToolStatus::Failed
+                },
+                duration_ms,
+                signal_killed: None,
+            }
+        }
+        Err(e) => {
+            let error_msg = format!("Backup failed: {}", e);
+            crate::append_trace_log_line(&format!("[BACKUP] failed: {}", error_msg));
+            emit_tool_result(&mut tui, "backup", false, &error_msg);
+            ToolExecutionResult {
+                tool_call_id: call_id.to_string(),
+                tool_name: "backup".to_string(),
+                content: error_msg,
+                ok: false,
+                exit_code: None,
+                timed_out: false,
+                status: crate::tools::ToolStatus::Failed,
+                duration_ms: start.elapsed().as_millis() as u64,
+                signal_killed: None,
+            }
+        }
     }
 }
 
@@ -3266,8 +3777,8 @@ fn exec_move(
         ok,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3320,8 +3831,8 @@ fn exec_mkdir(
         ok,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3394,8 +3905,8 @@ fn exec_trash(
         ok,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3442,8 +3953,8 @@ fn exec_touch(
         ok,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3521,8 +4032,8 @@ fn exec_file_size(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3542,11 +4053,15 @@ fn exec_workspace_info(
         let mut items: Vec<String> = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            let name = path.file_name()
+            let name = path
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            if name.starts_with('.') || name == "target" || name == "node_modules"
-                || name == "dist" || name == "build"
+            if name.starts_with('.')
+                || name == "target"
+                || name == "node_modules"
+                || name == "dist"
+                || name == "build"
             {
                 continue;
             }
@@ -3559,7 +4074,9 @@ fn exec_workspace_info(
                         .filter_map(|e| {
                             let sp = e.path();
                             let sn = sp.file_name()?.to_string_lossy().to_string();
-                            if sn.starts_with('.') { return None; }
+                            if sn.starts_with('.') {
+                                return None;
+                            }
                             let sm = if sp.is_dir() { "/" } else { "" };
                             Some(format!("    {}{}", sn, sm))
                         })
@@ -3574,7 +4091,9 @@ fn exec_workspace_info(
             } else {
                 items.push(format!("  {}{}", name, marker));
             }
-            if items.len() >= 100 { break; }
+            if items.len() >= 100 {
+                break;
+            }
         }
         items.sort();
         info.push_str(&items.join("\n"));
@@ -3613,7 +4132,12 @@ fn exec_workspace_info(
     if workdir.join(".git").exists() {
         info.push_str("\n## Git Status\n");
         let branch = std::process::Command::new("git")
-            .args(["-C", &workdir.display().to_string(), "branch", "--show-current"])
+            .args([
+                "-C",
+                &workdir.display().to_string(),
+                "branch",
+                "--show-current",
+            ])
             .output();
         if let Ok(out) = branch {
             let b = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -3630,9 +4154,15 @@ fn exec_workspace_info(
             if lines.is_empty() {
                 info.push_str("Working tree clean\n");
             } else {
-                let modified = lines.iter().filter(|l| l.starts_with(" M") || l.starts_with("M ")).count();
+                let modified = lines
+                    .iter()
+                    .filter(|l| l.starts_with(" M") || l.starts_with("M "))
+                    .count();
                 let untracked = lines.iter().filter(|l| l.starts_with("??")).count();
-                let staged = lines.iter().filter(|l| l.starts_with("M ") || l.starts_with("A ")).count();
+                let staged = lines
+                    .iter()
+                    .filter(|l| l.starts_with("M ") || l.starts_with("A "))
+                    .count();
                 info.push_str(&format!(
                     "{} staged, {} modified, {} untracked files\n",
                     staged, modified, untracked
@@ -3648,20 +4178,14 @@ fn exec_workspace_info(
         }
     }
 
-    let guidance_files = [
-        ("AGENTS.md", 1600usize),
-        ("_tasks/TASKS.md", 1200),
-    ];
+    let guidance_files = [("AGENTS.md", 1600usize), ("_tasks/TASKS.md", 1200)];
     let mut guidance_section = String::new();
     for (rel_path, max_chars) in &guidance_files {
         let full_path = workdir.join(rel_path);
         if full_path.exists() {
             if let Ok(content) = std::fs::read_to_string(&full_path) {
                 let trimmed: String = content.chars().take(*max_chars).collect();
-                guidance_section.push_str(&format!(
-                    "\n### {}\n```\n{}\n```\n",
-                    rel_path, trimmed
-                ));
+                guidance_section.push_str(&format!("\n### {}\n```\n{}\n```\n", rel_path, trimmed));
                 if content.chars().count() > *max_chars {
                     guidance_section.push_str("...(truncated)\n");
                 }
@@ -3676,7 +4200,8 @@ fn exec_workspace_info(
                 if path.is_file() && path.extension().map(|e| e == "md").unwrap_or(false) {
                     if let Ok(content) = std::fs::read_to_string(&path) {
                         let trimmed: String = content.chars().take(800).collect();
-                        let name = path.file_name()
+                        let name = path
+                            .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
                         guidance_section.push_str(&format!(
@@ -3702,8 +4227,8 @@ fn exec_workspace_info(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Failed,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3714,10 +4239,21 @@ fn exec_exists(
     call_id: &str,
     mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> ToolExecutionResult {
-    let path = av["path"].as_str().unwrap_or("");
+    let paths: Vec<String> = if let Some(arr) = av["paths"].as_array() {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .filter(|s| !s.trim().is_empty())
+            .collect()
+    } else {
+        av["path"]
+            .as_str()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| vec![s.to_string()])
+            .unwrap_or_default()
+    };
     let check_type = av["type"].as_str().unwrap_or("any");
 
-    if path.is_empty() {
+    if paths.is_empty() {
         let error_msg = "Error: path required".to_string();
         emit_tool_result(&mut tui, "exists", false, &error_msg);
         return ToolExecutionResult {
@@ -3733,17 +4269,29 @@ fn exec_exists(
         };
     }
 
-    let full_path = workdir.join(path);
-    let exists = full_path.exists();
-
-    let content = if !exists {
-        "exists: false".to_string()
-    } else {
-        let actual_type = if full_path.is_dir() { "dir" } else if full_path.is_file() { "file" } else { "other" };
-        let wanted_type = check_type;
-        let matches = wanted_type == "any" || wanted_type == actual_type;
-        format!("exists: true, type: {}, matches: {}", actual_type, matches)
-    };
+    let mut rows = Vec::new();
+    for path in paths {
+        let full_path = workdir.join(&path);
+        let exists = full_path.exists();
+        let row = if !exists {
+            format!("{}: exists: false", path)
+        } else {
+            let actual_type = if full_path.is_dir() {
+                "dir"
+            } else if full_path.is_file() {
+                "file"
+            } else {
+                "other"
+            };
+            let matches = check_type == "any" || check_type == actual_type;
+            format!(
+                "{}: exists: true, type: {}, matches: {}",
+                path, actual_type, matches
+            )
+        };
+        rows.push(row);
+    }
+    let content = rows.join("\n");
 
     emit_tool_result(&mut tui, "exists", true, &content);
     ToolExecutionResult {
@@ -3753,8 +4301,8 @@ fn exec_exists(
         ok: true,
         exit_code: None,
         timed_out: false,
-            status: crate::tools::ToolStatus::Failed,
-            duration_ms: 0,
+        status: crate::tools::ToolStatus::Success,
+        duration_ms: 0,
         signal_killed: None,
     }
 }
@@ -3768,7 +4316,7 @@ fn extract_line_limit(command: &str) -> Option<usize> {
         r"\|\s*tail\s*-n\s*(\d+)",
         r"\|\s*tail\s*-(\d+)",
     ];
-    
+
     for p in patterns {
         if let Ok(re) = regex::Regex::new(p) {
             if let Some(caps) = re.captures(command) {

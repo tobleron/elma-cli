@@ -264,6 +264,16 @@ pub fn get_tool_schema(tool_name: &str) -> Option<ToolArgSchema> {
                 .help("Create a directory (including parent directories).")
                 .example(r#"{"path": "src/foo/bar"}"#),
         ),
+        "backup" => Some(
+            ToolArgSchema::new("backup")
+                .required("source_dir", ArgType::RelPath)
+                .required("dest_dir", ArgType::RelPath)
+                .optional("include_patterns", ArgType::String_)
+                .optional("exclude_patterns", ArgType::String_)
+                .optional("verify", ArgType::Bool)
+                .help("Create a safe backup of source files. Copies matching files from source_dir to dest_dir, writes a manifest, and verifies counts.")
+                .example(r#"{"source_dir": "src", "dest_dir": "project_tmp/backup"}"#),
+        ),
         "copy" => Some(
             ToolArgSchema::new("copy")
                 .required("source", ArgType::RelPath)
@@ -378,31 +388,32 @@ pub fn get_tool_schema(tool_name: &str) -> Option<ToolArgSchema> {
 
 fn check_type(val: &serde_json::Value, arg_type: &ArgType) -> Result<(), String> {
     match arg_type {
-        ArgType::String_ => {
-            val.as_str()
-                .filter(|s| !s.is_empty())
-                .map(|_| ())
-                .ok_or_else(|| "expected a non-empty string".to_string())
-        }
-        ArgType::UInt => {
-            val.as_u64()
-                .map(|_| ())
-                .ok_or_else(|| "expected a non-negative integer".to_string())
-        }
-        ArgType::Bool => {
-            val.as_bool()
-                .map(|_| ())
-                .ok_or_else(|| "expected a boolean".to_string())
-        }
+        ArgType::String_ => val
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(|_| ())
+            .ok_or_else(|| "expected a non-empty string".to_string()),
+        ArgType::UInt => val
+            .as_u64()
+            .map(|_| ())
+            .ok_or_else(|| "expected a non-negative integer".to_string()),
+        ArgType::Bool => val
+            .as_bool()
+            .map(|_| ())
+            .ok_or_else(|| "expected a boolean".to_string()),
         ArgType::RelPath => {
-            let s = val.as_str().ok_or_else(|| "expected a string path".to_string())?;
+            let s = val
+                .as_str()
+                .ok_or_else(|| "expected a string path".to_string())?;
             if s.starts_with('/') || s.contains("..") {
                 return Err("absolute path or parent traversal not allowed".to_string());
             }
             Ok(())
         }
         ArgType::UIntRange(min, max) => {
-            let n = val.as_u64().ok_or_else(|| "expected a non-negative integer".to_string())?;
+            let n = val
+                .as_u64()
+                .ok_or_else(|| "expected a non-negative integer".to_string())?;
             if n < *min || n > *max {
                 return Err(format!("value {} out of range [{}, {}]", n, min, max));
             }

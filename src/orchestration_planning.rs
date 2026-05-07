@@ -950,23 +950,34 @@ pub async fn plan_batches_if_needed(
 }
 
 pub fn batch_plan_to_step(plan: &BatchPlan, objective: &str) -> Step {
-    let batch_groups: Vec<BatchGroup> = plan.batches.iter().map(|b| {
-        BatchGroup {
+    let batch_groups: Vec<BatchGroup> = plan
+        .batches
+        .iter()
+        .map(|b| BatchGroup {
             batch_number: b.batch_number,
             item_uris: b.item_uris.clone(),
             item_kinds: b.item_kinds.clone(),
             estimated_tokens: b.estimated_tokens,
             summary_prompt: b.summary_prompt.clone(),
             depends_on_previous: b.depends_on_previous,
-        }
-    }).collect();
+        })
+        .collect();
 
     Step::Batch {
-        id: format!("batch_{:x}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() & 0xFFFF_FFFF),
+        id: format!(
+            "batch_{:x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+                & 0xFFFF_FFFF
+        ),
         batches: batch_groups,
         common: StepCommon {
-            purpose: format!("Process {} items in {} batches to investigate: {}",
-                plan.total_items, plan.batch_count, objective),
+            purpose: format!(
+                "Process {} items in {} batches to investigate: {}",
+                plan.total_items, plan.batch_count, objective
+            ),
             depends_on: vec![],
             success_condition: "All batches summarized, aggregated findings available".to_string(),
             ..Default::default()

@@ -35,6 +35,10 @@ pub fn build_current_tools() -> Vec<ToolDefinition> {
     elma_tools::build_current_tools(get_registry())
 }
 
+pub fn default_tool_count() -> usize {
+    get_registry().default_tools().len()
+}
+
 pub fn build_tools_for_context(context_hint: &str) -> Vec<ToolDefinition> {
     elma_tools::build_tools_for_context(get_registry(), context_hint)
 }
@@ -75,6 +79,7 @@ mod tests {
             "edit",
             "write",
             "stat",
+            "backup",
             "copy",
             "mkdir",
             "move",

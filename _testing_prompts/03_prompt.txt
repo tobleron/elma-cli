@@ -1,0 +1,1 @@
+Analyze the project's documentation files to find all code examples that reference external APIs or libraries, check online sources to verify if those references are current and secure, and create a detailed report in the project_tmp directory listing any outdated or insecure references with specific suggestions for updating them to more secure alternatives.

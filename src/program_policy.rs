@@ -223,7 +223,7 @@ pub(crate) fn request_requires_workspace_evidence(
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
 ) -> bool {
-    complexity.needs_evidence 
+    complexity.needs_evidence
         || formula.primary.starts_with("inspect_")
         || formula.primary.contains("analysis")
         || formula.primary.contains("audit")

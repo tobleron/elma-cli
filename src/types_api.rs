@@ -235,19 +235,39 @@ pub(crate) struct StepResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum ItemKind {
     FilePath(String),
-    ShellOutput { command_hash: String, offset_bytes: u64, length_bytes: u64 },
-    SearchPage { query: String, file: String, start_line: u32, match_count: usize },
-    TextBlock { source_label: String },
+    ShellOutput {
+        command_hash: String,
+        offset_bytes: u64,
+        length_bytes: u64,
+    },
+    SearchPage {
+        query: String,
+        file: String,
+        start_line: u32,
+        match_count: usize,
+    },
+    TextBlock {
+        source_label: String,
+    },
 }
 
 impl ItemKind {
     pub(crate) fn to_uri(&self) -> String {
         match self {
             ItemKind::FilePath(p) => p.clone(),
-            ItemKind::ShellOutput { command_hash, offset_bytes, length_bytes } => {
+            ItemKind::ShellOutput {
+                command_hash,
+                offset_bytes,
+                length_bytes,
+            } => {
                 format!("shell://{command_hash}/offset={offset_bytes}/len={length_bytes}")
             }
-            ItemKind::SearchPage { query, file, start_line, .. } => {
+            ItemKind::SearchPage {
+                query,
+                file,
+                start_line,
+                ..
+            } => {
                 format!("search://{query}@{file}:{start_line}")
             }
             ItemKind::TextBlock { source_label } => {

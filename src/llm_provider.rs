@@ -614,14 +614,18 @@ impl UnifiedLlmClient {
 
         let status = resp.status();
         if !status.is_success() {
-            anyhow::bail!("Connectivity check failed: HTTP {} - {}", status, resp.text().await.unwrap_or_default());
+            anyhow::bail!(
+                "Connectivity check failed: HTTP {} - {}",
+                status,
+                resp.text().await.unwrap_or_default()
+            );
         }
 
-         Ok(())
-     }
- }
+        Ok(())
+    }
+}
 
- /// Convert ChatCompletionRequest to UnifiedChatRequest.
+/// Convert ChatCompletionRequest to UnifiedChatRequest.
 pub(crate) fn to_unified_request(req: &ChatCompletionRequest) -> UnifiedChatRequest {
     let messages: Vec<UnifiedMessage> = req
         .messages

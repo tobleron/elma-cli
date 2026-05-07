@@ -48,8 +48,6 @@ impl AutocompleteState {
         }
     }
 
-
-
     /// Deactivate the dropdown.
     pub(crate) fn deactivate(&mut self) {
         self.active = false;
@@ -109,8 +107,6 @@ fn filter_slash_commands(prefix: &str) -> Vec<AutocompleteSuggestion> {
         })
         .collect()
 }
-
-
 
 // ============================================================================
 // Dropdown rendering

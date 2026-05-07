@@ -260,10 +260,7 @@ impl ClaudeRenderer {
                 context_preview,
             } => MdEntry::Meta {
                 label: "compact".into(),
-                detail: format!(
-                    "{} messages, preview={:?}",
-                    message_count, context_preview
-                ),
+                detail: format!("{} messages, preview={:?}", message_count, context_preview),
             },
             ClaudeMessage::System { content } => MdEntry::Meta {
                 label: "system".into(),
@@ -392,8 +389,10 @@ impl ClaudeRenderer {
     pub(crate) fn toggle_thinking_entry(&mut self, mouse_y: u16, mouse_x: u16) {
         // First: check if click is on the scrollbar track
         if let Some(sb) = self.last_scrollbar_area {
-            if mouse_y >= sb.y && mouse_y < sb.y + sb.height
-                && mouse_x >= sb.x && mouse_x < sb.x + sb.width
+            if mouse_y >= sb.y
+                && mouse_y < sb.y + sb.height
+                && mouse_x >= sb.x
+                && mouse_x < sb.x + sb.width
             {
                 // Scrollbar click: compute new scroll position from click Y
                 if self.thinking_total_lines > self.thinking_area_height {
@@ -459,7 +458,9 @@ impl ClaudeRenderer {
     /// Increment output token count by delta chars (used during streaming)
     pub(crate) fn inc_output_tokens(&mut self, delta_chars: usize) {
         if delta_chars > 0 {
-            self.output_token_count = self.output_token_count.saturating_add((delta_chars / 3).max(1));
+            self.output_token_count = self
+                .output_token_count
+                .saturating_add((delta_chars / 3).max(1));
         }
     }
 
@@ -859,9 +860,10 @@ impl ClaudeRenderer {
         let transcript_deadline = self.transcript.thinking_redraw_deadline();
 
         // Also keep redrawing while any thinking entry is still revealing its text
-        let any_revealing = self.thinking_entries.iter().any(|e| {
-            e.reveal_chars < e.content.len()
-        });
+        let any_revealing = self
+            .thinking_entries
+            .iter()
+            .any(|e| e.reveal_chars < e.content.len());
 
         if any_revealing {
             // Need to keep redrawing for smooth character reveal (~60fps)
@@ -1087,7 +1089,10 @@ impl ClaudeRenderer {
         let panel_width = content_area.width.saturating_sub(main_width).max(18);
         let h_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(main_width), Constraint::Length(panel_width)])
+            .constraints([
+                Constraint::Length(main_width),
+                Constraint::Length(panel_width),
+            ])
             .split(content_area);
         let main_area = h_chunks[0];
         let panel_area = h_chunks[1];
@@ -1209,7 +1214,11 @@ impl ClaudeRenderer {
         // never paints underneath the scrollbar or its edge.
         let content_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(0), Constraint::Length(2), Constraint::Length(1)])
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(2),
+                Constraint::Length(1),
+            ])
             .split(content_area);
         let text_area = content_chunks[0];
         let _right_margin = content_chunks[1];
@@ -1249,7 +1258,11 @@ impl ClaudeRenderer {
         // Store hit-testing state for click-to-expand tool traces (visible portion only)
         self.last_content_area = Some(content_area);
         self.last_start_line = start_line;
-        self.last_line_mapping = all_mapping.into_iter().skip(start_line).take(height).collect();
+        self.last_line_mapping = all_mapping
+            .into_iter()
+            .skip(start_line)
+            .take(height)
+            .collect();
 
         // Slice visible lines from the transcript
         let visible_lines: Vec<Line<'static>> = all_lines
@@ -1343,15 +1356,12 @@ impl ClaudeRenderer {
             let mut picker_lines = match &self.picker_state {
                 PickerState::Slash { query: _, selected } => {
                     let filtered = self.filtered_slash_commands();
-                let filtered = self.filtered_slash_commands();
+                    let filtered = self.filtered_slash_commands();
                     let mut lines = Vec::new();
                     for (i, cmd) in filtered.iter().enumerate().take(8) {
                         let is_sel = i == *selected;
                         let arrow = if is_sel {
-                            Span::styled(
-                                "▸ ",
-                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                            )
+                            Span::styled("▸ ", Style::default().fg(theme.fg_dim.to_ratatui_color()))
                         } else {
                             Span::raw("  ")
                         };
@@ -1388,10 +1398,7 @@ impl ClaudeRenderer {
                     for (i, path) in self.file_matches.iter().enumerate().take(8) {
                         let is_sel = i == *selected;
                         let arrow = if is_sel {
-                            Span::styled(
-                                "▸ ",
-                                Style::default().fg(theme.fg_dim.to_ratatui_color()),
-                            )
+                            Span::styled("▸ ", Style::default().fg(theme.fg_dim.to_ratatui_color()))
                         } else {
                             Span::raw("  ")
                         };
@@ -1432,7 +1439,6 @@ impl ClaudeRenderer {
         }
         self.clear_expired_prompt_hint();
 
-
         // Footer is 3 rows: margin-top, content, margin-bottom
         let footer_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -1464,7 +1470,8 @@ impl ClaudeRenderer {
                 footer_content,
             );
         } else if let Some(model) = &self.footer_model {
-            let line = render_footer_line(model, self.footer_streaming_state(), footer_content.width);
+            let line =
+                render_footer_line(model, self.footer_streaming_state(), footer_content.width);
             f.render_widget(Paragraph::new(line), footer_content);
         } else {
             let hints: Vec<Span> = FOOTER_HINTS
@@ -1505,19 +1512,24 @@ impl ClaudeRenderer {
                 .direction(Direction::Vertical)
                 .constraints(if show_reasoning {
                     vec![
-                        Constraint::Length(13),  // info area (compact logo + stats + model)
-                        Constraint::Min(4),      // thinking area (fills remaining space)
+                        Constraint::Length(13), // info area (compact logo + stats + model)
+                        Constraint::Min(4),     // thinking area (fills remaining space)
                     ]
                 } else {
                     vec![
-                        Constraint::Min(0),    // info fills entire panel
+                        Constraint::Min(0), // info fills entire panel
                     ]
                 })
                 .split(panel_area);
             let info_area = panel_chunks[0];
-            let thinking_area = if show_reasoning { panel_chunks[1] } else { Rect::default() };
+            let thinking_area = if show_reasoning {
+                panel_chunks[1]
+            } else {
+                Rect::default()
+            };
 
-            let is_processing = self.streaming.is_streaming_thinking || self.streaming.is_streaming_content;
+            let is_processing =
+                self.streaming.is_streaming_thinking || self.streaming.is_streaming_content;
             render_right_panel_info(
                 info_area,
                 f,
@@ -1898,7 +1910,10 @@ fn render_right_panel_info(
 
     // ── Top: ELMA logo with alternating letter animation ──
     // Logo pre-computed into fixed 3-char groups: E L M A
-    let logo_width = logo_groups[0].iter().map(|g| g.chars().count()).sum::<usize>();
+    let logo_width = logo_groups[0]
+        .iter()
+        .map(|g| g.chars().count())
+        .sum::<usize>();
     let logo_pad = if logo_width < text_width {
         (text_width - logo_width) / 2
     } else {
@@ -1912,7 +1927,11 @@ fn render_right_panel_info(
     let elma_highlight = if is_processing {
         // Fast cycle (5 frames per letter = 20 per cycle), wait 90 frames between cycles
         let phase = anim_frame % 110; // 20 frames cycle + 90 frames gap
-        if phase < 20 { (phase / 5) % 4 } else { 5 }
+        if phase < 20 {
+            (phase / 5) % 4
+        } else {
+            5
+        }
     } else if anim_frame >= 2 && anim_frame < 10 {
         (anim_frame - 2) / 2
     } else {
@@ -1949,7 +1968,11 @@ fn render_right_panel_info(
 
     let mut tagline_spans = vec![Span::raw(tag_pad_str)];
     for (ci, ch) in tagline_chars.iter().enumerate() {
-        let style = if active_char == Some(ci) { secondary } else { dim };
+        let style = if active_char == Some(ci) {
+            secondary
+        } else {
+            dim
+        };
         tagline_spans.push(Span::styled(ch.clone(), style));
     }
     all_lines.push(Line::from(tagline_spans));
@@ -1958,7 +1981,11 @@ fn render_right_panel_info(
 
     // ── Token counters (animated, in complementary color) ──
     fn fmt_tokens(n: usize) -> String {
-        if n >= 1000 { format!("{:.1}k", n as f64 / 1000.0) } else { n.to_string() }
+        if n >= 1000 {
+            format!("{:.1}k", n as f64 / 1000.0)
+        } else {
+            n.to_string()
+        }
     }
     all_lines.push(Line::from(""));
     all_lines.push(Line::from(vec![
@@ -1975,13 +2002,13 @@ fn render_right_panel_info(
         if let Some(ref model) = fm.model_label {
             all_lines.push(Line::from(""));
             all_lines.push(Line::from(vec![Span::styled(
-                truncate_to_width(&format!("{}{}", pad, model), text_width), dim,
+                truncate_to_width(&format!("{}{}", pad, model), text_width),
+                dim,
             )]));
         }
     }
 
-    let panel = Paragraph::new(all_lines)
-        .style(Style::default().bg(theme.bg.to_ratatui_color()));
+    let panel = Paragraph::new(all_lines).style(Style::default().bg(theme.bg.to_ratatui_color()));
 
     f.render_widget(panel, area);
 }
@@ -2107,7 +2134,11 @@ fn render_right_panel_thinking(
 
         let thinking_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(0), Constraint::Length(2), Constraint::Length(2)])
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(2),
+                Constraint::Length(2),
+            ])
             .split(area);
         let text_area = thinking_chunks[0];
         let scrollbar_track = thinking_chunks[1];
@@ -2184,7 +2215,10 @@ fn render_progress_bar_line(
     spans.push(Span::styled(format!("{}{} ", pad, label), dim));
     spans.push(Span::styled(format!("{}% ", pct), accent));
     spans.push(Span::styled(fill, bar_color));
-    spans.push(Span::styled(empty, Style::default().fg(theme.border.to_ratatui_color())));
+    spans.push(Span::styled(
+        empty,
+        Style::default().fg(theme.border.to_ratatui_color()),
+    ));
 
     Line::from(spans)
 }
@@ -2479,9 +2513,7 @@ mod tests {
         assert!(lines[0].contains("Thinking"));
         // Expanded thinking no longer shows inline collapse hint;
         // collapse is managed via click or ctrl+o (event-driven, not text-driven).
-        let any_collapse_hint = lines
-            .iter()
-            .any(|l| l.contains("(ctrl+o to collapse)"));
+        let any_collapse_hint = lines.iter().any(|l| l.contains("(ctrl+o to collapse)"));
         assert!(!any_collapse_hint);
     }
 
@@ -2568,14 +2600,18 @@ mod tests {
             "thinking header should NOT appear in left panel transcript"
         );
         assert!(
-            live_lines.iter().all(|line| !line.contains("live reasoning text")),
+            live_lines
+                .iter()
+                .all(|line| !line.contains("live reasoning text")),
             "thinking content should NOT appear in left panel"
         );
 
         renderer.finish_thinking();
         let held_lines = renderer.transcript.render();
         assert!(
-            held_lines.iter().all(|line| !line.contains("live reasoning text")),
+            held_lines
+                .iter()
+                .all(|line| !line.contains("live reasoning text")),
             "finished thinking should NOT appear in left panel"
         );
 
@@ -2583,7 +2619,9 @@ mod tests {
             Some((0, Instant::now() - Duration::from_secs(1)));
         let collapsed_lines = renderer.transcript.render();
         assert!(
-            collapsed_lines.iter().all(|line| !line.contains("Thinking")),
+            collapsed_lines
+                .iter()
+                .all(|line| !line.contains("Thinking")),
             "thinking should NOT render as collapsed row in left panel"
         );
     }
@@ -2602,7 +2640,9 @@ mod tests {
             "thinking should not render in left panel transcript"
         );
         assert!(
-            !lines.iter().any(|l| fragments_contain(l, "first second third fourth fifth")),
+            !lines
+                .iter()
+                .any(|l| fragments_contain(l, "first second third fourth fifth")),
             "thinking content should not appear in left panel"
         );
     }
@@ -2649,7 +2689,11 @@ mod tests {
             renderer.transcript.toggle_trace_collapse(msg_idx);
         }
         let (lines2, _) = renderer.transcript.render_ratatui(80);
-        assert_eq!(lines2.len(), 0, "after click, thinking still not in left panel");
+        assert_eq!(
+            lines2.len(),
+            0,
+            "after click, thinking still not in left panel"
+        );
     }
 
     #[test]
@@ -2764,7 +2808,10 @@ mod tests {
                 }
             }
         }
-        assert!(seen_fill_accent, "filled bar chars should use accent_primary");
+        assert!(
+            seen_fill_accent,
+            "filled bar chars should use accent_primary"
+        );
         assert!(seen_empty_border, "empty bar chars should use border color");
     }
 

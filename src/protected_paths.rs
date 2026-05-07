@@ -24,9 +24,7 @@ impl ProtectedPaths {
         }
 
         // Protect DOTFILE config files at workspace root
-        let protected_dotfiles = [
-            ".gitignore",
-        ];
+        let protected_dotfiles = [".gitignore"];
         for dotfile in &protected_dotfiles {
             if path == *dotfile || path.starts_with(&format!("{}/", dotfile)) {
                 return Some(format!(

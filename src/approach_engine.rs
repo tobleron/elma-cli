@@ -80,7 +80,11 @@ impl ApproachEngine {
         let mut builder = WorkGraphBuilder::new(objective);
         let approach_id = builder.approach_id().clone();
         // Add initial root objective node
-        builder.add_goal("approach_root", "Primary approach", "Initial approach branch");
+        builder.add_goal(
+            "approach_root",
+            "Primary approach",
+            "Initial approach branch",
+        );
         let graph = builder.into_graph();
 
         Self {
@@ -99,7 +103,11 @@ impl ApproachEngine {
         let approach_id = builder.approach_id().clone();
 
         if !builder.skip_graph() {
-            builder.add_goal("approach_root", "Primary approach", "Initial approach branch");
+            builder.add_goal(
+                "approach_root",
+                "Primary approach",
+                "Initial approach branch",
+            );
         }
 
         let graph = builder.into_graph();
@@ -250,9 +258,10 @@ impl ApproachEngine {
             return self.current_approach_id.clone();
         }
 
-        self.graph
-            .approaches
-            .insert(self.current_approach_id.0.clone(), ApproachStatus::Superseded);
+        self.graph.approaches.insert(
+            self.current_approach_id.0.clone(),
+            ApproachStatus::Superseded,
+        );
 
         let new_id = ApproachId::new();
         self.graph

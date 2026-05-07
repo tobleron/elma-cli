@@ -15,11 +15,23 @@ pub struct RetryPolicy {
 
 impl RetryPolicy {
     pub fn for_streaming() -> Self {
-        Self { max_retries: 3, base_delay_ms: 1000, max_delay_ms: 30_000, backoff_multiplier: 2.0, jitter: true }
+        Self {
+            max_retries: 3,
+            base_delay_ms: 1000,
+            max_delay_ms: 30_000,
+            backoff_multiplier: 2.0,
+            jitter: true,
+        }
     }
 
     pub fn for_one_shot() -> Self {
-        Self { max_retries: 2, base_delay_ms: 500, max_delay_ms: 10_000, backoff_multiplier: 2.0, jitter: true }
+        Self {
+            max_retries: 2,
+            base_delay_ms: 500,
+            max_delay_ms: 10_000,
+            backoff_multiplier: 2.0,
+            jitter: true,
+        }
     }
 
     pub fn get_delay(&self, attempt: u32) -> Duration {

@@ -33,8 +33,7 @@ pub(crate) fn inject_turn_summary(messages: &mut Vec<ChatMessage>, summary: &Tur
     };
     let content = format!(
         "Previous turn summary: {}{}",
-        summary.summary_narrative,
-        artifact_line,
+        summary.summary_narrative, artifact_line,
     );
 
     let summary_msg = ChatMessage {

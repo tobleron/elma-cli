@@ -42,27 +42,59 @@ pub fn assess_complexity(user_message: &str) -> Complexity {
 
     // Multi-doc / multi-file signals → OPEN_ENDED or MULTISTEP
     let multi_edit_signals = [
-        "all docs", "every file", "all files", "compare with",
-        "throughout", "across the", "entire project", "whole codebase",
-        "everywhere", "all occurrences", "all references",
-        "multiple files", "many files", "each file",
+        "all docs",
+        "every file",
+        "all files",
+        "compare with",
+        "throughout",
+        "across the",
+        "entire project",
+        "whole codebase",
+        "everywhere",
+        "all occurrences",
+        "all references",
+        "multiple files",
+        "many files",
+        "each file",
     ];
     let has_multi_signal = multi_edit_signals.iter().any(|s| lower.contains(s));
 
     // Code modification signals → MULTISTEP
     let code_change_signals = [
-        "refactor", "implement", "create", "write a", "add a",
-        "change", "modify", "update all", "migrate", "convert",
-        "rename", "move", "extract",
+        "refactor",
+        "implement",
+        "create",
+        "write a",
+        "add a",
+        "change",
+        "modify",
+        "update all",
+        "migrate",
+        "convert",
+        "rename",
+        "move",
+        "extract",
     ];
     let has_code_signal = code_change_signals.iter().any(|s| lower.contains(s));
 
     // Investigation signals → INVESTIGATE
     let investigate_signals = [
-        "find", "search", "look for", "check", "examine",
-        "read", "show me", "tell me about", "what is",
-        "how does", "where is", "why does", "analyze",
-        "list", "get", "look at",
+        "find",
+        "search",
+        "look for",
+        "check",
+        "examine",
+        "read",
+        "show me",
+        "tell me about",
+        "what is",
+        "how does",
+        "where is",
+        "why does",
+        "analyze",
+        "list",
+        "get",
+        "look at",
     ];
     let has_investigate_signal = investigate_signals.iter().any(|s| lower.contains(s));
 
@@ -71,8 +103,8 @@ pub fn assess_complexity(user_message: &str) -> Complexity {
 
     // Greeting / simple chat — minimum complexity
     let greeting_signals = ["hi", "hello", "hey", "thanks", "ok", "yes", "no"];
-    let is_greeting = greeting_signals.iter().any(|s| s == &lower.trim())
-        || lower.trim().len() < 10;
+    let is_greeting =
+        greeting_signals.iter().any(|s| s == &lower.trim()) || lower.trim().len() < 10;
 
     // Classification logic
     // Multi-doc/file signals => OpenEnded regardless of length (scale is implied)
@@ -121,7 +153,9 @@ mod tests {
 
     #[test]
     fn test_multi_file_refactor() {
-        let result = assess_complexity("rename the function getCwd to getCurrentWorkingDirectory across the entire project");
+        let result = assess_complexity(
+            "rename the function getCwd to getCurrentWorkingDirectory across the entire project",
+        );
         assert_eq!(result, Complexity::OpenEnded);
     }
 
@@ -133,7 +167,8 @@ mod tests {
 
     #[test]
     fn test_multistep_implementation() {
-        let result = assess_complexity("add a new endpoint for user registration with validation and tests");
+        let result =
+            assess_complexity("add a new endpoint for user registration with validation and tests");
         assert_eq!(result, Complexity::Multistep);
     }
 

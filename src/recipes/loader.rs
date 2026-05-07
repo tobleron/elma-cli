@@ -43,11 +43,11 @@ impl RecipeLoader {
 
     /// Load a recipe from a specific path
     pub fn load_from_path(&self, path: &PathBuf) -> Result<Recipe, RecipeError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| RecipeError::ReadError(e.to_string()))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| RecipeError::ReadError(e.to_string()))?;
 
-        let recipe: Recipe = toml::from_str(&content)
-            .map_err(|e| RecipeError::ValidationFailed(e.to_string()))?;
+        let recipe: Recipe =
+            toml::from_str(&content).map_err(|e| RecipeError::ValidationFailed(e.to_string()))?;
 
         self.validate(&recipe)?;
         Ok(recipe)

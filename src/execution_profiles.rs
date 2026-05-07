@@ -85,7 +85,10 @@ pub(crate) fn is_command_allowed(profile: &ExecutionProfile, command: &str) -> b
 }
 
 /// Get the effective workdir based on execution profile.
-pub(crate) fn get_effective_workdir(profile: &ExecutionProfile, default_workdir: &PathBuf) -> PathBuf {
+pub(crate) fn get_effective_workdir(
+    profile: &ExecutionProfile,
+    default_workdir: &PathBuf,
+) -> PathBuf {
     if profile.workdir_root.is_empty() {
         default_workdir.clone()
     } else {
@@ -111,18 +114,21 @@ pub(crate) fn is_path_writable(profile: &ExecutionProfile, path: &PathBuf) -> bo
 }
 
 /// Load execution profile from config file.
-pub(crate) fn load_execution_profile(config_root: &str, profile_name: &str) -> Result<ExecutionProfile> {
+pub(crate) fn load_execution_profile(
+    config_root: &str,
+    profile_name: &str,
+) -> Result<ExecutionProfile> {
     let path = std::path::Path::new(config_root).join("execution_profiles.toml");
     if !path.exists() {
         // Return default local profile if no config exists
         return Ok(default_local_profile());
     }
 
-    let content = std::fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let content =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
 
-    let profiles: ExecutionProfilesFile = toml::from_str(&content)
-        .context("parse execution_profiles.toml")?;
+    let profiles: ExecutionProfilesFile =
+        toml::from_str(&content).context("parse execution_profiles.toml")?;
 
     for profile in profiles.profiles {
         if profile.name == profile_name {

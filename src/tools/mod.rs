@@ -3,15 +3,15 @@
 
 pub mod discovery;
 pub mod helpers;
+pub mod tool_trait;
 pub mod types;
 pub mod validation;
-pub mod tool_trait;
 
 pub use discovery::*;
 pub use helpers::*;
+pub use tool_trait::*;
 pub use types::*;
 pub use validation::*;
-pub use tool_trait::*;
 
 // ── Cache types and functions ──────────────────────────────────────────────
 

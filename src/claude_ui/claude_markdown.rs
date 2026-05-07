@@ -1126,24 +1126,21 @@ fn is_shell_language(lang: &str) -> bool {
 fn starts_with_heading(line: &str) -> bool {
     let trimmed = line.trim_start();
     let hash_count = trimmed.chars().take_while(|c| *c == '#').count();
-    hash_count >= 1 && hash_count <= 6
+    hash_count >= 1
+        && hash_count <= 6
         && trimmed.len() > hash_count
         && trimmed.chars().nth(hash_count) == Some(' ')
 }
 
 fn starts_with_list_item(line: &str) -> bool {
     let trimmed = line.trim_start();
-    if trimmed.starts_with("- ")
-        || trimmed.starts_with("+ ")
-    {
+    if trimmed.starts_with("- ") || trimmed.starts_with("+ ") {
         return true;
     }
     // * item but NOT **bold** (two asterisks without space)
     if let Some(rest) = trimmed.strip_prefix("* ") {
         // "* " at index 0 and NOT preceded by another * (i.e., not "**ing**")
-        if trimmed.len() > 2
-            && !trimmed.starts_with("**")
-        {
+        if trimmed.len() > 2 && !trimmed.starts_with("**") {
             return true;
         }
         return true;

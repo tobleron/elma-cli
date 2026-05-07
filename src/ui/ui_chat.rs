@@ -45,7 +45,7 @@ fn is_response_truncated(text: &str) -> bool {
             || last_char == ')'
             || last_char == ']'
             || last_char == '}';
-        
+
         if !ends_properly {
             return true;
         }
@@ -165,14 +165,14 @@ async fn attempt_chat_request(
             append_reasoning_audit_record(effective_req, &parsed);
             maybe_display_reasoning_trace(&parsed);
             append_trace_log_line(&format!("[HTTP_SUCCESS] parsed response successfully"));
-            
+
             // Log finish_reason for debugging
             if let Some(ref choice) = parsed.choices.first() {
                 if let Some(ref fr) = choice.finish_reason {
                     append_trace_log_line(&format!("[HTTP_FINISH] finish_reason={}", fr));
                 }
             }
-            
+
             AttemptOutcome::Success(parsed)
         }
         Ok(Err(e)) => {
@@ -204,6 +204,7 @@ async fn chat_once_base(
     req: &ChatCompletionRequest,
     timeout_s: Option<u64>,
     profile_name: Option<&str>,
+    max_attempts: u32,
 ) -> Result<ChatCompletionResponse> {
     let mut effective_req = req.clone();
 
@@ -232,10 +233,11 @@ async fn chat_once_base(
     let mut last_error = String::new();
     let mut is_timeout = false;
 
-    for attempt in 0..3u32 {
+    for attempt in 0..max_attempts {
         append_trace_log_line(&format!(
-            "[HTTP_ATTEMPT] attempt={}/3 max_tokens={:?}",
+            "[HTTP_ATTEMPT] attempt={}/{} max_tokens={:?}",
             attempt + 1,
+            max_attempts,
             effective_req.max_tokens
         ));
 
@@ -251,11 +253,12 @@ async fn chat_once_base(
 
                 if truncated {
                     append_trace_log_line(&format!(
-                        "[HTTP_RETRY] response appears truncated (attempt {}/3), retrying with increased max_tokens...",
-                        attempt + 1
+                        "[HTTP_RETRY] response appears truncated (attempt {}/{}), retrying with increased max_tokens...",
+                        attempt + 1,
+                        max_attempts,
                     ));
-                    // Retry with increased max_tokens (only on attempts 0 and 1)
-                    if attempt < 2 {
+                    // Retry with increased max_tokens (not on last attempt)
+                    if attempt + 1 < max_attempts {
                         // Update effective_req directly so the next iteration uses it
                         effective_req.max_tokens =
                             effective_req.max_tokens.saturating_mul(2).min(4096);
@@ -266,7 +269,9 @@ async fn chat_once_base(
                         continue;
                     } else {
                         // Last attempt - log warning but return what we have
-                        append_trace_log_line("[HTTP_WARN] response truncated on last attempt, returning as-is");
+                        append_trace_log_line(
+                            "[HTTP_WARN] response truncated on last attempt, returning as-is",
+                        );
                     }
                 }
                 return Ok(resp);
@@ -275,8 +280,8 @@ async fn chat_once_base(
                 if err.contains("timeout") || err.contains("Tokio timeout") {
                     is_timeout = true;
                 }
-                last_error = format!("{} (attempt {}/{})", err, attempt + 1, 3);
-                if attempt < 2 {
+                last_error = format!("{} (attempt {}/{})", err, attempt + 1, max_attempts);
+                if attempt + 1 < max_attempts {
                     append_trace_log_line(&format!("[HTTP_RETRY] sleeping before retry..."));
                     tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
                     continue;
@@ -302,7 +307,7 @@ pub(crate) async fn chat_once(
     chat_url: &Url,
     req: &ChatCompletionRequest,
 ) -> Result<ChatCompletionResponse> {
-    chat_once_base(client, chat_url, req, None, None).await
+    chat_once_base(client, chat_url, req, None, None, 3).await
 }
 
 pub(crate) async fn chat_once_with_timeout(
@@ -311,7 +316,18 @@ pub(crate) async fn chat_once_with_timeout(
     req: &ChatCompletionRequest,
     timeout_s: u64,
 ) -> Result<ChatCompletionResponse> {
-    chat_once_base(client, chat_url, req, Some(timeout_s), None).await
+    chat_once_base(client, chat_url, req, Some(timeout_s), None, 3).await
+}
+
+/// Single attempt version of chat_once_with_timeout — no retry.
+/// Used for artifact synthesis where deterministic fallback is preferred over retries.
+pub(crate) async fn chat_once_with_timeout_single(
+    client: &reqwest::Client,
+    chat_url: &Url,
+    req: &ChatCompletionRequest,
+    timeout_s: u64,
+) -> Result<ChatCompletionResponse> {
+    chat_once_base(client, chat_url, req, Some(timeout_s), None, 1).await
 }
 
 /// Chat once with grammar injection for a specific profile
@@ -321,7 +337,7 @@ pub(crate) async fn chat_once_with_grammar(
     req: &ChatCompletionRequest,
     profile_name: &str,
 ) -> Result<ChatCompletionResponse> {
-    chat_once_base(client, chat_url, req, None, Some(profile_name)).await
+    chat_once_base(client, chat_url, req, None, Some(profile_name), 3).await
 }
 
 /// Chat once with grammar injection and timeout
@@ -332,7 +348,7 @@ pub(crate) async fn chat_once_with_grammar_timeout(
     profile_name: &str,
     timeout_s: u64,
 ) -> Result<ChatCompletionResponse> {
-    chat_once_base(client, chat_url, req, Some(timeout_s), Some(profile_name)).await
+    chat_once_base(client, chat_url, req, Some(timeout_s), Some(profile_name), 3).await
 }
 
 pub(crate) async fn chat_json_with_repair<T: DeserializeOwned + 'static>(

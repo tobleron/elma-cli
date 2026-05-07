@@ -288,6 +288,7 @@ pub(crate) fn mark_summary_applied(session_root: &Path, turn_number: usize) -> R
 // ── session.md append ─────────────────────────────────────────────────
 
 /// Entry kinds for the session markdown transcript.
+#[derive(Clone, Debug)]
 pub(crate) enum MdEntry {
     User {
         content: String,
@@ -378,7 +379,16 @@ pub(crate) fn append_session_markdown(session_root: &Path, entry: &MdEntry) {
 
 /// Append a line to `terminal_transcript.txt` under the session root.
 /// Creates the file with a header if it does not exist.
+/// Strips ANSI escape sequences when --no-color is active (Task 706).
 pub(crate) fn append_terminal_transcript(session_root: &Path, line: &str) {
+    let line = if crate::markdown_ansi::no_color_enabled() {
+        // Strip ANSI escape sequences for clean plain-text transcript
+        String::from_utf8_lossy(
+            &strip_ansi_escapes::strip(line.as_bytes()).unwrap_or_else(|_| line.as_bytes().to_vec())
+        ).to_string()
+    } else {
+        line.to_string()
+    };
     let path = session_root.join("terminal_transcript.txt");
     // Ensure parent directory exists (should already exist from bootstrap, but guard against edge cases)
     if let Some(parent) = path.parent() {

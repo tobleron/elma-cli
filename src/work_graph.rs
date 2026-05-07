@@ -6,8 +6,8 @@
 //! set at a time. Each node carries the original user objective for
 //! semantic continuity (Task 380 integration point).
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Unique identifier for an approach branch.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -132,10 +132,7 @@ impl WorkGraph {
 
     /// Returns all nodes of a given kind.
     pub fn nodes_by_kind(&self, kind: NodeKind) -> Vec<&WorkNode> {
-        self.nodes
-            .values()
-            .filter(|n| n.kind == kind)
-            .collect()
+        self.nodes.values().filter(|n| n.kind == kind).collect()
     }
 
     /// Update the status of a node by id.

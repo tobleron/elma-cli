@@ -460,7 +460,10 @@ pub(crate) fn validate_schema_complexity(schema: &JsonSchema, type_name: &str) -
         );
     }
     if has_object_arrays(schema) {
-        bail!("Schema for '{}' contains arrays of objects (banned)", type_name);
+        bail!(
+            "Schema for '{}' contains arrays of objects (banned)",
+            type_name
+        );
     }
     Ok(())
 }
@@ -558,7 +561,9 @@ mod tests {
     #[test]
     fn test_validate_accepts_simple_schema() {
         let mut schema = schema(vec!["choice", "reason"]);
-        schema.field_types.insert("choice", FieldType::Choice(&["a", "b"]));
+        schema
+            .field_types
+            .insert("choice", FieldType::Choice(&["a", "b"]));
         schema.field_types.insert("reason", FieldType::String);
         assert!(validate_schema_complexity(&schema, "Simple").is_ok());
     }
@@ -568,7 +573,10 @@ mod tests {
         let schema = schema(vec!["a", "b", "c", "d"]);
         let result = validate_schema_complexity(&schema, "TooMany");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("4 required fields"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("4 required fields"));
     }
 
     #[test]

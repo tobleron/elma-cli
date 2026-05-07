@@ -80,9 +80,7 @@ pub(crate) async fn repair_json<T: DeserializeOwned + 'static>(
     }
 
     // Stage 4: LLM-based repair via existing JsonRepairUnit
-    let repair_unit = crate::JsonRepairUnit::new(
-        repair_profile.clone(),
-    );
+    let repair_unit = crate::JsonRepairUnit::new(repair_profile.clone());
     let problems = vec!["Failed to parse as valid JSON".to_string()];
     match repair_unit
         .repair_with_fallback(client, chat_url, raw_trimmed, &problems)
@@ -126,7 +124,9 @@ pub(crate) async fn repair_json<T: DeserializeOwned + 'static>(
 
 /// Synchronous repair for contexts where async/network is unavailable.
 /// Stages 1-3 only (no LLM repair).
-pub(crate) fn repair_json_sync<T: DeserializeOwned + 'static>(raw: &str) -> RepairResult<Option<T>> {
+pub(crate) fn repair_json_sync<T: DeserializeOwned + 'static>(
+    raw: &str,
+) -> RepairResult<Option<T>> {
     let raw_trimmed = raw.trim();
 
     // Stage 1: Direct parse
@@ -211,9 +211,7 @@ mod tests {
     fn test_sync_fails_on_garbage() {
         // Use a string with no key=value tokens and no JSON-like structure
         // to ensure all deterministic stages fail
-        let result = repair_json_sync::<serde_json::Value>(
-            "\u{0000}\u{0001}\u{0002}noise\u{0003}",
-        );
+        let result = repair_json_sync::<serde_json::Value>("\u{0000}\u{0001}\u{0002}noise\u{0003}");
         // The specific behavior depends on jsonrepair-rs, but we verify
         // that the pipeline completes without panicking
         assert!(
@@ -227,7 +225,8 @@ mod tests {
     #[test]
     fn test_sync_stage_order_precedence() {
         // Valid JSON should hit stage 1, not fall through to regex
-        let result = repair_json_sync::<serde_json::Value>(r#"{"choice": "ok", "reason": "direct"}"#);
+        let result =
+            repair_json_sync::<serde_json::Value>(r#"{"choice": "ok", "reason": "direct"}"#);
         assert_eq!(result.stage, RepairStage::DirectParse);
     }
 }

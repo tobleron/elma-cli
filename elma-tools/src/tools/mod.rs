@@ -1,3 +1,4 @@
+mod backup;
 mod copy;
 mod edit;
 mod exists;
@@ -30,6 +31,7 @@ mod workspace_info;
 mod write;
 
 pub(crate) fn register_all(builder: &mut crate::registry::RegistryBuilder) {
+    backup::register(builder);
     copy::register(builder);
     edit::register(builder);
     exists::register(builder);

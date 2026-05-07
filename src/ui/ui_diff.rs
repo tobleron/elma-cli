@@ -134,11 +134,11 @@ impl StructuredDiff {
                     ChangeTag::Delete => "-",
                     ChangeTag::Insert => "+",
                 };
-                 let color = match line.tag {
-                     ChangeTag::Equal => theme.fg_dim.to_ratatui_color(),
-                     ChangeTag::Delete => theme.error.to_ratatui_color(),
-                     ChangeTag::Insert => theme.success.to_ratatui_color(),
-                 };
+                let color = match line.tag {
+                    ChangeTag::Equal => theme.fg_dim.to_ratatui_color(),
+                    ChangeTag::Delete => theme.error.to_ratatui_color(),
+                    ChangeTag::Insert => theme.success.to_ratatui_color(),
+                };
                 let line_num = match line.tag {
                     ChangeTag::Equal | ChangeTag::Delete => line
                         .old_line

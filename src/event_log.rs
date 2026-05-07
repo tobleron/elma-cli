@@ -42,19 +42,34 @@ pub(crate) fn record_lifecycle(event_type: LifecycleEventType, turn_id: Option<&
     });
 }
 
-pub(crate) fn record_model_event(event_type: ModelEventType, turn_id: &str, tool_call_id: Option<&str>, model_request_id: Option<&str>) {
+pub(crate) fn record_model_event(
+    event_type: ModelEventType,
+    turn_id: &str,
+    tool_call_id: Option<&str>,
+    model_request_id: Option<&str>,
+) {
     let _ = with_session_event_log(|log| {
         log.record_model_event(event_type, turn_id, tool_call_id, model_request_id);
     });
 }
 
-pub(crate) fn record_tool_event(event_type: ToolEventType, turn_id: &str, tool_call_id: &str, tool_name: &str) {
+pub(crate) fn record_tool_event(
+    event_type: ToolEventType,
+    turn_id: &str,
+    tool_call_id: &str,
+    tool_name: &str,
+) {
     let _ = with_session_event_log(|log| {
         log.record_tool_event(event_type, turn_id, tool_call_id, tool_name);
     });
 }
 
-pub(crate) fn record_policy_event(event_type: PolicyEventType, turn_id: &str, tool_call_id: Option<&str>, reason: &str) {
+pub(crate) fn record_policy_event(
+    event_type: PolicyEventType,
+    turn_id: &str,
+    tool_call_id: Option<&str>,
+    reason: &str,
+) {
     let _ = with_session_event_log(|log| {
         log.record_policy_event(event_type, turn_id, tool_call_id, reason);
     });
@@ -66,7 +81,11 @@ pub(crate) fn record_evidence_event(turn_id: &str, claim_text: &str, source_arti
     });
 }
 
-pub(crate) fn record_finalization(event_type: FinalizationEventType, turn_id: &str, stop_reason: &str) {
+pub(crate) fn record_finalization(
+    event_type: FinalizationEventType,
+    turn_id: &str,
+    stop_reason: &str,
+) {
     let _ = with_session_event_log(|log| {
         log.record_finalization(event_type, turn_id, stop_reason);
     });
@@ -88,7 +107,10 @@ pub(crate) fn init_session_event_log(session_id: &str) {
 }
 
 pub(crate) fn get_session_event_log() -> Option<EventLog> {
-    session_event_log().read().ok().and_then(|lock| lock.clone())
+    session_event_log()
+        .read()
+        .ok()
+        .and_then(|lock| lock.clone())
 }
 
 pub(crate) fn with_session_event_log<F, R>(f: F) -> Option<R>
@@ -301,7 +323,11 @@ impl EventLog {
         seq
     }
 
-    pub(crate) fn record_lifecycle(&mut self, event_type: LifecycleEventType, turn_id: Option<&str>) -> EventId {
+    pub(crate) fn record_lifecycle(
+        &mut self,
+        event_type: LifecycleEventType,
+        turn_id: Option<&str>,
+    ) -> EventId {
         self.record(AgentEvent::Lifecycle(LifecycleEvent {
             event_type,
             session_id: self.session_id.clone(),
@@ -311,7 +337,13 @@ impl EventLog {
         }))
     }
 
-    pub(crate) fn record_model_event(&mut self, event_type: ModelEventType, turn_id: &str, tool_call_id: Option<&str>, model_request_id: Option<&str>) -> EventId {
+    pub(crate) fn record_model_event(
+        &mut self,
+        event_type: ModelEventType,
+        turn_id: &str,
+        tool_call_id: Option<&str>,
+        model_request_id: Option<&str>,
+    ) -> EventId {
         self.record(AgentEvent::Model(ModelEvent {
             event_type,
             session_id: self.session_id.clone(),
@@ -323,7 +355,13 @@ impl EventLog {
         }))
     }
 
-    pub(crate) fn record_tool_event(&mut self, event_type: ToolEventType, turn_id: &str, tool_call_id: &str, tool_name: &str) -> EventId {
+    pub(crate) fn record_tool_event(
+        &mut self,
+        event_type: ToolEventType,
+        turn_id: &str,
+        tool_call_id: &str,
+        tool_name: &str,
+    ) -> EventId {
         self.record(AgentEvent::Tool(ToolEvent {
             event_type,
             session_id: self.session_id.clone(),
@@ -338,7 +376,13 @@ impl EventLog {
         }))
     }
 
-    pub(crate) fn record_policy_event(&mut self, event_type: PolicyEventType, turn_id: &str, tool_call_id: Option<&str>, reason: &str) -> EventId {
+    pub(crate) fn record_policy_event(
+        &mut self,
+        event_type: PolicyEventType,
+        turn_id: &str,
+        tool_call_id: Option<&str>,
+        reason: &str,
+    ) -> EventId {
         self.record(AgentEvent::Policy(PolicyEvent {
             event_type,
             session_id: self.session_id.clone(),
@@ -350,7 +394,12 @@ impl EventLog {
         }))
     }
 
-    pub(crate) fn record_evidence_event(&mut self, turn_id: &str, claim_text: &str, source_artifact: &str) -> EventId {
+    pub(crate) fn record_evidence_event(
+        &mut self,
+        turn_id: &str,
+        claim_text: &str,
+        source_artifact: &str,
+    ) -> EventId {
         self.record(AgentEvent::Evidence(EvidenceEvent {
             event_type: EvidenceEventType::EvidenceRecorded,
             session_id: self.session_id.clone(),
@@ -363,7 +412,12 @@ impl EventLog {
         }))
     }
 
-    pub(crate) fn record_finalization(&mut self, event_type: FinalizationEventType, turn_id: &str, stop_reason: &str) -> EventId {
+    pub(crate) fn record_finalization(
+        &mut self,
+        event_type: FinalizationEventType,
+        turn_id: &str,
+        stop_reason: &str,
+    ) -> EventId {
         self.record(AgentEvent::Finalization(FinalizationEvent {
             event_type,
             session_id: self.session_id.clone(),
@@ -429,19 +483,24 @@ impl EventLog {
 
     pub(crate) fn load_from_session(session_root: &Path, session_id: &str) -> Option<Self> {
         let doc = crate::session_write::load_session_doc(session_root);
-        let events: Vec<AgentEvent> = doc.get("events")
+        let events: Vec<AgentEvent> = doc
+            .get("events")
             .and_then(|e| serde_json::from_value(e.clone()).ok())
             .unwrap_or_default();
-        
-        let max_seq = events.iter().filter_map(|e| match e {
-            AgentEvent::Lifecycle(le) => Some(le.sequence),
-            AgentEvent::Model(me) => Some(me.sequence),
-            AgentEvent::Tool(te) => Some(te.sequence),
-            AgentEvent::Policy(pe) => Some(pe.sequence),
-            AgentEvent::Evidence(ee) => Some(ee.sequence),
-            AgentEvent::Transcript(te) => Some(te.sequence),
-            AgentEvent::Finalization(fe) => Some(fe.sequence),
-        }).max().unwrap_or(0);
+
+        let max_seq = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Lifecycle(le) => Some(le.sequence),
+                AgentEvent::Model(me) => Some(me.sequence),
+                AgentEvent::Tool(te) => Some(te.sequence),
+                AgentEvent::Policy(pe) => Some(pe.sequence),
+                AgentEvent::Evidence(ee) => Some(ee.sequence),
+                AgentEvent::Transcript(te) => Some(te.sequence),
+                AgentEvent::Finalization(fe) => Some(fe.sequence),
+            })
+            .max()
+            .unwrap_or(0);
 
         Some(Self {
             session_id: session_id.to_string(),

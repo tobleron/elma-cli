@@ -42,7 +42,10 @@ pub enum ToolError {
     ToolNotFound { name: String },
 
     #[error("Execution failed: exit_code={exit_code:?}, timed_out={timed_out}")]
-    ExecutionFailed { exit_code: Option<i32>, timed_out: bool },
+    ExecutionFailed {
+        exit_code: Option<i32>,
+        timed_out: bool,
+    },
 }
 
 /// Model response errors.

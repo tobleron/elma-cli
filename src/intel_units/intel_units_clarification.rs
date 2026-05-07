@@ -165,11 +165,7 @@ impl IntelUnit for CompletionCheckUnit {
         )
         .await?;
 
-        Ok(IntelOutput::success(
-            self.name(),
-            result,
-            0.85,
-        ))
+        Ok(IntelOutput::success(self.name(), result, 0.85))
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {

@@ -162,7 +162,10 @@ pub(crate) async fn handle_shell_step(
             );
             trace(
                 args,
-                &format!("step_denied_profile id={sid} cmd={}", cmd.replace('\n', " ")),
+                &format!(
+                    "step_denied_profile id={sid} cmd={}",
+                    cmd.replace('\n', " ")
+                ),
             );
             state.step_results.push(StepResult {
                 id: sid.clone(),
@@ -236,7 +239,10 @@ pub(crate) async fn handle_shell_step(
 
     // Task 458: Snapshot before risky shell commands
     let risk = shell_preflight::classify_command(&cmd);
-    if matches!(risk, shell_preflight::RiskLevel::Caution | shell_preflight::RiskLevel::Dangerous(_)) {
+    if matches!(
+        risk,
+        shell_preflight::RiskLevel::Caution | shell_preflight::RiskLevel::Dangerous(_)
+    ) {
         match crate::snapshot::create_workspace_snapshot(
             session,
             workdir,
@@ -244,7 +250,13 @@ pub(crate) async fn handle_shell_step(
             true,
         ) {
             Ok(snapshot) => {
-                trace(args, &format!("snapshot_saved id={} for risky shell command", snapshot.snapshot_id));
+                trace(
+                    args,
+                    &format!(
+                        "snapshot_saved id={} for risky shell command",
+                        snapshot.snapshot_id
+                    ),
+                );
             }
             Err(e) => {
                 trace(args, &format!("snapshot_failed: {}", e));

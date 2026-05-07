@@ -124,7 +124,8 @@ pub fn strategic_signal(complexity_complexity: &str) -> bool {
 /// Determine if revision loop is anticipated based on route and complexity.
 pub fn needs_revision_loop(route: &str, complexity_complexity: &str, risk: &str) -> bool {
     let is_edit_route = route.eq_ignore_ascii_case("EDIT");
-    let is_high_complexity = complexity_complexity == "MULTISTEP" || complexity_complexity == "OPEN_ENDED";
+    let is_high_complexity =
+        complexity_complexity == "MULTISTEP" || complexity_complexity == "OPEN_ENDED";
     let is_high_risk = risk == "HIGH";
     is_edit_route || (is_high_complexity && is_high_risk)
 }

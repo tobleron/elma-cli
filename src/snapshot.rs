@@ -9,6 +9,9 @@ use tap::Tap;
 use tracing::{info, trace};
 
 const SNAPSHOT_MANIFEST_VERSION: u32 = 1;
+const SNAPSHOT_MAX_FILES: usize = 5_000;
+const SNAPSHOT_MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
+const SNAPSHOT_MAX_TOTAL_BYTES: u64 = 100 * 1024 * 1024;
 
 pub(crate) fn create_workspace_snapshot(
     session: &SessionPaths,
@@ -159,12 +162,13 @@ fn next_snapshot_seq(snapshots_dir: &Path) -> Result<u32> {
 
 fn collect_snapshot_relative_files(repo_root: &Path) -> Result<(bool, String, Vec<PathBuf>)> {
     if is_git_workspace(repo_root) {
-        let files = collect_git_snapshot_files(repo_root)?;
+        let files = limit_snapshot_files(repo_root, collect_git_snapshot_files(repo_root)?)?;
         return Ok((true, "git_ls_files".to_string(), files));
     }
     let mut files = Vec::new();
     walk_snapshot_files(repo_root, repo_root, &mut files)?;
     files = files.into_iter().unique().collect();
+    files = limit_snapshot_files(repo_root, files)?;
     Ok((false, "workspace_walk".to_string(), files))
 }
 
@@ -204,7 +208,7 @@ fn collect_git_snapshot_files(repo_root: &Path) -> Result<Vec<PathBuf>> {
             continue;
         }
         let rel = PathBuf::from(rel_text);
-        if snapshot_path_excluded(&rel) {
+        if snapshot_path_excluded(&rel) || !snapshot_file_eligible(repo_root, &rel) {
             continue;
         }
         let abs = repo_root.join(&rel);
@@ -231,7 +235,7 @@ fn walk_snapshot_files(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Resul
             .with_context(|| format!("file_type {}", path.display()))?;
         if file_type.is_dir() {
             walk_snapshot_files(root, &path, out)?;
-        } else if file_type.is_file() {
+        } else if file_type.is_file() && snapshot_file_eligible(root, rel) {
             out.push(rel.to_path_buf());
         }
     }
@@ -252,8 +256,25 @@ fn snapshot_path_excluded(rel: &Path) -> bool {
     if components[0].starts_with(".git")
         || components[0] == "target"
         || components[0] == "sessions"
+        || components[0] == "project_tmp"
+        || components[0] == "_knowledge_base"
+        || components[0] == "_testing_reports"
         || components[0] == ".opencode"
+        || components[0] == ".kilo"
+        || components[0] == ".codex"
+        || components[0] == "node_modules"
+        || components[0] == "dist"
+        || components[0] == "build"
     {
+        return true;
+    }
+    if components.iter().any(|component| {
+        component.starts_with("snap_")
+            || component == "artifacts"
+            || component == "runtime_tasks"
+            || component == "backup"
+            || component.starts_with("backup_")
+    }) {
         return true;
     }
     if components.len() >= 3
@@ -269,6 +290,40 @@ fn snapshot_path_excluded(rel: &Path) -> bool {
         .last()
         .map(|name| name == ".DS_Store")
         .unwrap_or(false)
+}
+
+fn snapshot_file_eligible(repo_root: &Path, rel: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(repo_root.join(rel)) else {
+        return false;
+    };
+    meta.is_file() && meta.len() <= SNAPSHOT_MAX_FILE_BYTES
+}
+
+fn limit_snapshot_files(repo_root: &Path, files: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
+    let mut total_bytes = 0u64;
+    let mut capped = false;
+    let mut kept = Vec::new();
+    for rel in files.into_iter().unique().sorted() {
+        let bytes = std::fs::metadata(repo_root.join(&rel))
+            .map(|meta| meta.len())
+            .unwrap_or(0);
+        if kept.len() >= SNAPSHOT_MAX_FILES
+            || total_bytes.saturating_add(bytes) > SNAPSHOT_MAX_TOTAL_BYTES
+        {
+            capped = true;
+            continue;
+        }
+        total_bytes = total_bytes.saturating_add(bytes);
+        kept.push(rel);
+    }
+    if capped {
+        trace!(
+            "snapshot scope capped at {} files and {} bytes",
+            kept.len(),
+            total_bytes
+        );
+    }
+    Ok(kept)
 }
 
 fn file_bytes_equal(a: &Path, b: &Path) -> Result<bool> {
@@ -335,11 +390,23 @@ mod tests {
         std::fs::write(repo.join("src").join("main.rs"), "fn main() {}\n")?;
         std::fs::create_dir_all(repo.join("target"))?;
         std::fs::write(repo.join("target").join("ignored.txt"), "ignored\n")?;
+        std::fs::create_dir_all(repo.join("project_tmp").join("round_sessions"))?;
+        std::fs::write(
+            repo.join("project_tmp")
+                .join("round_sessions")
+                .join("ignored.txt"),
+            "ignored\n",
+        )?;
+        std::fs::create_dir_all(repo.join("_knowledge_base"))?;
+        std::fs::write(repo.join("_knowledge_base").join("ignored.md"), "ignored\n")?;
 
         let session = ensure_session_layout(&repo.join("sessions"))?;
         let created = create_workspace_snapshot(&session, &repo, "test snapshot", false)?;
         assert_eq!(created.snapshot_id, "snap_001");
         assert!(created.manifest_path.exists());
+        let manifest = std::fs::read_to_string(&created.manifest_path)?;
+        assert!(!manifest.contains("project_tmp"));
+        assert!(!manifest.contains("_knowledge_base"));
 
         std::fs::write(repo.join("Cargo.toml"), "[package]\nname = \"changed\"\n")?;
         std::fs::write(repo.join("new.txt"), "created after snapshot\n")?;

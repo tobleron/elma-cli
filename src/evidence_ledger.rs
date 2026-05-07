@@ -173,73 +173,74 @@ impl EvidenceLedger {
         }
     }
 
-     pub(crate) fn add_entry(&mut self, source: EvidenceSource, raw_output: &str) -> &EvidenceEntry {
-         // Strip ANSI escape sequences from raw output
-         let clean_output = match strip_ansi_escapes::strip(raw_output.as_bytes()) {
-             Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
-             Err(_) => raw_output.to_string(), // Fallback: return raw if stripping fails
-         };
-         
-         let id = format!("e_{:03}", self.next_id);
-         self.next_id += 1;
+    pub(crate) fn add_entry(&mut self, source: EvidenceSource, raw_output: &str) -> &EvidenceEntry {
+        // Strip ANSI escape sequences from raw output
+        let clean_output = match strip_ansi_escapes::strip(raw_output.as_bytes()) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+            Err(_) => raw_output.to_string(), // Fallback: return raw if stripping fails
+        };
 
-         let extra = match &source {
-             EvidenceSource::Shell { command, exit_code } => SummarizeExtra {
-                 command: Some(command.clone()),
-                 path: None,
-                 pattern: None,
-                 exit_code: Some(*exit_code),
-             },
-             EvidenceSource::Read { path } => SummarizeExtra {
-                 command: None,
-                 path: Some(path.clone()),
-                 pattern: None,
-                 exit_code: None,
-             },
-             EvidenceSource::Search { path, pattern } => SummarizeExtra {
-                 command: None,
-                 path: Some(path.clone()),
-                 pattern: Some(pattern.clone()),
-                 exit_code: None,
-             },
-             EvidenceSource::Tool { name, input } => SummarizeExtra {
-                 command: None,
-                 path: None,
-                 pattern: None,
-                 exit_code: None,
-             },
-         };
+        let id = format!("e_{:03}", self.next_id);
+        self.next_id += 1;
 
-         let summary = summarize_tool_result(
-             match &source {
-                 EvidenceSource::Shell { .. } => "shell",
-                 EvidenceSource::Read { .. } => "read",
-                 EvidenceSource::Search { .. } => "search",
-                 EvidenceSource::Tool { name, .. } => name.as_str(),
-             },
-             &clean_output, // Use cleaned output for summarization
-             &extra,
-         );
+        let extra = match &source {
+            EvidenceSource::Shell { command, exit_code } => SummarizeExtra {
+                command: Some(command.clone()),
+                path: None,
+                pattern: None,
+                exit_code: Some(*exit_code),
+            },
+            EvidenceSource::Read { path } => SummarizeExtra {
+                command: None,
+                path: Some(path.clone()),
+                pattern: None,
+                exit_code: None,
+            },
+            EvidenceSource::Search { path, pattern } => SummarizeExtra {
+                command: None,
+                path: Some(path.clone()),
+                pattern: Some(pattern.clone()),
+                exit_code: None,
+            },
+            EvidenceSource::Tool { name, input } => SummarizeExtra {
+                command: None,
+                path: None,
+                pattern: None,
+                exit_code: None,
+            },
+        };
 
-         let quality = Self::assess_quality(&source, &clean_output); // Use cleaned output for quality assessment
-         let timestamp = SystemTime::now()
-             .duration_since(UNIX_EPOCH)
-             .unwrap_or_default()
-             .as_secs();
+        let summary = summarize_tool_result(
+            match &source {
+                EvidenceSource::Shell { .. } => "shell",
+                EvidenceSource::Read { .. } => "read",
+                EvidenceSource::Search { .. } => "search",
+                EvidenceSource::Tool { name, .. } => name.as_str(),
+            },
+            &clean_output, // Use cleaned output for summarization
+            &extra,
+        );
 
-         let mut raw_path = None;
-         if should_store_raw(&clean_output) {
-             let evidence_dir = PathBuf::from(&self.base_dir)
-                 .join("evidence")
-                 .join(&self.session_id);
-             std::fs::create_dir_all(&evidence_dir).ok();
-             let file_path = evidence_dir.join(format!("{}_raw.txt", id));
-             if std::fs::write(&file_path, &clean_output).is_ok() { // Store cleaned output
-                 raw_path = Some(file_path.to_string_lossy().to_string());
-             }
-         }
+        let quality = Self::assess_quality(&source, &clean_output); // Use cleaned output for quality assessment
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
-let entry = EvidenceEntry {
+        let mut raw_path = None;
+        if should_store_raw(&clean_output) {
+            let evidence_dir = PathBuf::from(&self.base_dir)
+                .join("evidence")
+                .join(&self.session_id);
+            std::fs::create_dir_all(&evidence_dir).ok();
+            let file_path = evidence_dir.join(format!("{}_raw.txt", id));
+            if std::fs::write(&file_path, &clean_output).is_ok() {
+                // Store cleaned output
+                raw_path = Some(file_path.to_string_lossy().to_string());
+            }
+        }
+
+        let entry = EvidenceEntry {
             id,
             source,
             timestamp,
@@ -248,7 +249,9 @@ let entry = EvidenceEntry {
             staleness: Staleness::Fresh,
             quality,
             file_mtime: raw_path.as_ref().and_then(|p| {
-                std::fs::metadata(p).ok().and_then(|m| m.modified().ok())
+                std::fs::metadata(p)
+                    .ok()
+                    .and_then(|m| m.modified().ok())
                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|d| d.as_secs())
             }),
@@ -263,9 +266,9 @@ let entry = EvidenceEntry {
             }),
         };
 
-         self.entries.push(entry);
-         self.entries.last().unwrap()
-     }
+        self.entries.push(entry);
+        self.entries.last().unwrap()
+    }
 
     pub(crate) fn mark_stale(&mut self, path: &str) {
         for entry in &mut self.entries {
@@ -304,7 +307,9 @@ let entry = EvidenceEntry {
                     if let Some(stored_mtime) = entry.file_mtime {
                         if let Ok(current_meta) = std::fs::metadata(path) {
                             if let Ok(current_modified) = current_meta.modified() {
-                                if let Ok(current_secs) = current_modified.duration_since(std::time::UNIX_EPOCH) {
+                                if let Ok(current_secs) =
+                                    current_modified.duration_since(std::time::UNIX_EPOCH)
+                                {
                                     if current_secs.as_secs() > stored_mtime {
                                         return true;
                                     }
@@ -379,8 +384,7 @@ let entry = EvidenceEntry {
     /// Atomic write: write to temp file, fsync, rename.
     fn atomic_write(path: &std::path::Path, content: &str) -> Result<()> {
         let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, content)
-            .with_context(|| format!("write {}", tmp.display()))?;
+        std::fs::write(&tmp, content).with_context(|| format!("write {}", tmp.display()))?;
         // Attempt fsync for durability (best-effort on some platforms)
         if let Ok(file) = std::fs::File::open(&tmp) {
             let _ = file.sync_all();
@@ -408,8 +412,7 @@ let entry = EvidenceEntry {
         let ledger_path = evidence_dir.join("ledger.json");
         let json = serde_json::to_string_pretty(self).context("Failed to serialize ledger")?;
         let tmp = ledger_path.with_extension("tmp");
-        std::fs::write(&tmp, &json)
-            .with_context(|| format!("write {}", tmp.display()))?;
+        std::fs::write(&tmp, &json).with_context(|| format!("write {}", tmp.display()))?;
         if let Ok(file) = std::fs::File::open(&tmp) {
             let _ = file.sync_all();
         }
@@ -424,8 +427,7 @@ let entry = EvidenceEntry {
         let evidence = doc.get("evidence")?;
         let entries: Vec<EvidenceEntry> =
             serde_json::from_value(evidence.get("entries")?.clone()).ok()?;
-        let claims: Vec<Claim> =
-            serde_json::from_value(evidence.get("claims")?.clone()).ok()?;
+        let claims: Vec<Claim> = serde_json::from_value(evidence.get("claims")?.clone()).ok()?;
         let max_id = entries
             .iter()
             .filter_map(|e| e.id.strip_prefix("e_"))
@@ -1037,7 +1039,9 @@ mod tests {
         let dir = std::env::temp_dir().join("test_entry");
         let mut ledger = EvidenceLedger::new("s_test", &dir);
         ledger.add_entry(
-            EvidenceSource::Read { path: "Cargo.toml".to_string() },
+            EvidenceSource::Read {
+                path: "Cargo.toml".to_string(),
+            },
             "test content",
         );
         let entry = ledger.entries.first().unwrap();

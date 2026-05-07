@@ -381,8 +381,8 @@ pub async fn assess_execution_level(
     let requires_ordering = needs_plan || complexity.complexity == "MULTISTEP";
 
     // Determine requires_phases
-    let requires_phases = level == ExecutionLevel::MasterPlan
-        || complexity.complexity == "OPEN_ENDED";
+    let requires_phases =
+        level == ExecutionLevel::MasterPlan || complexity.complexity == "OPEN_ENDED";
 
     // Determine requires_revision_loop
     let requires_revision_loop = needs_revision_loop(

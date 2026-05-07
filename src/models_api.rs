@@ -1,6 +1,7 @@
 //! @efficiency-role: infra-adapter
 
 use crate::*;
+use crate::model_capability_probe::ModelRuntimeKind;
 
 fn new_request_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -74,6 +75,102 @@ pub(crate) async fn fetch_all_model_ids(
         anyhow::bail!("No model ids found in /v1/models response");
     }
     Ok(out)
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct EndpointRuntimeProfile {
+    pub(crate) model_id: String,
+    pub(crate) ctx_max: Option<u64>,
+}
+
+/// Persisted provider profile with discovered endpoint facts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ProviderProfile {
+    pub endpoint_url: String,
+    pub discovered_model_id: String,
+    pub context_window: Option<u64>,
+    pub provider_family: String,
+    pub runtime_kind: String,
+    pub supports_thinking: bool,
+    pub supports_json_mode: bool,
+    pub probe_timestamp_unix_s: u64,
+    pub probe_source: String,
+}
+
+impl ProviderProfile {
+    pub(crate) fn from_endpoint(
+        endpoint_url: &str,
+        endpoint: &EndpointRuntimeProfile,
+        provider_family: &str,
+        runtime_kind: &ModelRuntimeKind,
+        supports_thinking: bool,
+        supports_json_mode: bool,
+        probe_source: &str,
+    ) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Self {
+            endpoint_url: endpoint_url.to_string(),
+            discovered_model_id: endpoint.model_id.clone(),
+            context_window: endpoint.ctx_max,
+            provider_family: provider_family.to_string(),
+            runtime_kind: runtime_kind.to_string(),
+            supports_thinking,
+            supports_json_mode,
+            probe_timestamp_unix_s: now,
+            probe_source: probe_source.to_string(),
+        }
+    }
+
+    /// Number of seconds since this profile was probed.
+    pub(crate) fn age_seconds(&self) -> u64 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now.saturating_sub(self.probe_timestamp_unix_s)
+    }
+
+    /// Whether this profile is considered stale (older than 1 hour).
+    pub(crate) fn is_stale(&self) -> bool {
+        self.age_seconds() > 3600
+    }
+}
+
+fn provider_profile_path(model_cfg_dir: &std::path::Path) -> std::path::PathBuf {
+    model_cfg_dir.join("provider_profile.toml")
+}
+
+pub(crate) fn save_provider_profile(
+    model_cfg_dir: &std::path::Path,
+    profile: &ProviderProfile,
+) -> Result<()> {
+    let s = toml::to_string_pretty(profile).context("Failed to serialize provider profile")?;
+    std::fs::write(provider_profile_path(model_cfg_dir), s.as_bytes())
+        .context("Failed to write provider profile")
+}
+
+pub(crate) fn load_provider_profile(
+    model_cfg_dir: &std::path::Path,
+) -> Option<ProviderProfile> {
+    let path = provider_profile_path(model_cfg_dir);
+    if !path.exists() {
+        return None;
+    }
+    let s = std::fs::read_to_string(&path).ok()?;
+    toml::from_str(&s).ok()
+}
+
+/// Probe the llama.cpp-compatible endpoint for the facts Elma must not ask the user to supply.
+pub(crate) async fn probe_endpoint_runtime(
+    client: &reqwest::Client,
+    base_url: &Url,
+) -> Result<EndpointRuntimeProfile> {
+    let model_id = fetch_first_model_id(client, base_url).await?;
+    let ctx_max = fetch_ctx_max(client, base_url).await.unwrap_or(None);
+    Ok(EndpointRuntimeProfile { model_id, ctx_max })
 }
 
 /// Try to fetch n_ctx from a given endpoint, extracting the value at a JSON path

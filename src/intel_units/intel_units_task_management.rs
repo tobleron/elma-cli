@@ -95,8 +95,7 @@ impl TaskManagementUnit {
         source: TaskSource,
     ) -> Result<(u32, PathBuf)> {
         let elma_tasks_dir = self.workspace.join("_elma-tasks");
-        std::fs::create_dir_all(&elma_tasks_dir)
-            .context("create _elma-tasks dir")?;
+        std::fs::create_dir_all(&elma_tasks_dir).context("create _elma-tasks dir")?;
 
         let (number, _) = task_persistence::next_task_filename(&elma_tasks_dir);
         let title = self.derive_task_title(description);
@@ -143,10 +142,7 @@ mod tests {
     #[test]
     fn test_create_instruction_task() {
         let tmp = tempdir().unwrap();
-        let unit = TaskManagementUnit::new(
-            tmp.path().to_path_buf(),
-            "sess_test".to_string(),
-        );
+        let unit = TaskManagementUnit::new(tmp.path().to_path_buf(), "sess_test".to_string());
 
         let (num, path) = unit
             .create_instruction_task(
@@ -177,10 +173,7 @@ mod tests {
     #[test]
     fn test_create_user_task() {
         let tmp = tempdir().unwrap();
-        let unit = TaskManagementUnit::new(
-            tmp.path().to_path_buf(),
-            "sess_test".to_string(),
-        );
+        let unit = TaskManagementUnit::new(tmp.path().to_path_buf(), "sess_test".to_string());
 
         let (num, path) = unit
             .create_user_task("usr_001", "a_456", "Add dark mode toggle")
@@ -197,10 +190,7 @@ mod tests {
     #[test]
     fn test_sequential_task_numbers() {
         let tmp = tempdir().unwrap();
-        let unit = TaskManagementUnit::new(
-            tmp.path().to_path_buf(),
-            "sess_1".to_string(),
-        );
+        let unit = TaskManagementUnit::new(tmp.path().to_path_buf(), "sess_1".to_string());
 
         let (n1, _) = unit
             .create_instruction_task("i1", "a1", "Task one", "shell")

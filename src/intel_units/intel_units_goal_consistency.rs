@@ -12,9 +12,9 @@ use crate::*;
 /// Verdict from the goal consistency check.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct GoalConsistencyVerdict {
-    pub status: String,    // CONsISTENT | DRIFTING | OFF_TRACK
-    pub reason: String,    // one short sentence
-    pub steering: String,  // what to focus on instead (empty if CONSISTENT)
+    pub status: String,   // CONsISTENT | DRIFTING | OFF_TRACK
+    pub reason: String,   // one short sentence
+    pub steering: String, // what to focus on instead (empty if CONSISTENT)
 }
 
 /// Run the goal consistency check as a fire-and-forget intel call.
@@ -84,10 +84,7 @@ Output contract:
     let verdict: GoalConsistencyVerdict = match serde_json::from_value(result) {
         Ok(v) => v,
         Err(e) => {
-            trace_fallback(
-                "goal_consistency",
-                &format!("parse failed: {}", e),
-            );
+            trace_fallback("goal_consistency", &format!("parse failed: {}", e));
             return None;
         }
     };

@@ -7,7 +7,6 @@ use crate::app_chat_builders_basic::*;
 use crate::app_chat_fast_paths::*;
 use crate::app_chat_handlers::*;
 use crate::app_chat_helpers::*;
-use crate::app_chat_patterns::*;
 use crate::*;
 
 pub(crate) async fn build_program(
@@ -137,15 +136,11 @@ pub(crate) async fn resolve_final_text(
     )
     .await?;
 
-    let preserved = if line.to_ascii_lowercase().contains("entry point") {
-        orchestration_helpers::preserve_exact_grounded_path(
-            final_text,
-            step_results,
-            "State the selected exact relative path first.",
-        )
-    } else {
-        final_text
-    };
+    let preserved = orchestration_helpers::preserve_exact_grounded_path(
+        final_text,
+        step_results,
+        &reply_instructions,
+    );
 
     Ok((preserved, usage))
 }

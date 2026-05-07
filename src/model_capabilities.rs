@@ -201,7 +201,12 @@ fn built_in_capabilities(model_id: &str, provider: LlmProvider) -> ModelCapabili
         };
     }
 
-    if lower.contains("claude-3") || lower.contains("claude-3-5") || lower.contains("sonnet") || lower.contains("haiku") || lower.contains("opus") {
+    if lower.contains("claude-3")
+        || lower.contains("claude-3-5")
+        || lower.contains("sonnet")
+        || lower.contains("haiku")
+        || lower.contains("opus")
+    {
         return ModelCapabilities {
             model_id: model_id.to_string(),
             provider_family: Some(provider),

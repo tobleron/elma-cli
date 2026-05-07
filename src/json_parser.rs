@@ -193,13 +193,22 @@ fn pre_repair_json(raw: &str) -> String {
 
     // 1. Fix trailing commas in objects: {"a": 1,} -> {"a": 1}
     // Pattern: comma followed by optional whitespace then closing brace
-    s = regex::Regex::new(r",\s*}").map(|r| r.replace_all(&s, "}")).unwrap_or(std::borrow::Cow::Borrowed(&s)).to_string();
+    s = regex::Regex::new(r",\s*}")
+        .map(|r| r.replace_all(&s, "}"))
+        .unwrap_or(std::borrow::Cow::Borrowed(&s))
+        .to_string();
 
     // 2. Fix trailing commas in arrays: [1, 2,] -> [1, 2]
-    s = regex::Regex::new(r",\s*\]").map(|r| r.replace_all(&s, "]")).unwrap_or(std::borrow::Cow::Borrowed(&s)).to_string();
+    s = regex::Regex::new(r",\s*\]")
+        .map(|r| r.replace_all(&s, "]"))
+        .unwrap_or(std::borrow::Cow::Borrowed(&s))
+        .to_string();
 
     // 3. Fix single quotes to double quotes (for keys and string values)
-    s = regex::Regex::new(r"'([^']*)'").map(|r| r.replace_all(&s, "\"$1\"")).unwrap_or(std::borrow::Cow::Borrowed(&s)).to_string();
+    s = regex::Regex::new(r"'([^']*)'")
+        .map(|r| r.replace_all(&s, "\"$1\""))
+        .unwrap_or(std::borrow::Cow::Borrowed(&s))
+        .to_string();
 
     // 4. Fix unquoted keys: {key: "value"} -> {"key": "value"}
     // This is tricky; use a conservative pattern for simple alphanumeric keys
@@ -209,15 +218,23 @@ fn pre_repair_json(raw: &str) -> String {
         .to_string();
 
     // 5. Strip markdown fences and language tags
-    s = regex::Regex::new(r"```(?:json)?\s*").map(|r| r.replace_all(&s, "")).unwrap_or(std::borrow::Cow::Borrowed(&s)).to_string();
-    s = regex::Regex::new(r"\s*```").map(|r| r.replace_all(&s, "")).unwrap_or(std::borrow::Cow::Borrowed(&s)).to_string();
+    s = regex::Regex::new(r"```(?:json)?\s*")
+        .map(|r| r.replace_all(&s, ""))
+        .unwrap_or(std::borrow::Cow::Borrowed(&s))
+        .to_string();
+    s = regex::Regex::new(r"\s*```")
+        .map(|r| r.replace_all(&s, ""))
+        .unwrap_or(std::borrow::Cow::Borrowed(&s))
+        .to_string();
 
     s
 }
 
 /// Universal model JSON parser: tries direct parse, then pre-repair, then full repair pipeline.
 /// Use this entry point for ALL model-generated JSON (tool arguments, intel outputs, etc.).
-pub(crate) fn parse_model_json<T: serde::de::DeserializeOwned + 'static>(raw: &str) -> Result<T, ParseError> {
+pub(crate) fn parse_model_json<T: serde::de::DeserializeOwned + 'static>(
+    raw: &str,
+) -> Result<T, ParseError> {
     let raw_trimmed = raw.trim();
 
     // Fast path: try direct parse first
@@ -589,46 +606,62 @@ mod tests {
 
     #[test]
     fn test_parse_model_json_markdown_fence() {
-        let result: serde_json::Value = parse_model_json("```json\n{\"path\": \"main.rs\"}\n```").unwrap();
+        let result: serde_json::Value =
+            parse_model_json("```json\n{\"path\": \"main.rs\"}\n```").unwrap();
         assert_eq!(result["path"], "main.rs");
     }
 
     #[test]
     fn test_parse_model_json_with_prose_prefix() {
-        let result: serde_json::Value = parse_model_json("Here is the result: {\"path\": \"main.rs\", \"depth\": 2}").unwrap();
+        let result: serde_json::Value =
+            parse_model_json("Here is the result: {\"path\": \"main.rs\", \"depth\": 2}").unwrap();
         assert_eq!(result["path"], "main.rs");
         assert_eq!(result["depth"], 2);
     }
 
     #[test]
     fn test_parse_model_json_think_block() {
-        let result: serde_json::Value = parse_model_json("<think>Need to read this file</think>{\"path\": \"main.rs\"}").unwrap();
+        let result: serde_json::Value =
+            parse_model_json("<think>Need to read this file</think>{\"path\": \"main.rs\"}")
+                .unwrap();
         assert_eq!(result["path"], "main.rs");
     }
 
     #[test]
     fn test_parse_model_json_extra_fields_ok() {
-        let result: serde_json::Value = parse_model_json(r#"{"path": "main.rs", "extra": "ignored", "nested": {"a": 1}}"#).unwrap();
+        let result: serde_json::Value =
+            parse_model_json(r#"{"path": "main.rs", "extra": "ignored", "nested": {"a": 1}}"#)
+                .unwrap();
         assert_eq!(result["path"], "main.rs");
         assert_eq!(result["extra"], "ignored");
     }
 
     #[test]
     fn test_parse_model_json_trailing_text() {
-        let result: serde_json::Value = parse_model_json(r#"{"path": "main.rs", "depth": 2} and then some"#).unwrap();
+        let result: serde_json::Value =
+            parse_model_json(r#"{"path": "main.rs", "depth": 2} and then some"#).unwrap();
         assert_eq!(result["path"], "main.rs");
     }
 
     #[test]
     fn test_parse_model_json_empty_does_not_panic() {
         let result = parse_model_json::<serde_json::Value>("");
-        assert!(result.is_ok(), "empty input should not panic; got {:?}", result);
+        assert!(
+            result.is_ok(),
+            "empty input should not panic; got {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_parse_model_json_garbage_does_not_panic() {
-        let result = parse_model_json::<serde_json::Value>("this is definitely not json at all whatsoever");
-        assert!(result.is_ok(), "garbage input should not panic; got {:?}", result);
+        let result =
+            parse_model_json::<serde_json::Value>("this is definitely not json at all whatsoever");
+        assert!(
+            result.is_ok(),
+            "garbage input should not panic; got {:?}",
+            result
+        );
     }
 
     #[test]

@@ -72,7 +72,7 @@ impl Recipe {
     }
 
     /// Find recipe by ID
-pub fn by_id(id: &str) -> Option<Recipe> {
+    pub fn by_id(id: &str) -> Option<Recipe> {
         Self::all().into_iter().find(|r| r.id == id)
     }
 }

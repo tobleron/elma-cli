@@ -1,0 +1,1 @@
+Look for all test files in the project, examine their structure to see if they follow consistent naming conventions and organization patterns, and create a report in the project_tmp directory suggesting improvements for better test organization.

@@ -1,0 +1,1 @@
+Search through all configuration files in the project for database connection strings, check if any contain plaintext passwords, and create a security report in the project_tmp directory with recommendations for using environment variables instead.

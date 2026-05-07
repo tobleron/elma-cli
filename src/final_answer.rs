@@ -233,7 +233,9 @@ pub(crate) fn strip_markdown(text: &str) -> String {
         .lines()
         .filter(|line| {
             let t = line.trim();
-            if (t.chars().all(|c| c == '-') || t.chars().all(|c| c == '*') || t.chars().all(|c| c == '_'))
+            if (t.chars().all(|c| c == '-')
+                || t.chars().all(|c| c == '*')
+                || t.chars().all(|c| c == '_'))
                 && t.len() >= 3
             {
                 return false;
@@ -283,7 +285,9 @@ pub(crate) fn process_final_answer(raw: &str) -> String {
         .filter(|line| {
             let t = line.trim();
             // ---, ***, ___ separator lines
-            if (t.chars().all(|c| c == '-') || t.chars().all(|c| c == '*') || t.chars().all(|c| c == '_'))
+            if (t.chars().all(|c| c == '-')
+                || t.chars().all(|c| c == '*')
+                || t.chars().all(|c| c == '_'))
                 && t.len() >= 3
             {
                 return false;
@@ -322,8 +326,13 @@ static DATE_DENIAL_PATTERNS: &[&str] = &[
 ];
 
 static DAY_NAMES: &[&str] = &[
-    "Sunday", "Monday", "Tuesday", "Wednesday",
-    "Thursday", "Friday", "Saturday",
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
 ];
 
 fn contains_date_denial(text: &str) -> bool {
@@ -352,10 +361,7 @@ fn find_day_in_messages(messages: &[ChatMessage]) -> Option<&'static str> {
 ///
 /// Currently handles: date denial (answer says "don't have date" but
 /// `date +%A` returned a day name).
-pub(crate) fn correct_evidence_contradictions(
-    answer: &str,
-    messages: &[ChatMessage],
-) -> String {
+pub(crate) fn correct_evidence_contradictions(answer: &str, messages: &[ChatMessage]) -> String {
     let answer = answer.trim();
     if answer.is_empty() {
         return answer.to_string();
@@ -610,7 +616,11 @@ mod tests {
         let (result, modified) = sanitize_final_answer(text);
         // "Analysis" should NOT be stripped here since it's part of a sentence
         // But our current implementation might strip it. Let's verify.
-        assert!(result.contains("Analysis"), "Should preserve 'Analysis' in non-framing context: '{}'", result);
+        assert!(
+            result.contains("Analysis"),
+            "Should preserve 'Analysis' in non-framing context: '{}'",
+            result
+        );
         assert!(!modified);
     }
 }

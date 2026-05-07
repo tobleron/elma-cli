@@ -205,9 +205,7 @@ pub(crate) async fn infer_route_prior(
         mode_code_pairs(),
     )
     .await
-    .unwrap_or_else(|_| {
-        fallback_probability_decision("EXECUTE", mode_code_pairs(), "fallback")
-    });
+    .unwrap_or_else(|_| fallback_probability_decision("EXECUTE", mode_code_pairs(), "fallback"));
 
     // Map mode classification to route
     let route = match mode.choice.as_str() {
@@ -219,10 +217,23 @@ pub(crate) async fn infer_route_prior(
     };
 
     let distribution = vec![
-        ("CHAT".to_string(), probability_of(&mode.distribution, "DECIDE")),
-        ("SHELL".to_string(), probability_of(&mode.distribution, "EXECUTE") + probability_of(&mode.distribution, "INSPECT")),
-        ("PLAN".to_string(), probability_of(&mode.distribution, "PLAN")),
-        ("MASTERPLAN".to_string(), probability_of(&mode.distribution, "MASTERPLAN")),
+        (
+            "CHAT".to_string(),
+            probability_of(&mode.distribution, "DECIDE"),
+        ),
+        (
+            "SHELL".to_string(),
+            probability_of(&mode.distribution, "EXECUTE")
+                + probability_of(&mode.distribution, "INSPECT"),
+        ),
+        (
+            "PLAN".to_string(),
+            probability_of(&mode.distribution, "PLAN"),
+        ),
+        (
+            "MASTERPLAN".to_string(),
+            probability_of(&mode.distribution, "MASTERPLAN"),
+        ),
         ("DECIDE".to_string(), 0.0),
     ];
 
@@ -231,7 +242,10 @@ pub(crate) async fn infer_route_prior(
 
     Ok(RouteDecision {
         route: route.to_string(),
-        source: format!("mode:{} entropy:{:.2} margin:{:.2}", mode.choice, entropy, margin),
+        source: format!(
+            "mode:{} entropy:{:.2} margin:{:.2}",
+            mode.choice, entropy, margin
+        ),
         margin,
         entropy,
         distribution,

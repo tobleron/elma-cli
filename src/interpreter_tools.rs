@@ -93,9 +93,12 @@ pub(crate) async fn execute_code(
     }
 
     // Write code to a temporary file
-    let temp_file = workdir.join(format!("temp_{}.{}", uuid_simple(), interp_config.file_extension));
-    std::fs::write(&temp_file, code)
-        .map_err(|e| format!("Failed to write temp file: {}", e))?;
+    let temp_file = workdir.join(format!(
+        "temp_{}.{}",
+        uuid_simple(),
+        interp_config.file_extension
+    ));
+    std::fs::write(&temp_file, code).map_err(|e| format!("Failed to write temp file: {}", e))?;
 
     let timeout = Duration::from_secs(timeout_seconds);
 
@@ -172,9 +175,7 @@ pub(crate) async fn execute_code(
         String::new()
     };
 
-    let exit_code = result
-        .map(|s| s.code().unwrap_or(-1))
-        .unwrap_or(-1);
+    let exit_code = result.map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
 
     Ok((stdout_str, stderr_str, exit_code))
 }

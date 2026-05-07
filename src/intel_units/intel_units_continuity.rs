@@ -96,7 +96,12 @@ impl IntelUnit for AnswerContinuityUnit {
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
-        if output.data.get("aligned").and_then(|v| v.as_bool()).is_none() {
+        if output
+            .data
+            .get("aligned")
+            .and_then(|v| v.as_bool())
+            .is_none()
+        {
             return Err(anyhow!("Missing aligned field"));
         }
         Ok(())

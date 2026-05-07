@@ -314,7 +314,8 @@ mod tests {
     }
 
     fn to_relative_path(workdir: &PathBuf, absolute_path: &PathBuf) -> String {
-        absolute_path.strip_prefix(workdir)
+        absolute_path
+            .strip_prefix(workdir)
             .unwrap_or(absolute_path)
             .to_string_lossy()
             .to_string()
@@ -337,11 +338,16 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_1".to_string(), "test".to_string(),
-            "Write new file".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_1".to_string(),
+            "test".to_string(),
+            "Write new file".to_string(),
+            vec![],
             "File should be written".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_ok());
@@ -369,11 +375,16 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_2".to_string(), "test".to_string(),
-            "Overwrite existing file".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_2".to_string(),
+            "test".to_string(),
+            "Overwrite existing file".to_string(),
+            vec![],
             "File should be overwritten".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_ok());
@@ -400,11 +411,16 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_3".to_string(), "test".to_string(),
-            "Append to existing file".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_3".to_string(),
+            "test".to_string(),
+            "Append to existing file".to_string(),
+            vec![],
             "Content should be appended".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_ok());
@@ -432,11 +448,16 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_4".to_string(), "test".to_string(),
-            "Append to new file".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_4".to_string(),
+            "test".to_string(),
+            "Append to new file".to_string(),
+            vec![],
             "New file should be created".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_ok());
@@ -463,11 +484,16 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_5".to_string(), "test".to_string(),
-            "Replace text".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_5".to_string(),
+            "test".to_string(),
+            "Replace text".to_string(),
+            vec![],
             "Text should be replaced".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_ok());
@@ -495,11 +521,16 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_6".to_string(), "test".to_string(),
-            "Replace with no match".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_6".to_string(),
+            "test".to_string(),
+            "Replace with no match".to_string(),
+            vec![],
             "Should fail".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_err());
@@ -523,15 +554,23 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_7".to_string(), "test".to_string(),
-            "Replace with empty find".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_7".to_string(),
+            "test".to_string(),
+            "Replace with empty find".to_string(),
+            vec![],
             "Should fail".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("requires non-empty find"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("requires non-empty find"));
     }
 
     #[test]
@@ -551,11 +590,16 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_8".to_string(), "test".to_string(),
-            "Unsupported operation".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_8".to_string(),
+            "test".to_string(),
+            "Unsupported operation".to_string(),
+            vec![],
             "Should fail".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_ok());
@@ -565,13 +609,12 @@ mod tests {
     }
 
     #[test]
-    fn test_absolute_path_within_workspace() {
+    fn test_absolute_path_within_workspace_is_rejected() {
         let (_temp_dir, workdir, project_tmp) = setup_test_env();
         let args = mock_args();
         let session = mock_session_paths(&workdir);
         let mut state = mock_execution_state();
 
-        // Use absolute path within workspace - should be accepted now
         let file_path = project_tmp.join("absolute_test.txt");
         let abs_path = file_path.to_string_lossy().to_string();
         let spec = EditSpec {
@@ -583,18 +626,23 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_abs".to_string(), "test".to_string(),
-            "Absolute path test".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_abs".to_string(),
+            "test".to_string(),
+            "Absolute path test".to_string(),
+            vec![],
             "Should succeed with absolute path".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
-        assert!(result.is_ok());
-        let step_result = state.step_results.first().unwrap();
-        assert!(step_result.ok);
-        let content = fs::read_to_string(&file_path).unwrap();
-        assert_eq!(content, "absolute path works");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("absolute tool paths are not allowed"));
     }
 
     #[test]
@@ -614,15 +662,23 @@ mod tests {
         };
 
         let result = handle_edit_step(
-            &args, &session, &workdir,
-            "step_outside".to_string(), "test".to_string(),
-            "Outside workspace".to_string(), vec![],
+            &args,
+            &session,
+            &workdir,
+            "step_outside".to_string(),
+            "test".to_string(),
+            "Outside workspace".to_string(),
+            vec![],
             "Should fail".to_string(),
-            spec, &mut state,
+            spec,
+            &mut state,
         );
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("outside workspace"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("absolute tool paths are not allowed"));
     }
 
     #[test]

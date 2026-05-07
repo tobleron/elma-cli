@@ -100,10 +100,14 @@ pub(crate) fn detect_duplicate_step_ratio(program: &Program) -> f64 {
                 common.purpose
             ),
             Step::Delete { path, common, .. } => format!("delete:{}:{}", path, common.purpose),
-            Step::Batch { batches, common, .. } => {
-                format!("batch:{} items:{}", 
+            Step::Batch {
+                batches, common, ..
+            } => {
+                format!(
+                    "batch:{} items:{}",
                     batches.iter().map(|b| b.item_uris.len()).sum::<usize>(),
-                    common.purpose)
+                    common.purpose
+                )
             }
         };
 

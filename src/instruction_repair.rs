@@ -103,7 +103,9 @@ pub(crate) fn select_repair_action(
         };
     }
 
-    if error_lower.contains("parse") || error_lower.contains("json") || error_lower.contains("invalid")
+    if error_lower.contains("parse")
+        || error_lower.contains("json")
+        || error_lower.contains("invalid")
     {
         return RepairAction {
             repair_action: "tighten_context".to_string(),
@@ -175,25 +177,14 @@ pub(crate) fn create_repair_outcome(
 /// Try to repair a failed instruction outcome.
 /// If retryable, returns a Running outcome for re-execution.
 /// If abandon, returns Abandoned.
-pub(crate) fn try_repair(
-    outcome: &InstructionOutcome,
-    error_summary: &str,
-) -> InstructionOutcome {
+pub(crate) fn try_repair(outcome: &InstructionOutcome, error_summary: &str) -> InstructionOutcome {
     if outcome.status != InstructionStatus::Failed {
         return outcome.clone();
     }
 
-    let repair = select_repair_action(
-        &outcome.instruction_id,
-        error_summary,
-        outcome.repair_count,
-    );
+    let repair = select_repair_action(&outcome.instruction_id, error_summary, outcome.repair_count);
 
-    let mut repaired = create_repair_outcome(
-        &outcome.instruction_id,
-        error_summary,
-        &repair,
-    );
+    let mut repaired = create_repair_outcome(&outcome.instruction_id, error_summary, &repair);
     repaired.repair_count = outcome.repair_count + 1;
 
     repaired
@@ -201,15 +192,9 @@ pub(crate) fn try_repair(
 
 /// Recombine sibling instruction outcomes into a parent-level result.
 /// Only uses successful outcomes. Fails closed when no evidence available.
-pub(crate) fn recombine(
-    outcomes: &[InstructionOutcome],
-    parent_goal: &str,
-) -> RecombinedResult {
+pub(crate) fn recombine(outcomes: &[InstructionOutcome], parent_goal: &str) -> RecombinedResult {
     let successful: Vec<_> = outcomes.iter().filter(|o| o.status.is_success()).collect();
-    let failed: Vec<_> = outcomes
-        .iter()
-        .filter(|o| !o.status.is_success())
-        .collect();
+    let failed: Vec<_> = outcomes.iter().filter(|o| !o.status.is_success()).collect();
 
     let succeeded_count = successful.len() as u32;
     let failed_count = failed.len() as u32;

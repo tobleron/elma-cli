@@ -1707,6 +1707,120 @@ fn extract_epub(
     }
 }
 
+// ── Task 702: File kind classifier and retrieval router ────────────────────
+
+/// File kind classification result.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum FileKind {
+    /// Source code (.rs, .py, .js, .ts, .go, .java, .c, .h, .cpp, etc.)
+    SourceCode,
+    /// Config/data files (.toml, .json, .yaml, .ini)
+    Config,
+    /// Readable document (.md, .txt, .html, .pdf, .epub, .docx)
+    Document,
+    /// Structured data (.csv, .tsv)
+    Data,
+    /// Binary or unsupported
+    Binary,
+}
+
+/// Classification result with citation hint.
+#[derive(Debug, Clone)]
+pub(crate) struct FileClassification {
+    pub kind: FileKind,
+    pub path: String,
+    pub citation_hint: String,
+}
+
+/// Classify a file by its extension.
+pub(crate) fn classify_file(path: &str) -> FileClassification {
+    let p = std::path::Path::new(path);
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let file_name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    let kind = match ext.as_str() {
+        "rs" | "py" | "js" | "ts" | "go" | "java" | "c" | "h" | "cpp" | "hpp"
+        | "cs" | "swift" | "kt" | "scala" | "rb" | "php" | "pl" | "sh" | "bash"
+        | "zsh" | "clj" | "cljs" | "ex" | "exs" => FileKind::SourceCode,
+        "toml" | "json" | "yaml" | "yml" | "ini" | "cfg" | "conf" => FileKind::Config,
+        "md" | "txt" | "html" | "htm" | "xml" | "rst" | "adoc" | "org" | "pdf"
+        | "epub" | "docx" | "rtf" => FileKind::Document,
+        "csv" | "tsv" => FileKind::Data,
+        _ => {
+            if ext.is_empty() && !file_name.starts_with('.') {
+                FileKind::Document
+            } else {
+                FileKind::Binary
+            }
+        }
+    };
+
+    let citation_hint = match &kind {
+        FileKind::SourceCode => format!("Symbols/imports at line ranges in {}", path),
+        FileKind::Document => format!("Sections in {}", path),
+        FileKind::Data => format!("Rows/columns in {}", path),
+        FileKind::Config => format!("Values in {}", path),
+        FileKind::Binary => format!("Binary file: {}", path),
+    };
+
+    FileClassification { kind, path: path.to_string(), citation_hint }
+}
+
+/// Generate a retrieval instruction based on file classification.
+pub(crate) fn retrieval_instruction(class: &FileClassification, query: &str) -> String {
+    match class.kind {
+        FileKind::SourceCode => {
+            format!(
+                "Inspect source file `{}`. First check imports, public symbols, \
+                 and function signatures relevant to: \"{}\". \
+                 Read only relevant sections.",
+                class.path, query
+            )
+        }
+        FileKind::Document => {
+            format!(
+                "Read document `{}`. Extract sections/pages relevant to: \"{}\". \
+                 Cite section headings and line ranges.",
+                class.path, query
+            )
+        }
+        FileKind::Data => {
+            format!(
+                "Preview data file `{}`. Show schema (column names, types), \
+                 first 5 sample rows, and then find rows matching: \"{}\". \
+                 Cite row numbers and column values.",
+                class.path, query
+            )
+        }
+        FileKind::Config => {
+            format!(
+                "Read config file `{}`. Extract values relevant to: \"{}\". \
+                 Cite line numbers.",
+                class.path, query
+            )
+        }
+        FileKind::Binary => {
+            format!(
+                "File `{}` appears to be binary or unsupported. \
+                 Cannot read content directly.",
+                class.path
+            )
+        }
+    }
+}
+
+/// Build a routing notice for the transcript.
+pub(crate) fn build_router_notice(path: &str, kind: &FileKind, source: &str) -> String {
+    let kind_label = match kind {
+        FileKind::SourceCode => "source code",
+        FileKind::Document => "document",
+        FileKind::Data => "data",
+        FileKind::Config => "config",
+        FileKind::Binary => "binary/unsupported",
+    };
+    format!("[ROUTER] file={} kind={} source={}", path, kind_label, source)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

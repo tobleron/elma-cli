@@ -2,16 +2,18 @@ use crate::intel_trait::{IntelContext, IntelOutput, IntelUnit};
 use crate::repo_map::RepoMapCache;
 use crate::*;
 
-pub(crate) use crate::BatchableItem;
-pub(crate) use crate::BatchPlannerInput;
-pub(crate) use crate::BatchPlan;
 pub(crate) use crate::BatchGroup;
+pub(crate) use crate::BatchPlan;
+pub(crate) use crate::BatchPlannerInput;
+pub(crate) use crate::BatchableItem;
 pub(crate) use crate::ItemKind;
 
 pub(crate) struct BatchPlannerUnit;
 
 impl IntelUnit for BatchPlannerUnit {
-    fn name(&self) -> &'static str { "batch_planner" }
+    fn name(&self) -> &'static str {
+        "batch_planner"
+    }
     fn profile(&self) -> &Profile {
         static DUMMY: once_cell::sync::OnceCell<Profile> = once_cell::sync::OnceCell::new();
         DUMMY.get_or_init(|| Profile {
@@ -30,13 +32,16 @@ impl IntelUnit for BatchPlannerUnit {
     }
     async fn execute(&self, ctx: &IntelContext) -> Result<IntelOutput> {
         let input: BatchPlannerInput = serde_json::from_value(
-            ctx.extra("input").cloned().unwrap_or(serde_json::Value::Null)
+            ctx.extra("input")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
         )
-            .map_err(|e| IntelError::ParseError("batch planner input".to_string(), e.to_string()))?;
+        .map_err(|e| IntelError::ParseError("batch planner input".to_string(), e.to_string()))?;
 
         let plan = Self::plan_batches(&input);
-        let data = serde_json::to_value(&plan)
-            .map_err(|e| IntelError::ParseError("batch plan serialization".to_string(), e.to_string()))?;
+        let data = serde_json::to_value(&plan).map_err(|e| {
+            IntelError::ParseError("batch plan serialization".to_string(), e.to_string())
+        })?;
 
         Ok(IntelOutput {
             unit_name: self.name().to_string(),
@@ -53,7 +58,8 @@ impl BatchPlannerUnit {
         let mut items: Vec<_> = input.items.clone();
         items.sort_by(|a, b| b.estimated_tokens.cmp(&a.estimated_tokens));
 
-        let effective_budget = input.available_budget_per_batch
+        let effective_budget = input
+            .available_budget_per_batch
             .saturating_sub(input.response_buffer_tokens);
 
         let mut batches: Vec<BatchGroup> = Vec::new();
@@ -73,7 +79,9 @@ impl BatchPlannerUnit {
                     item_kinds: std::mem::take(&mut current_kinds),
                     estimated_tokens: current_tokens,
                     summary_prompt: Self::build_summary_prompt(
-                        batch_num, &input.objective, batch_num > 1
+                        batch_num,
+                        &input.objective,
+                        batch_num > 1,
                     ),
                     depends_on_previous: batch_num > 1,
                 });
@@ -93,7 +101,9 @@ impl BatchPlannerUnit {
                 item_kinds: current_kinds,
                 estimated_tokens: current_tokens,
                 summary_prompt: Self::build_summary_prompt(
-                    batch_num, &input.objective, batch_num > 1
+                    batch_num,
+                    &input.objective,
+                    batch_num > 1,
                 ),
                 depends_on_previous: batch_num > 1,
             });
@@ -133,15 +143,14 @@ impl BatchPlannerUnit {
         }
     }
 
-    pub fn apply_semantic_grouping(
-        plan: &mut BatchPlan,
-        _repo_map: &RepoMapCache,
-    ) {
+    pub fn apply_semantic_grouping(plan: &mut BatchPlan, _repo_map: &RepoMapCache) {
         if plan.batches.len() <= 1 {
             return;
         }
         for batch in &mut plan.batches {
-            let mut paired: Vec<(usize, String, ItemKind)> = batch.item_uris.iter()
+            let mut paired: Vec<(usize, String, ItemKind)> = batch
+                .item_uris
+                .iter()
                 .zip(batch.item_kinds.iter())
                 .enumerate()
                 .map(|(pos, (uri, kind))| (pos, uri.clone(), kind.clone()))
@@ -151,10 +160,12 @@ impl BatchPlannerUnit {
                 let a_is_file = matches!(kind_a, ItemKind::FilePath(_));
                 let b_is_file = matches!(kind_b, ItemKind::FilePath(_));
                 if a_is_file && b_is_file {
-                    let dir_a = std::path::Path::new(uri_a).parent()
+                    let dir_a = std::path::Path::new(uri_a)
+                        .parent()
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_default();
-                    let dir_b = std::path::Path::new(uri_b).parent()
+                    let dir_b = std::path::Path::new(uri_b)
+                        .parent()
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_default();
                     dir_a.cmp(&dir_b).then_with(|| uri_a.cmp(uri_b))

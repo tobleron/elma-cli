@@ -82,7 +82,8 @@ impl IntelUnit for TurnSummaryUnit {
              Final response in THIS turn: {final_text}"
         );
 
-        let raw = execute_intel_text_from_user_content(&context.client, &self.profile, prompt).await?;
+        let raw =
+            execute_intel_text_from_user_content(&context.client, &self.profile, prompt).await?;
         let raw = crate::text_utils::strip_thinking_blocks(&raw);
 
         let summary = raw
@@ -97,9 +98,7 @@ impl IntelUnit for TurnSummaryUnit {
         let summary = if summary.trim().is_empty() {
             let user_preview = user_message.chars().take(120).collect::<String>();
             let outcome_preview = final_text.chars().take(200).collect::<String>();
-            format!(
-                "User asked: \"{user_preview}\". Outcome: {outcome_preview}"
-            )
+            format!("User asked: \"{user_preview}\". Outcome: {outcome_preview}")
         } else {
             summary
         };
@@ -116,9 +115,7 @@ impl IntelUnit for TurnSummaryUnit {
     }
 
     fn post_flight(&self, output: &IntelOutput) -> Result<()> {
-        let text = output
-            .get_str("summary_narrative")
-            .unwrap_or("");
+        let text = output.get_str("summary_narrative").unwrap_or("");
         if text.trim().is_empty() {
             return Err(anyhow::anyhow!("Empty summary narrative"));
         }

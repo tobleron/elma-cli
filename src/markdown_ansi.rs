@@ -10,25 +10,62 @@
 //! (parse_markdown → RenderBlock IR → render_blocks_to_lines).
 //! No code path should call `render_markdown_to_ansi` and then re-parse ANSI back into
 //! Ratatui spans — that would corrupt the structured intermediate representation.
+//!
+//! Task 700: --no-color support. When no_color is set, strip ANSI from rendered output.
 
+use crate::*;
 use markdown_to_ansi::Options;
+use std::sync::{OnceLock, RwLock};
+
+static NO_COLOR_FLAG: OnceLock<RwLock<bool>> = OnceLock::new();
+
+pub(crate) fn no_color_enabled() -> bool {
+    if let Ok(lock) = NO_COLOR_FLAG.get_or_init(|| RwLock::new(false)).read() {
+        *lock
+    } else {
+        false
+    }
+}
+
+/// Set whether ANSI color output should be suppressed (Task 700).
+pub(crate) fn set_no_color(enabled: bool) {
+    if let Ok(mut lock) = NO_COLOR_FLAG.get_or_init(|| RwLock::new(false)).write() {
+        *lock = enabled;
+    }
+}
 
 fn default_options() -> Options {
     Options {
-        syntax_highlight: true,
+        syntax_highlight: !no_color_enabled(),
         width: None,
-        code_bg: true,
+        code_bg: !no_color_enabled(),
     }
 }
 
 /// Render markdown to ANSI-formatted terminal text.
+/// When --no-color is active, strips ANSI escape sequences from the output (Task 700).
 pub(crate) fn render_markdown_to_ansi(text: &str) -> String {
-    markdown_to_ansi::render(text, &default_options())
+    if no_color_enabled() {
+        let rendered = markdown_to_ansi::render(text, &default_options());
+        strip_ansi_escapes::strip(rendered.as_bytes())
+            .map(|b| String::from_utf8_lossy(&b).to_string())
+            .unwrap_or(rendered)
+    } else {
+        markdown_to_ansi::render(text, &default_options())
+    }
 }
 
 /// Render inline markdown (no block-level elements) to ANSI.
+/// When --no-color is active, strips ANSI escape sequences from the output (Task 700).
 pub(crate) fn render_markdown_inline_to_ansi(text: &str) -> String {
-    markdown_to_ansi::render_inline(text, &default_options())
+    if no_color_enabled() {
+        let rendered = markdown_to_ansi::render_inline(text, &default_options());
+        strip_ansi_escapes::strip(rendered.as_bytes())
+            .map(|b| String::from_utf8_lossy(&b).to_string())
+            .unwrap_or(rendered)
+    } else {
+        markdown_to_ansi::render_inline(text, &default_options())
+    }
 }
 
 #[cfg(test)]

@@ -67,12 +67,8 @@ impl IntelUnit for DocumentSummarizerUnit {
              Document: {doc_name}\n\n{doc_text}"
         );
 
-        let raw = execute_intel_text_from_user_content(
-            &context.client,
-            &self.profile,
-            prompt,
-        )
-        .await?;
+        let raw =
+            execute_intel_text_from_user_content(&context.client, &self.profile, prompt).await?;
 
         Ok(IntelOutput::success(
             self.name(),

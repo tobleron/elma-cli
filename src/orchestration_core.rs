@@ -52,10 +52,7 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
 
     let skill_context = build_skill_context(runtime);
 
-    crate::prompt_core::assemble_system_prompt(
-        &conversation,
-        &skill_context,
-    )
+    crate::prompt_core::assemble_system_prompt(&conversation, &skill_context)
 }
 
 fn build_skill_context(runtime: &AppRuntime) -> String {
@@ -117,7 +114,10 @@ pub(crate) async fn run_tool_calling_pipeline(
 
     // Task 590: Inject cross-cycle evidence summary if available
     let user_line: String = if let Some(ref prior_evidence) = runtime.last_evidence_summary {
-        trace(&runtime.args, "tool_loop: injected cross-cycle evidence summary");
+        trace(
+            &runtime.args,
+            "tool_loop: injected cross-cycle evidence summary",
+        );
         format!(
             "{}\n\n[Previously gathered in a prior attempt]\n{}\nDo NOT repeat steps already completed. Continue from where you left off.",
             line, prior_evidence

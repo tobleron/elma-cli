@@ -6,6 +6,8 @@ use crate::app::{AppRuntime, LoadedProfiles};
 use crate::app_bootstrap_modes::*;
 use crate::app_bootstrap_profiles::*;
 use crate::dirs::ElmaPaths;
+use crate::llm_provider::LlmProvider;
+use crate::model_capability_probe::ModelCapabilityProbe;
 use crate::ui_state::{
     set_final_answer_extractor_profile, set_json_outputter_profile, set_model_behavior_profile,
     set_reasoning_display, set_trace_log_path,
@@ -16,6 +18,7 @@ use crate::*;
 
 pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     set_reasoning_display(args.show_thinking && args.debug_trace, args.no_color);
+    crate::markdown_ansi::set_no_color(args.no_color);
     if args.show_thinking {
         crate::set_show_reasoning(true);
     }
@@ -62,15 +65,27 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         .timeout(Duration::from_secs(llm_runtime_cfg.http_timeout_s))
         .build()
         .context("Failed to build HTTP client")?;
+    let session = prepare_session(&args)?;
 
-    // Task 437 + Task 438: Skip active connectivity checks at startup
-    // Defer to first real request (offline-first behavior)
-    // Connectivity can be verified on-demand via /provider check command
+    let endpoint_profile = probe_endpoint_runtime(&client, &base)
+        .await
+        .context("Model endpoint health probe failed")?;
+    trace(
+        &args,
+        &format!(
+            "endpoint_probe_ok discovered_model={} ctx_max={}",
+            endpoint_profile.model_id,
+            endpoint_profile
+                .ctx_max
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        ),
+    );
 
     let model_id = if let Some(model) = args.model.as_ref().filter(|s| !s.trim().is_empty()) {
         model.trim().to_string()
     } else {
-        fetch_first_model_id(&client, &base).await?
+        endpoint_profile.model_id.clone()
     };
     let model_cfg_dir = ensure_model_config_folder(&cfg_root, &base_url, &model_id)?;
 
@@ -84,6 +99,39 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
         ensure_model_behavior_profile(&client, &chat_url, &base_url, &model_cfg_dir, &model_id)
             .await?;
     set_model_behavior_profile(Some(behavior.clone()));
+    let provider = LlmProvider::detect(&base_url, Some(&model_id));
+    let mut capability_probe = ModelCapabilityProbe::probe(&provider.to_string(), &model_id);
+    ModelCapabilityProbe::refine_with_runtime(
+        &mut capability_probe,
+        &behavior,
+        endpoint_profile.ctx_max,
+    );
+    trace(
+        &args,
+        &format!(
+            "model_capability_probe provider={} kind={} thinking={} json_mode={} ctx_max={}",
+            capability_probe.provider_name,
+            capability_probe.runtime_kind,
+            capability_probe.supports_thinking,
+            capability_probe.supports_json_mode,
+            capability_probe
+                .context_window_tokens
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        ),
+    );
+
+    // Persist provider profile
+    let provider_profile = ProviderProfile::from_endpoint(
+        &base_url,
+        &endpoint_profile,
+        &provider.to_string(),
+        &capability_probe.runtime_kind,
+        capability_probe.supports_thinking,
+        capability_probe.supports_json_mode,
+        "startup",
+    );
+    let _ = save_provider_profile(&model_cfg_dir, &provider_profile);
 
     if handle_special_modes(
         &args,
@@ -212,8 +260,7 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     }
     */
 
-    let ctx_max = fetch_ctx_max(&client, &base).await.unwrap_or(None);
-    let session = prepare_session(&args)?;
+    let ctx_max = endpoint_profile.ctx_max;
     let repo = repo_root()?;
     let ws = gather_workspace_context(&repo);
     let ws_brief = gather_workspace_brief(&repo);

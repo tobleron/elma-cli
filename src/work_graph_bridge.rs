@@ -3,12 +3,12 @@
 //! Bridge between pyramid work graph, task persistence, and step execution.
 //! Task 494: Wires Instruction → PersistedTask → Step → StepResult.
 
-use anyhow::{Context, Result};
-use crate::task_persistence::{PersistedTask, PersistedTaskList, TaskItemStatus, TaskSource};
-use crate::task_persistence;
 use crate::intel_units::intel_units_task_management::TaskManagementUnit;
+use crate::task_persistence;
+use crate::task_persistence::{PersistedTask, PersistedTaskList, TaskItemStatus, TaskSource};
 use crate::{PathBuf, SessionPaths};
 use crate::{Program, Step, StepResult};
+use anyhow::{Context, Result};
 
 /// Create a PersistedTask from a Step and link it to a work graph instruction node.
 pub(crate) fn step_to_persisted_task(
@@ -25,21 +25,28 @@ pub(crate) fn step_to_persisted_task(
             id.clone(),
         ),
         Step::Search { id, query, .. } => ("search", query.clone(), id.clone()),
-        Step::Select { id, instructions, .. } => ("select", instructions.clone(), id.clone()),
+        Step::Select {
+            id, instructions, ..
+        } => ("select", instructions.clone(), id.clone()),
         Step::Plan { id, goal, .. } => ("plan", goal.clone(), id.clone()),
         Step::MasterPlan { id, goal, .. } => ("masterplan", goal.clone(), id.clone()),
         Step::Decide { id, prompt, .. } => ("decide", prompt.clone(), id.clone()),
         Step::Summarize { id, text, .. } => ("summarize", text.clone(), id.clone()),
         Step::Edit { id, .. } => ("edit", String::new(), id.clone()),
-        Step::Reply { id, instructions, .. } => ("reply", instructions.clone(), id.clone()),
-        Step::Respond { id, instructions, .. } => {
-            ("respond", instructions.clone(), id.clone())
-        }
+        Step::Reply {
+            id, instructions, ..
+        } => ("reply", instructions.clone(), id.clone()),
+        Step::Respond {
+            id, instructions, ..
+        } => ("respond", instructions.clone(), id.clone()),
         Step::Explore { id, objective, .. } => ("explore", objective.clone(), id.clone()),
         Step::Write { id, path, .. } => ("write", path.clone(), id.clone()),
         Step::Delete { id, path, .. } => ("delete", path.clone(), id.clone()),
         Step::Batch { id, batches, .. } => {
-            let desc = format!("batch {} items", batches.iter().map(|b| b.item_uris.len()).sum::<usize>());
+            let desc = format!(
+                "batch {} items",
+                batches.iter().map(|b| b.item_uris.len()).sum::<usize>()
+            );
             ("batch", desc, id.clone())
         }
     };
@@ -71,10 +78,11 @@ pub(crate) fn update_tasks_from_results(
 ) {
     for result in step_results {
         // Find task by matching step id or description
-        if let Some(task) = tasks.tasks.iter_mut().find(|t| {
-            t.instruction_id == result.id
-                || t.description.contains(&result.id)
-        }) {
+        if let Some(task) = tasks
+            .tasks
+            .iter_mut()
+            .find(|t| t.instruction_id == result.id || t.description.contains(&result.id))
+        {
             task.status = if result.ok {
                 TaskItemStatus::Completed
             } else {
@@ -111,8 +119,7 @@ pub(crate) fn finalize_tasks_to_session(
     auto_generate_files: bool,
 ) -> Result<()> {
     // Persist to session
-    task_persistence::save_session_tasks(session_root, tasks)
-        .context("save session tasks")?;
+    task_persistence::save_session_tasks(session_root, tasks).context("save session tasks")?;
 
     // Optionally auto-generate _elma-tasks/ files
     if auto_generate_files {

@@ -1,0 +1,1 @@
+Search through all source files to find hardcoded URLs or endpoints, verify if they use secure protocols (HTTPS), and create a report in the project_tmp directory listing any insecure endpoints that should be updated.

@@ -141,9 +141,11 @@ pub(crate) fn step_detail(step: &Step) -> String {
         Step::Write { path, .. } => format!("Write to \"{}\"", path.trim()),
         Step::Delete { path, .. } => format!("Delete \"{}\"", path.trim()),
         Step::Batch { batches, .. } => {
-            format!("Batch process {} items in {} batches", 
+            format!(
+                "Batch process {} items in {} batches",
                 batches.iter().map(|b| b.item_uris.len()).sum::<usize>(),
-                batches.len())
+                batches.len()
+            )
         }
     }
 }

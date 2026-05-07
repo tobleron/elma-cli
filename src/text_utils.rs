@@ -6,8 +6,11 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 // Pre-compiled regex patterns for performance
-static PATH_TOKEN_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[^\s"'`;:(){}\[\]\/\\]+/[^\s"'`;:(){}\[\]\/\\]*|[^\s"'`;:(){}\[\]\/\\]+\\[^\s"'`;:(){}\[\]\/\\]*"#).unwrap());
-static FILE_EXTENSION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r#"(?i)\.(toml|md|rs|txt|json|lock)$"#).unwrap());
+static PATH_TOKEN_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"[^\s"'`;:(){}\[\]\/\\]+/[^\s"'`;:(){}\[\]\/\\]*|[^\s"'`;:(){}\[\]\/\\]+\\[^\s"'`;:(){}\[\]\/\\]*"#).unwrap()
+});
+static FILE_EXTENSION_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?i)\.(toml|md|rs|txt|json|lock)$"#).unwrap());
 
 /// Strip `...</thinking>` blocks that
 /// leak from models even when reasoning_format=none.
@@ -61,21 +64,19 @@ pub(crate) fn looks_like_path_token(s: &str) -> bool {
             '"' | '\'' | '`' | ',' | '.' | ';' | ':' | ')' | ']' | '}'
         )
     });
-    
+
     if t.is_empty() {
         return false;
     }
-    
+
     // Check if it contains path separators
     if t.contains('/') || t.contains('\\') {
         return true;
     }
-    
+
     // Check if it ends with known file extensions
     let lower = t.to_ascii_lowercase();
-    FILE_EXTENSION_REGEX.is_match(&lower) || 
-        lower == "makefile" || 
-        lower == "dockerfile"
+    FILE_EXTENSION_REGEX.is_match(&lower) || lower == "makefile" || lower == "dockerfile"
 }
 
 fn existing_workspace_token(s: &str) -> Option<String> {

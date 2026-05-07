@@ -282,6 +282,10 @@ impl DynamicToolRegistry {
     /// Search tools by capability query
     pub fn search(&self, query: &str) -> Vec<&ToolDefinitionExt> {
         let query_lower = query.to_lowercase();
+        let query_terms: Vec<&str> = query_lower
+            .split(|ch: char| !ch.is_ascii_alphanumeric())
+            .filter(|term| term.len() >= 3)
+            .collect();
         let mut results = Vec::new();
 
         for tool in self.tools.values() {
@@ -308,6 +312,28 @@ impl DynamicToolRegistry {
                     results.push(tool);
                     break;
                 }
+            }
+
+            if results
+                .last()
+                .is_some_and(|matched| matched.function.name == tool.function.name)
+            {
+                continue;
+            }
+
+            let searchable = format!(
+                "{} {} {}",
+                tool.function.name,
+                tool.function.description,
+                tool.search_hints.join(" ")
+            )
+            .to_lowercase();
+            let overlap = query_terms
+                .iter()
+                .filter(|term| searchable.contains(**term))
+                .count();
+            if overlap >= query_terms.len().min(2) && overlap > 0 {
+                results.push(tool);
             }
         }
 
@@ -591,9 +617,18 @@ mod tests {
 
     #[test]
     fn test_implementation_kind_priority_rust_native_highest() {
-        assert!(ImplementationKind::RustNative.selection_priority() > ImplementationKind::Shell.selection_priority());
-        assert!(ImplementationKind::RustNative.selection_priority() > ImplementationKind::Network.selection_priority());
-        assert!(ImplementationKind::RustWrapper.selection_priority() > ImplementationKind::Shell.selection_priority());
+        assert!(
+            ImplementationKind::RustNative.selection_priority()
+                > ImplementationKind::Shell.selection_priority()
+        );
+        assert!(
+            ImplementationKind::RustNative.selection_priority()
+                > ImplementationKind::Network.selection_priority()
+        );
+        assert!(
+            ImplementationKind::RustWrapper.selection_priority()
+                > ImplementationKind::Shell.selection_priority()
+        );
     }
 
     #[test]

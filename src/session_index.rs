@@ -219,7 +219,11 @@ pub(crate) fn build_index_entry(
         if main_path.exists() {
             if let Ok(json) = std::fs::read_to_string(&main_path) {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
-                    if let Some(s) = parsed.get("status").and_then(|s| s.get("state")).and_then(|s| s.as_str()) {
+                    if let Some(s) = parsed
+                        .get("status")
+                        .and_then(|s| s.get("state"))
+                        .and_then(|s| s.as_str())
+                    {
                         s.to_string()
                     } else {
                         "active".to_string()

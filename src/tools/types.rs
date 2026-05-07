@@ -92,9 +92,13 @@ impl ToolExecutionResult {
         timed_out: bool,
         duration_ms: u64,
     ) -> Self {
-        let status = if timed_out { ToolStatus::TimedOut }
-            else if exit_code == 0 { ToolStatus::Success }
-            else { ToolStatus::ExecutionError };
+        let status = if timed_out {
+            ToolStatus::TimedOut
+        } else if exit_code == 0 {
+            ToolStatus::Success
+        } else {
+            ToolStatus::ExecutionError
+        };
         Self {
             tool_call_id: call_id.to_string(),
             tool_name: tool_name.to_string(),

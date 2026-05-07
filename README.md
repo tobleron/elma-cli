@@ -47,3 +47,20 @@ elma-cli [OPTIONS]
 ```
 
 Use `elma-cli --help` to see all available options.
+
+## Runtime Config
+
+The auxiliary helper LLM is disabled by default so Elma can run on constrained
+VRAM with only the primary local model:
+
+```bash
+elma-cli config set runtime.auxiliary.enabled false
+```
+
+Enable it only when a separate helper endpoint is available:
+
+```bash
+elma-cli config set runtime.auxiliary.enabled true
+elma-cli config set runtime.auxiliary.base_url http://127.0.0.1:8084
+elma-cli config set runtime.auxiliary.model helper-model-name
+```

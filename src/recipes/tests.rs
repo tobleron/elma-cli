@@ -49,9 +49,6 @@ mod tests {
             formula_to_recipe_id("inspect_summarize_reply"),
             Some("project_summary".to_string())
         );
-        assert_eq!(
-            formula_to_recipe_id("reply_only"),
-            None
-        );
+        assert_eq!(formula_to_recipe_id("reply_only"), None);
     }
 }

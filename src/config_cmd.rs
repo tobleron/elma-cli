@@ -1,16 +1,41 @@
 use crate::dirs::ElmaPaths;
+use crate::models_api::{load_provider_profile, ProviderProfile};
 use crate::paths::{elma_config_path, project_elma_config_path};
 use crate::types::ConfigAction;
 use std::path::PathBuf;
 
-pub(crate) fn handle_config_command(action: &ConfigAction) {
+pub(crate) fn handle_config_command(action: &ConfigAction, config_root: &str) {
     match action {
         ConfigAction::Path => cmd_path(),
-        ConfigAction::Show => cmd_show(),
-        ConfigAction::Set { key, value } => cmd_set(key, value),
+        ConfigAction::Show => cmd_show(config_root),
+        ConfigAction::Set { key, value } => cmd_set(key, value, config_root),
         ConfigAction::EffectiveProfile { profile_name } => cmd_effective_profile(profile_name),
         ConfigAction::Doctor => cmd_doctor(),
     }
+}
+
+fn find_provider_profile(config_root: &str) -> Option<ProviderProfile> {
+    use crate::paths::discover_saved_base_url;
+    let cfg_root = PathBuf::from(config_root);
+    let base_url = discover_saved_base_url(&cfg_root, None).ok().flatten()
+        .unwrap_or_else(|| "http://localhost:8080".to_string());
+    // Scan model config subdirectories for provider_profile.toml
+    if let Ok(entries) = std::fs::read_dir(&cfg_root) {
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if dir.is_dir() {
+                let profile_path = dir.join("provider_profile.toml");
+                if profile_path.exists() {
+                    if let Some(profile) = load_provider_profile(&dir) {
+                        if profile.endpoint_url == base_url {
+                            return Some(profile);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn cmd_path() {
@@ -20,7 +45,7 @@ fn cmd_path() {
     }
 }
 
-fn cmd_show() {
+fn cmd_show(config_root: &str) {
     // Show OS-native config path
     println!("Global config path:");
     match elma_config_path() {
@@ -55,15 +80,72 @@ fn cmd_show() {
     println!("\nLegacy global.toml:");
     if let Some(paths) = ElmaPaths::new() {
         let legacy = paths.config_dir().join("global.toml");
-        let exists = if legacy.exists() { "exists" } else { "not found" };
+        let exists = if legacy.exists() {
+            "exists"
+        } else {
+            "not found"
+        };
         println!("  {} ({})", legacy.display(), exists);
+    }
+
+    println!("\nRuntime config:");
+    let config_root = PathBuf::from(config_root);
+    let runtime_path = crate::llm_config::runtime_config_path(&config_root);
+    let exists = if runtime_path.exists() {
+        "exists"
+    } else {
+        "not found"
+    };
+    println!("  {} ({})", runtime_path.display(), exists);
+    if runtime_path.exists() {
+        match crate::llm_config::load_or_create_runtime_llm_config(&config_root) {
+            Ok(cfg) => {
+                println!("  auxiliary_enabled = {}", cfg.auxiliary_enabled);
+                println!("  auxiliary_base_url = {}", cfg.auxiliary_base_url);
+                println!("  auxiliary_model = {}", cfg.auxiliary_model);
+                println!("  auxiliary_timeout_s = {}", cfg.auxiliary_timeout_s);
+            }
+            Err(e) => println!("  (parse error: {})", e),
+        }
+    }
+
+    // Show discovered provider profile
+    if let Some(profile) = find_provider_profile(config_root.as_os_str().to_str().unwrap_or("")) {
+        println!("\nProvider profile (discovered):");
+        println!("  endpoint_url = {}", profile.endpoint_url);
+        println!("  model_id = {}", profile.discovered_model_id);
+        println!(
+            "  context_window = {}",
+            profile
+                .context_window
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        );
+        println!("  provider = {}", profile.provider_family);
+        println!("  runtime_kind = {}", profile.runtime_kind);
+        println!("  supports_thinking = {}", profile.supports_thinking);
+        println!("  supports_json_mode = {}", profile.supports_json_mode);
+        println!("  probe_source = {}", profile.probe_source);
+        println!(
+            "  probe_age = {}s{}",
+            profile.age_seconds(),
+            if profile.is_stale() { " (STALE)" } else { "" },
+        );
+    } else {
+        println!("\nProvider profile: not found (run /provider or start Elma to discover)");
     }
 }
 
-fn cmd_set(key: &str, value: &str) {
+fn cmd_set(key: &str, value: &str, config_root: &str) {
+    if key.starts_with("runtime.") {
+        cmd_set_runtime(key, value, config_root);
+        return;
+    }
+
     match elma_config_path() {
         Ok(path) => {
-            let mut cfg = path.exists()
+            let mut cfg = path
+                .exists()
                 .then(|| crate::paths::load_elma_config(&path).ok())
                 .flatten()
                 .unwrap_or(crate::types::ElmaProjectConfig {
@@ -76,7 +158,9 @@ fn cmd_set(key: &str, value: &str) {
                 "provider.model" => cfg.model = value.to_string(),
                 _ => {
                     eprintln!("Unknown config key: {}", key);
-                    eprintln!("Supported keys: provider.base_url, provider.model");
+                    eprintln!(
+                        "Supported keys: provider.base_url, provider.model, runtime.auxiliary.enabled, runtime.auxiliary.base_url, runtime.auxiliary.model, runtime.auxiliary.timeout_s"
+                    );
                     return;
                 }
             }
@@ -88,6 +172,69 @@ fn cmd_set(key: &str, value: &str) {
             }
         }
         Err(e) => eprintln!("Error: {}", e),
+    }
+}
+
+fn cmd_set_runtime(key: &str, value: &str, config_root: &str) {
+    let config_root = PathBuf::from(config_root);
+    let runtime_path = crate::llm_config::runtime_config_path(&config_root);
+    let mut cfg = match crate::llm_config::load_or_create_runtime_llm_config(&config_root) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Error loading runtime config: {}", e);
+            return;
+        }
+    };
+
+    match key {
+        "runtime.auxiliary.enabled" | "runtime.auxiliary_enabled" => match parse_bool(value) {
+            Some(enabled) => cfg.auxiliary_enabled = enabled,
+            None => {
+                eprintln!("Invalid boolean value for {}: {}", key, value);
+                eprintln!("Use true or false.");
+                return;
+            }
+        },
+        "runtime.auxiliary.base_url" | "runtime.auxiliary_base_url" => {
+            cfg.auxiliary_base_url = value.to_string()
+        }
+        "runtime.auxiliary.model" | "runtime.auxiliary_model" => {
+            cfg.auxiliary_model = value.to_string()
+        }
+        "runtime.auxiliary.timeout_s" | "runtime.auxiliary_timeout_s" => {
+            let Ok(timeout_s) = value.parse::<u64>() else {
+                eprintln!("Invalid integer value for {}: {}", key, value);
+                return;
+            };
+            cfg.auxiliary_timeout_s = timeout_s;
+        }
+        _ => {
+            eprintln!("Unknown runtime config key: {}", key);
+            eprintln!(
+                "Supported runtime keys: runtime.auxiliary.enabled, runtime.auxiliary.base_url, runtime.auxiliary.model, runtime.auxiliary.timeout_s"
+            );
+            return;
+        }
+    }
+
+    let s = match toml::to_string_pretty(&cfg) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error serializing runtime config: {}", e);
+            return;
+        }
+    };
+    match std::fs::write(&runtime_path, s.as_bytes()) {
+        Ok(_) => println!("Set {} = {} in {}", key, value, runtime_path.display()),
+        Err(e) => eprintln!("Error writing runtime config: {}", e),
+    }
+}
+
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
     }
 }
 
@@ -166,6 +313,25 @@ fn cmd_doctor() {
                 "{}: legacy global.toml present (migrate to elma.toml)",
                 legacy.display()
             ));
+        }
+    }
+
+    // Check provider profile freshness
+    let config_root_str = ElmaPaths::new()
+        .map(|p| p.config_dir().to_string_lossy().to_string())
+        .unwrap_or_default();
+    if !config_root_str.is_empty() {
+        if let Some(profile) = find_provider_profile(&config_root_str) {
+            if profile.is_stale() {
+                issues.push(format!(
+                    "Provider profile for {} is stale ({}s old, last probed via {})",
+                    profile.endpoint_url,
+                    profile.age_seconds(),
+                    profile.probe_source,
+                ));
+            }
+        } else {
+            issues.push("No provider profile found — run /provider or start Elma to discover endpoint capabilities".to_string());
         }
     }
 

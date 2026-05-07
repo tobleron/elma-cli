@@ -16,10 +16,15 @@ pub trait Tool: Send + Sync + Debug {
     fn info(&self) -> ToolInfo;
 
     /// Executes the tool.
-    /// 
+    ///
     /// # Arguments
     /// * `call_id` - Unique identifier for this specific tool call.
     /// * `arguments` - JSON string of arguments.
     /// * `context` - The current execution context (can include user info, session, etc.)
-    async fn run(&self, call_id: &str, arguments: &str, context: &serde_json::Value) -> ToolExecutionResult;
+    async fn run(
+        &self,
+        call_id: &str,
+        arguments: &str,
+        context: &serde_json::Value,
+    ) -> ToolExecutionResult;
 }

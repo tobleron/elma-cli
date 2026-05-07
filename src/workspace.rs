@@ -78,7 +78,7 @@ pub(crate) fn gather_workspace_context(repo_root: &Path) -> String {
     }
     // T301: Explicitly list excluded directories so the model knows not to scan them.
     // These directories are massive and will cause shell timeouts if traversed.
-    s.push_str("excluded_dirs: .git/, target/, sessions/, .opencode/ — do NOT scan or search these directories.\n");
+    s.push_str("excluded_dirs: .git/, target/, sessions/, .opencode/, project_tmp/, .trash/, _knowledge_base/, .crush/, .dirac-symbol-index/, .kilo/ — do NOT scan or search these directories.\n");
     s.trim().to_string()
 }
 

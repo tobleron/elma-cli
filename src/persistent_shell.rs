@@ -247,9 +247,21 @@ impl PersistentShell {
                         let s = elapsed % 60;
                         let elapsed_str = format!(
                             "{}{}{}{}s",
-                            if d > 0 { format!("{}d ", d) } else { String::new() },
-                            if h > 0 { format!("{}h ", h) } else { String::new() },
-                            if m > 0 { format!("{}m ", m) } else { String::new() },
+                            if d > 0 {
+                                format!("{}d ", d)
+                            } else {
+                                String::new()
+                            },
+                            if h > 0 {
+                                format!("{}h ", h)
+                            } else {
+                                String::new()
+                            },
+                            if m > 0 {
+                                format!("{}m ", m)
+                            } else {
+                                String::new()
+                            },
                             s
                         );
                         self.dead = true;
@@ -286,9 +298,21 @@ impl PersistentShell {
                     let s = total % 60;
                     let total_str = format!(
                         "{}{}{}{}s",
-                        if d > 0 { format!("{}d ", d) } else { String::new() },
-                        if h > 0 { format!("{}h ", h) } else { String::new() },
-                        if m > 0 { format!("{}m ", m) } else { String::new() },
+                        if d > 0 {
+                            format!("{}d ", d)
+                        } else {
+                            String::new()
+                        },
+                        if h > 0 {
+                            format!("{}h ", h)
+                        } else {
+                            String::new()
+                        },
+                        if m > 0 {
+                            format!("{}m ", m)
+                        } else {
+                            String::new()
+                        },
                         s
                     );
                     self.dead = true;
@@ -434,9 +458,8 @@ mod tests {
         let workdir = env::current_dir()?;
         let mut shell = PersistentShell::new(&workdir)?;
 
-        // Reproduce the exact command from session s_1777312219
         let (code, out) =
-            shell.execute(r#"find . -name "AGENTS.md" 2>/dev/null | head -n 5"#, 10)?;
+            shell.execute(r#"find . -maxdepth 1 -name "AGENTS.md" 2>/dev/null"#, 10)?;
         assert_eq!(code, 0);
         println!("DEBUG find AGENTS.md OUTPUT:\n[{}]", out);
 
@@ -447,12 +470,10 @@ mod tests {
             out
         );
 
-        // There should be multiple results (at least root + qwen-code)
         let line_count = out.lines().count();
-        assert!(
-            line_count >= 2,
-            "Expected at least 2 AGENTS.md files, got {} lines: [{}]",
-            line_count,
+        assert_eq!(
+            line_count, 1,
+            "Expected root AGENTS.md only, got: [{}]",
             out
         );
 

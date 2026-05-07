@@ -81,6 +81,12 @@ fn is_ignored_dir(name: &str) -> bool {
             | "sessions"
             | "trace"
             | ".opencode"
+            | "project_tmp"
+            | ".trash"
+            | "_knowledge_base"
+            | ".crush"
+            | ".dirac-symbol-index"
+            | ".kilo"
     )
 }
 

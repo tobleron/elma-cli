@@ -417,11 +417,12 @@ fn dry_run_rm(args: &str, workdir: &PathBuf) -> Option<String> {
 
 fn dry_run_mv(args: &str, workdir: &PathBuf) -> Option<String> {
     let parts = try_parse_shlex(args)?;
-    if parts.len() < 2 {
+    let operands = non_flag_parts(&parts);
+    if operands.len() < 2 {
         return None;
     }
 
-    let (sources, dest) = (&parts[0], &parts[1]);
+    let (sources, dest) = (operands[0], operands[1]);
     let dest_path = resolve_path(dest, workdir);
 
     if sources.contains('*') || sources.contains('?') {
@@ -472,13 +473,14 @@ fn dry_run_mv(args: &str, workdir: &PathBuf) -> Option<String> {
 
 fn dry_run_cp(args: &str, workdir: &PathBuf) -> Option<String> {
     let parts = try_parse_shlex(args)?;
-    if parts.len() < 2 {
+    let operands = non_flag_parts(&parts);
+    if operands.len() < 2 {
         return None;
     }
-    let src = resolve_path(&parts[0], workdir);
-    let dest = resolve_path(&parts[1], workdir);
+    let src = resolve_path(operands[0], workdir);
+    let dest = resolve_path(operands[1], workdir);
     if !src.exists() {
-        return Some(format!("Dry-run: Source '{}' does not exist.", parts[0]));
+        return Some(format!("Dry-run: Source '{}' does not exist.", operands[0]));
     }
     Some(format!(
         "Dry-run: This would copy '{}' → '{}'",
@@ -611,16 +613,34 @@ fn check_protected_paths(command: &str) -> Option<String> {
     let cmd = command.trim();
 
     let path_args: Option<Vec<&str>> = if let Some(args) = cmd.strip_prefix("rm ") {
-        Some(args.split_whitespace().filter(|a| !a.starts_with('-')).collect())
+        Some(
+            args.split_whitespace()
+                .filter(|a| !a.starts_with('-'))
+                .collect(),
+        )
     } else if let Some(args) = cmd.strip_prefix("mv ") {
-        Some(args.split_whitespace().filter(|a| !a.starts_with('-')).collect())
+        Some(
+            args.split_whitespace()
+                .filter(|a| !a.starts_with('-'))
+                .collect(),
+        )
     } else if let Some(args) = cmd.strip_prefix("cp ") {
-        Some(args.split_whitespace().filter(|a| !a.starts_with('-')).collect())
+        Some(
+            args.split_whitespace()
+                .filter(|a| !a.starts_with('-'))
+                .collect(),
+        )
     } else if let Some(args) = cmd.strip_prefix("chmod ") {
-        let parts: Vec<&str> = args.split_whitespace().filter(|a| !a.starts_with('-')).collect();
+        let parts: Vec<&str> = args
+            .split_whitespace()
+            .filter(|a| !a.starts_with('-'))
+            .collect();
         Some(parts.into_iter().skip(1).collect())
     } else if let Some(args) = cmd.strip_prefix("chown ") {
-        let parts: Vec<&str> = args.split_whitespace().filter(|a| !a.starts_with('-')).collect();
+        let parts: Vec<&str> = args
+            .split_whitespace()
+            .filter(|a| !a.starts_with('-'))
+            .collect();
         Some(parts.into_iter().skip(1).collect())
     } else {
         None
@@ -655,6 +675,10 @@ fn suggest_scoped_alternative(command: &str) -> String {
     "Add `-maxdepth` or specific file patterns to limit scope".to_string()
 }
 
+fn non_flag_parts(parts: &[String]) -> Vec<&str> {
+    parts.iter().map(|s| s.as_str()).filter(|a| !a.starts_with('-')).collect()
+}
+
 fn preflight_mv(args: &str, workdir: &PathBuf) -> PreflightResult {
     let parts = match try_parse_shlex(args) {
         Some(p) => p,
@@ -666,15 +690,16 @@ fn preflight_mv(args: &str, workdir: &PathBuf) -> PreflightResult {
             };
         }
     };
-    if parts.len() < 2 {
+    let operands = non_flag_parts(&parts);
+    if operands.len() < 2 {
         return PreflightResult {
             risk: RiskLevel::Caution,
             error_guidance: Some("mv requires at least source and destination.".to_string()),
             dry_run_preview: generate_dry_run_preview(&format!("mv {}", args), workdir),
         };
     }
-    let source = &parts[0];
-    let dest = &parts[1];
+    let source = operands[0];
+    let dest = operands[1];
     let source_path = resolve_path(source, workdir);
     if !source_path.exists() {
         return PreflightResult {
@@ -718,20 +743,24 @@ fn preflight_cp(args: &str, workdir: &PathBuf) -> PreflightResult {
             };
         }
     };
-    if parts.len() < 2 {
+    let operands = non_flag_parts(&parts);
+    if operands.len() < 2 {
         return PreflightResult {
             risk: RiskLevel::Caution,
-            error_guidance: Some("cp requires at least source and destination.".to_string()),
+            error_guidance: Some("cp requires at least source and destination. For safe backups, use `backup` tool instead.".to_string()),
             dry_run_preview: generate_dry_run_preview(&format!("cp {}", args), workdir),
         };
     }
-    let source = &parts[0];
-    let dest = &parts[1];
+    let source = operands[0];
+    let dest = operands[1];
     let source_path = resolve_path(source, workdir);
     if !source_path.exists() {
         return PreflightResult {
             risk: RiskLevel::Dangerous("source_not_found".to_string()),
-            error_guidance: Some(format!("Source '{}' does not exist.", source)),
+            error_guidance: Some(format!(
+                "Source '{}' does not exist. For safe backups, try `run_safe_backup` with correct source directory.",
+                source
+            )),
             dry_run_preview: None,
         };
     }
@@ -741,16 +770,24 @@ fn preflight_cp(args: &str, workdir: &PathBuf) -> PreflightResult {
             return PreflightResult {
                 risk: RiskLevel::Dangerous("destination_not_found".to_string()),
                 error_guidance: Some(format!(
-                    "Destination directory '{}' does not exist.",
+                    "Destination directory '{}' does not exist. The backup tool can create it automatically.",
                     dest_path.display()
                 )),
                 dry_run_preview: None,
             };
         }
     }
+    // Task 705: Recommend backup tool for cp operations with directories (likely backup intent)
+    let is_likely_backup = source_path.is_dir() || operands.len() > 2;
+    let backup_suggestion = if is_likely_backup {
+        Some("Tip: For directory backups with hierarchy preservation and manifest, \
+              use the safe backup tool instead of `cp -r`.".to_string())
+    } else {
+        None
+    };
     PreflightResult {
         risk: RiskLevel::Caution,
-        error_guidance: None,
+        error_guidance: backup_suggestion,
         dry_run_preview: generate_dry_run_preview(&format!("cp {}", args), workdir),
     }
 }
@@ -905,15 +942,30 @@ mod tests {
 
     #[test]
     fn test_git_protected_mutation_blocked() {
-        assert!(check_protected_paths("rm -rf .git/").is_some(), ".git/ should be protected");
-        assert!(check_protected_paths("mv .git/hooks /tmp/").is_some(), ".git/ should be protected");
-        assert!(check_protected_paths("rm -rf .git").is_some(), ".git should be protected");
+        assert!(
+            check_protected_paths("rm -rf .git/").is_some(),
+            ".git/ should be protected"
+        );
+        assert!(
+            check_protected_paths("mv .git/hooks /tmp/").is_some(),
+            ".git/ should be protected"
+        );
+        assert!(
+            check_protected_paths("rm -rf .git").is_some(),
+            ".git should be protected"
+        );
     }
 
     #[test]
     fn test_gitignore_protected() {
-        assert!(check_protected_paths("rm .gitignore").is_some(), ".gitignore should be protected");
-        assert!(check_protected_paths("mv .gitignore backup/").is_some(), ".gitignore should be protected");
+        assert!(
+            check_protected_paths("rm .gitignore").is_some(),
+            ".gitignore should be protected"
+        );
+        assert!(
+            check_protected_paths("mv .gitignore backup/").is_some(),
+            ".gitignore should be protected"
+        );
     }
 
     #[test]
@@ -948,5 +1000,4 @@ mod tests {
         let cmd = "find . | xargs rm -rf";
         assert!(matches!(classify_command(cmd), RiskLevel::Dangerous(_)));
     }
-
 }

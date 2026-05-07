@@ -69,15 +69,13 @@ pub(crate) fn start_background_monitor() {
     if BACKGROUND_RUNNING.swap(true, Ordering::SeqCst) {
         return;
     }
-    thread::spawn(|| {
-        loop {
-            let snapshot = collect_snapshot();
-            let cache = background_cache();
-            if let Ok(mut guard) = cache.lock() {
-                *guard = snapshot;
-            }
-            thread::sleep(Duration::from_secs(1));
+    thread::spawn(|| loop {
+        let snapshot = collect_snapshot();
+        let cache = background_cache();
+        if let Ok(mut guard) = cache.lock() {
+            *guard = snapshot;
         }
+        thread::sleep(Duration::from_secs(1));
     });
 }
 

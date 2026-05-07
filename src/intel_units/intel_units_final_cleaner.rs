@@ -52,12 +52,10 @@ impl FinalCleanerUnit {
             client.clone(),
         );
         match self.execute_with_fallback(&context).await {
-            Ok(output) => {
-                output
-                    .get_str("cleaned_text")
-                    .unwrap_or(raw_answer)
-                    .to_string()
-            }
+            Ok(output) => output
+                .get_str("cleaned_text")
+                .unwrap_or(raw_answer)
+                .to_string(),
             Err(_) => raw_answer.to_string(),
         }
     }

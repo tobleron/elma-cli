@@ -78,11 +78,7 @@ pub(crate) struct ContinuityTracker {
 }
 
 impl ContinuityTracker {
-    pub fn new(
-        original_intent: String,
-        route: &str,
-        formula: &str,
-    ) -> Self {
+    pub fn new(original_intent: String, route: &str, formula: &str) -> Self {
         let mut tracker = Self {
             original_intent,
             selected_route: route.to_string(),
@@ -92,7 +88,11 @@ impl ContinuityTracker {
             fallback_triggered: false,
             threshold: 0.80,
         };
-        tracker.add_checkpoint("initialization", ContinuityVerdict::Aligned, "tracker created");
+        tracker.add_checkpoint(
+            "initialization",
+            ContinuityVerdict::Aligned,
+            "tracker created",
+        );
         tracker
     }
 
@@ -103,12 +103,7 @@ impl ContinuityTracker {
     }
 
     /// Add a continuity checkpoint and recalculate alignment score.
-    pub fn add_checkpoint(
-        &mut self,
-        stage: &str,
-        verdict: ContinuityVerdict,
-        reason: &str,
-    ) {
+    pub fn add_checkpoint(&mut self, stage: &str, verdict: ContinuityVerdict, reason: &str) {
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -161,10 +156,7 @@ impl ContinuityTracker {
     }
 
     /// Pre-execution routing check: does the route match a known pattern?
-    pub fn check_route_alignment(
-        &mut self,
-        route_decision: &crate::types_core::RouteDecision,
-    ) {
+    pub fn check_route_alignment(&mut self, route_decision: &crate::types_core::RouteDecision) {
         let route = route_decision.route.to_uppercase();
         let intent_lower = self.original_intent.to_lowercase();
 
@@ -194,24 +186,26 @@ impl ContinuityTracker {
                     "High entropy ({:.2}) and low margin ({:.2}) suggest uncertain routing",
                     route_decision.entropy, route_decision.margin
                 )),
-                &format!("entropy={:.2} margin={:.2}", route_decision.entropy, route_decision.margin),
+                &format!(
+                    "entropy={:.2} margin={:.2}",
+                    route_decision.entropy, route_decision.margin
+                ),
             );
         } else {
             self.add_checkpoint(
                 "routing",
                 ContinuityVerdict::Aligned,
-                &format!("route={} entropy={:.2} margin={:.2}", route, route_decision.entropy, route_decision.margin),
+                &format!(
+                    "route={} entropy={:.2} margin={:.2}",
+                    route, route_decision.entropy, route_decision.margin
+                ),
             );
         }
     }
 
     /// Post-execution check: verify final answer is non-empty and
     /// has a reasonable relationship to the original intent.
-    pub fn check_final_answer(
-        &mut self,
-        final_text: &str,
-        has_evidence: bool,
-    ) {
+    pub fn check_final_answer(&mut self, final_text: &str, has_evidence: bool) {
         let original_norm: String = self
             .original_intent
             .chars()
@@ -304,11 +298,7 @@ mod tests {
 
     #[test]
     fn test_continuity_tracker_creation() {
-        let ct = ContinuityTracker::new(
-            "What time is it?".to_string(),
-            "CHAT",
-            "direct",
-        );
+        let ct = ContinuityTracker::new("What time is it?".to_string(), "CHAT", "direct");
         assert_eq!(ct.original_intent, "What time is it?");
         assert_eq!(ct.selected_route, "CHAT");
         assert_eq!(ct.checkpoints.len(), 1); // initialization checkpoint
@@ -325,14 +315,22 @@ mod tests {
     #[test]
     fn test_mismatch_reduces_score() {
         let mut ct = ContinuityTracker::new("test".into(), "CHAT", "direct");
-        ct.add_checkpoint("execution", ContinuityVerdict::Mismatch("wrong answer".into()), "bad");
+        ct.add_checkpoint(
+            "execution",
+            ContinuityVerdict::Mismatch("wrong answer".into()),
+            "bad",
+        );
         assert!(ct.alignment_score < 0.5);
     }
 
     #[test]
     fn test_needs_fallback_on_low_score() {
         let mut ct = ContinuityTracker::new("test".into(), "CHAT", "direct");
-        ct.add_checkpoint("execution", ContinuityVerdict::Mismatch("wrong".into()), "fail");
+        ct.add_checkpoint(
+            "execution",
+            ContinuityVerdict::Mismatch("wrong".into()),
+            "fail",
+        );
         assert!(ct.needs_fallback());
     }
 
@@ -351,11 +349,7 @@ mod tests {
 
     #[test]
     fn test_route_alignment_simple_factual() {
-        let mut ct = ContinuityTracker::new(
-            "What is 2+2?".to_string(),
-            "CHAT",
-            "direct",
-        );
+        let mut ct = ContinuityTracker::new("What is 2+2?".to_string(), "CHAT", "direct");
         let route = crate::types_core::RouteDecision {
             route: "CHAT".to_string(),
             source: "test".to_string(),
@@ -370,11 +364,7 @@ mod tests {
 
     #[test]
     fn test_route_alignment_flags_complex_route() {
-        let mut ct = ContinuityTracker::new(
-            "What is 2+2?".to_string(),
-            "CHAT",
-            "direct",
-        );
+        let mut ct = ContinuityTracker::new("What is 2+2?".to_string(), "CHAT", "direct");
         let route = crate::types_core::RouteDecision {
             route: "MASTERPLAN".to_string(),
             source: "test".to_string(),
@@ -389,11 +379,7 @@ mod tests {
 
     #[test]
     fn test_route_alignment_flags_high_entropy() {
-        let mut ct = ContinuityTracker::new(
-            "Build a web app".to_string(),
-            "WORKFLOW",
-            "direct",
-        );
+        let mut ct = ContinuityTracker::new("Build a web app".to_string(), "WORKFLOW", "direct");
         let route = crate::types_core::RouteDecision {
             route: "WORKFLOW".to_string(),
             source: "test".to_string(),
@@ -425,11 +411,8 @@ mod tests {
 
     #[test]
     fn test_check_final_answer_no_evidence() {
-        let mut ct = ContinuityTracker::new(
-            "Tell me the current time please".into(),
-            "CHAT",
-            "direct",
-        );
+        let mut ct =
+            ContinuityTracker::new("Tell me the current time please".into(), "CHAT", "direct");
         ct.check_final_answer("The time is 5:35 PM.", false);
         assert!(!ct.last_checkpoint_is_aligned());
         assert_eq!(
@@ -440,11 +423,7 @@ mod tests {
 
     #[test]
     fn test_check_final_answer_with_evidence() {
-        let mut ct = ContinuityTracker::new(
-            "What time is it?".into(),
-            "CHAT",
-            "direct",
-        );
+        let mut ct = ContinuityTracker::new("What time is it?".into(), "CHAT", "direct");
         ct.check_final_answer("It is 5:35 PM.", true);
         assert!(ct.last_checkpoint_is_aligned());
     }

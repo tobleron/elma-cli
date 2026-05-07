@@ -43,6 +43,8 @@ pub(crate) struct TerminalUI {
     input: TextInput,
     raw_mode: bool,
     pending_draw: bool,
+    /// Task 706: Whether stdout is a real terminal (vs redirected pipe/file).
+    is_interactive: bool,
     // Claude parity renderer
     claude: crate::claude_ui::ClaudeRenderer,
     previous_claude_screen: Option<Vec<String>>,
@@ -139,6 +141,7 @@ impl TerminalUI {
             input: TextInput::new(10),
             raw_mode: is_interactive,
             pending_draw: true,
+            is_interactive,
             claude: crate::claude_ui::ClaudeRenderer::new(cols as usize, rows as usize),
             previous_claude_screen: None,
             terminal,
@@ -171,6 +174,13 @@ impl TerminalUI {
     /// Save input history to a file. Call before cleanup.
     pub(crate) fn save_history(&self, path: &PathBuf) {
         self.input.save_history(path);
+    }
+
+    /// Task 706: Whether UI is running in interactive (TTY) mode.
+    /// Non-interactive mode means stdout is redirected — cursor sequences
+    /// and alternate screen should be suppressed.
+    pub(crate) fn is_interactive(&self) -> bool {
+        self.is_interactive
     }
 
     /// Apply an autocomplete suggestion by replacing the input content.
@@ -906,9 +916,8 @@ impl TerminalUI {
         }
 
         // Estimate the current model budget (base from last update + streaming)
-        let streaming_tokens =
-            (self.claude.streaming.thinking.len() / 4
-             + self.claude.streaming.content.len() / 4) as u64;
+        let streaming_tokens = (self.claude.streaming.thinking.len() / 4
+            + self.claude.streaming.content.len() / 4) as u64;
         let model_context_tokens_estimate = self.state.footer.context_current + streaming_tokens;
         let transcript_tokens_estimate = self.transcript_token_estimate;
 
@@ -1076,13 +1085,15 @@ impl TerminalUI {
                     }
                     MouseEventKind::Drag(_) => {
                         if in_scrollbar {
-                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.claude
+                                .toggle_thinking_entry(mouse_event.row, mouse_event.column);
                             self.pending_draw = true;
                         }
                     }
                     _ => {
                         if in_thinking || in_scrollbar {
-                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.claude
+                                .toggle_thinking_entry(mouse_event.row, mouse_event.column);
                             self.pending_draw = true;
                         } else {
                             self.handle_transcript_click(&mouse_event);
@@ -1927,13 +1938,15 @@ impl TerminalUI {
                     }
                     MouseEventKind::Drag(_) => {
                         if in_scrollbar {
-                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.claude
+                                .toggle_thinking_entry(mouse_event.row, mouse_event.column);
                             self.pending_draw = true;
                         }
                     }
                     _ => {
                         if in_right_panel {
-                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                            self.claude
+                                .toggle_thinking_entry(mouse_event.row, mouse_event.column);
                             self.pending_draw = true;
                         } else {
                             self.handle_transcript_click(&mouse_event);
@@ -2404,41 +2417,43 @@ impl TerminalUI {
                             && mouse_event.row < area.y + area.height
                             && mouse_event.column >= area.x
                             && mouse_event.column < area.x + area.width
-                });
-                let in_right_panel = in_thinking || in_scrollbar;
-                match mouse_event.kind {
-                    MouseEventKind::ScrollDown => {
-                        if in_right_panel {
-                            self.claude.thinking_scroll_down(3);
-                        } else {
-                            self.claude.scroll_down(3);
-                        }
-                        self.pending_draw = true;
-                    }
-                    MouseEventKind::ScrollUp => {
-                        if in_right_panel {
-                            self.claude.thinking_scroll_up(3);
-                        } else {
-                            self.claude.scroll_up(3);
-                        }
-                        self.pending_draw = true;
-                    }
-                    MouseEventKind::Drag(_) => {
-                        if in_scrollbar {
-                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                    });
+                    let in_right_panel = in_thinking || in_scrollbar;
+                    match mouse_event.kind {
+                        MouseEventKind::ScrollDown => {
+                            if in_right_panel {
+                                self.claude.thinking_scroll_down(3);
+                            } else {
+                                self.claude.scroll_down(3);
+                            }
                             self.pending_draw = true;
                         }
-                    }
-                    _ => {
-                        if in_right_panel {
-                            self.claude.toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                        MouseEventKind::ScrollUp => {
+                            if in_right_panel {
+                                self.claude.thinking_scroll_up(3);
+                            } else {
+                                self.claude.scroll_up(3);
+                            }
                             self.pending_draw = true;
-                        } else {
-                            self.handle_transcript_click(&mouse_event);
+                        }
+                        MouseEventKind::Drag(_) => {
+                            if in_scrollbar {
+                                self.claude
+                                    .toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                                self.pending_draw = true;
+                            }
+                        }
+                        _ => {
+                            if in_right_panel {
+                                self.claude
+                                    .toggle_thinking_entry(mouse_event.row, mouse_event.column);
+                                self.pending_draw = true;
+                            } else {
+                                self.handle_transcript_click(&mouse_event);
+                            }
                         }
                     }
                 }
-            }
                 _ => {}
             }
         }
@@ -2560,8 +2575,8 @@ mod tests {
             transcript_tokens
         );
 
-        let streaming_tokens =
-            crate::token_counter::count_tokens(&tui.claude.streaming.thinking) as u64
+        let streaming_tokens = crate::token_counter::count_tokens(&tui.claude.streaming.thinking)
+            as u64
             + crate::token_counter::count_tokens(&tui.claude.streaming.content) as u64;
         let model_budget = tui.state.footer.context_current + streaming_tokens;
         assert_eq!(

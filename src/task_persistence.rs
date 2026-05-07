@@ -7,8 +7,8 @@
 //! 2. `_elma-tasks/NNN_auto_Task_Name_uid.md` — auto-generated or user-initiated task files
 
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// Single task item derived from an Instruction node in the work graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,11 +123,7 @@ fn existing_task_numbers(dir: &Path) -> Vec<u32> {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if let Some(num) = name
-                .split('_')
-                .next()
-                .and_then(|s| s.parse::<u32>().ok())
-            {
+            if let Some(num) = name.split('_').next().and_then(|s| s.parse::<u32>().ok()) {
                 nums.push(num);
             }
         }
@@ -159,7 +155,10 @@ pub(crate) fn write_task_file(
         TaskSource::User => "user",
     };
 
-    let filename = format!("{:03}_{}_{}_{}.md", number, source_label, slug, graph_node_id);
+    let filename = format!(
+        "{:03}_{}_{}_{}.md",
+        number, source_label, slug, graph_node_id
+    );
     let path = dir.join(&filename);
 
     let now = chrono::Utc::now().to_rfc3339();

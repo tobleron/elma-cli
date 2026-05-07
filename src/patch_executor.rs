@@ -90,7 +90,8 @@ impl PatchExecutor {
             return Err(PatchError::EmptyPatch);
         }
 
-        let parsed = parse_patch(patch_content).map_err(|e| PatchError::ParseError(e.to_string()))?;
+        let parsed =
+            parse_patch(patch_content).map_err(|e| PatchError::ParseError(e.to_string()))?;
 
         let results = self.execute_parsed(&parsed.operations)?;
         Ok(results)
@@ -117,7 +118,11 @@ impl PatchExecutor {
                         }
                     }
                 }
-                PatchOperation::UpdateFile { path, old_string, new_string } => {
+                PatchOperation::UpdateFile {
+                    path,
+                    old_string,
+                    new_string,
+                } => {
                     self.validate_update_path(path, old_string)?;
                     if !self.dry_run {
                         let snapshot = self.snapshot_file(path)?;
@@ -214,8 +219,7 @@ impl PatchExecutor {
             std::fs::create_dir_all(parent)
                 .map_err(|e| PatchError::OperationError(e.to_string()))?;
         }
-        std::fs::write(&full, content)
-            .map_err(|e| PatchError::OperationError(e.to_string()))?;
+        std::fs::write(&full, content).map_err(|e| PatchError::OperationError(e.to_string()))?;
         Ok(PatchOpResult {
             path: path.to_string(),
             status: PatchOpStatus::Added,
@@ -253,8 +257,7 @@ impl PatchExecutor {
 
     fn execute_delete(&self, path: &str) -> Result<PatchOpResult, PatchError> {
         let full = self.workdir.join(path);
-        std::fs::remove_file(&full)
-            .map_err(|e| PatchError::OperationError(e.to_string()))?;
+        std::fs::remove_file(&full).map_err(|e| PatchError::OperationError(e.to_string()))?;
         Ok(PatchOpResult {
             path: path.to_string(),
             status: PatchOpStatus::Deleted,

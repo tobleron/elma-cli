@@ -41,8 +41,6 @@ pub fn init_session_log(session_root: &Path) {
             .with_writer(std::sync::Mutex::new(file))
             .with_ansi(false)
             .with_target(false);
-        tracing_subscriber::registry()
-            .with(file_layer)
-            .init();
+        tracing_subscriber::registry().with(file_layer).init();
     }
 }

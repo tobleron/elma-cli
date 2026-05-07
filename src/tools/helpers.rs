@@ -10,7 +10,11 @@ pub fn emit_tool_progress(
 ) {
 }
 
-pub fn emit_tool_start(tui: &mut Option<&mut crate::ui_terminal::TerminalUI>, name: &str, input: &str) {
+pub fn emit_tool_start(
+    tui: &mut Option<&mut crate::ui_terminal::TerminalUI>,
+    name: &str,
+    input: &str,
+) {
     if let Some(t) = tui.as_mut() {
         t.handle_ui_event(crate::claude_ui::UiEvent::ToolStarted {
             name: name.to_string(),
@@ -84,7 +88,10 @@ pub fn verify_syntax(path: &str, workdir: &PathBuf) -> Result<(), String> {
                     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
                     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
                     let combined = format!("{}\n{}", stdout, stderr);
-                    return Err(format!("Cargo check failed after mutation:\n{}", combined.trim()));
+                    return Err(format!(
+                        "Cargo check failed after mutation:\n{}",
+                        combined.trim()
+                    ));
                 }
                 Err(e) => return Err(format!("Failed to run cargo check: {}", e)),
                 _ => {}

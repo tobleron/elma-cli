@@ -134,8 +134,7 @@ fn detect_failure_class(
                         .filter(|(_, _, e)| e.contains(tool_name))
                         .count();
                     if count >= 2 {
-                        signals
-                            .push(FailureClass::ToolRepeatedFailure(tool_name.to_string()));
+                        signals.push(FailureClass::ToolRepeatedFailure(tool_name.to_string()));
                         break;
                     }
                 }
@@ -431,12 +430,8 @@ pub(crate) async fn orchestrate_with_retries(
                 .last()
                 .map(|(_, _, e)| e.as_str())
                 .unwrap_or("");
-            let failure_class = detect_failure_class(
-                attempt,
-                last_error,
-                &attempt_history,
-                &retry_program,
-            );
+            let failure_class =
+                detect_failure_class(attempt, last_error, &attempt_history, &retry_program);
 
             trace(
                 args,
@@ -581,18 +576,18 @@ pub(crate) async fn orchestrate_with_retries(
 
         // Task 390: Record attempt in approach engine
         let strategy_label = format!("{:?}", strategy);
-        let approach_decision = approach_engine.record_attempt(
-            &strategy_label,
-            "retry_failure",
-            &error_summary,
-        );
+        let approach_decision =
+            approach_engine.record_attempt(&strategy_label, "retry_failure", &error_summary);
         match &approach_decision {
             crate::approach_engine::ApproachDecision::Exhausted { reason, .. } => {
                 show_intel_summary(
                     args.show_process,
                     &format!("Approach engine exhausted: {}", reason),
                 );
-                trace(args, &format!("approach_engine_exhausted reason={}", reason));
+                trace(
+                    args,
+                    &format!("approach_engine_exhausted reason={}", reason),
+                );
                 if let Some(ref mut t) = tui {
                     t.push_meta_event("APPROACH", &format!("exhausted: {}", reason));
                 }
@@ -969,7 +964,11 @@ mod tests {
     fn test_failure_class_tool_repeated() {
         let history = vec![
             (0, make_test_program("t"), "tool: read failed".to_string()),
-            (1, make_test_program("t"), "tool: read failed again".to_string()),
+            (
+                1,
+                make_test_program("t"),
+                "tool: read failed again".to_string(),
+            ),
         ];
         let class = detect_failure_class(
             2,
@@ -996,10 +995,7 @@ mod tests {
 
     #[test]
     fn test_failure_class_label() {
-        assert_eq!(
-            FailureClass::JsonParseFailure.label(),
-            "json_parse_failure"
-        );
+        assert_eq!(FailureClass::JsonParseFailure.label(), "json_parse_failure");
         assert_eq!(FailureClass::Stagnation(3).label(), "stagnation");
         assert_eq!(
             FailureClass::ToolRepeatedFailure("read".into()).label(),
@@ -1007,7 +1003,10 @@ mod tests {
         );
         assert_eq!(FailureClass::EmptyOutput.label(), "empty_output");
         assert_eq!(FailureClass::Timeout.label(), "timeout");
-        assert_eq!(FailureClass::StrategyExhaustion.label(), "strategy_exhaustion");
+        assert_eq!(
+            FailureClass::StrategyExhaustion.label(),
+            "strategy_exhaustion"
+        );
     }
 
     #[test]
@@ -1064,9 +1063,7 @@ mod tests {
 
     #[test]
     fn test_failure_class_mixed() {
-        let history = vec![
-            (0, make_test_program("test"), "parse error".to_string()),
-        ];
+        let history = vec![(0, make_test_program("test"), "parse error".to_string())];
         // "parse" + "timeout" should trigger both signals -> Mixed
         let class = detect_failure_class(
             1,

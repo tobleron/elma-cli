@@ -8,7 +8,7 @@
 use crate::ui_colors::border_gray;
 use crate::ui_state::ModalState;
 use crate::ui_theme::*;
-use crate::ui_theme::{current_theme, fg_bold_token, fg_token, dim, fg, fg_bold};
+use crate::ui_theme::{current_theme, dim, fg, fg_bold, fg_bold_token, fg_token};
 use crate::ui_wrap::{display_width, wrap_ansi};
 
 const ICON_ERROR: &str = "✗";
@@ -131,7 +131,10 @@ fn render_help_box(content: &str, _screen_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
 
     // Title
-    let title_line = format!(" {} ", fg_bold_token(current_theme().accent_secondary, "Commands"));
+    let title_line = format!(
+        " {} ",
+        fg_bold_token(current_theme().accent_secondary, "Commands")
+    );
     lines.push(title_line);
 
     lines.push(String::new()); // spacer
@@ -192,7 +195,10 @@ fn render_select_box(title: &str, options: &[String], _screen_width: usize) -> V
 /// Render a settings display box.
 fn render_settings_box(content: &str, _screen_width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
-    let title_line = format!(" {} ", fg_bold_token(current_theme().accent_secondary, "Settings"));
+    let title_line = format!(
+        " {} ",
+        fg_bold_token(current_theme().accent_secondary, "Settings")
+    );
     lines.push(title_line);
     lines.push(String::new());
     let max_width = 60;
@@ -428,11 +434,7 @@ fn render_splash(content: &str, _screen_width: usize) -> Vec<String> {
 fn wrap_in_borders(text: &str, width: usize) -> String {
     let (r, g, b) = border_gray();
     let padded = format!(" {:width$}", text, width = width.saturating_sub(3));
-    format!("{}{}{}",
-        fg(r, g, b, "│"),
-        padded,
-        fg(r, g, b, "│"),
-    )
+    format!("{}{}{}", fg(r, g, b, "│"), padded, fg(r, g, b, "│"),)
 }
 
 /// Create a centered border line for the top or bottom of the modal box.
@@ -440,7 +442,12 @@ fn center_box_line(width: usize, _label: Option<&str>) -> String {
     let inner = width.saturating_sub(2);
     let (r, g, b) = border_gray();
     let bar = "─".repeat(inner);
-    format!("{}{}{}", fg(r, g, b, "│"), fg(r, g, b, &bar), fg(r, g, b, "│"))
+    format!(
+        "{}{}{}",
+        fg(r, g, b, "│"),
+        fg(r, g, b, &bar),
+        fg(r, g, b, "│")
+    )
 }
 
 #[cfg(test)]

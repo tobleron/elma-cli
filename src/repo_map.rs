@@ -24,7 +24,7 @@ pub(crate) struct SymbolEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct FileEntry {
     pub(crate) path: String,
-    pub(crate) mtime: u64, // last modified time (unix seconds)
+    pub(crate) mtime: u64,   // last modified time (unix seconds)
     pub(crate) hash: String, // file content hash for cache invalidation
     pub(crate) symbols: Vec<SymbolEntry>,
 }
@@ -68,14 +68,19 @@ impl RepoMapCache {
 
     pub(crate) fn save(&self, repo_root: &Path) -> Result<()> {
         let path = Self::get_cache_path(repo_root);
-        let content = serde_json::to_string_pretty(self)
-            .context("Failed to serialize repo map cache")?;
+        let content =
+            serde_json::to_string_pretty(self).context("Failed to serialize repo map cache")?;
         std::fs::write(&path, content)
             .with_context(|| format!("Failed to write {}", path.display()))?;
         Ok(())
     }
 
-    pub(crate) fn is_file_changed(&self, file: &str, current_mtime: u64, current_hash: &str) -> bool {
+    pub(crate) fn is_file_changed(
+        &self,
+        file: &str,
+        current_mtime: u64,
+        current_hash: &str,
+    ) -> bool {
         match self.files.get(file) {
             Some(entry) => entry.mtime != current_mtime || entry.hash != current_hash,
             None => true, // New file
@@ -128,15 +133,45 @@ fn extract_rust_symbols(content: &str, path: &Path) -> Vec<SymbolEntry> {
     for (line_num, line) in content.lines().enumerate() {
         let line = line.trim();
         let (kind, name) = if line.starts_with("fn ") {
-            ("function", line.trim_start_matches("fn ").split('(').next().map(|s| s.trim()))
+            (
+                "function",
+                line.trim_start_matches("fn ")
+                    .split('(')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else if line.starts_with("struct ") {
-            ("struct", line.trim_start_matches("struct ").split('{').next().map(|s| s.trim()))
+            (
+                "struct",
+                line.trim_start_matches("struct ")
+                    .split('{')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else if line.starts_with("enum ") {
-            ("enum", line.trim_start_matches("enum ").split('{').next().map(|s| s.trim()))
+            (
+                "enum",
+                line.trim_start_matches("enum ")
+                    .split('{')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else if line.starts_with("trait ") {
-            ("trait", line.trim_start_matches("trait ").split('{').next().map(|s| s.trim()))
+            (
+                "trait",
+                line.trim_start_matches("trait ")
+                    .split('{')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else if line.starts_with("impl ") {
-            ("impl", line.trim_start_matches("impl ").split('{').next().map(|s| s.trim()))
+            (
+                "impl",
+                line.trim_start_matches("impl ")
+                    .split('{')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else {
             continue;
         };
@@ -163,9 +198,21 @@ fn extract_python_symbols(content: &str, path: &Path) -> Vec<SymbolEntry> {
     for (line_num, line) in content.lines().enumerate() {
         let line = line.trim();
         let (kind, name) = if line.starts_with("def ") {
-            ("function", line.trim_start_matches("def ").split('(').next().map(|s| s.trim()))
+            (
+                "function",
+                line.trim_start_matches("def ")
+                    .split('(')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else if line.starts_with("class ") {
-            ("class", line.trim_start_matches("class ").split('(').next().map(|s| s.trim()))
+            (
+                "class",
+                line.trim_start_matches("class ")
+                    .split('(')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else {
             continue;
         };
@@ -192,11 +239,29 @@ fn extract_js_symbols(content: &str, path: &Path) -> Vec<SymbolEntry> {
     for (line_num, line) in content.lines().enumerate() {
         let line = line.trim();
         let (kind, name) = if line.starts_with("function ") {
-            ("function", line.trim_start_matches("function ").split('(').next().map(|s| s.trim()))
+            (
+                "function",
+                line.trim_start_matches("function ")
+                    .split('(')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else if line.starts_with("class ") {
-            ("class", line.trim_start_matches("class ").split('{').next().map(|s| s.trim()))
+            (
+                "class",
+                line.trim_start_matches("class ")
+                    .split('{')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else if line.starts_with("const ") && line.contains('=') && line.contains("=>") {
-            ("arrow_function", line.trim_start_matches("const ").split('=').next().map(|s| s.trim()))
+            (
+                "arrow_function",
+                line.trim_start_matches("const ")
+                    .split('=')
+                    .next()
+                    .map(|s| s.trim()),
+            )
         } else {
             continue;
         };
@@ -283,7 +348,10 @@ pub(crate) fn build_repo_map(
 
         cache.update_file(entry);
 
-        let tokens = format_file_entry(cache.files.get(&file_str).unwrap(), token_budget - token_count);
+        let tokens = format_file_entry(
+            cache.files.get(&file_str).unwrap(),
+            token_budget - token_count,
+        );
         if token_count + tokens.len() <= token_budget {
             output.push_str(&tokens);
             token_count += tokens.len();
@@ -300,7 +368,10 @@ pub(crate) fn build_repo_map(
     // Save cache
     let _ = cache.save(repo_root);
 
-    output.push_str(&format!("\n\n{} files processed, {} tokens used\n", files_processed, token_count));
+    output.push_str(&format!(
+        "\n\n{} files processed, {} tokens used\n",
+        files_processed, token_count
+    ));
     (output, token_count)
 }
 
@@ -310,7 +381,10 @@ fn format_file_entry(entry: &FileEntry, token_budget: usize) -> String {
     output.push_str(&format!("## {}\n", entry.path));
 
     for symbol in &entry.symbols {
-        let line = format!("  - {} {} (line {})\n", symbol.kind, symbol.name, symbol.line);
+        let line = format!(
+            "  - {} {} (line {})\n",
+            symbol.kind, symbol.name, symbol.line
+        );
         if output.len() + line.len() > token_budget {
             output.push_str("  ...\n");
             break;
