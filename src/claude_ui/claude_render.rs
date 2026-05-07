@@ -10,7 +10,7 @@
 use super::claude_input::{InputMode, PickerState, SLASH_COMMANDS};
 use super::claude_markdown::AssistantContent;
 use super::claude_state::{
-    ClaudeMessage, ClaudeTranscript, NoticePersistence, UiNotice, FOOTER_HINTS,
+    ClaudeMessage, ClaudeTranscript, FOOTER_HINTS, NoticePersistence, UiNotice,
 };
 use super::claude_stream::StreamingUI;
 use crate::markdown_ansi::render_markdown_inline_to_ansi;
@@ -1660,6 +1660,26 @@ impl ClaudeRenderer {
             cursor_col,
         }
     }
+
+    /// Return the visible left-pane (transcript) lines as they currently appear
+    /// in the viewport, excluding input area and footer.
+    pub(crate) fn visible_left_pane_lines(&self) -> Vec<String> {
+        let mut lines = self.transcript.render();
+        let input_height = self.input_lines.len();
+        let footer_height = 1;
+        let transcript_height = self
+            .terminal_height
+            .saturating_sub(input_height + footer_height);
+
+        while lines.len() > transcript_height {
+            lines.remove(0);
+        }
+        while lines.len() < transcript_height {
+            lines.push(String::new());
+        }
+
+        lines
+    }
 }
 
 fn content_area_width_guess(transcript_width: usize) -> usize {
@@ -1927,11 +1947,7 @@ fn render_right_panel_info(
     let elma_highlight = if is_processing {
         // Fast cycle (5 frames per letter = 20 per cycle), wait 90 frames between cycles
         let phase = anim_frame % 110; // 20 frames cycle + 90 frames gap
-        if phase < 20 {
-            (phase / 5) % 4
-        } else {
-            5
-        }
+        if phase < 20 { (phase / 5) % 4 } else { 5 }
     } else if anim_frame >= 2 && anim_frame < 10 {
         (anim_frame - 2) / 2
     } else {
@@ -2103,10 +2119,13 @@ fn render_right_panel_thinking(
     // System info at bottom of thinking section
     if let Some(notice) = notice_text {
         all_lines.push(Line::from(""));
-        all_lines.push(Line::from(vec![Span::styled(
-            truncate_to_width(notice, area.width.saturating_sub(4) as usize),
-            Style::default().fg(theme.fg_dim.to_ratatui_color()),
-        )]));
+        let max_w = (area.width.saturating_sub(4) as usize).max(10);
+        for line in wrap_text_at_width(notice, max_w) {
+            all_lines.push(Line::from(vec![Span::styled(
+                line,
+                Style::default().fg(theme.fg_dim.to_ratatui_color()),
+            )]));
+        }
     }
 
     let total_lines = all_lines.len();

@@ -155,6 +155,16 @@ pub(crate) enum UiRuntimeEvent {
     BackgroundTaskRemoved {
         id: String,
     },
+    CoverageProgress {
+        completed: usize,
+        total: usize,
+    },
+    /// Fired when scope discovery upgrades the initial shape-based assessment (Task 760).
+    ComplexityReassessed {
+        original: String,
+        reassessed: String,
+        reason: String,
+    },
 }
 
 impl UiRuntimeEvent {
@@ -203,6 +213,8 @@ impl UiRuntimeEvent {
             UiRuntimeEvent::BackgroundTaskAdded { .. } => "bg_task_add",
             UiRuntimeEvent::BackgroundTaskUpdated { .. } => "bg_task_update",
             UiRuntimeEvent::BackgroundTaskRemoved { .. } => "bg_task_remove",
+            UiRuntimeEvent::CoverageProgress { .. } => "coverage",
+            UiRuntimeEvent::ComplexityReassessed { .. } => "complexity_reassess",
         }
     }
 }

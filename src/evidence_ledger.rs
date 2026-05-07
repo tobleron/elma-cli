@@ -489,6 +489,82 @@ impl EvidenceLedger {
         self.entries.len()
     }
 
+    /// Task 761: Returns a summary of evidence grouped by source type
+    /// (files read, directories searched, shell commands run).
+    pub(crate) fn coverage_summary(&self) -> String {
+        if self.entries.is_empty() {
+            return "No evidence collected.".to_string();
+        }
+
+        let mut file_paths: Vec<String> = Vec::new();
+        let mut search_dirs: Vec<String> = Vec::new();
+        let mut shell_cmds: Vec<String> = Vec::new();
+        let mut tool_calls: Vec<String> = Vec::new();
+
+        for entry in &self.entries {
+            match &entry.source {
+                EvidenceSource::Read { path } => {
+                    file_paths.push(path.clone());
+                }
+                EvidenceSource::Search { path, .. } => {
+                    search_dirs.push(path.clone());
+                }
+                EvidenceSource::Shell { command, .. } => {
+                    let short = command.chars().take(80).collect::<String>();
+                    shell_cmds.push(short);
+                }
+                EvidenceSource::Tool { name, input } => {
+                    let short = input.chars().take(60).collect::<String>();
+                    tool_calls.push(format!("{}: {}", name, short));
+                }
+            }
+        }
+
+        let mut parts: Vec<String> = Vec::new();
+        let total = self.entries.len();
+        parts.push(format!("Total evidence entries: {}", total));
+
+        if !file_paths.is_empty() {
+            parts.push(format!("Files read: {}", file_paths.len()));
+            let preview: Vec<String> = file_paths.iter().take(5).cloned().collect();
+            parts.push(format!("  ({})", preview.join(", ")));
+            if file_paths.len() > 5 {
+                parts.push(format!("  ... and {} more", file_paths.len() - 5));
+            }
+        }
+        if !search_dirs.is_empty() {
+            parts.push(format!("Directories searched: {}", search_dirs.len()));
+        }
+        if !shell_cmds.is_empty() {
+            parts.push(format!("Shell commands executed: {}", shell_cmds.len()));
+        }
+        if !tool_calls.is_empty() {
+            parts.push(format!("Other tool calls: {}", tool_calls.len()));
+        }
+
+        parts.join("\n")
+    }
+
+    /// Task 761: Whether the evidence ledger has at least minimal coverage
+    /// (at least one successful entry of any kind).
+    pub(crate) fn has_minimal_coverage(&self) -> bool {
+        self.entries.iter().any(|e| matches!(e.quality, EvidenceQuality::Direct | EvidenceQuality::Indirect))
+    }
+
+    /// Task 761: Count of unique files read in this session.
+    pub(crate) fn unique_files_read(&self) -> usize {
+        use std::collections::HashSet;
+        let paths: HashSet<&str> = self
+            .entries
+            .iter()
+            .filter_map(|e| match &e.source {
+                EvidenceSource::Read { path } => Some(path.as_str()),
+                _ => None,
+            })
+            .collect();
+        paths.len()
+    }
+
     pub(crate) fn fresh_entries(&self) -> Vec<&EvidenceEntry> {
         self.entries
             .iter()
@@ -1053,5 +1129,51 @@ mod tests {
         let dir = std::env::temp_dir().join("test_stale");
         let ledger = EvidenceLedger::new("s_test", &dir);
         assert!(!ledger.check_file_is_stale("nonexistent.txt"));
+    }
+
+    // ── Task 761: Coverage assessment tests ──
+
+    #[test]
+    fn test_coverage_summary_with_evidence() {
+        let ledger = test_ledger();
+        let summary = ledger.coverage_summary();
+        assert!(summary.contains("Total evidence entries: 2"));
+        assert!(summary.contains("Files read: 1"));
+        assert!(summary.contains("Shell commands executed: 1"));
+        assert!(summary.contains("src/main.rs"));
+    }
+
+    #[test]
+    fn test_coverage_summary_empty() {
+        let dir = std::env::temp_dir().join("test_coverage_empty");
+        let ledger = EvidenceLedger::new("s_empty", &dir);
+        let summary = ledger.coverage_summary();
+        assert!(summary.contains("No evidence collected"));
+    }
+
+    #[test]
+    fn test_has_minimal_coverage() {
+        let ledger = test_ledger();
+        assert!(ledger.has_minimal_coverage());
+    }
+
+    #[test]
+    fn test_has_minimal_coverage_empty() {
+        let dir = std::env::temp_dir().join("test_coverage_min");
+        let ledger = EvidenceLedger::new("s_empty", &dir);
+        assert!(!ledger.has_minimal_coverage());
+    }
+
+    #[test]
+    fn test_unique_files_read() {
+        let mut ledger = test_ledger();
+        assert_eq!(ledger.unique_files_read(), 1); // src/main.rs
+        ledger.add_entry(
+            EvidenceSource::Read {
+                path: "AGENTS.md".to_string(),
+            },
+            "content",
+        );
+        assert_eq!(ledger.unique_files_read(), 2);
     }
 }

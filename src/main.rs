@@ -100,6 +100,7 @@ mod extension_gateway; // Task 680: Extension state MCP with offline gates
 mod file_scout; // Task 198: Read-only whole-system file scout
 mod file_watcher; // Task 682: File watcher and autosave workflow
 mod final_answer; // Task 384: Clean-Context Finalization Enforcement
+mod finalization_hardener; // Task 766: Strengthen finalization against stale artifacts
 mod finalization_verifier; // Task 690: Evidence grounded finalization honesty
 mod footer_contract; // Task 641: Footer contract for core-metrics-only status bar
 mod format;
@@ -136,10 +137,11 @@ mod logging;
 mod markdown_ansi; // Markdown-to-ANSI terminal rendering
 mod metrics;
 mod model_capabilities; // Task 448: Model Capability Registry And Token Budgeting
-mod mutation_contract; // Task 699: Mutating request execution and verification contract
 mod model_capability_probe; // Task 643: Model Capability Probe
 mod models_api;
+mod mutation_contract; // Task 699: Mutating request execution and verification contract
 mod network_policy; // Task 683: Network fetch/download/browser and offline search policy
+mod objective_state; // Task 763: Objective state and approach supervisor
 mod offline_lsp; // Task 670: Offline LSP diagnostics and code intelligence tool
 mod online_verification; // Task 694: Online verification policy and tool routing
 mod optimization;
@@ -193,10 +195,13 @@ mod safe_mode; // Task 272: Safe Mode Toggle System For Permission Levels
 mod safe_operations; // Task 692: Safe file operation planning and verification
 mod sanitize; // Task 577: ANSI escape sanitization boundary
 mod scenarios;
+mod scope_coverage; // Task 764: Scope coverage ledger as completion contract
 mod search_ranker; // Task 672: Search result analysis intel unit
 mod session;
 mod session_cleanup;
 mod session_display;
+#[cfg(test)]
+mod session_regression_test; // Task 769: Last session replay regression harness
 mod session_error;
 mod session_flush; // Task 283: Session Transcript Flush
 mod session_gc; // Task 282: Session Garbage Collector
@@ -264,7 +269,9 @@ mod verification_evidence;
 mod work_graph; // Task 389: Pyramid Work Graph
 mod work_graph_bridge; // Task 494: Bridge graph → tasks → steps
 mod work_graph_persistence; // Task 651: Work graph task persistence
+mod work_graph_runner; // Tasks 763-769: Work graph integration with tool loop
 mod workspace;
+mod workspace_path_resolver; // Task 765: Workspace path resolution and failed path recovery
 mod workspace_policy; // Task 441: Workspace ignore/protect policy
 mod workspace_tree; // Task 169: Claude Code-style Terminal UI
 

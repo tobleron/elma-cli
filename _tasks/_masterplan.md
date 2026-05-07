@@ -1,6 +1,6 @@
 # Master Plan
 
-Last updated: 2026-05-07 (round 8 prompt testing complete; tasks 724-728 opened)
+Last updated: 2026-05-07 (latest session failure analysis complete; tasks 760-769 opened)
 
 ## Phase 1: COMPLETED ✅
 
@@ -31,7 +31,43 @@ Remaining: integrate these modules into the runtime, complete remaining task fil
 
 This is the execution guide for the active pending queue. Use it to pick work in dependency order and to avoid touching the same source surfaces out of sequence. Each task file remains the implementation detail, acceptance criteria, and verification contract.
 
-## Immediate Round 8 Stabilization Queue
+## Immediate Round 9 Session-Failure Recovery Queue
+
+These tasks were created from the latest failed live chat session. Do these before more prompt testing or dense-model troubleshooting. The issue is no longer just individual tool-call repair; the core failure is that current-turn intent, stale context, artifacts, coverage, and finalization are not governed by strong enough runtime contracts.
+
+Execution order:
+
+1. `760_Enforce_Task_Governance_Guidelines_In_Task_Creation_Workflows.md`
+2. `761_Separate_Current_User_Request_From_Context_And_Prior_Evidence.md`
+3. `762_Replace_Global_Artifact_Tracking_With_Per_Turn_Deliverable_Contracts.md`
+4. `763_Add_Objective_State_And_Approach_Supervisor_Around_Direct_Tool_Calling.md`
+5. `764_Add_Scope_Coverage_Ledger_As_Completion_Contract.md`
+6. `765_Add_Workspace_Path_Resolution_And_Failed_Path_Recovery.md`
+7. `766_Strengthen_Finalization_Against_Stale_Artifacts_And_Objective_Drift.md`
+8. `767_Propagate_Direct_Tool_Loop_Results_To_Summaries_Continuity_And_Trace.md`
+9. `768_Add_Relevance_And_Expiry_To_Effective_History_Context.md`
+10. `769_Add_Last_Session_Replay_Regression_Harness.md`
+
+Why this order:
+
+1. Task 760 locks task quality so new work does not repeat circular repair patterns.
+2. Task 761 fixes the upstream data-flow bug where prior evidence is merged into the current user request.
+3. Task 762 fixes stale/global deliverables so existence questions cannot become artifact-completion answers.
+4. Tasks 763-765 add the runtime contracts needed for long-running autonomous completion: objective state, scope coverage, and path recovery.
+5. Task 766 hardens finalization after the upstream contracts exist.
+6. Task 767 makes session summaries and continuity see direct tool-loop facts.
+7. Task 768 reduces live-context noise for small models without losing traceability.
+8. Task 769 turns this bad session into a permanent replay gate.
+
+Observed latest-session failures these tasks must prevent:
+
+- Root `AGENTS.md` existed but final answer implied all AGENTS files lived under `_knowledge_base`.
+- `root path has no AGENTS.md ?` was answered as artifact completion instead of an existence answer.
+- `tasks/completed` did not recover to `_tasks/completed`.
+- The final turn returned stale `_testing_prompts` artifact-completion text.
+- Turn summaries claimed no tools were executed even when tool artifacts existed.
+
+## Previous Round 8 Stabilization Queue
 
 These tasks were created from direct prompt testing against `_testing_prompts/01_prompt.txt` through `_testing_prompts/08_prompt.txt` after tasks 720-723 were implemented. Do these before dense-model troubleshooting because they are still visible with the thinking model and will be worse on dense coder models.
 

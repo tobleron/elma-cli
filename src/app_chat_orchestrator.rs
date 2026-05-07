@@ -56,15 +56,29 @@ pub(crate) async fn build_program_with_temp(
     )
     .await
     {
-        Ok((answer, iterations, tool_calls, stopped_by_max)) => {
+        Ok(pipeline_result) => {
             trace(
                 &runtime.args,
                 &format!(
                     "tool_calling_pipeline: answer_len={} iterations={} tool_calls={} stopped={}",
-                    answer.len(),
-                    iterations,
-                    tool_calls,
-                    stopped_by_max,
+                    pipeline_result.final_answer.len(),
+                    pipeline_result.iterations,
+                    pipeline_result.tool_calls_made,
+                    pipeline_result.stopped_by_max,
+                ),
+            );
+            // Task 767: Store direct loop summary for trace/summary use
+            let ls = &pipeline_result.loop_summary;
+            trace(
+                &runtime.args,
+                &format!(
+                    "tool_calling_pipeline: loop_summary tools={} reads={} searches={} fails={} dups={} stop={}",
+                    ls.tool_calls_made,
+                    ls.successful_reads.len(),
+                    ls.successful_searches.len(),
+                    ls.failed_operations.len(),
+                    ls.duplicate_suppressions,
+                    ls.stop_reason,
                 ),
             );
             // Return as a single Respond step for the execution framework
@@ -72,7 +86,7 @@ pub(crate) async fn build_program_with_temp(
                 objective: line.to_string(),
                 steps: vec![Step::Respond {
                     id: "r1".to_string(),
-                    instructions: answer,
+                    instructions: pipeline_result.final_answer,
                     common: StepCommon {
                         purpose: "respond to user".to_string(),
                         depends_on: Vec::new(),

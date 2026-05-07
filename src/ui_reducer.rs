@@ -259,6 +259,10 @@ pub(crate) fn ui_reducer(state: &mut UiViewState, event: &UiRuntimeEvent) {
         UiRuntimeEvent::BackgroundTaskUpdated { .. } => {}
         UiRuntimeEvent::BackgroundTaskRemoved { .. } => {}
 
+        // ── Operational visibility (passthrough to transcript) ──────────
+        UiRuntimeEvent::CoverageProgress { .. } => {}
+        UiRuntimeEvent::ComplexityReassessed { .. } => {}
+
         // ── Compact (passthrough to transcript) ─────────────────────────
         UiRuntimeEvent::CompactBoundary => {}
         UiRuntimeEvent::CompactSummary { .. } => {}

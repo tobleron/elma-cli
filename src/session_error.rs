@@ -198,6 +198,9 @@ pub(crate) fn install_panic_hook(session_root: Option<PathBuf>) {
             let _ = write_session_status(root, "error", 0, None, Some(&message));
         }
 
+        // Task 762: Best-effort left chat render on panic
+        crate::session_write::write_left_chat_render_crash_recover();
+
         if let Some(ref root) = session_root {
             let trace_path = root.join("trace_debug.log");
             if let Ok(mut file) = std::fs::OpenOptions::new()

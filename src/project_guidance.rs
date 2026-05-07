@@ -19,7 +19,7 @@ impl GuidanceSnapshot {
             sections.push(format!("AGENTS.md:\n{}", trim_guidance(agents, 1600)));
         }
         if let Some(tasks) = &self.tasks_md {
-            sections.push(format!("_tasks/TASKS.md:\n{}", trim_guidance(tasks, 1200)));
+            sections.push(format!("_tasks/_tasks.md:\n{}", trim_guidance(tasks, 1200)));
         }
         if let (Some(path), Some(summary)) = (&self.active_master_path, &self.active_master_summary)
         {
@@ -43,7 +43,8 @@ fn trim_guidance(text: &str, max_chars: usize) -> String {
 
 pub(crate) fn load_project_guidance(root: &Path) -> GuidanceSnapshot {
     let agents_path = root.join("AGENTS.md");
-    let tasks_path = root.join("_tasks").join("TASKS.md");
+    let tasks_path = root.join("_tasks").join("_tasks.md");
+    let legacy_tasks_path = root.join("_tasks").join("TASKS.md");
     let active_dir = root.join("_tasks").join("active");
 
     let active_master = std::fs::read_dir(&active_dir)
@@ -61,7 +62,9 @@ pub(crate) fn load_project_guidance(root: &Path) -> GuidanceSnapshot {
 
     GuidanceSnapshot {
         agents_md: std::fs::read_to_string(&agents_path).ok(),
-        tasks_md: std::fs::read_to_string(&tasks_path).ok(),
+        tasks_md: std::fs::read_to_string(&tasks_path)
+            .or_else(|_| std::fs::read_to_string(&legacy_tasks_path))
+            .ok(),
         active_master_path: active_master
             .as_ref()
             .and_then(|p| p.strip_prefix(root).ok())
@@ -112,7 +115,7 @@ mod tests {
         };
         let rendered = snapshot.render_for_system_prompt();
         assert!(rendered.contains("AGENTS.md"));
-        assert!(rendered.contains("_tasks/TASKS.md"));
+        assert!(rendered.contains("_tasks/_tasks.md"));
         assert!(rendered.contains("master summary"));
     }
 }

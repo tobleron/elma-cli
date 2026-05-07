@@ -157,6 +157,123 @@ pub(crate) fn write_thinking_log(
     Ok(path)
 }
 
+// ── left chat render (Task 739 / Task 762) ────────────────────────────
+
+/// Last known render state cached for crash/panic recovery.
+static LAST_LEFT_RENDER: std::sync::RwLock<Option<(PathBuf, Vec<String>, u16)>> =
+    std::sync::RwLock::new(None);
+
+/// Persist the visible left chat pane lines to `left_chat_render.txt`
+/// in the session directory, with viewport metadata as leading comments.
+/// Also caches the state for panic recovery.
+pub(crate) fn write_left_chat_render(session_root: &Path, lines: &[String], terminal_width: u16) {
+    // Cache for crash recovery (clone paths + lines for ownership)
+    if let Ok(mut cache) = LAST_LEFT_RENDER.write() {
+        *cache = Some((
+            session_root.to_path_buf(),
+            lines.to_vec(),
+            terminal_width,
+        ));
+    }
+
+    let path = session_root.join("left_chat_render.txt");
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            tracing::warn!("Failed to create dir for left_chat_render: {}", e);
+            return;
+        }
+    }
+
+    let mut content = String::new();
+    content.push_str(&format!("# terminal_width: {}\n", terminal_width));
+    content.push_str(&format!("# lines: {}\n", lines.len()));
+    content.push_str("# === visible left chat pane ===\n\n");
+
+    let strip = crate::markdown_ansi::no_color_enabled();
+    for line in lines {
+        if strip {
+            let clean = String::from_utf8_lossy(
+                &strip_ansi_escapes::strip(line.as_bytes())
+                    .unwrap_or_else(|_| line.as_bytes().to_vec()),
+            )
+            .to_string();
+            content.push_str(&clean);
+        } else {
+            content.push_str(line);
+        }
+        content.push('\n');
+    }
+
+    if let Err(e) = std::fs::write(&path, &content) {
+        tracing::warn!("Failed to write left_chat_render.txt: {}", e);
+    }
+}
+
+/// Best-effort crash recovery: write cached render state if available.
+/// Designed to be called from panic hooks. Errors are silently ignored.
+pub(crate) fn write_left_chat_render_crash_recover() {
+    let cache = match LAST_LEFT_RENDER.read() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+    if let Some((ref root, ref lines, width)) = *cache {
+        let path = root.join("left_chat_render.txt");
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let mut content = String::new();
+        content.push_str(&format!("# terminal_width: {}\n", width));
+        content.push_str(&format!("# lines: {}\n", lines.len()));
+        content.push_str("# === visible left chat pane (crash snapshot) ===\n\n");
+        let strip = crate::markdown_ansi::no_color_enabled();
+        for line in lines {
+            if strip {
+                let clean = String::from_utf8_lossy(
+                    &strip_ansi_escapes::strip(line.as_bytes())
+                        .unwrap_or_else(|_| line.as_bytes().to_vec()),
+                )
+                .to_string();
+                content.push_str(&clean);
+            } else {
+                content.push_str(line);
+            }
+            content.push('\n');
+        }
+        let _ = std::fs::write(&path, &content);
+    }
+}
+
+/// Append one frame record to `left_chat_frames.jsonl` in the session
+/// directory, describing the viewport dimensions at the end of a turn.
+pub(crate) fn append_left_chat_frame(
+    session_root: &Path,
+    turn_id: usize,
+    terminal_width: usize,
+    visible_line_count: usize,
+    timestamp: u64,
+) {
+    let path = session_root.join("left_chat_frames.jsonl");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let record = serde_json::json!({
+        "turn": turn_id,
+        "width": terminal_width,
+        "lines": visible_line_count,
+        "ts": timestamp,
+    });
+    let line = match serde_json::to_string(&record) {
+        Ok(s) => format!("{}\n", s),
+        Err(_) => return,
+    };
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+}
+
+
 // ── goal state → session.json ─────────────────────────────────────────
 
 /// Write goal state into the session metadata file (session.json).

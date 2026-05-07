@@ -140,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn test_check_goal_drift_action_mismatch() {
+    fn test_check_goal_drift_does_not_infer_intent_from_objective_keywords() {
         let objective = "Delete unused files";
         let program = Program {
             objective: objective.to_string(),
@@ -168,8 +168,7 @@ mod tests {
         let results = vec![];
 
         let verdict = check_goal_drift(objective, &program, &results);
-        assert!(verdict.drift_detected);
-        assert!(verdict.reason.as_ref().unwrap().contains("read-only"));
+        assert!(!verdict.drift_detected);
     }
 
     #[test]
@@ -357,11 +356,13 @@ mod tests {
 
         let verdict = check_goal_drift(objective, &program, &results);
         assert!(verdict.drift_detected);
-        assert!(verdict
-            .reason
-            .as_ref()
-            .unwrap()
-            .contains("0 successful modifications"));
+        assert!(
+            verdict
+                .reason
+                .as_ref()
+                .unwrap()
+                .contains("0 successful modifications")
+        );
     }
 
     #[test]

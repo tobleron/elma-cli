@@ -1,6 +1,7 @@
 //! @efficiency-role: domain-logic
 //!
 //! Artifact Deliverable Verifier — Task 688 / Task 697.
+//! Task 762: Replaced global artifact tracking with per-turn DeliverableContract.
 //!
 //! Tracks required output artifacts requested by the user and verifies
 //! they exist before finalization. Prevents the model from claiming
@@ -9,8 +10,7 @@
 //! Task 697: Task-specific artifact naming, artifact manifest, collision-safe paths.
 
 use crate::*;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,7 +39,220 @@ impl std::fmt::Display for ArtifactState {
     }
 }
 
-/// Check whether a file contains a recovered-evidence-dump header.
+/// Task 762: A single tracked deliverable with per-entry metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct DeliverableEntry {
+    /// Normalized relative path of the requested deliverable.
+    pub path: String,
+    /// How this deliverable was requested: "user_request", "artifact_inference", "continuation"
+    pub source: String,
+    /// Whether the file already existed on disk when the deliverable was registered.
+    pub pre_existed: bool,
+    /// Whether write/edit/backup/copy tools touched this path during the current turn.
+    pub touched_this_turn: bool,
+    /// Verification status after finalization.
+    pub verification_status: DeliverableStatus,
+}
+
+/// Task 762: Completion status for a deliverable after verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum DeliverableStatus {
+    /// File exists and was written this turn (model-authored or deterministic).
+    CompletedCurrentTurn,
+    /// File existed before this turn — not created or updated now.
+    PreExistedNotModified,
+    /// File was touched this turn but may be partial (evidence recovery).
+    PartialEvidenceRecovery,
+    /// File does not exist on disk.
+    Failed,
+}
+
+impl std::fmt::Display for DeliverableStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeliverableStatus::CompletedCurrentTurn => write!(f, "completed_current_turn"),
+            DeliverableStatus::PreExistedNotModified => write!(f, "pre_existed_not_modified"),
+            DeliverableStatus::PartialEvidenceRecovery => write!(f, "partial_evidence_recovery"),
+            DeliverableStatus::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+/// Task 762: Per-turn deliverable contract. Created fresh each turn
+/// instead of using global mutable state. Records requested deliverables,
+/// their pre-existence, current-turn mutations, and final verification.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct DeliverableContract {
+    pub entries: Vec<DeliverableEntry>,
+    pub turn_id: String,
+}
+
+impl DeliverableContract {
+    pub fn new(turn_id: &str) -> Self {
+        Self {
+            entries: Vec::new(),
+            turn_id: turn_id.to_string(),
+        }
+    }
+
+    /// Register a new deliverable. Records whether the path already existed.
+    pub fn require(&mut self, path: &str, source: &str, workspace_root: &Path) {
+        let normalized = normalize_path(path);
+        if self.entries.iter().any(|e| e.path == normalized) {
+            return;
+        }
+        let full_path = workspace_root.join(&normalized);
+        let pre_existed = full_path.exists();
+        self.entries.push(DeliverableEntry {
+            path: normalized,
+            source: source.to_string(),
+            pre_existed,
+            touched_this_turn: false,
+            verification_status: DeliverableStatus::Failed,
+        });
+    }
+
+    /// Mark a deliverable as touched by a current-turn tool (write, edit, backup, copy).
+    pub fn mark_touched(&mut self, path: &str) {
+        let normalized = normalize_path(path);
+        for entry in &mut self.entries {
+            if entry.path == normalized {
+                entry.touched_this_turn = true;
+                return;
+            }
+        }
+    }
+
+    /// Verify all deliverables against the filesystem.
+    pub fn verify_all(&mut self, workspace_root: &Path) {
+        for entry in &mut self.entries {
+            let full_path = workspace_root.join(&entry.path);
+            if !full_path.exists() {
+                entry.verification_status = DeliverableStatus::Failed;
+            } else if is_evidence_recovery_file(&full_path) || is_empty_file(&full_path) {
+                entry.verification_status = DeliverableStatus::PartialEvidenceRecovery;
+            } else if entry.touched_this_turn {
+                entry.verification_status = DeliverableStatus::CompletedCurrentTurn;
+            } else if entry.pre_existed {
+                entry.verification_status = DeliverableStatus::PreExistedNotModified;
+            } else {
+                // File exists but wasn't touched this turn and didn't pre-exist.
+                // This can happen with deterministic artifact synthesis.
+                entry.verification_status = DeliverableStatus::CompletedCurrentTurn;
+            }
+        }
+    }
+
+    /// Whether any deliverable was actually completed (created or updated) this turn.
+    pub fn has_current_turn_completions(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|e| e.verification_status == DeliverableStatus::CompletedCurrentTurn)
+    }
+
+    /// Whether all deliverables are in a terminal state (not Failed).
+    pub fn all_terminal(&self) -> bool {
+        !self.entries.is_empty()
+            && self
+                .entries
+                .iter()
+                .all(|e| e.verification_status != DeliverableStatus::Failed)
+    }
+
+    /// List of paths that are still Failed.
+    pub fn failed_paths(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter(|e| e.verification_status == DeliverableStatus::Failed)
+            .map(|e| e.path.clone())
+            .collect()
+    }
+
+    /// Get paths that were completed this turn (for finalization claims).
+    pub fn current_turn_completions(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter(|e| e.verification_status == DeliverableStatus::CompletedCurrentTurn)
+            .map(|e| e.path.clone())
+            .collect()
+    }
+
+    /// All required paths (regardless of status).
+    pub fn required_paths(&self) -> Vec<String> {
+        self.entries.iter().map(|e| e.path.clone()).collect()
+    }
+
+    /// Persist the contract to session storage.
+    pub fn persist(&self, session_root: &Path) {
+        let dir = session_root.join("deliverables");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("turn_{}.json", self.turn_id));
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(&path, &json);
+        }
+    }
+}
+
+// Task 762: Per-turn deliverable contract (replaces global REQUIRED_ARTIFACTS).
+static CURRENT_DELIVERABLE_CONTRACT: OnceLock<RwLock<Option<DeliverableContract>>> =
+    OnceLock::new();
+
+fn current_contract() -> &'static RwLock<Option<DeliverableContract>> {
+    CURRENT_DELIVERABLE_CONTRACT.get_or_init(|| RwLock::new(None))
+}
+
+/// Initialize a fresh deliverable contract for the current turn.
+pub(crate) fn init_deliverable_contract(turn_id: &str) {
+    if let Ok(mut lock) = current_contract().write() {
+        *lock = Some(DeliverableContract::new(turn_id));
+    }
+}
+
+/// Get a clone of the current deliverable contract (if any).
+pub(crate) fn get_deliverable_contract() -> Option<DeliverableContract> {
+    current_contract()
+        .read()
+        .ok()
+        .and_then(|lock| lock.clone())
+}
+
+/// Require a deliverable in the current contract (with source tracking).
+pub(crate) fn require_deliverable(path: &str, source: &str, workspace_root: &Path) {
+    if let Ok(mut lock) = current_contract().write() {
+        if let Some(ref mut contract) = *lock {
+            contract.require(path, source, workspace_root);
+        }
+    }
+}
+
+/// Mark a path as touched by a current-turn tool.
+pub(crate) fn mark_deliverable_touched(path: &str) {
+    if let Ok(mut lock) = current_contract().write() {
+        if let Some(ref mut contract) = *lock {
+            contract.mark_touched(path);
+        }
+    }
+}
+
+/// Verify all deliverables in the current contract.
+pub(crate) fn verify_deliverable_contract(workspace_root: &Path) {
+    if let Ok(mut lock) = current_contract().write() {
+        if let Some(ref mut contract) = *lock {
+            contract.verify_all(workspace_root);
+        }
+    }
+}
+
+/// Persist the current deliverable contract.
+pub(crate) fn persist_deliverable_contract(session_root: &Path) {
+    if let Ok(lock) = current_contract().read() {
+        if let Some(ref contract) = *lock {
+            contract.persist(session_root);
+        }
+    }
+}
+
+/// Check whether a file exists on disk.
 pub(crate) fn is_evidence_recovery_file(path: &Path) -> bool {
     if !path.exists() {
         return false;
@@ -662,5 +875,144 @@ mod tests {
         let request = "Search src and create a detailed security report in the project_tmp directory.";
         let artifacts = extract_required_artifacts_from_request(request);
         assert!(artifacts.contains(&"project_tmp/security_report.md".to_string()));
+    }
+
+    // ── Task 762: DeliverableContract tests ──
+
+    #[test]
+    fn test_deliverable_contract_new() {
+        let mut contract = DeliverableContract::new("turn_001");
+        let tmp = std::env::temp_dir().join("deliverable_test_new");
+        let _ = std::fs::create_dir_all(&tmp);
+        contract.require("project_tmp/report.md", "user_request", &tmp);
+        assert_eq!(contract.entries.len(), 1);
+        assert!(!contract.entries[0].pre_existed);
+        assert!(!contract.has_current_turn_completions());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_pre_existed() {
+        let tmp = std::env::temp_dir().join("deliverable_test_preexist");
+        let _ = std::fs::create_dir_all(&tmp);
+        std::fs::write(tmp.join("existing.txt"), "hello").unwrap();
+        let mut contract = DeliverableContract::new("turn_002");
+        contract.require("existing.txt", "user_request", &tmp);
+        assert!(contract.entries[0].pre_existed);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_mark_touched() {
+        let tmp = std::env::temp_dir().join("deliverable_test_touch");
+        let _ = std::fs::create_dir_all(&tmp);
+        let mut contract = DeliverableContract::new("turn_003");
+        contract.require("report.md", "user_request", &tmp);
+        contract.mark_touched("report.md");
+        assert!(contract.entries[0].touched_this_turn);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_verify_failed() {
+        let tmp = std::env::temp_dir().join("deliverable_test_verify_fail");
+        let _ = std::fs::create_dir_all(&tmp);
+        let mut contract = DeliverableContract::new("turn_004");
+        contract.require("missing.md", "user_request", &tmp);
+        contract.verify_all(&tmp);
+        assert_eq!(
+            contract.entries[0].verification_status,
+            DeliverableStatus::Failed
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_verify_touched_exists() {
+        let tmp = std::env::temp_dir().join("deliverable_test_verify_touch");
+        let _ = std::fs::create_dir_all(&tmp);
+        std::fs::write(tmp.join("output.md"), "content").unwrap();
+        let mut contract = DeliverableContract::new("turn_005");
+        contract.require("output.md", "user_request", &tmp);
+        contract.mark_touched("output.md");
+        contract.verify_all(&tmp);
+        assert_eq!(
+            contract.entries[0].verification_status,
+            DeliverableStatus::CompletedCurrentTurn
+        );
+        assert!(contract.has_current_turn_completions());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_verify_pre_existed_not_modified() {
+        let tmp = std::env::temp_dir().join("deliverable_test_preexist_notouch");
+        let _ = std::fs::create_dir_all(&tmp);
+        std::fs::write(tmp.join("existing.md"), "existing content").unwrap();
+        let mut contract = DeliverableContract::new("turn_006");
+        contract.require("existing.md", "user_request", &tmp);
+        // Not marked touched
+        contract.verify_all(&tmp);
+        assert_eq!(
+            contract.entries[0].verification_status,
+            DeliverableStatus::PreExistedNotModified
+        );
+        assert!(!contract.has_current_turn_completions());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_current_turn_completions() {
+        let tmp = std::env::temp_dir().join("deliverable_test_completions");
+        let _ = std::fs::create_dir_all(&tmp);
+        std::fs::write(tmp.join("a.md"), "a").unwrap();
+        let mut contract = DeliverableContract::new("turn_007");
+        contract.require("a.md", "user_request", &tmp);
+        contract.require("b.md", "user_request", &tmp);
+        contract.mark_touched("a.md");
+        contract.verify_all(&tmp);
+        let completions = contract.current_turn_completions();
+        assert!(completions.contains(&"a.md".to_string()));
+        assert!(!completions.contains(&"b.md".to_string()));
+        let failed = contract.failed_paths();
+        assert!(failed.contains(&"b.md".to_string()));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_required_paths() {
+        let tmp = std::env::temp_dir().join("deliverable_test_paths");
+        let _ = std::fs::create_dir_all(&tmp);
+        let mut contract = DeliverableContract::new("turn_008");
+        contract.require("a.txt", "user_request", &tmp);
+        contract.require("b.txt", "user_request", &tmp);
+        let paths = contract.required_paths();
+        assert_eq!(paths.len(), 2);
+        assert!(paths.contains(&"a.txt".to_string()));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_all_terminal() {
+        let tmp = std::env::temp_dir().join("deliverable_test_terminal");
+        let _ = std::fs::create_dir_all(&tmp);
+        std::fs::write(tmp.join("done.md"), "done").unwrap();
+        let mut contract = DeliverableContract::new("turn_009");
+        contract.require("done.md", "user_request", &tmp);
+        contract.mark_touched("done.md");
+        contract.verify_all(&tmp);
+        assert!(contract.all_terminal());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_deliverable_contract_not_all_terminal() {
+        let tmp = std::env::temp_dir().join("deliverable_test_not_terminal");
+        let _ = std::fs::create_dir_all(&tmp);
+        let mut contract = DeliverableContract::new("turn_010");
+        contract.require("missing.md", "user_request", &tmp);
+        contract.verify_all(&tmp);
+        assert!(!contract.all_terminal());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

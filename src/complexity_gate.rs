@@ -4,6 +4,11 @@
 //! Semantic classification belongs to the model/intel unit. This module only
 //! normalizes that signal, assigns the depth ceiling, and provides a conservative
 //! shape-based fallback when no model signal is available.
+//!
+//! Scope-based reassessment upgrades complexity when workspace discovery reveals
+//! a large file set that the input shape alone could not predict.
+
+use std::collections::HashMap;
 
 /// Complexity level for a user request, used to gate work graph depth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +116,54 @@ impl ComplexityGate {
             ComplexityLevel::Investigate => 2,
             ComplexityLevel::Multistep => 3,
             ComplexityLevel::OpenEnded => 4,
+        }
+    }
+
+    /// Scope-based reassessment: upgrade complexity when workspace discovery
+    /// reveals a file set larger than the input shape suggested.
+    ///
+    /// Scope signals are grounded counts (files, file-type variety, estimated
+    /// work items). No keyword matching. The upgrade ladder is conservative:
+    /// each call upgrades at most one level. OpenEnded is the ceiling.
+    pub(crate) fn reassess_with_scope(
+        previous_level: ComplexityLevel,
+        discovered_files: usize,
+        file_type_mix: &HashMap<String, usize>,
+        estimated_work_items: usize,
+    ) -> ComplexityAssessment {
+        let upgrade = discovered_files > 10 || estimated_work_items > 20;
+        if !upgrade {
+            return ComplexityAssessment {
+                level: previous_level,
+                confidence: 0.70,
+                reasoning: format!(
+                    "scope_reassessment no_upgrade files={} work_items={}",
+                    discovered_files, estimated_work_items
+                ),
+                max_graph_depth: Self::max_depth_for_level(&previous_level),
+            };
+        }
+
+        let new_level = match previous_level {
+            ComplexityLevel::Direct => ComplexityLevel::Investigate,
+            ComplexityLevel::Investigate => ComplexityLevel::Multistep,
+            ComplexityLevel::Multistep | ComplexityLevel::OpenEnded => ComplexityLevel::OpenEnded,
+        };
+
+        let confidence = if discovered_files > 50 || estimated_work_items > 100 {
+            0.80
+        } else {
+            0.62
+        };
+
+        ComplexityAssessment {
+            level: new_level,
+            confidence,
+            reasoning: format!(
+                "scope_reassessment upgrade {:?}->{:?} files={} file_types={} work_items={}",
+                previous_level, new_level, discovered_files, file_type_mix.len(), estimated_work_items
+            ),
+            max_graph_depth: Self::max_depth_for_level(&new_level),
         }
     }
 
@@ -272,5 +325,148 @@ mod tests {
             "please refactor the entire authentication system across all files",
             &assessment,
         ));
+    }
+
+    // ── Scope-based reassessment tests (Task 760) ───────────────────────────
+
+    #[test]
+    fn scope_reassessment_small_scope_stays() {
+        let mix = HashMap::new();
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::Investigate,
+            3,
+            &mix,
+            6,
+        );
+        assert_eq!(result.level, ComplexityLevel::Investigate);
+        assert_eq!(result.max_graph_depth, 2);
+    }
+
+    #[test]
+    fn scope_reassessment_direct_small_scope_stays_direct() {
+        let mix = HashMap::new();
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::Direct,
+            5,
+            &mix,
+            10,
+        );
+        assert_eq!(result.level, ComplexityLevel::Direct);
+        assert_eq!(result.max_graph_depth, 0);
+    }
+
+    #[test]
+    fn scope_reassessment_large_scope_upgrades_direct_to_investigate() {
+        let mut mix = HashMap::new();
+        mix.insert("rs".to_string(), 8);
+        mix.insert("toml".to_string(), 2);
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::Direct,
+            15,
+            &mix,
+            30,
+        );
+        assert_eq!(result.level, ComplexityLevel::Investigate);
+        assert_eq!(result.max_graph_depth, 2);
+        assert!(result.reasoning.contains("upgrade"));
+    }
+
+    #[test]
+    fn scope_reassessment_large_scope_upgrades_investigate_to_multistep() {
+        let mut mix = HashMap::new();
+        mix.insert("md".to_string(), 30);
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::Investigate,
+            44,
+            &mix,
+            88,
+        );
+        assert_eq!(result.level, ComplexityLevel::Multistep);
+        assert_eq!(result.max_graph_depth, 3);
+    }
+
+    #[test]
+    fn scope_reassessment_small_scope_stays_multistep() {
+        let mix = HashMap::new();
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::Multistep,
+            2,
+            &mix,
+            4,
+        );
+        assert_eq!(result.level, ComplexityLevel::Multistep);
+    }
+
+    #[test]
+    fn scope_reassessment_large_scope_upgrades_multistep_to_openended() {
+        let mut mix = HashMap::new();
+        mix.insert("rs".to_string(), 40);
+        mix.insert("md".to_string(), 15);
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::Multistep,
+            60,
+            &mix,
+            120,
+        );
+        assert_eq!(result.level, ComplexityLevel::OpenEnded);
+        assert_eq!(result.max_graph_depth, 4);
+    }
+
+    #[test]
+    fn scope_reassessment_openended_stays_openended() {
+        let mut mix = HashMap::new();
+        mix.insert("rs".to_string(), 200);
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::OpenEnded,
+            200,
+            &mix,
+            400,
+        );
+        assert_eq!(result.level, ComplexityLevel::OpenEnded);
+        assert_eq!(result.max_graph_depth, 4);
+    }
+
+    #[test]
+    fn scope_reassessment_large_files_high_confidence() {
+        let mix = HashMap::new();
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::Investigate,
+            60,
+            &mix,
+            120,
+        );
+        assert_eq!(result.level, ComplexityLevel::Multistep);
+        assert!(result.confidence > 0.75);
+    }
+
+    #[test]
+    fn scope_reassessment_empty_file_type_mix_still_upgrades() {
+        let mix = HashMap::new();
+        let result = ComplexityGate::reassess_with_scope(
+            ComplexityLevel::Direct,
+            11,
+            &mix,
+            22,
+        );
+        assert_eq!(result.level, ComplexityLevel::Investigate);
+    }
+}
+
+
+pub(crate) fn complexity_level_label(level: ComplexityLevel) -> &'static str {
+    match level {
+        ComplexityLevel::Direct => "DIRECT",
+        ComplexityLevel::Investigate => "INVESTIGATE",
+        ComplexityLevel::Multistep => "MULTISTEP",
+        ComplexityLevel::OpenEnded => "OPEN_ENDED",
+    }
+}
+
+pub(crate) fn max_iter_for_level(level: ComplexityLevel) -> usize {
+    match level {
+        ComplexityLevel::Direct => 3,
+        ComplexityLevel::Investigate => 5,
+        ComplexityLevel::Multistep => 10,
+        ComplexityLevel::OpenEnded => 20,
     }
 }

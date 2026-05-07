@@ -22,6 +22,7 @@ mod intel_units_final_summary;
 mod intel_units_goal_consistency;
 mod intel_units_graph_assessment;
 mod intel_units_intent;
+mod intel_units_workgraph_schema; // Tasks 763-769: Work graph schema intel
 pub(crate) mod intel_units_maestro;
 mod intel_units_repair;
 mod intel_units_responder;
@@ -54,6 +55,7 @@ pub(crate) use intel_units_repair::*;
 pub(crate) use intel_units_responder::*;
 pub(crate) use intel_units_thought_summary::*; // Task 622
 pub(crate) use intel_units_turn_summary::*; // Task 501
+pub(crate) use intel_units_workgraph_schema::*; // Tasks 763-769
 
 use crate::intel_trait::*;
 use crate::*;

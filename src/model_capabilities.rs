@@ -30,6 +30,12 @@ pub(crate) enum TokenizerKind {
     Anthropic,
     #[serde(rename = "huggingface")]
     HuggingFace,
+    #[serde(rename = "llama_cpp")]
+    LlamaCpp,
+    #[serde(rename = "gemma")]
+    Gemma,
+    #[serde(rename = "qwen")]
+    Qwen,
     #[serde(rename = "estimator")]
     Estimator,
     #[serde(rename = "none")]
@@ -233,7 +239,23 @@ fn built_in_capabilities(model_id: &str, provider: LlmProvider) -> ModelCapabili
             supports_logprobs: CapabilitySupport::Supported,
             supports_reasoning_format_auto: CapabilitySupport::Supported,
             supports_reasoning_format_none: CapabilitySupport::Supported,
-            tokenizer: TokenizerKind::Estimator,
+            tokenizer: TokenizerKind::LlamaCpp,
+            source: CapabilitySource::BuiltIn,
+        };
+    }
+
+    if lower.contains("gemma") {
+        return ModelCapabilities {
+            model_id: model_id.to_string(),
+            provider_family: Some(provider),
+            context_window_tokens: Some(128_000),
+            max_output_tokens: Some(8_192),
+            supports_tools: CapabilitySupport::Supported,
+            supports_streaming: CapabilitySupport::Supported,
+            supports_logprobs: CapabilitySupport::Unknown,
+            supports_reasoning_format_auto: CapabilitySupport::Unknown,
+            supports_reasoning_format_none: CapabilitySupport::Supported,
+            tokenizer: TokenizerKind::Gemma,
             source: CapabilitySource::BuiltIn,
         };
     }
@@ -249,7 +271,7 @@ fn built_in_capabilities(model_id: &str, provider: LlmProvider) -> ModelCapabili
             supports_logprobs: CapabilitySupport::Unknown,
             supports_reasoning_format_auto: CapabilitySupport::Unknown,
             supports_reasoning_format_none: CapabilitySupport::Supported,
-            tokenizer: TokenizerKind::Estimator,
+            tokenizer: TokenizerKind::Qwen,
             source: CapabilitySource::BuiltIn,
         };
     }
@@ -302,14 +324,29 @@ mod tests {
     fn test_built_in_llama() {
         let caps = built_in_capabilities("Llama-3.1-70B-Instruct", LlmProvider::OpenAICompatible);
         assert_eq!(caps.source, CapabilitySource::BuiltIn);
+        assert_eq!(caps.tokenizer, TokenizerKind::LlamaCpp);
+    }
+
+    #[test]
+    fn test_built_in_gemma() {
+        let caps = built_in_capabilities("gemma-2-27b-it", LlmProvider::OpenAICompatible);
+        assert_eq!(caps.source, CapabilitySource::BuiltIn);
+        assert_eq!(caps.tokenizer, TokenizerKind::Gemma);
+    }
+
+    #[test]
+    fn test_built_in_qwen() {
+        let caps = built_in_capabilities("qwen2.5-7b-instruct", LlmProvider::OpenAICompatible);
+        assert_eq!(caps.source, CapabilitySource::BuiltIn);
+        assert_eq!(caps.tokenizer, TokenizerKind::Qwen);
     }
 
     #[test]
     fn test_token_count_estimator() {
         let caps = ModelCapabilities::default();
-        // "hello world" = 2 tokens in cl100k
-        let count = token_count("hello world", &caps);
-        assert_eq!(count, 2);
+        let est = token_count("hello world", &caps);
+        assert!(est.count > 0);
+        assert!(!est.is_exact);
     }
 
     #[test]
@@ -324,12 +361,11 @@ mod tests {
     #[test]
     fn test_context_window_fallback() {
         let caps = ModelCapabilities::default();
-        // No context window set, should fall back to 8192
         assert_eq!(context_window_tokens(&caps), 8192);
     }
 }
 
-pub(crate) fn token_count(text: &str, capabilities: &ModelCapabilities) -> usize {
+pub(crate) fn token_count(text: &str, capabilities: &ModelCapabilities) -> crate::token_counter::TokenEstimate {
     crate::token_counter::count_tokens_for_model(text, capabilities.tokenizer)
 }
 

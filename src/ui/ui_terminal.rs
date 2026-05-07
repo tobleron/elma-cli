@@ -415,6 +415,16 @@ impl TerminalUI {
         self.state.footer.context_current
     }
 
+    /// Return the visible left-pane transcript lines currently rendered in the viewport.
+    pub(crate) fn visible_transcript_lines(&self) -> Vec<String> {
+        self.claude.visible_left_pane_lines()
+    }
+
+    /// Return the terminal width in columns.
+    pub(crate) fn terminal_width(&self) -> u16 {
+        self.claude.terminal_width as u16
+    }
+
     // --- New push_* methods ---
 
     pub(crate) fn push_meta_event(&mut self, category: &str, message: &str) {

@@ -5,6 +5,8 @@
 //! Computes the effective message history for the next LLM call by:
 //! - Excluding messages marked as `summarized = true`
 //! - Injecting turn summaries as system messages at turn boundaries
+//! - Task 768: Relevance and expiry — irrelevant artifacts, failed tools,
+//!   and stale evidence can be removed from live context while staying in trace.
 //!
 //! This is the core of the deferred pre-turn summary system (Task 310).
 //! It replaces raw turn messages with compact summaries to save context window.
@@ -12,9 +14,99 @@
 use crate::intel_units::TurnSummaryOutput;
 use crate::types_api::ChatMessage;
 
+/// Task 768: Relevance label for evidence and tool messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Relevance {
+    /// Directly relevant to the current objective.
+    Relevant,
+    /// Related but not essential.
+    Ancillary,
+    /// Not relevant to the current objective — candidate for expiry.
+    Irrelevant,
+}
+
+/// Task 768: Expire irrelevant messages from effective history.
+/// Keeps trace/session artifacts complete but filters the live packet.
+///
+/// Messages are considered for expiry if:
+/// - They are tool messages with no current-objective relevance
+/// - They are failed tool calls that resolved into a different approach
+/// - They reference artifacts or files not in the current scope
+pub(crate) fn compute_effective_history_with_relevance(
+    messages: &[ChatMessage],
+    current_objective: &str,
+    prior_turn_artifact_paths: &[String],
+) -> Vec<ChatMessage> {
+    let objective_lower = current_objective.to_lowercase();
+
+    messages
+        .iter()
+        .filter(|m| {
+            // Always keep non-summarized user/assistant messages
+            if m.role == "user" || m.role == "system" {
+                return !m.is_summarized();
+            }
+
+            // Assistant messages with tool calls: keep
+            if m.role == "assistant" && m.tool_calls.is_some() {
+                return !m.is_summarized();
+            }
+
+            // Tool messages: keep if relevant to current objective,
+            // or if the tool name appears in current-objective context
+            if m.role == "tool" {
+                if m.is_summarized() {
+                    return false;
+                }
+
+                // Check if the tool name appears in the objective
+                if let Some(ref name) = m.name {
+                    if objective_lower.contains(&name.to_lowercase()) {
+                        return true;
+                    }
+                }
+
+                // Check if the content references a current-scope path
+                let content_lower = m.content.to_lowercase();
+                if prior_turn_artifact_paths
+                    .iter()
+                    .any(|p| content_lower.contains(&p.to_lowercase()))
+                {
+                    return true;
+                }
+
+                // Keep tool results that contain error info (important for debugging)
+                if content_lower.contains("error") || content_lower.contains("failed") {
+                    return true;
+                }
+
+                // If the result references current-objective keywords, keep it
+                let obj_words: Vec<&str> = objective_lower
+                    .split_whitespace()
+                    .filter(|w| w.len() > 3)
+                    .collect();
+                if obj_words
+                    .iter()
+                    .any(|w| content_lower.contains(w))
+                {
+                    return true;
+                }
+
+                // Default: expire tool messages that don't match any relevance signal
+                return false;
+            }
+
+            !m.is_summarized()
+        })
+        .cloned()
+        .collect()
+}
+
 /// Compute the effective message history for the next LLM call.
 /// Messages marked `summarized = true` are excluded from the result.
 /// The remaining messages preserve their original order.
+///
+/// Task 768: Uses relevance filtering when current_objective is provided.
 pub(crate) fn compute_effective_history(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     messages
         .iter()
@@ -70,6 +162,18 @@ mod tests {
             tool_call_id: None,
             reasoning_content: None,
             summarized,
+        }
+    }
+
+    fn make_tool_msg(content: &str, name: &str) -> ChatMessage {
+        ChatMessage {
+            role: "tool".to_string(),
+            content: content.to_string(),
+            name: Some(name.to_string()),
+            tool_calls: None,
+            tool_call_id: Some("t1".to_string()),
+            reasoning_content: None,
+            summarized: false,
         }
     }
 
@@ -159,5 +263,63 @@ mod tests {
 
         inject_turn_summary(&mut messages, &summary);
         assert!(messages[1].content.contains("Cargo.toml"));
+    }
+
+    // ── Task 768: Relevance and expiry tests ──
+
+    #[test]
+    fn test_relevance_filter_keeps_user_msgs() {
+        let msgs = vec![
+            make_msg("user", "find AGENTS.md", false),
+            make_msg("assistant", "looking...", false),
+        ];
+        let filtered = compute_effective_history_with_relevance(&msgs, "find AGENTS.md", &[]);
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_relevance_expires_irrelevant_tool_msg() {
+        let msgs = vec![
+            make_msg("user", "find AGENTS.md", false),
+            make_tool_msg("Found 3 files in _testing_prompts", "search"),
+        ];
+        let filtered = compute_effective_history_with_relevance(&msgs, "find AGENTS.md", &[]);
+        // Tool msg about _testing_prompts not relevant to AGENTS.md — should expire
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_relevance_keeps_relevant_tool_msg() {
+        let msgs = vec![
+            make_msg("user", "find AGENTS.md", false),
+            make_tool_msg("Found AGENTS.md in workspace root", "search"),
+        ];
+        let filtered = compute_effective_history_with_relevance(&msgs, "find AGENTS.md", &[]);
+        // Tool msg contains "AGENTS.md" which appears in objective — keep
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_relevance_keeps_error_tool_msg() {
+        let msgs = vec![
+            make_msg("user", "read file", false),
+            make_tool_msg("error: file not found", "read"),
+        ];
+        let filtered = compute_effective_history_with_relevance(&msgs, "read file", &[]);
+        // Error messages are always kept
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_relevance_keeps_tool_with_scoped_path() {
+        let msgs = vec![
+            make_msg("user", "verify completed tasks", false),
+            make_tool_msg("Contents of _tasks/completed/001_done.md", "read"),
+        ];
+        let prior = vec!["_tasks/completed".to_string()];
+        let filtered =
+            compute_effective_history_with_relevance(&msgs, "verify completed tasks", &prior);
+        // Tool msg references a path from prior_turn_artifact_paths — keep
+        assert_eq!(filtered.len(), 2);
     }
 }

@@ -25,6 +25,7 @@ IMPLEMENTATION_SUMMARY.md
 TASK_WIRING_UNUSED_CRATES.md
 *.md
 !AGENTS.md
+!_tasks/_guidelines.md
 !_tasks/pending/437_Clippy_Lint_Gate_Baseline_Cleanup.md
 !_tasks/pending/438_Provider_Connectivity_And_Endpoint_Hardening.md
 !_tasks/pending/439_Task_Ledger_Drift_And_Completed_Claim_Reconciliation.md

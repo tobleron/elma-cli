@@ -8,6 +8,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_APPROACH_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Unique identifier for an approach branch.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -18,7 +21,13 @@ impl ApproachId {
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
-        Self(format!("a_{}_{}", ts.as_secs(), ts.subsec_nanos()))
+        let sequence = NEXT_APPROACH_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        Self(format!(
+            "a_{}_{}_{}",
+            ts.as_secs(),
+            ts.subsec_nanos(),
+            sequence
+        ))
     }
 
     pub fn from_str(s: &str) -> Self {
@@ -370,11 +379,13 @@ mod tests {
     fn test_builder_creates_approach() {
         let builder = WorkGraphBuilder::new("test".to_string());
         assert_eq!(builder.graph.approaches.len(), 1);
-        assert!(builder
-            .graph
-            .approaches
-            .values()
-            .any(|s| *s == ApproachStatus::Active));
+        assert!(
+            builder
+                .graph
+                .approaches
+                .values()
+                .any(|s| *s == ApproachStatus::Active)
+        );
     }
 
     #[test]

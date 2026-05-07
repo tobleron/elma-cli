@@ -1,5 +1,14 @@
 # Task Management
 
+## Required Guidance
+
+Before creating, editing, implementing, or archiving tasks, read:
+
+- [`_guidelines.md`](_guidelines.md) for Elma's task-quality rules, objectives, anti-patterns, and model-bottleneck policy.
+- [`_masterplan.md`](_masterplan.md) for current sequencing and dependency order.
+
+New pending tasks must explicitly align with the guidelines. If a proposed task would violate Elma's objectives, depend on deterministic user-input keyword matching, or repeat a circular failed repair pattern, revise it before adding it to `pending/`.
+
 ## Task Creation
 
 ### Main Project Tasks (Numbered Prefixes)

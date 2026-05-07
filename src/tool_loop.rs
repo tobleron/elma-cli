@@ -8,6 +8,7 @@ use crate::auto_compact::{
 use crate::event_log;
 use crate::tool_calling::build_tool_definitions;
 use crate::tool_result_storage::{DEFAULT_MAX_RESULT_SIZE_CHARS, apply_tool_result_budget};
+use crate::tools::ToolExecutionResult;
 use crate::ui_state::{
     get_total_intel_failures, increment_intel_failure_count, reset_intel_failure_counts,
 };
@@ -279,6 +280,22 @@ pub(crate) struct ToolLoopResult {
     /// Summary of evidence gathered during this loop cycle,
     /// used for cross-cycle evidence injection on restart.
     pub(crate) evidence_progress_summary: Option<String>,
+    /// Task 763: Structured tool-loop summary for turn summarizer
+    pub(crate) loop_summary: ToolLoopSummary,
+}
+
+/// Task 763: Structured summary of a tool-loop execution cycle.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ToolLoopSummary {
+    pub tool_calls_made: usize,
+    pub tool_call_ids: Vec<String>,
+    pub successful_reads: Vec<String>,
+    pub successful_searches: Vec<String>,
+    pub failed_operations: Vec<(String, String)>,
+    pub duplicate_suppressions: usize,
+    pub coverage: Option<(usize, usize)>,
+    pub stop_reason: String,
+    pub stop_iteration: usize,
 }
 
 struct ToolLoopModelTurn {
@@ -295,6 +312,234 @@ struct StreamingToolCallPart {
     call_type: Option<String>,
     name: Option<String>,
     arguments: String,
+}
+
+fn extract_read_paths_from_args(args_json: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(args_json) else {
+        return Vec::new();
+    };
+    let Some(obj) = value.as_object() else {
+        return Vec::new();
+    };
+
+    let mut paths = Vec::new();
+    for key in ["path", "filePath"] {
+        if let Some(path) = obj
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            paths.push(path.to_string());
+        }
+    }
+    if let Some(arr) = obj.get("paths").and_then(|v| v.as_array()) {
+        for path in arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            paths.push(path.to_string());
+        }
+    }
+
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn read_call_requests_broad_scope(paths: &[String]) -> bool {
+    paths.len() > 1
+        || paths
+            .iter()
+            .any(|path| path.contains('*') || path.contains('?') || path.contains('['))
+}
+
+fn concrete_workspace_file_path(workdir: &Path, candidate: &str) -> Option<String> {
+    let clean = candidate.trim();
+    if clean.is_empty() || clean.ends_with('/') {
+        return None;
+    }
+    let full = if std::path::Path::new(clean).is_absolute() {
+        PathBuf::from(clean)
+    } else {
+        workdir.join(clean)
+    };
+    if !full.is_file() {
+        return None;
+    }
+    Some(
+        full.strip_prefix(workdir)
+            .unwrap_or(&full)
+            .display()
+            .to_string(),
+    )
+}
+
+fn extract_ls_scope_paths(args_json: &str, output: &str, workdir: &Path) -> Vec<String> {
+    let base = serde_json::from_str::<serde_json::Value>(args_json)
+        .ok()
+        .and_then(|v| v.get("path").and_then(|p| p.as_str()).map(str::to_string))
+        .unwrap_or_default();
+    let base = base.trim().trim_end_matches('/').to_string();
+    let mut paths = Vec::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.contains("item(s)")
+            || trimmed.starts_with("...")
+            || trimmed.starts_with("total ")
+            || trimmed.ends_with('/')
+        {
+            continue;
+        }
+        // Primary: split on "  (" between name and (size, date) metadata.
+        let name = if let Some((name, _meta)) = trimmed.rsplit_once("  (") {
+            name.trim().to_string()
+        } else {
+            // Fallback: take the first whitespace-delimited word that looks
+            // like a filename (has an extension). Handles truncated entries
+            // and entries without metadata blocks.
+            trimmed
+                .split_whitespace()
+                .next()
+                .unwrap_or(trimmed)
+                .to_string()
+        };
+        if name.is_empty() || name.contains("truncated") || name.ends_with("…") {
+            continue;
+        }
+        let candidate = if base.is_empty() || base == "." {
+            name
+        } else {
+            format!("{}/{}", base, name)
+        };
+        if let Some(path) = concrete_workspace_file_path(workdir, &candidate) {
+            paths.push(path);
+        }
+    }
+
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn extract_line_scope_paths(output: &str, workdir: &Path) -> Vec<String> {
+    let mut paths = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with("error")
+            || trimmed.starts_with("Tool result")
+            || trimmed.starts_with('[')
+        {
+            continue;
+        }
+        if let Some(path) = concrete_workspace_file_path(workdir, trimmed) {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn update_scope_coverage_from_tool(
+    scope_coverage: &mut crate::scope_coverage::ScopeCoverageLedger,
+    tool_name: &str,
+    args_json: &str,
+    result: &ToolExecutionResult,
+    workdir: &Path,
+    scope_tracking_active: bool,
+) {
+    match tool_name {
+        "ls" if result.ok => {
+            let paths = extract_ls_scope_paths(args_json, &result.content, workdir);
+            scope_coverage.register_items(&paths, "file");
+        }
+        "glob" if result.ok => {
+            let paths = extract_line_scope_paths(&result.content, workdir);
+            scope_coverage.register_items(&paths, "file");
+        }
+        "shell" if result.ok && scope_tracking_active => {
+            let paths = extract_line_scope_paths(&result.content, workdir);
+            scope_coverage.register_items(&paths, "file");
+        }
+        "read" => {
+            let paths = extract_read_paths_from_args(args_json)
+                .into_iter()
+                .filter_map(|path| concrete_workspace_file_path(workdir, &path))
+                .collect::<Vec<_>>();
+            if !paths.is_empty() {
+                scope_coverage.register_items(&paths, "file");
+                for path in paths {
+                    if result.ok {
+                        scope_coverage.mark_covered(&path);
+                    } else {
+                        scope_coverage.mark_failed(&path);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn scope_coverage_pair(
+    scope_coverage: &crate::scope_coverage::ScopeCoverageLedger,
+) -> Option<(usize, usize)> {
+    let total = scope_coverage.total();
+    if total == 0 {
+        None
+    } else {
+        Some((
+            scope_coverage.count_by_status(crate::scope_coverage::CoverageStatus::Covered),
+            total,
+        ))
+    }
+}
+
+fn sync_loop_summary_coverage(
+    summary: &mut ToolLoopSummary,
+    scope_coverage: &crate::scope_coverage::ScopeCoverageLedger,
+) {
+    summary.coverage = scope_coverage_pair(scope_coverage);
+}
+
+fn scope_coverage_blocks_finalization(
+    read_scope_required: bool,
+    scope_coverage: &crate::scope_coverage::ScopeCoverageLedger,
+) -> bool {
+    // Block if coverage was activated and items remain pending.
+    // Also block if activation was triggered but discovery failed (total == 0).
+    read_scope_required
+        && (scope_coverage.total() == 0 || scope_coverage.has_pending())
+}
+
+fn build_scope_coverage_nudge(
+    scope_coverage: &crate::scope_coverage::ScopeCoverageLedger,
+) -> String {
+    let pending = scope_coverage
+        .items
+        .iter()
+        .filter(|item| item.status == crate::scope_coverage::CoverageStatus::Pending)
+        .take(12)
+        .map(|item| format!("- `{}`", item.item))
+        .collect::<Vec<_>>();
+    let failed = scope_coverage.count_by_status(crate::scope_coverage::CoverageStatus::Failed);
+    let pending_suffix = if pending.is_empty() {
+        String::new()
+    } else {
+        format!("\n\nPending files:\n{}", pending.join("\n"))
+    };
+    format!(
+        "Scope coverage is incomplete: {}. Failed entries: {}. Continue reading the remaining concrete paths before answering. Prefer batching with the read tool's `paths` array when possible.{}",
+        scope_coverage.render_summary(),
+        failed,
+        pending_suffix,
+    )
 }
 
 fn is_tool_call_markup(text: &str) -> bool {
@@ -742,7 +987,10 @@ async fn finalize_from_evidence_or_fallback(
     }
     if !required_artifacts.is_empty() && missing_after.is_empty() && !all_complete {
         // All paths exist but some are partial (evidence recovery)
-        trace(args, "finalization_stage=partial_artifact_completion artifact_state=partial_evidence_recovery");
+        trace(
+            args,
+            "finalization_stage=partial_artifact_completion artifact_state=partial_evidence_recovery",
+        );
         return build_partial_artifact_completion_answer(&required_artifacts, workdir);
     }
 
@@ -1000,7 +1248,10 @@ async fn synthesize_missing_artifacts(
             } else {
                 trace(
                     args,
-                    &format!("artifact_synth_fallback_written path={} artifact_state=evidence_recovery", artifact_name),
+                    &format!(
+                        "artifact_synth_fallback_written path={} artifact_state=evidence_recovery",
+                        artifact_name
+                    ),
                 );
                 crate::artifact_verifier::mark_artifact_verified(artifact_name);
             }
@@ -1053,8 +1304,12 @@ fn build_artifact_fallback_from_tool_evidence(
                 .filter(|l| {
                     let t = l.trim();
                     !t.is_empty()
-                        && (t.contains('/') || t.contains(".rs") || t.contains(".md")
-                            || t.contains(".toml") || t.contains(".json") || t.contains(".py"))
+                        && (t.contains('/')
+                            || t.contains(".rs")
+                            || t.contains(".md")
+                            || t.contains(".toml")
+                            || t.contains(".json")
+                            || t.contains(".py"))
                         && (t.chars().filter(|&c| c == '/').count() == 1
                             || t.starts_with("src/")
                             || t.starts_with("tests/")
@@ -1074,9 +1329,7 @@ fn build_artifact_fallback_from_tool_evidence(
     } else {
         evidence
             .iter()
-            .map(|(name, content)| {
-                format!("## Tool Evidence: {}\n\n{}", name, content)
-            })
+            .map(|(name, content)| format!("## Tool Evidence: {}\n\n{}", name, content))
             .collect::<Vec<_>>()
             .join("\n\n---\n\n")
     };
@@ -1085,12 +1338,25 @@ fn build_artifact_fallback_from_tool_evidence(
         String::new()
     } else {
         let mut seen: Vec<&str> = Vec::new();
-        let unique: Vec<&str> = file_refs.iter().map(|s| s.as_str()).filter(|p| {
-            if seen.contains(p) { false } else { seen.push(p); true }
-        }).collect();
+        let unique: Vec<&str> = file_refs
+            .iter()
+            .map(|s| s.as_str())
+            .filter(|p| {
+                if seen.contains(p) {
+                    false
+                } else {
+                    seen.push(p);
+                    true
+                }
+            })
+            .collect();
         format!(
             "\n\n## Files Referenced in Evidence\n\n{}\n",
-            unique.iter().map(|p| format!("- `{}`", p)).collect::<Vec<_>>().join("\n")
+            unique
+                .iter()
+                .map(|p| format!("- `{}`", p))
+                .collect::<Vec<_>>()
+                .join("\n")
         )
     };
 
@@ -1106,11 +1372,7 @@ fn build_artifact_fallback_from_tool_evidence(
          {}{}\n\n\
          ## Evidence\n\n\
          {}\n",
-        artifact_name,
-        user_objective,
-        stop_reason_note,
-        files_section,
-        evidence_block,
+        artifact_name, user_objective, stop_reason_note, files_section, evidence_block,
     )
 }
 
@@ -1204,13 +1466,24 @@ fn tool_signal(tc: &ToolCall) -> String {
             .unwrap_or("")
             .trim()
             .to_string(),
-        "read" => parsed
-            .get("path")
-            .or_else(|| parsed.get("filePath"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim()
-            .to_string(),
+        "read" => {
+            // Check path, filePath, then paths[0] (canonicalized by repair layer)
+            let single = parsed
+                .get("path")
+                .or_else(|| parsed.get("filePath"))
+                .and_then(|v| v.as_str());
+            if let Some(s) = single {
+                s.trim().to_string()
+            } else if let Some(arr) = parsed.get("paths").and_then(|v| v.as_array()) {
+                arr.first()
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string()
+            } else {
+                String::new()
+            }
+        }
         "search" => {
             let pat = parsed
                 .get("pattern")
@@ -1275,15 +1548,23 @@ pub(crate) async fn run_tool_loop(
     ctx_max: Option<u64>,
     goal_state: &GoalState,
     complexity: &str,
+    // Task 761: raw_user_request is the user's original text without injected evidence.
+    // When None, falls back to user_message for backward compat.
+    raw_user_request: Option<&str>,
+    // Tasks 763-769: Graph-driven execution with node commitment and relaxed finalization.
+    mut work_graph_runner: crate::work_graph_runner::WorkGraphRunner,
 ) -> Result<ToolLoopResult> {
     let budget = StageBudget::from_complexity(complexity);
     let total_timeout = Duration::from_secs(45 * 60); // 45 minutes
     let loop_start = Instant::now();
     let original_user_request = user_message.to_string();
+    // Task 761: Use raw_user_request for artifact extraction so prior evidence
+    // and runtime hints do not create false artifact requirements.
+    let artifact_request = raw_user_request.unwrap_or(user_message);
     crate::artifact_verifier::init_artifact_tracking();
     crate::tool_repair::reset_empty_read_validation_failures();
     let required_artifacts =
-        crate::artifact_verifier::extract_required_artifacts_from_request(&original_user_request);
+        crate::artifact_verifier::extract_required_artifacts_from_request(artifact_request);
     if !required_artifacts.is_empty() {
         crate::artifact_verifier::require_artifacts(&required_artifacts);
         trace(
@@ -1391,6 +1672,15 @@ pub(crate) async fn run_tool_loop(
         )
     }
 
+    // Task 759: Persistent duplicate-read counter across loop iterations
+    let mut consecutive_read_duplicates: u32 = 0;
+    let mut consecutive_empty_read_signals: u32 = 0;
+    let mut read_stuck_hint_injected: bool = false;
+    // Task 763: Accumulate structured summary data during execution
+    let mut loop_summary_tracker = ToolLoopSummary::default();
+    let mut scope_coverage = crate::scope_coverage::ScopeCoverageLedger::new();
+    let mut read_scope_required = false;
+
     loop {
         turn_counter += 1;
         let turn_id = format!("turn_{}", turn_counter);
@@ -1423,6 +1713,7 @@ pub(crate) async fn run_tool_loop(
             crate::event_log::clear_current_turn();
             let _ = crate::event_log::persist(&sess.root);
             tui.push_stop_notice(&format!("Timeout: {}", timeout_reason));
+            sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
             return Ok(ToolLoopResult {
                 final_answer: format!(
                     "⏱️ **Timeout After {:.1} Minutes**\n\n\
@@ -1444,6 +1735,7 @@ pub(crate) async fn run_tool_loop(
                 total_elapsed_s: elapsed.as_secs() as f64,
                 timeout_reason: Some(timeout_reason),
                 evidence_progress_summary: build_evidence_progress_summary(&messages),
+                loop_summary: loop_summary_tracker.clone(),
             });
         }
 
@@ -1496,13 +1788,28 @@ pub(crate) async fn run_tool_loop(
 
             if can_continue && !has_required_artifact_deliverable {
                 continuation_count += 1;
-                let cont_msg = build_continuation_message(
-                    &messages,
-                    &original_user_request,
-                    continuation_count,
-                    MAX_CONTINUATIONS,
-                    &sess.root,
-                );
+                let cont_msg = if scope_coverage_blocks_finalization(
+                    read_scope_required,
+                    &scope_coverage,
+                ) {
+                    sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
+                    tui.push_meta_event(
+                        "COVERAGE",
+                        &format!("continuing - {}", scope_coverage.render_summary()),
+                    );
+                    format!(
+                        "Continue from existing evidence. Scope coverage is still incomplete, so do not finalize yet.\n\n{}",
+                        build_scope_coverage_nudge(&scope_coverage)
+                    )
+                } else {
+                    build_continuation_message(
+                        &messages,
+                        &original_user_request,
+                        continuation_count,
+                        MAX_CONTINUATIONS,
+                        &sess.root,
+                    )
+                };
                 messages.push(ChatMessage::simple("user", &cont_msg));
                 tui.push_stop_notice(&format!(
                     "Budget continued ({}/{}): meaningful progress detected",
@@ -1527,14 +1834,17 @@ pub(crate) async fn run_tool_loop(
                 // give a bounded continuation focused on completing the deliverables.
                 let all_complete = crate::artifact_verifier::are_all_artifacts_complete(workdir);
                 let incomplete = crate::artifact_verifier::find_incomplete_artifacts(workdir);
-                if !all_complete && !incomplete.is_empty() && continuation_count < MAX_CONTINUATIONS {
+                if !all_complete && !incomplete.is_empty() && continuation_count < MAX_CONTINUATIONS
+                {
                     continuation_count += 1;
                     let cont_msg = format!(
                         "You reached the tool-call budget but the following required deliverables are still incomplete:\n{}\n\n\
                          Continue working to complete these deliverables. Focus on completing them directly.",
-                        incomplete.iter().map(|(name, _, state)| {
-                            format!("- `{}` ({})", name, state)
-                        }).collect::<Vec<_>>().join("\n")
+                        incomplete
+                            .iter()
+                            .map(|(name, _, state)| { format!("- `{}` ({})", name, state) })
+                            .collect::<Vec<_>>()
+                            .join("\n")
                     );
                     messages.push(ChatMessage::simple("user", &cont_msg));
                     tui.push_stop_notice(&format!(
@@ -1561,10 +1871,35 @@ pub(crate) async fn run_tool_loop(
                 );
             }
 
-            messages.push(ChatMessage::simple(
-                "user",
-                "You've reached the maximum number of tool calls. Please provide your final answer.",
-            ));
+            // Tasks 763-769: Relaxed continuation — resist "finalize now" pressure.
+            // For graph-driven mode, inject a focused continuation that keeps the model
+            // on the current node rather than rushing to a premature final answer.
+            let graph_incomplete = work_graph_runner.finalization_is_premature();
+            if scope_coverage_blocks_finalization(read_scope_required, &scope_coverage) || graph_incomplete {
+                sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
+                tui.push_meta_event(
+                    "COVERAGE",
+                    &format!("incomplete at stop - {}", scope_coverage.render_summary()),
+                );
+                let cont_msg = if graph_incomplete {
+                    format!(
+                        "{}\n\n{}",
+                        work_graph_runner.build_relaxed_continuation(),
+                        build_scope_coverage_nudge(&scope_coverage)
+                    )
+                } else {
+                    format!(
+                        "You've reached the maximum number of tool calls with incomplete scope coverage. Produce a clearly partial progress report.\n\n{}",
+                        build_scope_coverage_nudge(&scope_coverage)
+                    )
+                };
+                messages.push(ChatMessage::simple("user", &cont_msg));
+            } else {
+                messages.push(ChatMessage::simple(
+                    "user",
+                    "You've reached the maximum number of tool calls. Please provide your final answer.",
+                ));
+            }
             let final_content = finalize_from_evidence_or_fallback(
                 args,
                 tui,
@@ -1614,6 +1949,7 @@ pub(crate) async fn run_tool_loop(
             } else {
                 tui.push_stop_notice(&format!("Budget limit: {}", outcome.reason.as_str()));
             }
+            sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
             return Ok(ToolLoopResult {
                 final_answer: if final_answer_needs_retry(&final_trimmed) {
                     build_fallback_from_recent_tool_evidence(&messages, Some(&outcome.reason))
@@ -1627,6 +1963,7 @@ pub(crate) async fn run_tool_loop(
                 total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                 timeout_reason: None,
                 evidence_progress_summary: build_evidence_progress_summary(&messages),
+                loop_summary: loop_summary_tracker.clone(),
             });
         }
 
@@ -1694,6 +2031,26 @@ pub(crate) async fn run_tool_loop(
         // Process pending keyboard events so the input buffer stays
         // responsive even while Elma is mid-tool-loop (Task 600).
         tui.process_pending_input_events();
+
+        // Tasks 763-769: In graph-driven mode, inject node focus context
+        // so the model stays committed to the current node and resists
+        // premature finalization or goal switching.
+        if work_graph_runner.is_graph_driven() {
+            // Advance to next pending node if no current commitment.
+            if work_graph_runner.current_progress.is_none() {
+                if work_graph_runner.advance_to_next_node().is_some() {
+                    trace(
+                        args,
+                        "work_graph_runner: advanced to next pending graph node",
+                    );
+                    // Seed coverage from graph sub-goal nodes on first advance.
+                    work_graph_runner.seed_coverage_from_graph();
+                }
+            }
+            // Record this iteration for the current node.
+            work_graph_runner.record_iteration();
+        }
+
         let total_calls = stop_policy.total_tool_calls();
         let profile = ad_hoc_profile(model_id, "tool_loop");
         let req = chat_request_from_profile(
@@ -1893,6 +2250,7 @@ pub(crate) async fn run_tool_loop(
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 tui.push_stop_notice(&format!("Tool call limit: {}", outcome.reason.as_str()));
                 let evidence_summary = build_evidence_progress_summary(&messages);
+                sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
                         build_fallback_from_recent_tool_evidence(&messages, stop_reason)
@@ -1906,6 +2264,7 @@ pub(crate) async fn run_tool_loop(
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
                     evidence_progress_summary: evidence_summary,
+                    loop_summary: loop_summary_tracker.clone(),
                 });
             }
 
@@ -1954,6 +2313,7 @@ pub(crate) async fn run_tool_loop(
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 tui.push_stop_notice(&format!("Stagnation: {}", outcome.reason.as_str()));
                 let evidence_summary = build_evidence_progress_summary(&messages);
+                sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
                         build_fallback_from_recent_tool_evidence(&messages, stop_reason)
@@ -1967,6 +2327,7 @@ pub(crate) async fn run_tool_loop(
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
                     evidence_progress_summary: evidence_summary,
+                    loop_summary: loop_summary_tracker.clone(),
                 });
             } else {
                 let stagnation_info = stop_policy.stagnation_trace_info();
@@ -1977,6 +2338,40 @@ pub(crate) async fn run_tool_loop(
                 // Task 540: Surface stagnation warning to transcript if persistent
                 if stop_policy.stagnation_runs() >= 3 {
                     tui.push_meta_event("STAGNATION", &stagnation_info);
+                }
+
+                // Tasks 763-769: When stagnating with pending coverage items,
+                // inject specific file paths so the model knows what to read.
+                if stop_policy.stagnation_runs() >= 2
+                    && work_graph_runner.coverage.has_pending()
+                {
+                    let pending: Vec<String> = work_graph_runner
+                        .coverage
+                        .items
+                        .iter()
+                        .filter(|i| i.status == crate::scope_coverage::CoverageStatus::Pending)
+                        .take(5)
+                        .map(|i| format!("  - `{}`", i.item))
+                        .collect();
+                    if !pending.is_empty() {
+                        let total = work_graph_runner.coverage.count_by_status(
+                            crate::scope_coverage::CoverageStatus::Pending,
+                        );
+                        let hint = format!(
+                            "You have {} unread files. Read one of these next:\n{}\n\
+                             Pick any pending file and read it. Do NOT re-read files you already read.",
+                            total,
+                            pending.join("\n"),
+                        );
+                        messages.push(ChatMessage::simple("system", &hint));
+                        trace(
+                            args,
+                            &format!(
+                                "tool_loop: injected stagnation hint with {} pending files",
+                                pending.len()
+                            ),
+                        );
+                    }
                 }
             }
 
@@ -2012,13 +2407,107 @@ pub(crate) async fn run_tool_loop(
                 {
                     if let Some((ok, prev)) = tool_outcomes.get(&sig) {
                         if *ok {
+                            let is_read = tc.function.name == "read";
+                            if is_read {
+                                consecutive_read_duplicates += 1;
+                            }
+                            loop_summary_tracker.duplicate_suppressions += 1;
+                            let dup_path = if is_read {
+                                crate::tool_repair::extract_path_from_args(&tc.function.arguments)
+                            } else {
+                                sig.clone()
+                            };
                             trace(
                                 args,
                                 &format!(
-                                    "tool_loop: duplicate skipped (already succeeded) signal={}",
-                                    sig
+                                    "tool_loop: duplicate skipped (already succeeded) signal={} consecutive_read_dups={} dup_path={}",
+                                    sig, consecutive_read_duplicates, dup_path
                                 ),
                             );
+                            if is_read
+                                && consecutive_read_duplicates >= 2
+                                && !read_stuck_hint_injected
+                            {
+                                read_stuck_hint_injected = true;
+                                let mut exclude_set: std::collections::HashSet<String> =
+                                    std::collections::HashSet::new();
+                                let current_path = crate::tool_repair::extract_path_from_args(
+                                    &tc.function.arguments,
+                                );
+                                if !current_path.is_empty() {
+                                    exclude_set.insert(current_path.clone());
+                                }
+                                let mut alt_hint = String::new();
+                                for msg in messages.iter().rev().take(12) {
+                                    if msg.role == "tool"
+                                        && (msg.name.as_deref() == Some("ls")
+                                            || msg.name.as_deref() == Some("glob")
+                                            || msg.name.as_deref() == Some("search"))
+                                    {
+                                        let alt_paths: Vec<String> = msg
+                                            .content
+                                            .lines()
+                                            .map(|l| l.trim())
+                                            .filter(|l| {
+                                                !l.is_empty()
+                                                    && !l.starts_with("total")
+                                                    && !l.starts_with("===")
+                                                    && !l.starts_with("File:")
+                                                    && !l.ends_with("/")
+                                                    && l.contains(".")
+                                                    && l.len() < 200
+                                            })
+                                            .filter(|p| !exclude_set.contains(*p))
+                                            .take(3)
+                                            .map(|s| s.to_string())
+                                            .collect();
+                                        if !alt_paths.is_empty() {
+                                            let formatted: Vec<String> = alt_paths
+                                                .iter()
+                                                .map(|p| format!("  - `{}`", p))
+                                                .collect();
+                                            alt_hint = format!(
+                                                "You have already read `{}`. Try OTHER unread files from the listing:\n{}\nUse read with a different path, e.g. `{}`.",
+                                                if current_path.is_empty() {
+                                                    "this file"
+                                                } else {
+                                                    &current_path
+                                                },
+                                                formatted.join("\n"),
+                                                alt_paths[0]
+                                            );
+                                            trace(
+                                                args,
+                                                &format!(
+                                                    "tool_loop: read_stuck_hint_injected dup_path={} suggested={}",
+                                                    current_path, alt_paths[0]
+                                                ),
+                                            );
+                                            break;
+                                        }
+                                    }
+                                }
+                                if alt_hint.is_empty() {
+                                    alt_hint = format!(
+                                        "You have already read `{}`. {} consecutive duplicate reads detected.\nUse glob or search to discover new files, then read them.",
+                                        if current_path.is_empty() {
+                                            "this file"
+                                        } else {
+                                            &current_path
+                                        },
+                                        consecutive_read_duplicates
+                                    );
+                                    trace(
+                                        args,
+                                        &format!(
+                                            "tool_loop: read_stuck_hint_generic dup_path={} count={}",
+                                            current_path, consecutive_read_duplicates
+                                        ),
+                                    );
+                                }
+                                messages.push(ChatMessage::simple("system", &alt_hint));
+                                continue;
+                            }
                             messages.push(ChatMessage::simple(
                                 "system",
                                 &format!("Already completed earlier — same result: {}", prev),
@@ -2040,13 +2529,7 @@ pub(crate) async fn run_tool_loop(
                                         search_paths.join(", ")
                                     )
                                 };
-                                trace(
-                                    args,
-                                    &format!(
-                                        "tool_loop: {} signal={}",
-                                        trace_note, sig
-                                    ),
-                                );
+                                trace(args, &format!("tool_loop: {} signal={}", trace_note, sig));
                                 let hint = if search_paths.is_empty() {
                                     "The same empty read call already failed. No valid file paths found in recent evidence. Use 'glob' or 'search' to discover files first.".to_string()
                                 } else {
@@ -2415,6 +2898,81 @@ pub(crate) async fn run_tool_loop(
                     result.ok,
                 );
 
+                let read_paths_for_coverage = if tc.function.name == "read" {
+                    extract_read_paths_from_args(&tc.function.arguments)
+                } else {
+                    Vec::new()
+                };
+                if tc.function.name == "read"
+                    && read_call_requests_broad_scope(&read_paths_for_coverage)
+                {
+                    read_scope_required = true;
+                    if !result.ok {
+                        messages.push(ChatMessage::simple(
+                            "system",
+                            "The broad read attempt did not resolve concrete files. Discover concrete paths with ls or glob, then read the remaining files in batches.",
+                        ));
+                    }
+                }
+                update_scope_coverage_from_tool(
+                    &mut scope_coverage,
+                    &tc.function.name,
+                    &tc.function.arguments,
+                    &result,
+                    workdir,
+                    read_scope_required,
+                );
+                if scope_coverage.total() > 0 {
+                    sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
+                    scope_coverage.persist(&sess.root);
+                    // Activate coverage tracking whenever the ledger has items,
+                    // not only on wildcard reads. If ls/glob/read discovered
+                    // files in a directory, the user's scope clearly requires
+                    // coverage enforcement — the model must read all discovered
+                    // items before finalization can pass.
+                    if !read_scope_required {
+                        read_scope_required = true;
+                    }
+                    tui.push_meta_event("COVERAGE", &scope_coverage.render_summary());
+                }
+
+                // Tasks 763-769: Sync external coverage into work graph runner.
+                // The runner's coverage ledger tracks graph-derived AND discovered items;
+                // this ensures discovered scope feeds into finalization gating.
+                if work_graph_runner.is_graph_driven() {
+                    work_graph_runner.sync_external_coverage(&scope_coverage);
+                    work_graph_runner.record_tool_call(result.ok);
+
+                    // When ls/glob discovers files, expand read_all graph nodes
+                    // with concrete SubGoal nodes for each discovered path.
+                    let is_discovery = tc.function.name == "ls"
+                        || (tc.function.name == "globbing" || tc.function.name == "glob");
+                    if is_discovery && result.ok && scope_coverage.total() > 0 {
+                        let paths: Vec<String> = scope_coverage
+                            .items
+                            .iter()
+                            .map(|i| i.item.clone())
+                            .collect();
+                        let expanded = work_graph_runner.populate_from_discovery(&paths);
+                        if expanded > 0 {
+                            trace(
+                                args,
+                                &format!(
+                                    "work_graph_runner: expanded {} SubGoal nodes from discovery ({} paths)",
+                                    expanded, paths.len()
+                                ),
+                            );
+                            tui.push_meta_event(
+                                "FOCUS",
+                                &format!(
+                                    "Graph populated: {} items to process",
+                                    work_graph_runner.coverage.total()
+                                ),
+                            );
+                        }
+                    }
+                }
+
                 // Task 287: Add evidence ledger entry for tool result
                 if tc.function.name != "respond"
                     && tc.function.name != "update_todo_list"
@@ -2438,10 +2996,7 @@ pub(crate) async fn run_tool_loop(
                         }
                         "read" => {
                             let path =
-                                serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
-                                    .ok()
-                                    .and_then(|v| v["path"].as_str().map(String::from))
-                                    .unwrap_or_default();
+                                crate::tool_repair::extract_path_from_args(&tc.function.arguments);
                             crate::evidence_ledger::EvidenceSource::Read { path }
                         }
                         "search" => {
@@ -2600,6 +3155,43 @@ pub(crate) async fn run_tool_loop(
                 {
                     let raw_content = normalize_final_answer_candidate(&result.content);
                     if !raw_content.is_empty() {
+                        // Tasks 763-769: Block respond when scope coverage or
+                        // work graph runner says finalization is premature.
+                        let coverage_incomplete =
+                            scope_coverage_blocks_finalization(read_scope_required, &scope_coverage);
+                        let graph_incomplete =
+                            work_graph_runner.finalization_is_premature();
+                        if coverage_incomplete || graph_incomplete {
+                            sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
+                            let nudge = if graph_incomplete {
+                                let mut msg = work_graph_runner.build_relaxed_continuation();
+                                if coverage_incomplete {
+                                    msg.push_str(&format!(
+                                        "\n\n{}",
+                                        build_scope_coverage_nudge(&scope_coverage)
+                                    ));
+                                }
+                                msg
+                            } else {
+                                build_scope_coverage_nudge(&scope_coverage)
+                            };
+                            tui.push_meta_event("COVERAGE", &scope_coverage.render_summary());
+                            if graph_incomplete {
+                                tui.push_meta_event(
+                                    "FOCUS",
+                                    "Graph-driven: finalization blocked — work incomplete",
+                                );
+                            }
+                            messages.push(ChatMessage::simple("system", &nudge));
+                            trace(
+                                args,
+                                &format!(
+                                    "tool_loop: blocked respond finalization coverage_incomplete={} graph_incomplete={}",
+                                    coverage_incomplete, graph_incomplete
+                                ),
+                            );
+                            continue;
+                        }
                         // Remove the model's raw streaming assistant before
                         // running the evidence finalizer — prevents duplicate
                         // responses when the model streams text AND calls respond.
@@ -2619,6 +3211,7 @@ pub(crate) async fn run_tool_loop(
                         )
                         .await;
                         let trimmed_final = normalize_final_answer_candidate(&final_content);
+                        sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
                         return Ok(ToolLoopResult {
                             final_answer: if final_answer_needs_retry(&trimmed_final) {
                                 build_fallback_from_recent_tool_evidence(&messages, None)
@@ -2632,6 +3225,7 @@ pub(crate) async fn run_tool_loop(
                             total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                             timeout_reason: None,
                             evidence_progress_summary: build_evidence_progress_summary(&messages),
+                            loop_summary: loop_summary_tracker.clone(),
                         });
                     }
                 }
@@ -2669,6 +3263,27 @@ pub(crate) async fn run_tool_loop(
                 }
 
                 if result.ok {
+                    // Task 763: Track structured summary data
+                    loop_summary_tracker.tool_calls_made += 1;
+                    loop_summary_tracker.tool_call_ids.push(tc.id.clone());
+                    match tc.function.name.as_str() {
+                        "read" => {
+                            loop_summary_tracker.successful_reads.push(
+                                crate::tool_repair::extract_path_from_args(&tc.function.arguments),
+                            );
+                        }
+                        "search" => {
+                            loop_summary_tracker
+                                .successful_searches
+                                .push(tc.function.arguments.chars().take(200).collect());
+                        }
+                        _ => {}
+                    }
+                    // Task 759: Reset read duplicate counter on non-read success
+                    if tc.function.name != "read" {
+                        consecutive_read_duplicates = 0;
+                        consecutive_empty_read_signals = 0;
+                    }
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
                         content: "".to_string(),
@@ -2808,6 +3423,7 @@ pub(crate) async fn run_tool_loop(
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
                 tui.push_stop_notice("Forced finalization due to repeated shell failures");
+                sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
                         build_fallback_from_recent_tool_evidence(&messages, None)
@@ -2827,6 +3443,7 @@ pub(crate) async fn run_tool_loop(
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
                     evidence_progress_summary: build_evidence_progress_summary(&messages),
+                    loop_summary: loop_summary_tracker.clone(),
                 });
             }
 
@@ -2868,6 +3485,7 @@ pub(crate) async fn run_tool_loop(
                 )
                 .await;
                 let trimmed = normalize_final_answer_candidate(&final_content);
+                sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed) {
                         build_fallback_from_recent_tool_evidence(&messages, stop_reason)
@@ -2881,6 +3499,7 @@ pub(crate) async fn run_tool_loop(
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
                     evidence_progress_summary: build_evidence_progress_summary(&messages),
+                    loop_summary: loop_summary_tracker.clone(),
                 });
             }
 
@@ -2928,6 +3547,7 @@ pub(crate) async fn run_tool_loop(
                     );
                     crate::event_log::clear_current_turn();
                     let _ = crate::event_log::persist(&sess.root);
+                    sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
                     return Ok(ToolLoopResult {
                         final_answer: if final_answer_needs_retry(&trimmed) {
                             build_fallback_from_recent_tool_evidence(
@@ -2944,6 +3564,7 @@ pub(crate) async fn run_tool_loop(
                         total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                         timeout_reason: None,
                         evidence_progress_summary: build_evidence_progress_summary(&messages),
+                        loop_summary: loop_summary_tracker.clone(),
                     });
                 }
             }
@@ -2967,6 +3588,40 @@ pub(crate) async fn run_tool_loop(
             // instead of using raw model output. The small model often produces
             // wrong answers that contradict its own tool results.
             if has_recent_tool_evidence(&messages) {
+                let coverage_incomplete =
+                    scope_coverage_blocks_finalization(read_scope_required, &scope_coverage);
+                let graph_incomplete = work_graph_runner.finalization_is_premature();
+                if coverage_incomplete || graph_incomplete {
+                    sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
+                    let nudge = if graph_incomplete {
+                        let mut msg = work_graph_runner.build_relaxed_continuation();
+                        if coverage_incomplete {
+                            msg.push_str(&format!(
+                                "\n\n{}",
+                                build_scope_coverage_nudge(&scope_coverage)
+                            ));
+                        }
+                        msg
+                    } else {
+                        build_scope_coverage_nudge(&scope_coverage)
+                    };
+                    tui.push_meta_event("COVERAGE", &scope_coverage.render_summary());
+                    if graph_incomplete {
+                        tui.push_meta_event(
+                            "FOCUS",
+                            "Graph-driven: finalization blocked — work incomplete",
+                        );
+                    }
+                    messages.push(ChatMessage::simple("system", &nudge));
+                    trace(
+                        args,
+                        &format!(
+                            "tool_loop: blocked voluntary finalization for pending scope coverage {}",
+                            scope_coverage.render_summary()
+                        ),
+                    );
+                    continue;
+                }
                 trace(
                     args,
                     "tool_loop: routing voluntary stop through evidence finalizer (Task 601)",
@@ -2989,6 +3644,7 @@ pub(crate) async fn run_tool_loop(
                 )
                 .await;
                 let trimmed_final = normalize_final_answer_candidate(&final_content);
+                sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
                 return Ok(ToolLoopResult {
                     final_answer: if final_answer_needs_retry(&trimmed_final) {
                         build_fallback_from_recent_tool_evidence(&messages, None)
@@ -3002,8 +3658,10 @@ pub(crate) async fn run_tool_loop(
                     total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                     timeout_reason: None,
                     evidence_progress_summary: build_evidence_progress_summary(&messages),
+                    loop_summary: loop_summary_tracker.clone(),
                 });
             }
+            sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
             return Ok(ToolLoopResult {
                 final_answer: normalize_final_answer_candidate(&content),
                 iterations: stop_policy.iteration(),
@@ -3013,6 +3671,7 @@ pub(crate) async fn run_tool_loop(
                 total_elapsed_s: loop_start.elapsed().as_secs() as f64,
                 timeout_reason: None,
                 evidence_progress_summary: build_evidence_progress_summary(&messages),
+                loop_summary: loop_summary_tracker.clone(),
             });
         }
     }
@@ -3318,5 +3977,55 @@ mod tests {
             },
         };
         assert_eq!(tool_signal(&tc1), tool_signal(&tc2));
+    }
+
+    #[test]
+    fn broad_read_scope_blocks_until_discovered_files_are_covered() {
+        let mut ledger = crate::scope_coverage::ScopeCoverageLedger::new();
+        assert!(read_call_requests_broad_scope(&vec![
+            "docs/a.md".to_string(),
+            "docs/b.md".to_string(),
+        ]));
+        assert!(scope_coverage_blocks_finalization(true, &ledger));
+
+        ledger.register_items(&["docs/a.md".to_string(), "docs/b.md".to_string()], "file");
+        ledger.mark_covered("docs/a.md");
+        assert!(scope_coverage_blocks_finalization(true, &ledger));
+
+        ledger.mark_covered("docs/b.md");
+        assert!(!scope_coverage_blocks_finalization(true, &ledger));
+    }
+
+    #[test]
+    fn ls_scope_paths_are_concrete_workspace_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::write(root.join("docs").join("a.md"), "a").unwrap();
+        std::fs::write(root.join("docs").join("b.md"), "b").unwrap();
+        std::fs::create_dir_all(root.join("docs").join("nested")).unwrap();
+
+        let output = "docs/  (3 item(s))\n    nested/\n    a.md  (1 B, now)\n    b.md  (1 B, now)";
+        let paths = extract_ls_scope_paths(r#"{"path":"docs"}"#, output, root);
+        assert_eq!(
+            paths,
+            vec!["docs/a.md".to_string(), "docs/b.md".to_string()]
+        );
+    }
+
+    #[test]
+    fn shell_scope_output_registers_concrete_workspace_files_when_active() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::write(root.join("docs").join("a.md"), "a").unwrap();
+        std::fs::write(root.join("docs").join("b.md"), "b").unwrap();
+
+        let mut ledger = crate::scope_coverage::ScopeCoverageLedger::new();
+        let result = ToolExecutionResult::new_ok("c1", "shell", "docs/a.md\ndocs/b.md\n");
+        update_scope_coverage_from_tool(&mut ledger, "shell", "{}", &result, root, true);
+
+        assert_eq!(ledger.total(), 2);
+        assert!(scope_coverage_blocks_finalization(true, &ledger));
     }
 }

@@ -1,6 +1,7 @@
 //! @efficiency-role: domain-logic
 //!
 //! Minimal Per-Turn Context Packet For Dense Models — Task 701.
+//! Task 761: CurrentTurnContext to separate raw user request from injected context.
 //!
 //! Builds a compact turn packet from raw user request, current objective,
 //! required artifacts, successful tool outcomes, failed tool signals,
@@ -11,6 +12,60 @@ use crate::*;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
+
+/// Task 761: Structured context for a single user turn.
+/// Keeps the raw user request separate from injected prior evidence,
+/// runtime hints, and system guidance so downstream components
+/// (artifact extraction, scope extraction, finalization) can distinguish
+/// what the user actually asked from what the runtime injected.
+#[derive(Debug, Clone)]
+pub(crate) struct CurrentTurnContext {
+    /// The original user message, verbatim — no injected text.
+    pub raw_user_request: String,
+    /// Prior-try evidence summary injected for cross-cycle continuity (if any).
+    pub prior_relevant_evidence: Option<String>,
+    /// Runtime recovery hints (budget, strategy, etc.)
+    pub runtime_recovery_hints: Option<String>,
+    /// System-level guidance for the model (e.g. "Don't repeat prior steps").
+    pub system_guidance: Option<String>,
+}
+
+impl CurrentTurnContext {
+    pub fn new(raw_user_request: &str) -> Self {
+        Self {
+            raw_user_request: raw_user_request.to_string(),
+            prior_relevant_evidence: None,
+            runtime_recovery_hints: None,
+            system_guidance: None,
+        }
+    }
+
+    /// Build the model-facing user message from the separate fields.
+    /// Prior evidence is tagged and separated so it's clear to the model
+    /// what came from the user vs. what was injected.
+    pub fn build_model_message(&self) -> String {
+        let mut parts = vec![self.raw_user_request.clone()];
+        if let Some(ref evidence) = self.prior_relevant_evidence {
+            parts.push(format!(
+                "\n\n[Previously gathered in a prior attempt]\n{}\nDo NOT repeat steps already completed. Continue from where you left off.",
+                evidence
+            ));
+        }
+        if let Some(ref hints) = self.runtime_recovery_hints {
+            parts.push(format!("\n\n[Runtime hints]\n{}", hints));
+        }
+        if let Some(ref guidance) = self.system_guidance {
+            parts.push(format!("\n\n[System guidance]\n{}", guidance));
+        }
+        parts.join("")
+    }
+
+    /// The raw user request alone — for artifact extraction, scope detection, etc.
+    /// This ensures artifacts are only derived from what the user actually asked.
+    pub fn raw_request(&self) -> &str {
+        &self.raw_user_request
+    }
+}
 
 /// A compact per-turn context packet for model-facing turns.
 #[derive(Debug, Clone)]
@@ -311,5 +366,53 @@ mod tests {
         if let Ok(c) = TURN_COUNTER.lock() {
             assert_eq!(*c, 0);
         }
+    }
+
+    // ── Task 761: CurrentTurnContext tests ──
+
+    #[test]
+    fn test_current_turn_context_basic() {
+        let ctx = CurrentTurnContext::new("find AGENTS.md");
+        assert_eq!(ctx.raw_request(), "find AGENTS.md");
+        assert!(ctx.prior_relevant_evidence.is_none());
+        let msg = ctx.build_model_message();
+        assert_eq!(msg, "find AGENTS.md");
+    }
+
+    #[test]
+    fn test_current_turn_context_with_evidence() {
+        let mut ctx = CurrentTurnContext::new("find AGENTS.md");
+        ctx.prior_relevant_evidence = Some("Read /workspace/AGENTS.md".to_string());
+        let msg = ctx.build_model_message();
+        assert!(msg.contains("find AGENTS.md"));
+        assert!(msg.contains("Previously gathered"));
+        assert!(msg.contains("Read /workspace/AGENTS.md"));
+        assert!(msg.contains("Do NOT repeat"));
+    }
+
+    #[test]
+    fn test_current_turn_context_raw_request_isolated() {
+        let mut ctx = CurrentTurnContext::new("root path has no AGENTS.md ?");
+        ctx.prior_relevant_evidence =
+            Some("Required artifact: _testing_prompts/01_prompt.txt".to_string());
+        let raw = ctx.raw_request();
+        // Raw request must never contain injected evidence
+        assert_eq!(raw, "root path has no AGENTS.md ?");
+        assert!(!raw.contains("_testing_prompts"));
+        assert!(!raw.contains("Previously gathered"));
+    }
+
+    #[test]
+    fn test_current_turn_context_with_hints() {
+        let mut ctx = CurrentTurnContext::new("verify completed tasks");
+        ctx.runtime_recovery_hints = Some("Narrow the scope to _tasks/completed".to_string());
+        ctx.system_guidance = Some("Do not repeat prior searches".to_string());
+        let msg = ctx.build_model_message();
+        assert!(msg.contains("verify completed tasks"));
+        assert!(msg.contains("Runtime hints"));
+        assert!(msg.contains("System guidance"));
+        let raw = ctx.raw_request();
+        assert_eq!(raw, "verify completed tasks");
+        assert!(!raw.contains("Runtime hints"));
     }
 }

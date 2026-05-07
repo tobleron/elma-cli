@@ -86,6 +86,33 @@ impl StopReason {
         )
     }
 
+    /// Task 761: Whether this stop reason indicates the model exited
+    /// without completing the task (bad/error stop). These are reasons
+    /// where finalization should produce a partial-progress report, not
+    /// a polished answer that reads like completion.
+    pub(crate) fn is_bad_stop(&self) -> bool {
+        matches!(
+            self,
+            StopReason::RespondAbuse
+                | StopReason::RespondOnlyStagnation
+                | StopReason::IterationLimitReached
+                | StopReason::StageBudgetExceeded
+                | StopReason::TaskBudgetExceeded
+                | StopReason::RepeatedToolFailure
+                | StopReason::RepeatedNoNewEvidence
+                | StopReason::RepeatedSameCommand
+                | StopReason::RepeatedSameConclusion
+                | StopReason::WallClockExceeded
+                | StopReason::ModelProgressStalled
+        )
+    }
+
+    /// Task 761: Whether this stop reason is a clean user-initiated stop
+    /// where the answer should pass through with minimal modification.
+    pub(crate) fn is_clean_stop(&self) -> bool {
+        matches!(self, StopReason::UserInterrupted)
+    }
+
     /// Whether this stop reason suggests the model is stuck on malformed calls
     /// and needs a strategy switch (Task 698).
     pub(crate) fn needs_strategy_switch(&self) -> bool {
@@ -122,11 +149,13 @@ impl Default for StageBudget {
 
 impl StageBudget {
     pub(crate) fn from_complexity(complexity: &str) -> Self {
+        // Tasks 763-769: Relaxed budgets — ELMA is not concerned about
+        // fast finalization. Accurate completion is the priority.
         let max_iterations = match complexity.to_ascii_uppercase().as_str() {
             "DIRECT" => 3,
-            "INVESTIGATE" => 9,
-            "MULTISTEP" => 12,
-            "OPEN_ENDED" => 20,
+            "INVESTIGATE" => 12,
+            "MULTISTEP" => 24,
+            "OPEN_ENDED" => 40,
             _ => 6, // Default for unknown complexity
         };
         Self {
@@ -1341,6 +1370,32 @@ mod tests {
     fn respond_abuse_reason_has_hint() {
         let hint = next_step_hint(&StopReason::RespondAbuse);
         assert!(hint.contains("search") || hint.contains("read") || hint.contains("shell"));
+    }
+
+    // ── Task 761: Stop reason classification tests ──
+
+    #[test]
+    fn test_is_bad_stop_respond_abuse() {
+        assert!(StopReason::RespondAbuse.is_bad_stop());
+        assert!(StopReason::IterationLimitReached.is_bad_stop());
+        assert!(StopReason::StageBudgetExceeded.is_bad_stop());
+        assert!(StopReason::RepeatedToolFailure.is_bad_stop());
+        assert!(StopReason::RepeatedNoNewEvidence.is_bad_stop());
+        assert!(StopReason::WallClockExceeded.is_bad_stop());
+        assert!(StopReason::ModelProgressStalled.is_bad_stop());
+        assert!(StopReason::RespondOnlyStagnation.is_bad_stop());
+    }
+
+    #[test]
+    fn test_is_bad_stop_user_interrupted_is_not_bad() {
+        assert!(!StopReason::UserInterrupted.is_bad_stop());
+    }
+
+    #[test]
+    fn test_is_clean_stop() {
+        assert!(StopReason::UserInterrupted.is_clean_stop());
+        assert!(!StopReason::RespondAbuse.is_clean_stop());
+        assert!(!StopReason::IterationLimitReached.is_clean_stop());
     }
 
     // ── Regression tests ──

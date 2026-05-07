@@ -28,8 +28,12 @@ pub(crate) fn init_project_scaffold(root: &Path) -> Result<Vec<PathBuf>> {
         default_agents_template(),
     )?);
     created.extend(write_if_missing(
-        &root.join("_tasks").join("TASKS.md"),
+        &root.join("_tasks").join("_tasks.md"),
         default_tasks_template(),
+    )?);
+    created.extend(write_if_missing(
+        &root.join("_tasks").join("_guidelines.md"),
+        default_guidelines_template(),
     )?);
     created.extend(write_if_missing(
         &root
@@ -54,7 +58,8 @@ fn default_agents_template() -> String {
     r#"# AGENTS.md
 
 ## Project Guidance
-- Read `_tasks/TASKS.md` before substantial work.
+- Read `_tasks/_tasks.md` before substantial work.
+- Read `_tasks/_guidelines.md` before creating or editing tasks.
 - Keep changes grounded in actual workspace evidence.
 - Prefer surgical edits over broad refactors.
 - Use root-relative paths in reasoning and edits.
@@ -72,6 +77,8 @@ fn default_agents_template() -> String {
 fn default_tasks_template() -> String {
     r#"# Task Management
 
+Read `_guidelines.md` before creating, editing, implementing, or archiving tasks.
+
 ## Current Master Plan
 - `001_Project_Master_Plan.md`
 
@@ -80,6 +87,16 @@ fn default_tasks_template() -> String {
 2. Implement surgically.
 3. Verify build/tests.
 4. Report before archiving.
+"#
+    .to_string()
+}
+
+fn default_guidelines_template() -> String {
+    r#"# Elma Task Guidelines
+
+New tasks must improve reliability, truthfulness, bounded autonomy, small-model effectiveness, or context efficiency.
+
+Do not add deterministic user-input keyword routing or classification. Prefer grounded evidence, typed state, decomposed decisions, and recoverable approach changes.
 "#
     .to_string()
 }
@@ -116,7 +133,8 @@ mod tests {
         let created = init_project_scaffold(&root).unwrap();
         assert!(!created.is_empty());
         assert!(root.join("AGENTS.md").exists());
-        assert!(root.join("_tasks").join("TASKS.md").exists());
+        assert!(root.join("_tasks").join("_tasks.md").exists());
+        assert!(root.join("_tasks").join("_guidelines.md").exists());
         assert!(root.join("_tasks").join("active").exists());
 
         std::fs::remove_dir_all(&root).unwrap();

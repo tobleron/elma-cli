@@ -149,4 +149,4 @@ AGENTS.md is the quick-reference behavioral contract. Full guidelines live in `d
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | End-to-end workflow, module map, all systems |
 | [SKILL_SYSTEM.md](docs/SKILL_SYSTEM.md) | Skills, formulas, playbook rules, context-budget awareness |
 
-Task management procedures are in [`_tasks/TASKS.md`](_tasks/TASKS.md).
+Task management procedures are in [`_tasks/_tasks.md`](_tasks/_tasks.md).

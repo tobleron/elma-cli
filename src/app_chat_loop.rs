@@ -388,23 +388,40 @@ async fn annotate_and_classify(
     Ok((rephrased, decision))
 }
 
-fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) {
-    let Some(path) = extract_first_path_from_user_text(line) else {
-        return;
-    };
+/// Metrics from workspace discovery, used for scope-based complexity reassessment.
+struct DiscoveryMetrics {
+    file_count: usize,
+    file_type_mix: std::collections::HashMap<String, usize>,
+}
+
+/// Map a ComplexityLevel to a compact label for transcript display.
+fn complexity_level_label(level: crate::complexity_gate::ComplexityLevel) -> &'static str {
+    match level {
+        crate::complexity_gate::ComplexityLevel::Direct => "DIRECT",
+        crate::complexity_gate::ComplexityLevel::Investigate => "INVESTIGATE",
+        crate::complexity_gate::ComplexityLevel::Multistep => "MULTISTEP",
+        crate::complexity_gate::ComplexityLevel::OpenEnded => "OPEN_ENDED",
+    }
+}
+
+/// Map a ComplexityLevel to the iteration budget ceiling.
+fn max_iter_for_level(level: crate::complexity_gate::ComplexityLevel) -> usize {
+    match level {
+        crate::complexity_gate::ComplexityLevel::Direct => 3,
+        crate::complexity_gate::ComplexityLevel::Investigate => 6,
+        crate::complexity_gate::ComplexityLevel::Multistep => 12,
+        crate::complexity_gate::ComplexityLevel::OpenEnded => 20,
+    }
+}
+
+fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) -> Option<DiscoveryMetrics> {
+    let path = extract_first_path_from_user_text(line)?;
 
     // Validate path stays within workspace to prevent directory traversal attacks.
-    let canonical_path = match std::fs::canonicalize(&path) {
-        Ok(p) => p,
-        Err(_) => return,
-    };
-    let workspace_root = match std::fs::canonicalize(".") {
-        Ok(p) => p,
-        Err(_) => return,
-    };
+    let canonical_path = std::fs::canonicalize(&path).ok()?;
+    let workspace_root = std::fs::canonicalize(".").ok()?;
     if !canonical_path.starts_with(&workspace_root) {
-        // Path escapes workspace — silently skip discovery.
-        return;
+        return None;
     }
 
     // Properly quote the path for shell interpolation to prevent injection.
@@ -414,13 +431,44 @@ fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) {
         "ls -R {safe_path} | head -n 100; echo '---'; file -b {safe_path}/* 2>/dev/null | head -n 10"
     );
     let output = crate::workspace::cmd_out(&cmd, &std::path::PathBuf::from("."));
-    if !output.trim().is_empty() {
-        runtime.ws = format!(
-            "### GROUNDED WORKSPACE DISCOVERY ({path})\n{}\n\n{}",
-            output.trim(),
-            runtime.ws
-        );
+    if output.trim().is_empty() {
+        return None;
     }
+
+    // Count discovered files from the ls -R output (before the --- separator).
+    // Filter out directory headers (lines ending with ':'), size summary lines,
+    // and blank lines.
+    let ls_part = output.split("---").next().unwrap_or(&output);
+    let mut file_count = 0usize;
+    let mut file_type_mix = std::collections::HashMap::new();
+
+    for line in ls_part.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.ends_with(':')
+            || trimmed.starts_with("total ")
+        {
+            continue;
+        }
+        file_count += 1;
+        if let Some(ext) = std::path::Path::new(trimmed)
+            .extension()
+            .and_then(|e| e.to_str())
+        {
+            *file_type_mix.entry(ext.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    runtime.ws = format!(
+        "### GROUNDED WORKSPACE DISCOVERY ({path})\n{}\n\n{}",
+        output.trim(),
+        runtime.ws
+    );
+
+    Some(DiscoveryMetrics {
+        file_count,
+        file_type_mix,
+    })
 }
 
 /// Execute a tool by name with arguments
@@ -731,7 +779,37 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Immediate redraw so user sees submitted message + busy state
         tui.pump_ui()?;
 
-        try_workspace_discovery(runtime, line);
+        // Task 760: Initial shape-based complexity assessment before discovery
+        let initial_gate =
+            crate::complexity_gate::ComplexityGate::assess(line, None);
+
+        let discovery_metrics = try_workspace_discovery(runtime, line);
+
+        // Task 760: Scope-based reassessment after discovery.
+        // If discovery found many files, upgrade complexity above shape-only estimate.
+        let gate_assessment = if let Some(ref metrics) = discovery_metrics {
+            let estimated_work = metrics.file_count.saturating_mul(2);
+            let reassessed = crate::complexity_gate::ComplexityGate::reassess_with_scope(
+                initial_gate.level,
+                metrics.file_count,
+                &metrics.file_type_mix,
+                estimated_work,
+            );
+            if reassessed.level != initial_gate.level {
+                let original_label = complexity_level_label(initial_gate.level);
+                let new_label = complexity_level_label(reassessed.level);
+                tui.push_meta_event(
+                    "COMPLEXITY",
+                    &format!(
+                        "scope_upgrade {}->{} files={} work_est={}",
+                        original_label, new_label, metrics.file_count, estimated_work
+                    ),
+                );
+            }
+            reassessed
+        } else {
+            initial_gate
+        };
 
         // Tool discovery and execution (Task 015: Autonomous Tool Discovery)
         if runtime.tool_registry.needs_discovery() {
@@ -802,16 +880,16 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let needs_tools = route_decision.evidence_required
             || route_decision.speech_act.choice != "CHAT"
             || route_decision.route != "CHAT";
-        // Use heuristic complexity assessment instead of hardcoded DIRECT/INVESTIGATE
-        let computed_complexity =
-            crate::complexity_assessor::assess_complexity(&rephrased_objective);
+        // Task 760: Use the (possibly scope-reassessed) complexity level.
+        let complexity_label = complexity_level_label(gate_assessment.level);
+        let max_iter = max_iter_for_level(gate_assessment.level);
         let complexity = ComplexityAssessment {
-            complexity: computed_complexity.as_str().to_string(),
+            complexity: complexity_label.to_string(),
             needs_evidence: route_decision.evidence_required,
             needs_tools,
-            needs_decision: computed_complexity.max_iterations() >= 12,
-            needs_plan: computed_complexity.max_iterations() >= 6,
-            risk: if computed_complexity.max_iterations() >= 12 {
+            needs_decision: max_iter >= 12,
+            needs_plan: max_iter >= 6,
+            risk: if max_iter >= 12 {
                 "MEDIUM"
             } else {
                 "LOW"
@@ -837,24 +915,24 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             memory_id: String::new(),
         };
         let ladder = ExecutionLadderAssessment::new(
-            match computed_complexity {
-                crate::complexity_assessor::Complexity::Direct => ExecutionLevel::Action,
-                crate::complexity_assessor::Complexity::Investigate => ExecutionLevel::Task,
-                crate::complexity_assessor::Complexity::Multistep => ExecutionLevel::Plan,
-                crate::complexity_assessor::Complexity::OpenEnded => ExecutionLevel::MasterPlan,
+            match gate_assessment.level {
+                crate::complexity_gate::ComplexityLevel::Direct => ExecutionLevel::Action,
+                crate::complexity_gate::ComplexityLevel::Investigate => ExecutionLevel::Task,
+                crate::complexity_gate::ComplexityLevel::Multistep => ExecutionLevel::Plan,
+                crate::complexity_gate::ComplexityLevel::OpenEnded => ExecutionLevel::MasterPlan,
             },
-            format!("complexity_assessor (source={})", route_decision.source),
+            format!("complexity_gate (source={})", route_decision.source),
             route_decision.evidence_required,
-            computed_complexity.max_iterations() >= 12,
-            computed_complexity.max_iterations() >= 12,
-            computed_complexity.max_iterations() >= 6,
-            if computed_complexity.max_iterations() >= 12 {
+            max_iter >= 12,
+            max_iter >= 12,
+            max_iter >= 6,
+            if max_iter >= 12 {
                 "MEDIUM"
             } else {
                 "LOW"
             }
             .to_string(),
-            computed_complexity.as_str().to_string(),
+            complexity_label.to_string(),
         );
         let workflow_plan: Option<WorkflowPlannerOutput> = None;
 
@@ -1017,8 +1095,8 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // back to the small model, triggering hallucinated expansions
         // (e.g. "Wednesday, December 18, 2024" from macOS build version).
         let is_direct = matches!(
-            computed_complexity,
-            crate::complexity_assessor::Complexity::Direct
+            gate_assessment.level,
+            crate::complexity_gate::ComplexityLevel::Direct
         );
         let already_retried = runtime
             .messages
@@ -1125,10 +1203,23 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let final_text =
             crate::final_answer::correct_evidence_contradictions(&final_text, &runtime.messages);
 
+        // Task 761: Finalization verification — block polished answers for bad
+        // stop reasons with insufficient coverage. Produce clearly labeled
+        // partial-progress reports instead of answers that read like completion.
+        let (final_text, _finalization_status) = verify_finalization(
+            &final_text,
+            runtime.last_stop_outcome.as_ref(),
+            runtime.verbose,
+            &mut tui,
+        );
+
         // Task 608: Best-effort finalization fallback — if answer is still empty
         // after all processing and evidence exists, build a transparent answer.
         let final_text = if final_text.trim().is_empty() && has_evidence {
-            build_best_effort_answer()
+            build_best_effort_answer(
+                runtime.last_stop_outcome.as_ref(),
+                runtime.last_evidence_summary.as_deref(),
+            )
         } else {
             final_text
         };
@@ -1319,8 +1410,34 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         }
 
         queued_inputs.extend(tui.take_queued_submissions());
+
+        // Task 762: Persist left chat render after every completed turn
+        {
+            let lines = tui.visible_transcript_lines();
+            let width = tui.terminal_width();
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            crate::session_write::write_left_chat_render(&runtime.session.root, &lines, width);
+            crate::session_write::append_left_chat_frame(
+                &runtime.session.root,
+                (turn_number + 1) as usize,
+                width as usize,
+                lines.len(),
+                ts,
+            );
+        }
+
         turn_number += 1;
     };
+
+    // Task 739 / Task 762: Persist left chat render at session end (final snapshot)
+    {
+        let lines = tui.visible_transcript_lines();
+        let width = tui.terminal_width();
+        crate::session_write::write_left_chat_render(&runtime.session.root, &lines, width);
+    }
 
     // Mark TUI as inactive
     crate::ui_state::set_tui_active(false);
@@ -1328,22 +1445,335 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     res
 }
 
+/// Task 761: Finalization verifier — blocks polished answers for bad stop
+/// reasons with insufficient coverage. Returns (answer, status).
+fn verify_finalization(
+    final_text: &str,
+    stop_outcome: Option<&StopOutcome>,
+    verbose: bool,
+    tui: &mut TerminalUI,
+) -> (String, FinalizationStatus) {
+    let ledger = crate::evidence_ledger::get_session_ledger();
+
+    // No stop outcome — nothing to verify against
+    let Some(outcome) = stop_outcome else {
+        return (final_text.to_string(), FinalizationStatus::Normal);
+    };
+
+    let stop_reason_str = outcome.reason.as_str();
+    let coverage_count = ledger.as_ref().map(|l| l.entries_count()).unwrap_or(0);
+    let has_minimal = ledger.as_ref().map(|l| l.has_minimal_coverage()).unwrap_or(false);
+    let unique_files = ledger.as_ref().map(|l| l.unique_files_read()).unwrap_or(0);
+
+    // Clean stop (user_abort) — pass through
+    if outcome.reason.is_clean_stop() {
+        return (final_text.to_string(), FinalizationStatus::Normal);
+    }
+
+    // Bad stop + no coverage → partial report
+    if outcome.reason.is_bad_stop() && !has_minimal {
+        tui.push_meta_event("FINALIZATION", "bad_stop_no_coverage - producing partial report");
+        let partial = build_partial_answer(
+            stop_reason_str,
+            coverage_count,
+            unique_files,
+            ledger.as_ref(),
+        );
+        return (partial, FinalizationStatus::PartialNoCoverage);
+    }
+
+    // Bad stop + thin coverage → label as partial
+    if outcome.reason.is_bad_stop() && has_minimal {
+        // If the answer looks suspiciously complete but coverage is thin,
+        // prepend a partial label.
+        let looks_complete = final_text.len() > 200
+            && !final_text.to_lowercase().contains("partial")
+            && !final_text.to_lowercase().contains("incomplete")
+            && !final_text.to_lowercase().contains("not yet");
+
+        if looks_complete && coverage_count < 5 && unique_files < 3 {
+            tui.push_meta_event(
+                "FINALIZATION",
+                &format!(
+                    "bad_stop_thin_coverage stop={} coverage={} files={} - labeling partial",
+                    stop_reason_str, coverage_count, unique_files
+                ),
+            );
+            let partial = wrap_partial_label(
+                final_text,
+                stop_reason_str,
+                coverage_count,
+                unique_files,
+                ledger.as_ref(),
+            );
+            return (partial, FinalizationStatus::PartialThinCoverage);
+        }
+    }
+
+    // For clean exits or reasonable coverage, pass through
+    if outcome.reason.is_bad_stop() {
+        tui.push_meta_event(
+            "FINALIZATION",
+            &format!(
+                "bad_stop_with_coverage stop={} entries={} files={} - allowing answer",
+                stop_reason_str, coverage_count, unique_files
+            ),
+        );
+    }
+
+    (final_text.to_string(), FinalizationStatus::Normal)
+}
+
+/// Task 761: Build a clearly labeled partial-progress report when the
+/// system hit a bad stop reason with no useful coverage.
+fn build_partial_answer(
+    stop_reason: &str,
+    coverage_count: usize,
+    unique_files: usize,
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    parts.push("[PARTIAL ANSWER — task incomplete]".to_string());
+    parts.push(String::new());
+    parts.push(format!("Stop reason: {}", stop_reason));
+    parts.push(String::new());
+
+    // What was completed
+    let coverage_detail = ledger
+        .map(|l| l.coverage_summary())
+        .unwrap_or_else(|| "No evidence collected.".to_string());
+    parts.push("**What was gathered:**".to_string());
+    parts.push(coverage_detail);
+    parts.push(String::new());
+
+    // What remains
+    parts.push("**What remains incomplete:**".to_string());
+    parts.push(format!(
+        "- Coverage: {} evidence entries, {} unique files read",
+        coverage_count, unique_files
+    ));
+
+    if coverage_count == 0 {
+        parts.push("- No files were read or searched during this attempt.".to_string());
+        parts.push("- No shell commands produced useful output.".to_string());
+    }
+
+    parts.push(String::new());
+    parts.push("**Suggested next action:**".to_string());
+    parts.push(format!(
+        "- Re-run the task with a narrower scope or break it into smaller steps.",
+    ));
+    parts.push("- Check that file paths and tool arguments are correct.".to_string());
+    parts.push(format!(
+        "- If stop_reason is '{}', the model may have been stuck in a loop — \
+         try rephrasing the request more directly.",
+        stop_reason
+    ));
+
+    parts.join("\n")
+}
+
+/// Task 761: Wrap an existing answer text with a partial-progress label
+/// when coverage is thin and the stop reason indicates incomplete work.
+fn wrap_partial_label(
+    answer: &str,
+    stop_reason: &str,
+    coverage_count: usize,
+    unique_files: usize,
+    ledger: Option<&crate::evidence_ledger::EvidenceLedger>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
+    parts.push("[PARTIAL ANSWER — task incomplete]".to_string());
+    parts.push(String::new());
+    parts.push(format!(
+        "The following answer was produced, but coverage is limited ({} evidence entries, \
+         {} unique files read) and the run was stopped for: {}.",
+        coverage_count, unique_files, stop_reason
+    ));
+    parts.push(String::new());
+
+    if let Some(l) = ledger {
+        parts.push("**Missing coverage:** found {} total evidence entries.".to_string());
+        parts.push(format!("{}", l.coverage_summary()));
+        parts.push(String::new());
+    }
+
+    parts.push("---".to_string());
+    parts.push(String::new());
+    parts.push(answer.to_string());
+
+    parts.join("\n")
+}
+
+/// Finalization outcome from the verifier (Task 761).
+#[derive(Debug, Clone, PartialEq)]
+enum FinalizationStatus {
+    Normal,
+    PartialNoCoverage,
+    PartialThinCoverage,
+}
+
 /// Task 608: Build a best-effort answer from available evidence when
 /// the normal finalization pipeline produces an empty answer.
-fn build_best_effort_answer() -> String {
+fn build_best_effort_answer(
+    stop_outcome: Option<&StopOutcome>,
+    prior_evidence: Option<&str>,
+) -> String {
     let evidence_summary = crate::evidence_ledger::get_session_ledger()
         .map(|l| l.compact_summary())
         .unwrap_or_default();
 
+    let stop_prefix = stop_outcome
+        .map(|o| {
+            format!(
+                "[Note: Execution stopped ({}). ",
+                o.reason.as_str()
+            )
+        })
+        .unwrap_or_else(|| "[Note: I exhausted my iteration budget before completing this task. ".to_string());
+
     if evidence_summary.is_empty() || evidence_summary == "No evidence collected yet." {
-        return "I wasn't able to complete this task before running out of iterations. \
-                 Unfortunately, no usable evidence was gathered."
-            .to_string();
+        let extra = prior_evidence
+            .map(|e| format!("\n\nPreviously gathered: {}", e))
+            .unwrap_or_default();
+        return format!(
+            "{}Unfortunately, no usable evidence was gathered in this attempt.]{}",
+            stop_prefix, extra
+        );
     }
 
     format!(
-        "[Note: I exhausted my iteration budget before completing this task. \
-         Here's what I found so far:]\n{}",
-        evidence_summary
+        "{}Here's what I found so far:]\n{}",
+        stop_prefix, evidence_summary
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Task 761: Finalization verifier tests ──
+
+    #[test]
+    fn test_build_partial_answer_no_coverage() {
+        let answer = build_partial_answer("respond_abuse", 0, 0, None);
+        assert!(answer.contains("[PARTIAL ANSWER — task incomplete]"));
+        assert!(answer.contains("Stop reason: respond_abuse"));
+        assert!(answer.contains("What was gathered:"));
+        assert!(answer.contains("What remains incomplete:"));
+        assert!(answer.contains("No evidence collected"));
+        assert!(answer.contains("Suggested next action:"));
+    }
+
+    #[test]
+    fn test_build_partial_answer_with_some_coverage() {
+        let mut ledger = crate::evidence_ledger::EvidenceLedger::new(
+            "s_test",
+            &std::path::PathBuf::from("."),
+        );
+        ledger.add_entry(
+            crate::evidence_ledger::EvidenceSource::Read {
+                path: "README.md".to_string(),
+            },
+            "project readme content",
+        );
+
+        let answer = build_partial_answer("max_iterations", 1, 1, Some(&ledger));
+        assert!(answer.contains("[PARTIAL ANSWER — task incomplete]"));
+        assert!(answer.contains("Stop reason: max_iterations"));
+        assert!(answer.contains("What was gathered:"));
+        assert!(answer.contains("README.md"));
+        assert!(answer.contains("What remains incomplete:"));
+    }
+
+    #[test]
+    fn test_wrap_partial_label() {
+        let answer = "I found some things in the project.";
+        let wrapped = wrap_partial_label(answer, "respond_abuse", 2, 1, None);
+        assert!(wrapped.contains("[PARTIAL ANSWER — task incomplete]"));
+        assert!(wrapped.contains("respond_abuse"));
+        assert!(wrapped.contains("I found some things in the project."));
+        assert!(wrapped.contains("---"));
+    }
+
+    #[test]
+    fn test_build_best_effort_answer_with_stop_reason() {
+        let outcome = StopOutcome {
+            reason: StopReason::RespondAbuse,
+            stage_index: 0,
+            stage_skill: "general".to_string(),
+            summary: "test".to_string(),
+            next_step_hint: "hint".to_string(),
+        };
+
+        let answer = build_best_effort_answer(Some(&outcome), None);
+        assert!(answer.contains("respond_abuse"));
+        assert!(answer.contains("Unfortunately"));
+    }
+
+    #[test]
+    fn test_build_best_effort_answer_without_stop_reason() {
+        let answer = build_best_effort_answer(None, None);
+        assert!(answer.contains("iteration budget"));
+        assert!(answer.contains("no usable evidence"));
+    }
+
+    #[test]
+    fn test_build_partial_answer_respond_abuse_format() {
+        // Simulate: respond_abuse + incomplete coverage → partial answer with warning
+        let answer = build_partial_answer("respond_abuse", 2, 1, None);
+        assert!(answer.contains("[PARTIAL ANSWER — task incomplete]"));
+        assert!(
+            answer.contains("respond_abuse"),
+            "Should mention the stop reason"
+        );
+        assert!(
+            answer.contains("What remains incomplete"),
+            "Should have incomplete section"
+        );
+    }
+
+    #[test]
+    fn test_partial_label_visible_on_bad_stop_thin_coverage() {
+        // Simulate: 1/44 docs read, respond_abuse → clearly partial
+        let fake_answer = "The documentation has been reviewed and everything looks good. \
+                           All files are in order and the project is well-structured. \
+                           No issues were found during the comprehensive review.";
+
+        let result = wrap_partial_label(fake_answer, "respond_abuse", 1, 1, None);
+        assert!(result.starts_with("[PARTIAL ANSWER — task incomplete]"));
+        assert!(result.contains("respond_abuse"));
+        assert!(result.contains("coverage is limited"));
+        // The original answer should appear after the label
+        assert!(result.contains("comprehensive review"));
+    }
+
+    #[test]
+    fn test_clean_stop_passes_through() {
+        // user_abort: the answer should not be wrapped with partial label
+        let outcome = StopOutcome {
+            reason: StopReason::UserInterrupted,
+            stage_index: 0,
+            stage_skill: "general".to_string(),
+            summary: "user abort".to_string(),
+            next_step_hint: "hint".to_string(),
+        };
+        assert!(outcome.reason.is_clean_stop());
+        assert!(!outcome.reason.is_bad_stop());
+    }
+
+    #[test]
+    fn test_respond_abuse_is_bad_stop() {
+        let outcome = StopOutcome {
+            reason: StopReason::RespondAbuse,
+            stage_index: 0,
+            stage_skill: "general".to_string(),
+            summary: "respond abuse".to_string(),
+            next_step_hint: "hint".to_string(),
+        };
+        assert!(!outcome.reason.is_clean_stop());
+        assert!(outcome.reason.is_bad_stop());
+    }
 }

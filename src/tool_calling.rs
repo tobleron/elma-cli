@@ -4178,7 +4178,11 @@ fn exec_workspace_info(
         }
     }
 
-    let guidance_files = [("AGENTS.md", 1600usize), ("_tasks/TASKS.md", 1200)];
+    let guidance_files = [
+        ("AGENTS.md", 1600usize),
+        ("_tasks/_tasks.md", 1200),
+        ("_tasks/_guidelines.md", 1200),
+    ];
     let mut guidance_section = String::new();
     for (rel_path, max_chars) in &guidance_files {
         let full_path = workdir.join(rel_path);

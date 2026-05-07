@@ -37,17 +37,12 @@ pub fn check_goal_drift(
 ) -> DriftVerdict {
     let mut drift_signals = Vec::new();
 
-    // Check 1: Step types don't match goal type
-    if let Some(mismatch) = check_step_goal_mismatch(original_objective, current_program) {
-        drift_signals.push(mismatch);
-    }
-
-    // Check 2: No progress toward success criteria
+    // Check 1: No progress toward success criteria
     if let Some(no_progress) = check_no_progress(original_objective, step_results) {
         drift_signals.push(no_progress);
     }
 
-    // Check 3: Self-referential steps (planning about planning)
+    // Check 2: Self-referential steps (planning about planning)
     if let Some(meta_planning) = check_meta_planning(current_program) {
         drift_signals.push(meta_planning);
     }
@@ -77,73 +72,8 @@ pub fn check_goal_drift(
     }
 }
 
-/// Check if step types match goal type
-fn check_step_goal_mismatch(objective: &str, program: &Program) -> Option<String> {
-    let objective_lower = objective.to_lowercase();
-
-    // Goal is action-oriented but steps are all read-only
-    let action_keywords = [
-        "delete", "remove", "add", "create", "update", "fix", "run", "execute",
-    ];
-    let is_action_goal = action_keywords
-        .iter()
-        .any(|kw| objective_lower.contains(kw));
-
-    if is_action_goal {
-        let has_action_step = program.steps.iter().any(|s| {
-            matches!(
-                s,
-                Step::Shell { .. } | Step::Edit { .. } | Step::Write { .. } | Step::Delete { .. }
-            )
-        });
-
-        let all_readonly = program.steps.iter().all(|s| {
-            matches!(
-                s,
-                Step::Read { .. }
-                    | Step::Search { .. }
-                    | Step::Plan { .. }
-                    | Step::MasterPlan { .. }
-                    | Step::Decide { .. }
-                    | Step::Respond { .. }
-                    | Step::Explore { .. }
-                    | Step::Reply { .. }
-            )
-        });
-
-        if all_readonly && !has_action_step && program.steps.len() >= 3 {
-            return Some(format!(
-                "Goal requires action but {} steps are read-only (no Shell/Edit steps)",
-                program.steps.len()
-            ));
-        }
-    }
-
-    // Goal is research but steps are destructive
-    let research_keywords = ["research", "analyze", "understand", "learn", "compare"];
-    let is_research_goal = research_keywords
-        .iter()
-        .any(|kw| objective_lower.contains(kw));
-
-    if is_research_goal {
-        let has_destructive = program.steps.iter().any(|s| {
-            if let Step::Shell { cmd, .. } = s {
-                cmd.contains("rm ") || cmd.contains("delete") || cmd.contains("drop")
-            } else {
-                false
-            }
-        });
-
-        if has_destructive {
-            return Some("Research goal but steps include destructive operations".to_string());
-        }
-    }
-
-    None
-}
-
 /// Check if there's no progress toward success
-fn check_no_progress(objective: &str, step_results: &[StepResult]) -> Option<String> {
+fn check_no_progress(_objective: &str, step_results: &[StepResult]) -> Option<String> {
     // If we've executed 5+ steps with no successful modifications
     let executed_steps = step_results
         .iter()
