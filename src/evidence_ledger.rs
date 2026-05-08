@@ -149,6 +149,13 @@ pub(crate) struct Claim {
     pub(crate) contested_by: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct EvidenceSummary {
+    pub(crate) entries_count: usize,
+    pub(crate) files_read: Vec<String>,
+    pub(crate) key_findings: Vec<String>,
+}
+
 // ============================================================================
 // Evidence Ledger
 // ============================================================================
@@ -485,15 +492,10 @@ impl EvidenceLedger {
         });
     }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct EvidenceSummary {
-    pub(crate) entries_count: usize,
-    pub(crate) files_read: Vec<String>,
-    pub(crate) key_findings: Vec<String>,
-}
+    pub(crate) fn entries_count(&self) -> usize {
+        self.entries.len()
+    }
 
-impl EvidenceLedger {
-...
     pub(crate) fn build_retry_summary(&self) -> EvidenceSummary {
         let mut files_read = Vec::new();
         let mut key_findings = Vec::new();
@@ -520,9 +522,6 @@ impl EvidenceLedger {
         }
     }
 
-    pub(crate) fn entries_count(&self) -> usize {
-        self.entries.len()
-    }
 
     /// Task 761: Returns a summary of evidence grouped by source type
     /// (files read, directories searched, shell commands run).

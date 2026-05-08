@@ -43,49 +43,19 @@ where
 
 #[allow(clippy::too_many_arguments)]
 async fn apply_policy_fallback(
-    runtime: &AppRuntime,
-    line: &str,
-    route_decision: &RouteDecision,
-    ladder: &ExecutionLadderAssessment,
+    _runtime: &AppRuntime,
+    _line: &str,
+    _route_decision: &RouteDecision,
+    _ladder: &ExecutionLadderAssessment,
     _complexity: &ComplexityAssessment,
     _scope: &ScopePlan,
     _formula: &FormulaSelection,
     _workflow_plan: &Option<WorkflowPlannerOutput>,
-    program: &mut Program,
+    _program: &mut Program,
 ) {
-    let Some(path) = extract_first_path_from_user_text(line) else {
-        return;
-    };
-    let fallback: Option<(&str, fn(&str, &str) -> Program)> = match ladder.level {
-        ExecutionLevel::Plan => {
-            // Task 453 Category 1: Remove stress-test fallback policies
-            // These were exercise markers, not production user features
-            None
-        }
-        ExecutionLevel::MasterPlan => {
-            // Task 453 Category 1: Remove stress-test fallback policies
-            None
-        }
-        _ => {
-            if route_decision.route.eq_ignore_ascii_case("SHELL") {
-                Some((
-                    "shell_path_probe_policy_fallback",
-                    build_shell_path_probe_program,
-                ))
-            } else if route_decision.route.eq_ignore_ascii_case("DECIDE") {
-                Some((
-                    "decide_path_probe_policy_fallback",
-                    build_decide_path_probe_program,
-                ))
-            } else {
-                None
-            }
-        }
-    };
-    if let Some((tag, builder)) = fallback {
-        trace(&runtime.args, &format!("{tag} path={path}"));
-        *program = builder(line, &path);
-    }
+    // Task 453 Category 1 & Task 772: Remove stress-test fallback policies
+    // These were exercise markers, not production user features.
+    // The model-based WorkGraph handles all paths now.
 }
 
 /// Returns true if the command was handled (should continue loop), false if not a command.

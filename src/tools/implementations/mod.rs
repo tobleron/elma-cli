@@ -26,3 +26,6 @@ pub mod tool_search;
 pub mod update_todo_list;
 pub mod workspace_info;
 pub mod write;
+pub mod shell;
+pub mod trash;
+pub mod touch;

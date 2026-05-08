@@ -96,7 +96,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
         }
     }
 
-    let result = app_chat::run_chat_loop(&mut runtime).await;
+    let result = crate::app_chat_loop::run_chat_loop(&mut runtime).await;
     // Finalize session status (Task 282: index update)
     let session_root = runtime.session.root.clone();
     match &result {
