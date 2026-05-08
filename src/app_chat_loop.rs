@@ -3,13 +3,10 @@
 //! App Chat - Main Chat Loop Orchestration
 
 use crate::app::*;
-use crate::app_chat_builders_advanced::*;
-use crate::app_chat_builders_basic::*;
 use crate::app_chat_fast_paths::*;
 use crate::app_chat_handlers::*;
 use crate::app_chat_helpers::*;
 use crate::app_chat_orchestrator::*;
-use crate::app_chat_patterns::*;
 use crate::app_chat_trace::*;
 use crate::goal_seeding::*;
 use crate::session_write::save_goal_state;
@@ -374,6 +371,7 @@ async fn annotate_and_classify(
         &runtime.ws,
         &runtime.ws_brief,
         &runtime.messages,
+        None,
     )
     .await?;
     show_process_step_verbose(
@@ -958,17 +956,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &mut tui,
         )
         .await;
-        if route_decision.route.eq_ignore_ascii_case("CHAT")
-            && formula.primary.eq_ignore_ascii_case("reply_only")
-        {
-            if let Some(path) = extract_first_path_from_user_text(line) {
-                trace(
-                    &runtime.args,
-                    &format!("path_scoped_chat_probe_fallback path={path}"),
-                );
-                program = build_shell_path_probe_program(line, &path);
-            }
-        }
+
         // Skip capability guard and policy validation for Maestro-generated programs
         // The Maestro + Orchestrator pipeline self-validates step generation
 

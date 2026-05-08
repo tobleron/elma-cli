@@ -93,6 +93,7 @@ pub(crate) async fn evaluate_workflow_suite_impl(
             &ws,
             &ws_brief,
             &conversation_messages,
+            None,
         )
         .await?;
         if decision.route.eq_ignore_ascii_case(&scenario.route) {

@@ -19,9 +19,7 @@ Schema:
 
 Principles:
 - DIRECT complexity → action level (single operation, no decomposition)
-- INVESTIGATE complexity → task level (evidence chain, bounded outcome)
 - MULTISTEP complexity → plan level (ordered breakdown, dependencies matter)
-- OPEN_ENDED complexity → masterplan level (phased strategy, multi-session)
 
 Escalate when:
 - Risk is HIGH (safety requires investigation)

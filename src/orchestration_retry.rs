@@ -733,6 +733,14 @@ async fn build_program_with_retry(
         for (attempt, _program, error) in attempt_history {
             prompt.push_str(&format!("\nAttempt {}: {}\n", attempt + 1, error));
         }
+
+        // Task 774: Inject Evidence Ledger summary
+        if let Some(ledger) = crate::evidence_ledger::get_session_ledger() {
+            prompt.push_str("\n\n=== EVIDENCE LEDGER (What we already know) ===\n");
+            prompt.push_str(&ledger.compact_summary());
+            prompt.push_str("\n\nDo NOT repeat these successful tool calls. Continue from where you left off.\n");
+        }
+
         prompt.push_str(&format!("\n{}\n", retry_prompt));
     }
 
@@ -814,6 +822,14 @@ async fn build_program_with_strategy(
         for (attempt, _program, error) in attempt_history {
             prompt.push_str(&format!("\nAttempt {}: {}\n", attempt + 1, error));
         }
+
+        // Task 774: Inject Evidence Ledger summary
+        if let Some(ledger) = crate::evidence_ledger::get_session_ledger() {
+            prompt.push_str("\n\n=== EVIDENCE LEDGER (What we already know) ===\n");
+            prompt.push_str(&ledger.compact_summary());
+            prompt.push_str("\n\nDo NOT repeat these successful tool calls. Continue from where you left off.\n");
+        }
+
         prompt.push_str("\nTry a DIFFERENT approach based on the current strategy.\n");
     }
 
@@ -878,6 +894,13 @@ async fn synthesize_meta_review(
     prompt.push_str(&ws.chars().take(4000).collect::<String>());
     prompt.push_str("\n\n");
     prompt.push_str(&ws_brief.chars().take(1000).collect::<String>());
+
+    // Task 774: Inject Evidence Ledger summary
+    if let Some(ledger) = crate::evidence_ledger::get_session_ledger() {
+        prompt.push_str("\n\n=== EVIDENCE LEDGER (Grounded findings) ===\n");
+        prompt.push_str(&ledger.compact_summary());
+        prompt.push_str("\n\nUse this evidence to build a program that avoids repeating work.\n");
+    }
 
     prompt.push_str("\n\n=== ROUTE PRIOR ===\n");
     prompt.push_str(&format!("Suggested route: {}\n", route_decision.route));

@@ -74,7 +74,7 @@ impl IntelUnit for ComplexityAssessmentUnit {
             return Err(IntelError::MissingField("risk".to_string()).into());
         }
         match d.get("complexity").and_then(|v| v.as_str()) {
-            Some("DIRECT") | Some("INVESTIGATE") | Some("MULTISTEP") | Some("OPEN_ENDED") => {}
+            Some("DIRECT") | Some("MULTISTEP") => {}
             other => {
                 return Err(IntelError::InvalidValue(
                     "complexity".to_string(),

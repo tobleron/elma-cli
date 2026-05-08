@@ -14,7 +14,7 @@ Return ONLY one valid JSON object.
 
 Schema:
 {
-  "complexity": "DIRECT" | "INVESTIGATE" | "MULTISTEP" | "OPEN_ENDED",
+  "complexity": "DIRECT" | "MULTISTEP",
   "needs_evidence": true | false,
   "needs_tools": true | false,
   "needs_decision": true | false,

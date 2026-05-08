@@ -14,7 +14,7 @@ Return ONLY one valid JSON object.
 
 Schema:
 {
-  "complexity":"DIRECT" | "INVESTIGATE" | "MULTISTEP" | "OPEN_ENDED",
+  "complexity":"DIRECT" | "MULTISTEP",
   "risk":"LOW" | "MEDIUM" | "HIGH",
   "needs_evidence":true | false,
   "needs_tools":true | false,
@@ -25,7 +25,5 @@ Schema:
 
 Principles:
 - DIRECT means one bounded response or action is sufficient.
-- INVESTIGATE means workspace evidence is needed before acting responsibly.
 - MULTISTEP means several ordered steps are needed in one bounded workflow.
-- OPEN_ENDED means strategic phased decomposition is needed.
 - Be conservative and choose the minimum sufficient complexity."""

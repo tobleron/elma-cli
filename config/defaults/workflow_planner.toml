@@ -14,7 +14,7 @@ Analyze the user's request and classification priors to determine the minimum su
 
 Return a JSON object with:
 - objective: One sentence describing what the workflow should achieve
-- complexity: DIRECT, INVESTIGATE, MULTISTEP, or OPEN_ENDED
+- complexity: DIRECT or MULTISTEP
 - risk: LOW, MEDIUM, or HIGH
 - needs_evidence: true if workspace inspection is needed
 - scope: object with objective, focus_paths, include_globs, exclude_globs, query_terms, expected_artifacts, reason
@@ -31,9 +31,9 @@ Rules:
 
 Examples:
 {"objective":"List repository files","complexity":"DIRECT","risk":"LOW","needs_evidence":false,"scope":{"objective":"List repository files","focus_paths":[],"include_globs":[],"exclude_globs":[],"query_terms":[],"expected_artifacts":[],"reason":"Command output is self-contained"},"preferred_formula":"execute_reply","alternatives":["inspect_reply"],"memory_id":"","reason":"Single direct command"}
-{"objective":"Inspect Cargo workspace configuration","complexity":"INVESTIGATE","risk":"LOW","needs_evidence":true,"scope":{"objective":"Inspect Cargo workspace configuration","focus_paths":["Cargo.toml"],"include_globs":["Cargo.toml"],"exclude_globs":[],"query_terms":["workspace"],"expected_artifacts":[],"reason":"Need config evidence"},"preferred_formula":"inspect_reply","alternatives":["inspect_summarize_reply"],"memory_id":"","reason":"Requires focused inspection"}
+{"objective":"Inspect Cargo workspace configuration","complexity":"DIRECT","risk":"LOW","needs_evidence":true,"scope":{"objective":"Inspect Cargo workspace configuration","focus_paths":["Cargo.toml"],"include_globs":["Cargo.toml"],"exclude_globs":[],"query_terms":["workspace"],"expected_artifacts":[],"reason":"Need config evidence"},"preferred_formula":"inspect_reply","alternatives":["inspect_summarize_reply"],"memory_id":"","reason":"Requires focused inspection"}
 {"objective":"Update session logging implementation","complexity":"MULTISTEP","risk":"MEDIUM","needs_evidence":true,"scope":{"objective":"Update session logging implementation","focus_paths":["src"],"include_globs":["src/**/*.rs"],"exclude_globs":["target/**"],"query_terms":["session log"],"expected_artifacts":["code changes","verification output"],"reason":"Need code inspection before edits"},"preferred_formula":"inspect_edit_verify_reply","alternatives":["plan_reply"],"memory_id":"","reason":"Edit flow needs inspection and verification"}
-{"objective":"Design a local AI CLI roadmap","complexity":"OPEN_ENDED","risk":"MEDIUM","needs_evidence":false,"scope":{"objective":"Design a local AI CLI roadmap","focus_paths":[],"include_globs":[],"exclude_globs":[],"query_terms":[],"expected_artifacts":["roadmap"],"reason":"High-level planning task"},"preferred_formula":"masterplan_reply","alternatives":["plan_reply"],"memory_id":"","reason":"Strategic multi-phase planning"}
+{"objective":"Design a local AI CLI roadmap","complexity":"MULTISTEP","risk":"MEDIUM","needs_evidence":false,"scope":{"objective":"Design a local AI CLI roadmap","focus_paths":[],"include_globs":[],"exclude_globs":[],"query_terms":[],"expected_artifacts":["roadmap"],"reason":"High-level planning task"},"preferred_formula":"masterplan_reply","alternatives":["plan_reply"],"memory_id":"","reason":"Strategic multi-phase planning"}
 
 Edge case:
 {"objective":"Answer a short conversational turn","complexity":"DIRECT","risk":"LOW","needs_evidence":false,"scope":{"objective":"Answer a short conversational turn","focus_paths":[],"include_globs":[],"exclude_globs":[],"query_terms":[],"expected_artifacts":[],"reason":"No workspace evidence needed"},"preferred_formula":"reply_only","alternatives":["capability_reply"],"memory_id":"","reason":"Keep the response lightweight"}

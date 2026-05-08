@@ -178,6 +178,7 @@ pub(crate) async fn infer_route_prior(
     workspace_facts: &str,
     workspace_brief: &str,
     recent_messages: &[ChatMessage],
+    mut tui: Option<&mut crate::ui_terminal::TerminalUI>,
 ) -> Result<RouteDecision> {
     let conversation = recent_messages
         .iter()
@@ -239,6 +240,16 @@ pub(crate) async fn infer_route_prior(
 
     let margin = route_margin(&distribution);
     let entropy = route_entropy(&distribution);
+
+    if let Some(ref mut t) = tui {
+        t.push_meta_event(
+            "ROUTING",
+            &format!(
+                "choice={} mode={} entropy={:.2} margin={:.2}",
+                route, mode.choice, entropy, margin
+            ),
+        );
+    }
 
     Ok(RouteDecision {
         route: route.to_string(),

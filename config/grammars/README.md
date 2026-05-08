@@ -17,10 +17,10 @@ The grammar is loaded and injected into ChatCompletionRequest.
 
 | File | Purpose | Choices |
 |------|---------|---------|
-| `router_choice_1of5.json.gbnf` | Route classification | CHAT, INVESTIGATE, SHELL, PLAN, MASTERPLAN |
+| `router_choice_1of5.json.gbnf` | Route classification | CHAT, SHELL, PLAN, MASTERPLAN |
 | `speech_act_choice_1of3.json.gbnf` | Speech act classification | CHAT, INQUIRE, INSTRUCT |
 | `mode_router_choice_1of4.json.gbnf` | Mode selection | INSPECT, EXECUTE, PLAN, MASTERPLAN |
-| `complexity_choice_1of4.json.gbnf` | Complexity assessment | DIRECT, INVESTIGATE, MULTISTEP, OPEN_ENDED |
+| `complexity_choice_1of4.json.gbnf` | Complexity assessment | DIRECT, MULTISTEP |
 
 ## Testing
 

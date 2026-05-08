@@ -485,6 +485,41 @@ impl EvidenceLedger {
         });
     }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct EvidenceSummary {
+    pub(crate) entries_count: usize,
+    pub(crate) files_read: Vec<String>,
+    pub(crate) key_findings: Vec<String>,
+}
+
+impl EvidenceLedger {
+...
+    pub(crate) fn build_retry_summary(&self) -> EvidenceSummary {
+        let mut files_read = Vec::new();
+        let mut key_findings = Vec::new();
+
+        for entry in &self.entries {
+            match &entry.source {
+                EvidenceSource::Read { path } => {
+                    files_read.push(path.clone());
+                }
+                _ => {}
+            }
+            if matches!(entry.quality, EvidenceQuality::Direct) && key_findings.len() < 5 {
+                key_findings.push(entry.summary.clone());
+            }
+        }
+
+        files_read.sort();
+        files_read.dedup();
+
+        EvidenceSummary {
+            entries_count: self.entries.len(),
+            files_read,
+            key_findings,
+        }
+    }
+
     pub(crate) fn entries_count(&self) -> usize {
         self.entries.len()
     }

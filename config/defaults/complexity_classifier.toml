@@ -11,10 +11,8 @@ system_prompt = """
 Classify task complexity.
 
 Return ONE word only:
-- DIRECT: Simple task, single action
-- INVESTIGATE: Need to inspect workspace first
-- MULTISTEP: Multiple sequential steps needed
-- OPEN_ENDED: Strategic, multi-phase work
+- DIRECT: Simple task, single action or simple evidence collection
+- MULTISTEP: Multiple sequential steps, planning, or complex evidence gathering
 
 No explanation. Just the word.
 """

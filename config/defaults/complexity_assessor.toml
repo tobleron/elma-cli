@@ -14,7 +14,7 @@ Return ONLY one valid JSON object.
 
 Schema:
 {
-  "complexity": "DIRECT" | "INVESTIGATE" | "MULTISTEP" | "OPEN_ENDED",
+  "complexity": "DIRECT" | "MULTISTEP",
   "needs_evidence": true | false,
   "needs_tools": true | false,
   "needs_decision": true | false,
@@ -43,5 +43,5 @@ Examples:
 {"complexity":"MULTISTEP","needs_evidence":true,"needs_tools":true,"needs_decision":false,"needs_plan":true,"risk":"MEDIUM","suggested_pattern":"inspect_edit_verify_reply"}
 
 Edge case:
-{"complexity":"INVESTIGATE","needs_evidence":true,"needs_tools":false,"needs_decision":false,"needs_plan":false,"risk":"LOW","suggested_pattern":"inspect_reply"}
+{"complexity":"DIRECT","needs_evidence":true,"needs_tools":false,"needs_decision":false,"needs_plan":false,"risk":"LOW","suggested_pattern":"inspect_reply"}
 """

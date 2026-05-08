@@ -105,6 +105,7 @@ pub(crate) async fn evaluate_response_suite_impl(
             &ws,
             &ws_brief,
             &conversation_messages,
+            None,
         )
         .await?;
         route_total += 1;

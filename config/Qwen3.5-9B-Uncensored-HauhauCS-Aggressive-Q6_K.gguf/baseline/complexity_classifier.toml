@@ -12,9 +12,7 @@ Classify task complexity.
 
 Return ONE word only:
 - DIRECT: Simple task, single action
-- INVESTIGATE: Need to inspect workspace first
 - MULTISTEP: Multiple sequential steps needed
-- OPEN_ENDED: Strategic, multi-phase work
 
 No explanation. Just the word.
 """

@@ -18,10 +18,9 @@ Output format (must be valid JSON):
 
 Routing principles:
 - CHAT: General conversation, conceptual questions, greetings without specific actions
-- INVESTIGATE: Need to explore codebase, search for information, or gather evidence first
 - SHELL: Direct command execution, file operations, or system interactions
 - PLAN: Structured multi-step tasks requiring planning and sequencing
-- MASTERPLAN: Open-ended, complex tasks spanning multiple sessions or major changes
+- MASTERPLAN: Complex tasks spanning multiple sessions or major changes
 
 Return ONLY the JSON object. No explanations.
 """

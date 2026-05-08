@@ -23,18 +23,12 @@ mod app_bootstrap_core;
 mod app_bootstrap_modes;
 mod app_bootstrap_profiles;
 mod app_chat;
-mod app_chat_builders_advanced;
-mod app_chat_builders_audit;
-mod app_chat_builders_basic;
-mod app_chat_builders_probes;
 mod app_chat_core;
 mod app_chat_fast_paths;
 mod app_chat_handlers;
 mod app_chat_helpers;
 mod app_chat_loop;
 mod app_chat_orchestrator;
-mod app_chat_orchestrator_tests;
-mod app_chat_patterns;
 mod app_chat_trace;
 mod approach_engine; // Task 390: Approach Branch Retry And Prune Engine
 mod approach_rehydration; // Task 652: Approach branch rehydration and failure taxonomy
@@ -48,7 +42,6 @@ mod certification_suite; // Task 676: JSON tool calling certification suites
 mod claude_ui;
 mod code_index; // Task 668: Persistent offline code index
 mod command_budget; // Task 121: Command Budget & Rate Limiting
-mod complexity_assessor; // Task 556: Heuristic complexity assessment
 mod complexity_gate; // Task 653: Complexity gate for work graph depth control
 mod config_cmd;
 mod config_validate; // Task 583: Config validation at startup
@@ -278,7 +271,6 @@ mod workspace_tree; // Task 169: Claude Code-style Terminal UI
 pub(crate) use abstractions::*;
 pub(crate) use agent_fsm::*;
 pub(crate) use atomic_write::*;
-pub(crate) use complexity_assessor::*;
 pub(crate) use config_validate::*;
 pub(crate) use context_budget::*;
 pub(crate) use decomposition::*; // Task 023

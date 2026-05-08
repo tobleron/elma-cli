@@ -31,6 +31,7 @@ pub(crate) async fn evaluate_runtime_scenario(
         &resources.ws,
         &resources.ws_brief,
         &conversation_messages,
+        None,
     )
     .await?;
 
