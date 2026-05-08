@@ -398,9 +398,7 @@ struct DiscoveryMetrics {
 fn complexity_level_label(level: crate::complexity_gate::ComplexityLevel) -> &'static str {
     match level {
         crate::complexity_gate::ComplexityLevel::Direct => "DIRECT",
-        crate::complexity_gate::ComplexityLevel::Investigate => "INVESTIGATE",
         crate::complexity_gate::ComplexityLevel::Multistep => "MULTISTEP",
-        crate::complexity_gate::ComplexityLevel::OpenEnded => "OPEN_ENDED",
     }
 }
 
@@ -408,9 +406,7 @@ fn complexity_level_label(level: crate::complexity_gate::ComplexityLevel) -> &'s
 fn max_iter_for_level(level: crate::complexity_gate::ComplexityLevel) -> usize {
     match level {
         crate::complexity_gate::ComplexityLevel::Direct => 3,
-        crate::complexity_gate::ComplexityLevel::Investigate => 6,
         crate::complexity_gate::ComplexityLevel::Multistep => 12,
-        crate::complexity_gate::ComplexityLevel::OpenEnded => 20,
     }
 }
 
@@ -917,9 +913,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         let ladder = ExecutionLadderAssessment::new(
             match gate_assessment.level {
                 crate::complexity_gate::ComplexityLevel::Direct => ExecutionLevel::Action,
-                crate::complexity_gate::ComplexityLevel::Investigate => ExecutionLevel::Task,
                 crate::complexity_gate::ComplexityLevel::Multistep => ExecutionLevel::Plan,
-                crate::complexity_gate::ComplexityLevel::OpenEnded => ExecutionLevel::MasterPlan,
             },
             format!("complexity_gate (source={})", route_decision.source),
             route_decision.evidence_required,

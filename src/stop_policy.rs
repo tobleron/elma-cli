@@ -153,10 +153,8 @@ impl StageBudget {
         // fast finalization. Accurate completion is the priority.
         let max_iterations = match complexity.to_ascii_uppercase().as_str() {
             "DIRECT" => 3,
-            "INVESTIGATE" => 12,
             "MULTISTEP" => 24,
-            "OPEN_ENDED" => 40,
-            _ => 6, // Default for unknown complexity
+            _ => 12, // Default for unknown complexity (assume Multistep)
         };
         Self {
             max_iterations,

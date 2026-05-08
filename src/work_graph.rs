@@ -52,12 +52,11 @@ pub(crate) enum ApproachStatus {
 }
 
 /// Kinds of nodes in the work graph.
+/// Objective (depth 0) → SubGoal (depth 1) → Instruction (depth 2, smallest unit)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) enum NodeKind {
     Objective,
-    Goal,
     SubGoal,
-    Plan,
     Instruction,
 }
 
@@ -66,9 +65,7 @@ impl NodeKind {
     pub fn label(&self) -> &'static str {
         match self {
             NodeKind::Objective => "Objective",
-            NodeKind::Goal => "Goal",
             NodeKind::SubGoal => "Sub-Goal",
-            NodeKind::Plan => "Plan",
             NodeKind::Instruction => "Instruction",
         }
     }
@@ -156,9 +153,9 @@ impl WorkGraph {
         self.nodes.values().map(|n| n.depth).max().unwrap_or(0)
     }
 
-    /// Number of goals (top-level nodes below objective).
-    pub fn goal_count(&self) -> usize {
-        self.nodes_by_kind(NodeKind::Goal).len()
+    /// Number of sub-goals (top-level nodes below objective).
+    pub fn subgoal_count(&self) -> usize {
+        self.nodes_by_kind(NodeKind::SubGoal).len()
     }
 
     /// Returns node IDs in topological order (parents before children).
@@ -200,19 +197,15 @@ impl WorkGraphBuilder {
     }
 
     /// Build a graph with depth capped by complexity assessment.
-    /// Complexity → max graph depth:
+    /// Two gates:
     ///   DIRECT → 0 (no graph, skip to instruction)
-    ///   INVESTIGATE → 2 (Goal → Instruction)
-    ///   MULTISTEP → 3 (Goal → SubGoal → Plan → Instruction)
-    ///   OPEN_ENDED → 4+ (full pyramid, parallel approaches)
+    ///   MULTISTEP → 2 (Objective → SubGoal → Instruction)
     pub fn from_complexity(objective: String, complexity: &str) -> Self {
         let approach_id = ApproachId::new();
         let max_depth = match complexity {
             "DIRECT" => 0,
-            "INVESTIGATE" => 2,
-            "MULTISTEP" => 3,
-            "OPEN_ENDED" => 4,
-            _ => 3, // conservative default
+            "MULTISTEP" => 2, // Objective(0) → SubGoal(1) → Instruction(2)
+            _ => 2, // conservative default: MULTISTEP
         };
         let mut graph = WorkGraph::new(objective);
         graph
@@ -247,10 +240,10 @@ impl WorkGraphBuilder {
         &self.current_approach
     }
 
-    pub fn add_goal(&mut self, id: &str, label: &str, description: &str) -> &mut Self {
+    pub fn add_objective(&mut self, id: &str, label: &str, description: &str) -> &mut Self {
         self.graph.add_node(WorkNode {
             id: id.to_string(),
-            kind: NodeKind::Goal,
+            kind: NodeKind::Objective,
             label: label.to_string(),
             description: description.to_string(),
             approach_id: self.current_approach.clone(),
@@ -269,12 +262,7 @@ impl WorkGraphBuilder {
         description: &str,
         parent_id: &str,
     ) -> &mut Self {
-        let depth = self
-            .graph
-            .get_node(parent_id)
-            .map(|n| n.depth + 1)
-            .unwrap_or(1);
-
+        // SubGoal depth is always 1 (parent is Objective depth 0)
         self.graph.add_node(WorkNode {
             id: id.to_string(),
             kind: NodeKind::SubGoal,
@@ -284,34 +272,7 @@ impl WorkGraphBuilder {
             objective: self.graph.root_objective.clone(),
             status: NodeStatus::Pending,
             parent_id: Some(parent_id.to_string()),
-            depth,
-        });
-        self
-    }
-
-    pub fn add_plan(
-        &mut self,
-        id: &str,
-        label: &str,
-        description: &str,
-        parent_id: &str,
-    ) -> &mut Self {
-        let depth = self
-            .graph
-            .get_node(parent_id)
-            .map(|n| n.depth + 1)
-            .unwrap_or(2);
-
-        self.graph.add_node(WorkNode {
-            id: id.to_string(),
-            kind: NodeKind::Plan,
-            label: label.to_string(),
-            description: description.to_string(),
-            approach_id: self.current_approach.clone(),
-            objective: self.graph.root_objective.clone(),
-            status: NodeStatus::Pending,
-            parent_id: Some(parent_id.to_string()),
-            depth,
+            depth: 1,
         });
         self
     }
@@ -323,12 +284,7 @@ impl WorkGraphBuilder {
         description: &str,
         parent_id: &str,
     ) -> &mut Self {
-        let depth = self
-            .graph
-            .get_node(parent_id)
-            .map(|n| n.depth + 1)
-            .unwrap_or(3);
-
+        // Instruction depth is always 2 (parent is SubGoal depth 1)
         self.graph.add_node(WorkNode {
             id: id.to_string(),
             kind: NodeKind::Instruction,
@@ -338,7 +294,7 @@ impl WorkGraphBuilder {
             objective: self.graph.root_objective.clone(),
             status: NodeStatus::Pending,
             parent_id: Some(parent_id.to_string()),
-            depth,
+            depth: 2,
         });
         self
     }
@@ -361,7 +317,7 @@ mod tests {
         let mut graph = WorkGraph::new("obj".to_string());
         let node = WorkNode {
             id: "g1".to_string(),
-            kind: NodeKind::Goal,
+            kind: NodeKind::Objective,
             label: "Goal 1".to_string(),
             description: "First goal".to_string(),
             approach_id: ApproachId::from_str("a1"),
@@ -392,15 +348,13 @@ mod tests {
     fn test_builder_full_hierarchy() {
         let mut builder = WorkGraphBuilder::new("Build feature".to_string());
         builder
-            .add_goal("g1", "Setup", "Prepare environment")
-            .add_sub_goal("sg1", "Install deps", "Install dependencies", "g1")
-            .add_plan("p1", "Run install", "Execute npm install", "sg1")
-            .add_instruction("i1", "npm install", "npm install express", "p1");
+            .add_objective("obj1", "Build feature", "User request: build feature")
+            .add_sub_goal("sg1", "Setup", "Prepare environment", "obj1")
+            .add_instruction("i1", "Install deps", "npm install express", "sg1");
         let graph = builder.into_graph();
-        assert_eq!(graph.nodes.len(), 4);
-        assert!(graph.get_node("g1").is_some());
+        assert_eq!(graph.nodes.len(), 3);
+        assert!(graph.get_node("obj1").is_some());
         assert!(graph.get_node("sg1").is_some());
-        assert!(graph.get_node("p1").is_some());
         assert!(graph.get_node("i1").is_some());
     }
 
@@ -408,26 +362,24 @@ mod tests {
     fn test_node_depth() {
         let mut builder = WorkGraphBuilder::new("obj".to_string());
         builder
-            .add_goal("g1", "G1", "")
-            .add_sub_goal("sg1", "SG1", "", "g1")
-            .add_plan("p1", "P1", "", "sg1")
-            .add_instruction("i1", "I1", "", "p1");
+            .add_objective("obj1", "O1", "")
+            .add_sub_goal("sg1", "SG1", "", "obj1")
+            .add_instruction("i1", "I1", "", "sg1");
         let graph = builder.into_graph();
-        assert_eq!(graph.get_node("g1").unwrap().depth, 0);
+        assert_eq!(graph.get_node("obj1").unwrap().depth, 0);
         assert_eq!(graph.get_node("sg1").unwrap().depth, 1);
-        assert_eq!(graph.get_node("p1").unwrap().depth, 2);
-        assert_eq!(graph.get_node("i1").unwrap().depth, 3);
+        assert_eq!(graph.get_node("i1").unwrap().depth, 2);
     }
 
     #[test]
     fn test_children_of() {
         let mut builder = WorkGraphBuilder::new("obj".to_string());
         builder
-            .add_goal("g1", "G1", "")
-            .add_sub_goal("sg1", "SG1", "", "g1")
-            .add_sub_goal("sg2", "SG2", "", "g1");
+            .add_objective("obj1", "O1", "")
+            .add_sub_goal("sg1", "SG1", "", "obj1")
+            .add_sub_goal("sg2", "SG2", "", "obj1");
         let graph = builder.into_graph();
-        let children = graph.children_of("g1");
+        let children = graph.children_of("obj1");
         assert_eq!(children.len(), 2);
     }
 
@@ -435,9 +387,9 @@ mod tests {
     fn test_set_node_status() {
         let mut graph = WorkGraph::new("obj".to_string());
         graph.add_node(WorkNode {
-            id: "g1".to_string(),
-            kind: NodeKind::Goal,
-            label: "G1".to_string(),
+            id: "obj1".to_string(),
+            kind: NodeKind::Objective,
+            label: "O1".to_string(),
             description: "".to_string(),
             approach_id: ApproachId::from_str("a1"),
             objective: "obj".to_string(),
@@ -445,20 +397,20 @@ mod tests {
             parent_id: None,
             depth: 0,
         });
-        graph.set_node_status("g1", NodeStatus::Succeeded);
-        assert_eq!(graph.get_node("g1").unwrap().status, NodeStatus::Succeeded);
+        graph.set_node_status("obj1", NodeStatus::Succeeded);
+        assert_eq!(graph.get_node("obj1").unwrap().status, NodeStatus::Succeeded);
     }
 
     #[test]
     fn test_nodes_by_kind() {
         let mut builder = WorkGraphBuilder::new("obj".to_string());
         builder
-            .add_goal("g1", "G1", "")
-            .add_goal("g2", "G2", "")
-            .add_sub_goal("sg1", "SG1", "", "g1");
+            .add_objective("obj1", "O1", "")
+            .add_sub_goal("sg1", "SG1", "", "obj1")
+            .add_sub_goal("sg2", "SG2", "", "obj1");
         let graph = builder.into_graph();
-        assert_eq!(graph.nodes_by_kind(NodeKind::Goal).len(), 2);
-        assert_eq!(graph.nodes_by_kind(NodeKind::SubGoal).len(), 1);
+        assert_eq!(graph.nodes_by_kind(NodeKind::SubGoal).len(), 2);
+        assert_eq!(graph.nodes_by_kind(NodeKind::Instruction).len(), 0);
     }
 
     #[test]
@@ -472,27 +424,22 @@ mod tests {
     fn test_topological_order() {
         let mut builder = WorkGraphBuilder::new("obj".to_string());
         builder
-            .add_goal("g1", "G1", "")
-            .add_sub_goal("sg1", "SG1", "", "g1")
-            .add_plan("p1", "P1", "", "sg1")
-            .add_instruction("i1", "I1", "", "p1");
+            .add_objective("obj1", "O1", "")
+            .add_sub_goal("sg1", "SG1", "", "obj1")
+            .add_instruction("i1", "I1", "", "sg1");
         let graph = builder.into_graph();
         let order = graph.topological_ids();
-        let g1_pos = order.iter().position(|&id| id == "g1").unwrap();
+        let obj1_pos = order.iter().position(|&id| id == "obj1").unwrap();
         let sg1_pos = order.iter().position(|&id| id == "sg1").unwrap();
-        let p1_pos = order.iter().position(|&id| id == "p1").unwrap();
         let i1_pos = order.iter().position(|&id| id == "i1").unwrap();
-        assert!(g1_pos < sg1_pos);
-        assert!(sg1_pos < p1_pos);
-        assert!(p1_pos < i1_pos);
+        assert!(obj1_pos < sg1_pos);
+        assert!(sg1_pos < i1_pos);
     }
 
     #[test]
     fn test_node_kind_label() {
         assert_eq!(NodeKind::Objective.label(), "Objective");
-        assert_eq!(NodeKind::Goal.label(), "Goal");
         assert_eq!(NodeKind::SubGoal.label(), "Sub-Goal");
-        assert_eq!(NodeKind::Plan.label(), "Plan");
         assert_eq!(NodeKind::Instruction.label(), "Instruction");
     }
 
@@ -500,19 +447,17 @@ mod tests {
     fn test_max_depth() {
         let mut builder = WorkGraphBuilder::new("obj".to_string());
         builder
-            .add_goal("g1", "G1", "")
-            .add_sub_goal("sg1", "SG1", "", "g1")
-            .add_plan("p1", "P1", "", "sg1")
-            .add_instruction("i1", "I1", "", "p1");
+            .add_objective("obj1", "O1", "")
+            .add_sub_goal("sg1", "SG1", "", "obj1")
+            .add_instruction("i1", "I1", "", "sg1");
         let graph = builder.into_graph();
-        assert_eq!(graph.max_depth(), 3);
+        assert_eq!(graph.max_depth(), 2);
     }
 
     #[test]
     fn test_empty_graph_properties() {
         let graph = WorkGraph::new("empty".to_string());
         assert_eq!(graph.max_depth(), 0);
-        assert_eq!(graph.goal_count(), 0);
         assert!(graph.topological_ids().is_empty());
     }
 }

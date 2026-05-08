@@ -2,9 +2,9 @@
 //!
 //! Work Graph Runner — Tasks 763-769 integration.
 //!
-//! Bridges the work graph (Goal → SubGoal → Plan → Instruction),
+//! Bridges the work graph (Objective → SubGoal → Instruction),
 //! approach engine, scope coverage, and objective state into the active
-//! tool-calling loop. For MULTISTEP and OPEN_ENDED complexity, the runner
+//! tool-calling loop. For MULTISTEP complexity, the runner
 //! walks graph nodes in topological order, enforces sub-goal commitment,
 //! derives coverage from graph nodes, and gates finalization on graph
 //! completion + coverage satisfaction.
@@ -24,9 +24,9 @@ use crate::intel_units::{SchemaPhase, WorkGraphSchema};
 /// Strategy the runner uses per turn.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum RunnerMode {
-    /// DIRECT / INVESTIGATE: bypass graph, flat direct tool-calling as before.
+    /// DIRECT: bypass graph, flat direct tool-calling.
     Direct,
-    /// MULTISTEP / OPEN_ENDED: graph-driven execution with node commitment.
+    /// MULTISTEP: graph-driven execution with node commitment.
     GraphDriven,
 }
 
@@ -34,7 +34,7 @@ pub(crate) enum RunnerMode {
 #[derive(Debug, Clone)]
 pub(crate) struct NodeProgress {
     pub node_id: String,
-    pub node_kind: String, // "Goal", "SubGoal", "Instruction"
+    pub node_kind: String, // "Objective", "SubGoal", "Instruction"
     pub node_label: String,
     pub iterations_spent: u32,
     pub tool_calls_spent: u32,
@@ -51,30 +51,33 @@ pub(crate) struct WorkGraphRunner {
     pub coverage: crate::scope_coverage::ScopeCoverageLedger,
     /// Current node being worked on (None if no graph).
     pub current_progress: Option<NodeProgress>,
+    /// Approach retry tracking: node_id → attempt count (max 3 per node).
+    pub node_attempts: std::collections::HashMap<String, u32>,
 }
 
 impl WorkGraphRunner {
+    /// Max approach retries per instruction before falling back to previous depth.
+    pub const MAX_ATTEMPTS_PER_NODE: u32 = 3;
+
     /// Create for a given complexity level and user objective.
+    /// Two gates: DIRECT (no graph) or MULTISTEP (graph-driven).
     pub fn new(complexity: &str, raw_objective: &str) -> Self {
-        let is_graph = matches!(
-            complexity.to_ascii_uppercase().as_str(),
-            "MULTISTEP" | "OPEN_ENDED"
-        );
+        let is_graph = complexity.to_ascii_uppercase().as_str() == "MULTISTEP";
+        let base = Self {
+            mode: RunnerMode::Direct,
+            graph: None,
+            coverage: crate::scope_coverage::ScopeCoverageLedger::new(),
+            current_progress: None,
+            node_attempts: std::collections::HashMap::new(),
+        };
         if is_graph {
-            let graph = WorkGraph::new(raw_objective.to_string());
             Self {
                 mode: RunnerMode::GraphDriven,
-                graph: Some(graph),
-                coverage: crate::scope_coverage::ScopeCoverageLedger::new(),
-                current_progress: None,
+                graph: Some(WorkGraph::new(raw_objective.to_string())),
+                ..base
             }
         } else {
-            Self {
-                mode: RunnerMode::Direct,
-                graph: None,
-                coverage: crate::scope_coverage::ScopeCoverageLedger::new(),
-                current_progress: None,
-            }
+            base
         }
     }
 
@@ -86,7 +89,7 @@ impl WorkGraphRunner {
     // ── graph population from schema + discovery ─────────────────────────
 
     /// Populate the work graph from a model-produced schema.
-    /// Converts abstract phases into concrete Goal/SubGoal nodes.
+    /// Converts schema phases (with depth) into Objective/SubGoal/Instruction nodes.
     /// Returns the number of nodes created.
     pub fn populate_from_schema(&mut self, schema: &WorkGraphSchema) -> usize {
         if self.mode == RunnerMode::Direct {
@@ -99,242 +102,86 @@ impl WorkGraphRunner {
 
         let mut count = 0;
         let mut phase_num: u32 = 0;
+        let mut objective_id: Option<String> = None;
+        let mut current_subgoal_id: Option<String> = None;
 
         for phase in &schema.phases {
             phase_num += 1;
-            let goal_id = format!("g_{:02}", phase_num);
-            match phase.action.as_str() {
-                "discover" => {
-                    // Single Goal: discover files in a scope
-                    graph.add_node(WorkNode {
-                        id: goal_id.clone(),
-                        kind: NodeKind::Goal,
-                        label: phase.label.clone(),
-                        description: format!("discover: {}", phase.scope_hint),
-                        approach_id: ApproachId::default(),
-                        objective: graph.root_objective.clone(),
-                        status: NodeStatus::Pending,
-                        parent_id: None,
-                        depth: 0,
-                    });
-                    graph.add_node(WorkNode {
-                        id: format!("{}_d1", goal_id),
-                        kind: NodeKind::SubGoal,
-                        label: format!("List {}", phase.scope_hint),
-                        description: phase.scope_hint.clone(),
-                        approach_id: ApproachId::default(),
-                        objective: graph.root_objective.clone(),
-                        status: NodeStatus::Pending,
-                        parent_id: Some(goal_id.clone()),
-                        depth: 1,
-                    });
-                    count += 2;
-                }
-                "read_all" => {
-                    // Goal: read all files from a previously discovered scope.
-                    // SubGoal nodes will be added after discovery provides file paths.
-                    graph.add_node(WorkNode {
-                        id: goal_id.clone(),
-                        kind: NodeKind::Goal,
-                        label: phase.label.clone(),
-                        description: format!("read_all: {}", phase.scope_hint),
-                        approach_id: ApproachId::default(),
-                        objective: graph.root_objective.clone(),
-                        status: NodeStatus::Pending,
-                        parent_id: None,
-                        depth: 0,
-                    });
-                    // Placeholder SubGoal — gets replaced/expanded after discovery
-                    graph.add_node(WorkNode {
-                        id: format!("{}_sg_placeholder", goal_id),
-                        kind: NodeKind::SubGoal,
-                        label: format!("Read files from {}", phase.scope_hint),
-                        description: "Placeholder — will be expanded after discovery".to_string(),
-                        approach_id: ApproachId::default(),
-                        objective: graph.root_objective.clone(),
-                        status: NodeStatus::Pending,
-                        parent_id: Some(goal_id.clone()),
-                        depth: 1,
-                    });
-                    count += 2;
-                }
-                "read_one" => {
-                    graph.add_node(WorkNode {
-                        id: goal_id.clone(),
-                        kind: NodeKind::Goal,
-                        label: phase.label.clone(),
-                        description: format!("read_one: {}", phase.scope_hint),
-                        approach_id: ApproachId::default(),
-                        objective: graph.root_objective.clone(),
-                        status: NodeStatus::Pending,
-                        parent_id: None,
-                        depth: 0,
-                    });
-                    graph.add_node(WorkNode {
-                        id: format!("{}_sg1", goal_id),
-                        kind: NodeKind::SubGoal,
-                        label: phase.label.clone(),
-                        description: phase.scope_hint.clone(),
-                        approach_id: ApproachId::default(),
-                        objective: graph.root_objective.clone(),
-                        status: NodeStatus::Pending,
-                        parent_id: Some(goal_id.clone()),
-                        depth: 1,
-                    });
-                    count += 2;
-                }
-                "shell" => {
-                    graph.add_node(WorkNode {
-                        id: goal_id.clone(),
-                        kind: NodeKind::Goal,
-                        label: phase.label.clone(),
-                        description: format!("shell: {}", phase.scope_hint),
-                        approach_id: ApproachId::default(),
-                        objective: graph.root_objective.clone(),
-                        status: NodeStatus::Pending,
-                        parent_id: None,
-                        depth: 0,
-                    });
-                    count += 1;
-                }
-                "answer" => {
-                    // Answer phases have no sub-goals — synthesis only
-                    graph.add_node(WorkNode {
-                        id: goal_id.clone(),
-                        kind: NodeKind::Goal,
-                        label: phase.label.clone(),
-                        description: "Synthesize final answer from gathered evidence".to_string(),
-                        approach_id: ApproachId::default(),
-                        objective: graph.root_objective.clone(),
-                        status: NodeStatus::Pending,
-                        parent_id: None,
-                        depth: 0,
-                    });
-                    count += 1;
-                }
-                _ => {}
+            let phase_id = format!("p_{:02}", phase_num);
+            let depth = phase.depth;
+
+            if depth == 0 {
+                // Objective node (root)
+                graph.add_node(WorkNode {
+                    id: phase_id.clone(),
+                    kind: NodeKind::Objective,
+                    label: phase.label.clone(),
+                    description: phase.label.clone(),
+                    approach_id: ApproachId::default(),
+                    objective: graph.root_objective.clone(),
+                    status: NodeStatus::Pending,
+                    parent_id: None,
+                    depth: 0,
+                });
+                objective_id = Some(phase_id.clone());
+                count += 1;
+            } else if depth == 1 {
+                // SubGoal node (under Objective)
+                // Track as parent for subsequent Instructions
+                current_subgoal_id = Some(phase_id.clone());
+                let parent = objective_id.clone().unwrap_or_default();
+                graph.add_node(WorkNode {
+                    id: phase_id.clone(),
+                    kind: NodeKind::SubGoal,
+                    label: phase.label.clone(),
+                    description: phase.label.clone(),
+                    approach_id: ApproachId::default(),
+                    objective: graph.root_objective.clone(),
+                    status: NodeStatus::Pending,
+                    parent_id: Some(parent),
+                    depth: 1,
+                });
+                count += 1;
+            } else if depth >= 2 {
+                // Instruction node — parent is the most recent SubGoal
+                let parent = current_subgoal_id.clone().unwrap_or_default();
+                graph.add_node(WorkNode {
+                    id: phase_id.clone(),
+                    kind: NodeKind::Instruction,
+                    label: phase.label.clone(),
+                    description: phase.label.clone(),
+                    approach_id: ApproachId::default(),
+                    objective: graph.root_objective.clone(),
+                    status: NodeStatus::Pending,
+                    parent_id: Some(parent),
+                    depth: 2,
+                });
+                count += 1;
             }
         }
         count
     }
 
-    /// After workspace discovery (ls/glob output), expand "read_all" phases
-    /// with concrete SubGoal nodes for each discovered file path.
-    /// Also seeds coverage items from the expanded nodes.
-    pub fn populate_from_discovery(
-        &mut self,
-        discovered_paths: &[String],
-    ) -> usize {
-        let graph = match self.graph.as_mut() {
-            Some(g) => g,
-            None => return 0,
-        };
-        if discovered_paths.is_empty() {
-            return 0;
-        }
-
-        // Find read_all goals that have placeholder SubGoal nodes
-        let read_all_goals: Vec<String> = graph
-            .nodes
-            .values()
-            .filter(|n| n.kind == NodeKind::Goal && n.description.starts_with("read_all:"))
-            .map(|n| n.id.clone())
-            .collect();
-
-        // Collect all data we need before mutating the graph.
-        struct GoalInfo {
-            id: String,
-            goal_depth: u8,
-            existing_children: Vec<String>,
-        }
-        let goal_infos: Vec<GoalInfo> = read_all_goals
-            .iter()
-            .filter_map(|gid| {
-                let node = graph.get_node(gid)?;
-                let children: Vec<String> = graph
-                    .children_of(gid)
-                    .iter()
-                    .map(|n| n.id.clone())
-                    .collect();
-                Some(GoalInfo {
-                    id: gid.clone(),
-                    goal_depth: node.depth,
-                    existing_children: children,
-                })
-            })
-            .collect();
-
-        let mut created = 0;
-        let mut seen = HashSet::new();
-
-        for goal_info in &goal_infos {
-            for path in discovered_paths {
-                if !seen.insert(path.clone()) {
-                    continue;
-                }
-                let base = std::path::Path::new(path)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or(path);
-                let sg_id = format!("{}_sg_{}", goal_info.id, base.replace('.', "_"));
-                if goal_info.existing_children.iter().any(|e| e == &sg_id) {
-                    continue;
-                }
-                let label = format!("Read {}", path);
-                graph.add_node(WorkNode {
-                    id: sg_id,
-                    kind: NodeKind::SubGoal,
-                    label,
-                    description: path.clone(),
-                    approach_id: ApproachId::default(),
-                    objective: graph.root_objective.clone(),
-                    status: NodeStatus::Pending,
-                    parent_id: Some(goal_info.id.clone()),
-                    depth: goal_info.goal_depth + 1,
-                });
-                created += 1;
-            }
-        }
-
-        // Remove placeholder nodes (they served their purpose)
-        let placeholders: Vec<String> = graph
-            .nodes
-            .iter()
-            .filter(|(id, n)| {
-                id.contains("_sg_placeholder") && n.kind == NodeKind::SubGoal
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in placeholders {
-            graph.nodes.remove(&id);
-        }
-
-        // Seed coverage from the newly created SubGoal nodes
-        self.seed_coverage_from_graph();
-
-        created
-    }
-
     // ── graph population ─────────────────────────────────────────────────
 
-    /// Add a Goal node to the graph.
-    pub fn add_goal(&mut self, id: &str, label: &str, description: &str) {
+    /// Add an Objective node to the graph.
+    pub fn add_objective(&mut self, id: &str, label: &str, description: &str) {
         if let Some(ref mut graph) = self.graph {
             graph.add_node(WorkNode {
                 id: id.to_string(),
-                kind: NodeKind::Goal,
+                kind: NodeKind::Objective,
                 label: label.to_string(),
                 description: description.to_string(),
                 approach_id: ApproachId::default(),
                 objective: graph.root_objective.clone(),
                 status: NodeStatus::Pending,
                 parent_id: None,
-                depth: 0,
+                depth:0,
             });
         }
     }
 
-    /// Add a SubGoal node with a parent Goal.
+    /// Add a SubGoal node with a parent Objective.
     pub fn add_sub_goal(
         &mut self,
         id: &str,
@@ -343,7 +190,7 @@ impl WorkGraphRunner {
         parent_id: &str,
     ) {
         if let Some(ref mut graph) = self.graph {
-            let depth = graph.get_node(parent_id).map(|n| n.depth + 1).unwrap_or(1);
+            // SubGoal depth is always 1 (parent is Objective depth 0)
             graph.add_node(WorkNode {
                 id: id.to_string(),
                 kind: NodeKind::SubGoal,
@@ -353,12 +200,12 @@ impl WorkGraphRunner {
                 objective: graph.root_objective.clone(),
                 status: NodeStatus::Pending,
                 parent_id: Some(parent_id.to_string()),
-                depth,
+                depth:1,
             });
         }
     }
 
-    /// Add an Instruction node.
+    /// Add an Instruction node (depth 2, under SubGoal).
     pub fn add_instruction(
         &mut self,
         id: &str,
@@ -367,7 +214,7 @@ impl WorkGraphRunner {
         parent_id: &str,
     ) {
         if let Some(ref mut graph) = self.graph {
-            let depth = graph.get_node(parent_id).map(|n| n.depth + 1).unwrap_or(2);
+            // Instruction depth is always 2 (parent is SubGoal depth 1)
             graph.add_node(WorkNode {
                 id: id.to_string(),
                 kind: NodeKind::Instruction,
@@ -377,7 +224,7 @@ impl WorkGraphRunner {
                 objective: graph.root_objective.clone(),
                 status: NodeStatus::Pending,
                 parent_id: Some(parent_id.to_string()),
-                depth,
+                depth:2,
             });
         }
     }
@@ -466,6 +313,65 @@ impl WorkGraphRunner {
         }
     }
 
+    /// Mark the current node as Skipped (budget exhausted, not relevant).
+    pub fn mark_current_node_skipped(&mut self) {
+        if let Some(ref progress) = self.current_progress {
+            if let Some(ref mut graph) = self.graph {
+                graph.set_node_status(&progress.node_id, NodeStatus::Skipped);
+            }
+        }
+    }
+
+    // ── approach retry tracking ──────────────────────────────────────────
+
+    /// Record an attempt on the current node and return the total attempt count.
+    /// Each node gets up to MAX_ATTEMPTS_PER_NODE approaches before permanent failure.
+    pub fn record_node_attempt(&mut self) -> u32 {
+        if let Some(ref progress) = self.current_progress {
+            let count = self.node_attempts.entry(progress.node_id.clone()).or_insert(0);
+            *count += 1;
+            *count
+        } else {
+            0
+        }
+    }
+
+    /// Whether the current node has retries left (< MAX_ATTEMPTS_PER_NODE).
+    pub fn can_retry_current(&self) -> bool {
+        if let Some(ref progress) = self.current_progress {
+            self.node_attempts
+                .get(&progress.node_id)
+                .map_or(true, |&c| c < Self::MAX_ATTEMPTS_PER_NODE)
+        } else {
+            false
+        }
+    }
+
+    /// Retry the current node with a new approach. Resets status to Pending
+    /// so it gets picked up again. Node is retried in-place — no new node created.
+    pub fn retry_current_with_approach(&mut self, new_approach_id: ApproachId) {
+        if let Some(ref progress) = self.current_progress {
+            if let Some(ref mut graph) = self.graph {
+                graph.set_node_status(&progress.node_id, NodeStatus::Pending);
+                if let Some(node) = graph.get_node_mut(&progress.node_id) {
+                    node.approach_id = new_approach_id;
+                }
+            }
+        }
+        self.current_progress = None;
+    }
+
+    /// Whether the current node has exhausted all approach retries.
+    pub fn current_node_retries_exhausted(&self) -> bool {
+        if let Some(ref progress) = self.current_progress {
+            self.node_attempts
+                .get(&progress.node_id)
+                .map_or(false, |&c| c >= Self::MAX_ATTEMPTS_PER_NODE)
+        } else {
+            false
+        }
+    }
+
     /// Record that the current node has spent another iteration.
     pub fn record_iteration(&mut self) {
         if let Some(ref mut progress) = self.current_progress {
@@ -525,6 +431,100 @@ impl WorkGraphRunner {
                 self.coverage.register_items(&all_paths, "file");
             }
         }
+    }
+
+    /// After ls/glob discovers files, expand the first pending "reading" SubGoal
+    /// with concrete Instruction nodes — one per discovered file path.
+    /// Reads within the SubGoal's scope are turned into specific instructions
+    /// the model (and Fix C) can track.
+    pub fn expand_instructions_from_discovery(
+        &mut self,
+        discovered_paths: &[String],
+    ) -> usize {
+        let graph = match self.graph.as_mut() {
+            Some(g) => g,
+            None => return 0,
+        };
+        if discovered_paths.is_empty() {
+            return 0;
+        }
+
+        const READABLE_EXTS: &[&str] = &[
+            "md", "rs", "toml", "txt", "yaml", "yml", "json",
+        ];
+        const MAX_EXPANDED: usize = 50;
+
+        // Find the first pending SubGoal that likely represents "read docs"
+        // (its label mentions reading, or it has no children yet).
+        let subgoal_id = graph
+            .topological_ids()
+            .iter()
+            .filter_map(|&id| {
+                let n = graph.get_node(id)?;
+                if n.kind != NodeKind::SubGoal || n.status != NodeStatus::Pending {
+                    return None;
+                }
+                let lower = n.label.to_lowercase();
+                let is_reading = lower.contains("read");
+                let children = graph.children_of(id);
+                if is_reading || children.is_empty() {
+                    Some(id.to_string())
+                } else {
+                    None
+                }
+            })
+            .next();
+
+        let Some(ref parent_id) = subgoal_id else { return 0; };
+
+        let mut created = 0;
+        let mut seen = std::collections::HashSet::new();
+
+        for path in discovered_paths {
+            if created >= MAX_EXPANDED {
+                break;
+            }
+            // Extension filter: skip binaries and non-readable files
+            let ext = std::path::Path::new(path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            if !ext.is_empty() && !READABLE_EXTS.contains(&ext.to_lowercase().as_str()) {
+                continue;
+            }
+            // Skip paths already covered by existing Instructions
+            if !seen.insert(path.to_string()) {
+                continue;
+            }
+            let base = std::path::Path::new(path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path);
+            let instr_id = format!(
+                "{}_disc_{}",
+                parent_id,
+                base.replace('.', "_").replace('/', "_")
+            );
+            // Avoid duplicate IDs
+            if graph.get_node(&instr_id).is_some() {
+                continue;
+            }
+            let label = format!("Read {}", path);
+            graph.add_node(WorkNode {
+                id: instr_id,
+                kind: NodeKind::Instruction,
+                label,
+                description: path.to_string(),
+                approach_id: ApproachId::default(),
+                objective: graph.root_objective.clone(),
+                status: NodeStatus::Pending,
+                parent_id: Some(parent_id.clone()),
+                depth: 2,
+            });
+            created += 1;
+        }
+
+        created
     }
 
     /// Derive coverage from ls/glob output that was registered in scope_coverage.
@@ -591,6 +591,105 @@ impl WorkGraphRunner {
     /// Whether finalization is premature (node remaining or coverage pending).
     pub fn finalization_is_premature(&self) -> bool {
         !self.can_finalize()
+    }
+
+    /// Render a compact progress string: "Inst: 5/16"
+    pub fn render_progress(&self) -> String {
+        match self.graph.as_ref() {
+            Some(graph) => {
+                let total = graph.nodes.len();
+                let done = graph
+                    .nodes
+                    .values()
+                    .filter(|n| {
+                        n.status == NodeStatus::Succeeded
+                            || n.status == NodeStatus::Skipped
+                            || n.status == NodeStatus::Failed
+                    })
+                    .count();
+                format!("Inst: {}/{}", done, total)
+            }
+            None => String::new(),
+        }
+    }
+
+    /// Label of the pending instruction node currently in focus, if any.
+    pub fn current_instruction_label(&self) -> Option<String> {
+        if let Some(ref progress) = self.current_progress {
+            self.graph.as_ref().and_then(|g| {
+                g.get_node(&progress.node_id)
+                    .map(|n| n.label.clone())
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Next N pending labels from the graph, in topological order.
+    /// Includes both SubGoal and Instruction nodes.
+    pub fn pending_instruction_labels(&self, limit: usize) -> Vec<String> {
+        let Some(graph) = self.graph.as_ref() else {
+            return Vec::new();
+        };
+        graph
+            .topological_ids()
+            .iter()
+            .filter_map(|&id| graph.get_node(id))
+            .filter(|n| {
+                n.status == NodeStatus::Pending
+                    && (n.kind == NodeKind::Instruction || n.kind == NodeKind::SubGoal)
+            })
+            .take(limit)
+            .map(|n| n.label.clone())
+            .collect()
+    }
+
+    /// If a file path partially matches a pending Instruction node's label,
+    /// mark that node succeeded. Returns true if a match was found.
+    pub fn mark_instruction_by_path(&mut self, file_path: &str) -> bool {
+        let file_base = std::path::Path::new(file_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(file_path)
+            .to_lowercase();
+        let file_name = std::path::Path::new(file_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(file_path)
+            .to_lowercase();
+
+        // Collect matching IDs via immutable borrow, then mutate.
+        let matching: Vec<String> = if let Some(ref graph) = self.graph {
+            graph
+                .topological_ids()
+                .iter()
+                .filter_map(|&id| {
+                    let node = graph.get_node(id)?;
+                    if node.status != NodeStatus::Pending
+                    || (node.kind != NodeKind::Instruction && node.kind != NodeKind::SubGoal)
+                {        return None;
+                    }
+                    let label_lower = node.label.to_lowercase();
+                    let matches = file_name.starts_with(&label_lower)
+                        || label_lower.contains(&file_base)
+                        || file_name.contains(&label_lower.replace(' ', "_"))
+                        || label_lower.contains(&file_name.replace('_', " ").replace('-', " "))
+                        || label_lower.split_whitespace().any(|w| {
+                            w.len() >= 3 && file_name.contains(w)
+                        });
+                    if matches { Some(id.to_string()) } else { None }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        if let Some(ref mut graph) = self.graph {
+            for id in &matching {
+                graph.set_node_status(id, NodeStatus::Succeeded);
+            }
+        }
+        !matching.is_empty()
     }
 
     /// Build a context nudge that tells the model to stay focused on the
@@ -718,24 +817,22 @@ mod tests {
     fn test_runner_graph_driven_mode() {
         let runner = WorkGraphRunner::new("MULTISTEP", "read all docs");
         assert!(runner.is_graph_driven());
-        // Empty graph with no nodes is vacuously terminal — no work items exist.
         assert!(runner.can_finalize());
-        // Adding a pending node makes it non-terminal.
         let mut runner = WorkGraphRunner::new("MULTISTEP", "read all docs");
-        runner.add_goal("g1", "Read docs", "read all documentation files");
+        runner.add_objective("obj1", "Read docs", "answer: read all documentation files");
         assert!(!runner.can_finalize());
     }
 
     #[test]
-    fn test_add_goal_and_sub_goal() {
+    fn test_add_objective_and_sub_goal() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "read all docs");
-        runner.add_goal("g1", "Discover files", "List docs directory");
-        runner.add_sub_goal("sg1", "Read ARCHITECTURAL_RULES.md", "Read the architecture rules", "g1");
-        runner.add_sub_goal("sg2", "Read SOUL.md", "Read the soul doc", "g1");
+        runner.add_objective("obj1", "Read all docs", "answer: synthesize findings");
+        runner.add_sub_goal("sg1", "Discover files", "discover: documentation directory", "obj1");
+        runner.add_sub_goal("sg2", "Read each doc", "read_all: discovered files", "obj1");
 
         let (label, kind, _) = runner.advance_to_next_node().unwrap();
-        assert_eq!(label, "Discover files");
-        assert_eq!(kind, "Goal");
+        assert_eq!(label, "Read all docs");
+        assert_eq!(kind, "Objective");
 
         let graphs = runner.graph.as_ref().unwrap();
         assert_eq!(graphs.nodes.len(), 3);
@@ -744,23 +841,19 @@ mod tests {
     #[test]
     fn test_node_lifecycle() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "test");
-        runner.add_goal("g1", "Goal 1", "desc");
-        runner.add_sub_goal("sg1", "SubGoal 1", "read docs/ARCHITECTURAL_RULES.md", "g1");
+        runner.add_objective("obj1", "Root", "answer: root");
+        runner.add_sub_goal("sg1", "SubGoal 1", "read_one: docs/ARCHITECTURAL_RULES.md", "obj1");
 
-        // Advance to Goal 1
         let (label, kind, _) = runner.advance_to_next_node().unwrap();
-        assert_eq!(label, "Goal 1");
+        assert_eq!(label, "Root");
 
-        // Record 3 iterations
         runner.record_iteration();
         runner.record_iteration();
         runner.record_iteration();
         assert!(runner.current_node_effort_sufficient());
 
-        // Mark succeeded
         runner.mark_current_node_succeeded();
 
-        // Next node should be SubGoal 1
         let (label, kind, _) = runner.advance_to_next_node().unwrap();
         assert_eq!(label, "SubGoal 1");
         assert_eq!(kind, "Sub-Goal");
@@ -769,23 +862,22 @@ mod tests {
     #[test]
     fn test_coverage_seeded_from_graph() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "read all docs");
-        runner.add_sub_goal("sg1", "Read docs/ARCHITECTURAL_RULES.md", "Read architecture rules", "g1");
-        runner.add_sub_goal("sg2", "Read docs/SOUL.md", "Read soul doc", "g1");
-        runner.add_sub_goal("sg3", "Read docs/SKILL_SYSTEM.md", "Read skill system", "g1");
+        runner.add_objective("obj1", "Root", "answer: root");
+        runner.add_sub_goal("sg1", "Read docs/ARCHITECTURAL_RULES.md", "read_one: docs/ARCHITECTURAL_RULES.md", "obj1");
+        runner.add_sub_goal("sg2", "Read docs/SOUL.md", "read_one: docs/SOUL.md", "obj1");
         runner.seed_coverage_from_graph();
 
-        assert_eq!(runner.coverage.total(), 3);
+        assert_eq!(runner.coverage.total(), 2);
         assert!(runner.coverage.has_pending());
     }
 
     #[test]
     fn test_finalization_blocked_by_nodes() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "test");
-        runner.add_goal("g1", "Goal 1", "desc");
-        runner.add_sub_goal("sg1", "SubGoal 1", "read file.md", "g1");
+        runner.add_objective("obj1", "Root", "answer: root");
+        runner.add_sub_goal("sg1", "SubGoal 1", "read_one: file.md", "obj1");
         runner.seed_coverage_from_graph();
 
-        // Nothing committed or done
         assert!(!runner.can_finalize());
         assert!(runner.finalization_is_premature());
     }
@@ -793,15 +885,13 @@ mod tests {
     #[test]
     fn test_finalization_allowed_when_done() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "test");
-        runner.add_goal("g1", "Goal 1", "desc");
-        runner.add_sub_goal("sg1", "SubGoal 1", "read docs/ARCHITECTURAL_RULES.md", "g1");
+        runner.add_objective("obj1", "Root", "answer: root");
+        runner.add_sub_goal("sg1", "SubGoal 1", "read_one: docs/ARCHITECTURAL_RULES.md", "obj1");
         runner.seed_coverage_from_graph();
 
-        // Complete all nodes
-        runner.advance_to_next_node(); // Goal 1
+        runner.advance_to_next_node();
         runner.mark_current_node_succeeded();
-        runner.advance_to_next_node(); // SubGoal 1
-        // Mark the coverage item that was seeded from graph
+        runner.advance_to_next_node();
         runner.mark_coverage_covered("docs/ARCHITECTURAL_RULES.md");
         runner.mark_current_node_succeeded();
 
@@ -812,7 +902,7 @@ mod tests {
     #[test]
     fn test_current_node_is_stuck_detection() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "test");
-        runner.add_goal("g1", "Goal 1", "desc");
+        runner.add_objective("obj1", "Root", "answer: root");
         runner.advance_to_next_node();
         runner.record_tool_call(false);
         runner.record_tool_call(false);
@@ -823,21 +913,21 @@ mod tests {
     #[test]
     fn test_current_node_not_stuck_after_success() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "test");
-        runner.add_goal("g1", "Goal 1", "desc");
+        runner.add_objective("obj1", "Root", "answer: root");
         runner.advance_to_next_node();
         runner.record_tool_call(false);
         runner.record_tool_call(false);
-        runner.record_tool_call(true); // success resets
+        runner.record_tool_call(true);
         assert!(!runner.current_node_is_stuck());
     }
 
     #[test]
     fn test_build_relaxed_continuation() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "read docs");
-        runner.add_goal("g1", "Discover docs", "desc");
-        runner.add_sub_goal("sg1", "Read ARCHITECTURAL_RULES.md", "read docs/ARCHITECTURAL_RULES.md", "g1");
+        runner.add_objective("obj1", "Read docs", "answer: read docs");
+        runner.add_sub_goal("sg1", "Read ARCHITECTURAL_RULES.md", "read_one: docs/ARCHITECTURAL_RULES.md", "obj1");
         runner.seed_coverage_from_graph();
-        runner.advance_to_next_node(); // commit to Goal 1
+        runner.advance_to_next_node();
 
         let msg = runner.build_relaxed_continuation();
         assert!(msg.contains("Do not finalize"));
@@ -848,7 +938,7 @@ mod tests {
     #[test]
     fn test_build_node_focus_context() {
         let mut runner = WorkGraphRunner::new("MULTISTEP", "test");
-        runner.add_goal("g1", "Read files", "read all the docs");
+        runner.add_objective("obj1", "Read files", "answer: read all the docs");
         runner.advance_to_next_node();
 
         let ctx = runner.build_node_focus_context();
@@ -865,13 +955,40 @@ mod tests {
 
         runner.sync_external_coverage(&external);
         assert_eq!(runner.coverage.total(), 2);
-        assert!(runner.coverage.has_pending()); // b.md still pending
+        assert!(runner.coverage.has_pending());
     }
 
     #[test]
     fn test_graph_runner_empty_graph_is_terminal() {
         let runner = WorkGraphRunner::new("MULTISTEP", "empty");
-        // No nodes added means graph is vacuously terminal
         assert!(runner.all_graph_nodes_terminal());
+    }
+
+    #[test]
+    fn test_retry_tracking() {
+        let mut runner = WorkGraphRunner::new("MULTISTEP", "test");
+        runner.add_objective("obj1", "Root", "answer: root");
+        runner.advance_to_next_node();
+
+        assert!(runner.can_retry_current());
+        assert_eq!(runner.record_node_attempt(), 1);
+        assert!(runner.can_retry_current());
+        assert_eq!(runner.record_node_attempt(), 2);
+        assert!(runner.can_retry_current());
+        assert_eq!(runner.record_node_attempt(), 3);
+        // After 3 attempts, no more retries
+        assert!(!runner.can_retry_current());
+        assert!(runner.current_node_retries_exhausted());
+    }
+
+    #[test]
+    fn test_retry_resets_node() {
+        let mut runner = WorkGraphRunner::new("MULTISTEP", "test");
+        runner.add_objective("obj1", "Root", "answer: root");
+        runner.advance_to_next_node();
+        runner.mark_current_node_succeeded();
+        runner.retry_current_with_approach(ApproachId::new());
+        // After retry, current progress is cleared
+        assert!(runner.current_progress.is_none());
     }
 }

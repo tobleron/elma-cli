@@ -6,30 +6,25 @@
 //! This runs before the tool loop to determine iteration budget.
 
 /// Complexity level for a user request.
+/// Two gates: Direct (no graph) or Multistep (Objective → SubGoal → Instruction).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Complexity {
     Direct,
-    Investigate,
     Multistep,
-    OpenEnded,
 }
 
 impl Complexity {
     pub fn as_str(&self) -> &'static str {
         match self {
             Complexity::Direct => "DIRECT",
-            Complexity::Investigate => "INVESTIGATE",
             Complexity::Multistep => "MULTISTEP",
-            Complexity::OpenEnded => "OPEN_ENDED",
         }
     }
 
     pub fn max_iterations(&self) -> usize {
         match self {
             Complexity::Direct => 3,
-            Complexity::Investigate => 6,
             Complexity::Multistep => 12,
-            Complexity::OpenEnded => 20,
         }
     }
 }
@@ -77,7 +72,7 @@ pub fn assess_complexity(user_message: &str) -> Complexity {
     ];
     let has_code_signal = code_change_signals.iter().any(|s| lower.contains(s));
 
-    // Investigation signals → INVESTIGATE
+    // Investigation / read signals → MULTISTEP
     let investigate_signals = [
         "find",
         "search",
@@ -106,18 +101,16 @@ pub fn assess_complexity(user_message: &str) -> Complexity {
     let is_greeting =
         greeting_signals.iter().any(|s| s == &lower.trim()) || lower.trim().len() < 10;
 
-    // Classification logic
-    // Multi-doc/file signals => OpenEnded regardless of length (scale is implied)
-    if has_multi_signal {
-        Complexity::OpenEnded
-    } else if has_code_signal && is_long {
+    // Classification logic (two gates)
+    // Multi-doc/file signals => MULTISTEP (scale is implied)
+    if has_multi_signal || has_code_signal {
         Complexity::Multistep
-    } else if has_investigate_signal || has_code_signal || is_long {
-        Complexity::Investigate
+    } else if has_investigate_signal || is_long {
+        Complexity::Multistep
     } else if is_greeting {
         Complexity::Direct
     } else {
-        Complexity::Investigate // default: assume needs investigation
+        Complexity::Multistep // default: assume needs investigation
     }
 }
 
@@ -136,19 +129,19 @@ mod tests {
     fn test_direct_question() {
         let result = assess_complexity("what time is it");
         // Short, no multi-file signals → INVESTIGATE (default)
-        assert_eq!(result, Complexity::Investigate);
+        assert_eq!(result, Complexity::Multistep);
     }
 
     #[test]
     fn test_read_single_file() {
         let result = assess_complexity("read src/main.rs");
-        assert_eq!(result, Complexity::Investigate);
+        assert_eq!(result, Complexity::Multistep);
     }
 
     #[test]
     fn test_read_all_docs() {
         let result = assess_complexity("read all docs and compare with source code");
-        assert_eq!(result, Complexity::OpenEnded);
+        assert_eq!(result, Complexity::Multistep);
     }
 
     #[test]
@@ -156,13 +149,13 @@ mod tests {
         let result = assess_complexity(
             "rename the function getCwd to getCurrentWorkingDirectory across the entire project",
         );
-        assert_eq!(result, Complexity::OpenEnded);
+        assert_eq!(result, Complexity::Multistep);
     }
 
     #[test]
     fn test_investigate() {
         let result = assess_complexity("find all places where the database connection is created");
-        assert_eq!(result, Complexity::Investigate);
+        assert_eq!(result, Complexity::Multistep);
     }
 
     #[test]
@@ -175,14 +168,12 @@ mod tests {
     #[test]
     fn test_complexity_as_str() {
         assert_eq!(Complexity::Direct.as_str(), "DIRECT");
-        assert_eq!(Complexity::OpenEnded.as_str(), "OPEN_ENDED");
+        assert_eq!(Complexity::Multistep.as_str(), "MULTISTEP");
     }
 
     #[test]
     fn test_max_iterations_scaling() {
         assert_eq!(Complexity::Direct.max_iterations(), 3);
-        assert_eq!(Complexity::Investigate.max_iterations(), 6);
         assert_eq!(Complexity::Multistep.max_iterations(), 12);
-        assert_eq!(Complexity::OpenEnded.max_iterations(), 20);
     }
 }

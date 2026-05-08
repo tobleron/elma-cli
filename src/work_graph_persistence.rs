@@ -11,35 +11,31 @@ use crate::*;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PersistedGraphNode {
     pub(crate) id: String,
-    pub(crate) goal: Option<String>,
+    pub(crate) objective: Option<String>,
     pub(crate) subgoal: Option<String>,
-    pub(crate) plan: Option<String>,
     pub(crate) instruction: Option<String>,
     pub(crate) status: NodeStatus,
     pub(crate) approach_id: String,
-    pub(crate) objective: String,
+    pub(crate) objective_text: String,
     pub(crate) depth: u8,
 }
 
 impl From<&WorkNode> for PersistedGraphNode {
     fn from(node: &WorkNode) -> Self {
-        let (goal, subgoal, plan, instruction) = match node.kind {
-            NodeKind::Goal => (Some(node.description.clone()), None, None, None),
-            NodeKind::SubGoal => (None, Some(node.description.clone()), None, None),
-            NodeKind::Plan => (None, None, Some(node.description.clone()), None),
-            NodeKind::Instruction => (None, None, None, Some(node.description.clone())),
-            NodeKind::Objective => (None, None, None, None),
+        let (objective, subgoal, instruction) = match node.kind {
+            NodeKind::Objective => (Some(node.description.clone()), None, None),
+            NodeKind::SubGoal => (None, Some(node.description.clone()), None),
+            NodeKind::Instruction => (None, None, Some(node.description.clone())),
         };
 
         Self {
             id: node.id.clone(),
-            goal,
+            objective,
             subgoal,
-            plan,
             instruction,
             status: node.status.clone(),
             approach_id: node.approach_id.0.clone(),
-            objective: node.objective.clone(),
+            objective_text: node.objective.clone(),
             depth: node.depth,
         }
     }
@@ -90,177 +86,161 @@ mod tests {
     use crate::work_graph::ApproachStatus;
     use tempfile::TempDir;
 
-    fn create_test_graph() -> WorkGraph {
-        let mut graph = WorkGraph::new("test objective".to_string());
-        graph
-            .approaches
-            .insert("a1".to_string(), ApproachStatus::Active);
+fn create_test_graph() -> WorkGraph {
+    let mut graph = WorkGraph::new("test objective".to_string());
+    graph
+        .approaches
+        .insert("a1".to_string(), ApproachStatus::Active);
 
-        graph.add_node(WorkNode {
-            id: "g1".to_string(),
-            kind: NodeKind::Goal,
-            label: "Goal 1".to_string(),
-            description: "Prepare environment".to_string(),
-            approach_id: ApproachId::from_str("a1"),
-            objective: "test objective".to_string(),
-            status: NodeStatus::Pending,
-            parent_id: None,
-            depth: 0,
-        });
+    graph.add_node(WorkNode {
+        id: "obj1".to_string(),
+        kind: NodeKind::Objective,
+        label: "O1".to_string(),
+        description: "Prepare environment".to_string(),
+        approach_id: ApproachId::from_str("a1"),
+        objective: "test objective".to_string(),
+        status: NodeStatus::Pending,
+        parent_id: None,
+        depth: 0,
+    });
 
-        graph.add_node(WorkNode {
-            id: "i1".to_string(),
-            kind: NodeKind::Instruction,
-            label: "Install".to_string(),
-            description: "npm install express".to_string(),
-            approach_id: ApproachId::from_str("a1"),
-            objective: "test objective".to_string(),
-            status: NodeStatus::Pending,
-            parent_id: Some("g1".to_string()),
-            depth: 1,
-        });
+    graph.add_node(WorkNode {
+        id: "i1".to_string(),
+        kind: NodeKind::Instruction,
+        label: "Install".to_string(),
+        description: "npm install express".to_string(),
+        approach_id: ApproachId::from_str("a1"),
+        objective: "test objective".to_string(),
+        status: NodeStatus::Pending,
+        parent_id: Some("obj1".to_string()),
+        depth: 2,
+    });
 
-        graph
-    }
+    graph
+}
 
-    #[test]
-    fn test_save_and_load() {
-        let tmp = TempDir::new().unwrap();
-        let graph = create_test_graph();
+#[test]
+fn test_save_and_load() {
+    let tmp = TempDir::new().unwrap();
+    let graph = create_test_graph();
 
-        WorkGraphPersistence::save(&graph, tmp.path()).unwrap();
-        let loaded = WorkGraphPersistence::load(tmp.path()).unwrap();
+    WorkGraphPersistence::save(&graph, tmp.path()).unwrap();
+    let loaded = WorkGraphPersistence::load(tmp.path()).unwrap();
 
-        assert_eq!(loaded.root_objective, "test objective");
-        assert_eq!(loaded.nodes.len(), 2);
-    }
+    assert_eq!(loaded.root_objective, "test objective");
+    assert_eq!(loaded.nodes.len(), 2);
+}
 
-    #[test]
-    fn test_load_nonexistent() {
-        let tmp = TempDir::new().unwrap();
-        let loaded = WorkGraphPersistence::load(tmp.path());
-        assert!(loaded.is_none());
-    }
+#[test]
+fn test_load_nonexistent() {
+    let tmp = TempDir::new().unwrap();
+    let loaded = WorkGraphPersistence::load(tmp.path());
+    assert!(loaded.is_none());
+}
 
-    #[test]
-    fn test_list() {
-        let tmp = TempDir::new().unwrap();
-        let graph = create_test_graph();
-        WorkGraphPersistence::save(&graph, tmp.path()).unwrap();
+#[test]
+fn test_list() {
+    let tmp = TempDir::new().unwrap();
+    let graph = create_test_graph();
+    WorkGraphPersistence::save(&graph, tmp.path()).unwrap();
 
-        let nodes = WorkGraphPersistence::list(tmp.path());
-        assert_eq!(nodes.len(), 2);
+    let nodes = WorkGraphPersistence::list(tmp.path());
+    assert_eq!(nodes.len(), 2);
 
-        let goal = nodes.iter().find(|n| n.id == "g1").unwrap();
-        assert_eq!(goal.goal.as_deref(), Some("Prepare environment"));
-        assert_eq!(goal.approach_id, "a1");
+    let obj = nodes.iter().find(|n| n.id == "obj1").unwrap();
+    assert_eq!(obj.objective.as_deref(), Some("Prepare environment"));
+    assert_eq!(obj.approach_id, "a1");
 
-        let instr = nodes.iter().find(|n| n.id == "i1").unwrap();
-        assert_eq!(instr.instruction.as_deref(), Some("npm install express"));
-        assert_eq!(instr.status, NodeStatus::Pending);
-    }
+    let instr = nodes.iter().find(|n| n.id == "i1").unwrap();
+    assert_eq!(instr.instruction.as_deref(), Some("npm install express"));
+    assert_eq!(instr.status, NodeStatus::Pending);
+}
 
-    #[test]
-    fn test_list_empty_session() {
-        let tmp = TempDir::new().unwrap();
-        let nodes = WorkGraphPersistence::list(tmp.path());
-        assert!(nodes.is_empty());
-    }
+#[test]
+fn test_list_empty_session() {
+    let tmp = TempDir::new().unwrap();
+    let nodes = WorkGraphPersistence::list(tmp.path());
+    assert!(nodes.is_empty());
+}
 
-    #[test]
-    fn test_persisted_graph_node_from_work_node_goal() {
-        let node = WorkNode {
-            id: "g1".to_string(),
-            kind: NodeKind::Goal,
-            label: "G".to_string(),
-            description: "Setup project".to_string(),
-            approach_id: ApproachId::from_str("a1"),
-            objective: "obj".to_string(),
-            status: NodeStatus::Pending,
-            parent_id: None,
-            depth: 0,
-        };
-        let pgn = PersistedGraphNode::from(&node);
-        assert_eq!(pgn.goal.as_deref(), Some("Setup project"));
-        assert!(pgn.subgoal.is_none());
-        assert!(pgn.plan.is_none());
-        assert!(pgn.instruction.is_none());
-    }
+#[test]
+fn test_persisted_graph_node_from_work_node_objective() {
+    let node = WorkNode {
+        id: "obj1".to_string(),
+        kind: NodeKind::Objective,
+        label: "O".to_string(),
+        description: "Setup project".to_string(),
+        approach_id: ApproachId::from_str("a1"),
+        objective: "obj".to_string(),
+        status: NodeStatus::Pending,
+        parent_id: None,
+        depth: 0,
+    };
+    let pgn = PersistedGraphNode::from(&node);
+    assert_eq!(pgn.objective.as_deref(), Some("Setup project"));
+    assert!(pgn.subgoal.is_none());
+    assert!(pgn.instruction.is_none());
+}
 
-    #[test]
-    fn test_persisted_graph_node_from_work_node_subgoal() {
-        let node = WorkNode {
-            id: "sg1".to_string(),
-            kind: NodeKind::SubGoal,
-            label: "SG".to_string(),
-            description: "Install deps".to_string(),
-            approach_id: ApproachId::from_str("a1"),
-            objective: "obj".to_string(),
-            status: NodeStatus::InProgress,
-            parent_id: Some("g1".to_string()),
-            depth: 1,
-        };
-        let pgn = PersistedGraphNode::from(&node);
-        assert!(pgn.goal.is_none());
-        assert_eq!(pgn.subgoal.as_deref(), Some("Install deps"));
-        assert_eq!(pgn.status, NodeStatus::InProgress);
-        assert_eq!(pgn.depth, 1);
-    }
+#[test]
+fn test_persisted_graph_node_from_work_node_subgoal() {
+    let node = WorkNode {
+        id: "sg1".to_string(),
+        kind: NodeKind::SubGoal,
+        label: "SG".to_string(),
+        description: "Install deps".to_string(),
+        approach_id: ApproachId::from_str("a1"),
+        objective: "obj".to_string(),
+        status: NodeStatus::InProgress,
+        parent_id: Some("obj1".to_string()),
+        depth: 1,
+    };
+    let pgn = PersistedGraphNode::from(&node);
+    assert_eq!(pgn.subgoal.as_deref(), Some("Install deps"));
+    assert_eq!(pgn.status, NodeStatus::InProgress);
+    assert_eq!(pgn.depth, 1);
+}
 
-    #[test]
-    fn test_persisted_graph_node_from_work_node_plan() {
-        let node = WorkNode {
-            id: "p1".to_string(),
-            kind: NodeKind::Plan,
-            label: "P".to_string(),
-            description: "Run install".to_string(),
-            approach_id: ApproachId::from_str("a1"),
-            objective: "obj".to_string(),
-            status: NodeStatus::Succeeded,
-            parent_id: Some("sg1".to_string()),
-            depth: 2,
-        };
-        let pgn = PersistedGraphNode::from(&node);
-        assert_eq!(pgn.plan.as_deref(), Some("Run install"));
-        assert_eq!(pgn.status, NodeStatus::Succeeded);
-    }
+#[test]
+fn test_persisted_graph_node_from_work_node_instruction() {
+    let node = WorkNode {
+        id: "i1".to_string(),
+        kind: NodeKind::Instruction,
+        label: "I".to_string(),
+        description: "npm install".to_string(),
+        approach_id: ApproachId::from_str("a1"),
+        objective: "obj".to_string(),
+        status: NodeStatus::Failed,
+        parent_id: Some("sg1".to_string()),
+        depth: 2,
+    };
+    let pgn = PersistedGraphNode::from(&node);
+    assert_eq!(pgn.instruction.as_deref(), Some("npm install"));
+    assert_eq!(pgn.status, NodeStatus::Failed);
+}
 
-    #[test]
-    fn test_persisted_graph_node_from_work_node_instruction() {
-        let node = WorkNode {
-            id: "i1".to_string(),
-            kind: NodeKind::Instruction,
-            label: "I".to_string(),
-            description: "npm install".to_string(),
-            approach_id: ApproachId::from_str("a1"),
-            objective: "obj".to_string(),
-            status: NodeStatus::Failed,
-            parent_id: Some("p1".to_string()),
-            depth: 3,
-        };
-        let pgn = PersistedGraphNode::from(&node);
-        assert_eq!(pgn.instruction.as_deref(), Some("npm install"));
-        assert_eq!(pgn.status, NodeStatus::Failed);
-    }
+#[test]
+fn test_list_ordering_by_depth() {
+    let tmp = TempDir::new().unwrap();
+    let mut graph = create_test_graph();
+    graph.add_node(WorkNode {
+        id: "i2".to_string(),
+        kind: NodeKind::Instruction,
+        label: "I2".to_string(),
+        description: "I2 desc".to_string(),
+        approach_id: ApproachId::from_str("a1"),
+        objective: "test objective".to_string(),
+        status: NodeStatus::Pending,
+        parent_id: Some("obj1".to_string()),
+        depth: 2,
+    });
+    WorkGraphPersistence::save(&graph, tmp.path()).unwrap();
 
-    #[test]
-    fn test_list_ordering_by_depth() {
-        let tmp = TempDir::new().unwrap();
-        let mut graph = create_test_graph();
-        graph.add_node(WorkNode {
-            id: "i2".to_string(),
-            kind: NodeKind::Instruction,
-            label: "I2".to_string(),
-            description: "test".to_string(),
-            approach_id: ApproachId::from_str("a1"),
-            objective: "obj".to_string(),
-            status: NodeStatus::Pending,
-            parent_id: Some("p1".to_string()),
-            depth: 3,
-        });
-        WorkGraphPersistence::save(&graph, tmp.path()).unwrap();
-        let nodes = WorkGraphPersistence::list(tmp.path());
-        assert!(nodes[0].depth <= nodes[1].depth);
-        assert!(nodes[1].depth <= nodes[2].depth);
-    }
+    let nodes = WorkGraphPersistence::list(tmp.path());
+    assert_eq!(nodes.len(), 3);
+    // Check ordering by depth
+    assert_eq!(nodes[0].depth, 0); // obj1
+    assert_eq!(nodes[1].depth, 2); // i1
+    assert_eq!(nodes[2].depth, 2); // i2
+}
 }

@@ -11,12 +11,11 @@
 use std::collections::HashMap;
 
 /// Complexity level for a user request, used to gate work graph depth.
+/// Two gates: Direct (no graph) or Multistep (Objective → SubGoal → Instruction).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ComplexityLevel {
     Direct,
-    Investigate,
     Multistep,
-    OpenEnded,
 }
 
 /// Assessment result with confidence score, reasoning, and derived max depth.
@@ -113,9 +112,7 @@ impl ComplexityGate {
     fn max_depth_for_level(level: &ComplexityLevel) -> usize {
         match level {
             ComplexityLevel::Direct => 0,
-            ComplexityLevel::Investigate => 2,
-            ComplexityLevel::Multistep => 3,
-            ComplexityLevel::OpenEnded => 4,
+            ComplexityLevel::Multistep => 2, // Objective(0) → SubGoal(1) → Instruction(2)
         }
     }
 
@@ -124,7 +121,7 @@ impl ComplexityGate {
     ///
     /// Scope signals are grounded counts (files, file-type variety, estimated
     /// work items). No keyword matching. The upgrade ladder is conservative:
-    /// each call upgrades at most one level. OpenEnded is the ceiling.
+    /// each call upgrades at most one level. Multistep is the ceiling.
     pub(crate) fn reassess_with_scope(
         previous_level: ComplexityLevel,
         discovered_files: usize,
@@ -145,9 +142,8 @@ impl ComplexityGate {
         }
 
         let new_level = match previous_level {
-            ComplexityLevel::Direct => ComplexityLevel::Investigate,
-            ComplexityLevel::Investigate => ComplexityLevel::Multistep,
-            ComplexityLevel::Multistep | ComplexityLevel::OpenEnded => ComplexityLevel::OpenEnded,
+            ComplexityLevel::Direct => ComplexityLevel::Multistep,
+            ComplexityLevel::Multistep => ComplexityLevel::Multistep, // already at ceiling
         };
 
         let confidence = if discovered_files > 50 || estimated_work_items > 100 {
@@ -204,21 +200,15 @@ impl InputShape {
 fn fallback_level(shape: InputShape) -> ComplexityLevel {
     if shape.words == 0 || (shape.words <= 6 && shape.structural_units <= 1) {
         ComplexityLevel::Direct
-    } else if shape.lines > 4 || shape.words > 80 {
-        ComplexityLevel::OpenEnded
-    } else if shape.structural_units >= 3 || shape.words > 24 {
-        ComplexityLevel::Multistep
     } else {
-        ComplexityLevel::Investigate
+        ComplexityLevel::Multistep
     }
 }
 
 fn fallback_confidence(shape: InputShape, level: ComplexityLevel) -> f32 {
     let base = match level {
         ComplexityLevel::Direct => 0.70,
-        ComplexityLevel::Investigate => 0.62,
         ComplexityLevel::Multistep => 0.58,
-        ComplexityLevel::OpenEnded => 0.52,
     };
     if shape.words == 0 {
         0.40
@@ -241,11 +231,7 @@ fn fallback_reasoning(shape: InputShape, context_hint: Option<&str>) -> String {
 fn shape_supports_level(shape: InputShape, level: ComplexityLevel) -> bool {
     match level {
         ComplexityLevel::Direct => shape.words <= 6 && shape.lines <= 1,
-        ComplexityLevel::Investigate => shape.words > 0 && shape.words <= 80 && shape.lines <= 4,
         ComplexityLevel::Multistep => shape.words >= 6 || shape.structural_units >= 2,
-        ComplexityLevel::OpenEnded => {
-            shape.words >= 12 || shape.lines >= 3 || shape.structural_units >= 3
-        }
     }
 }
 
@@ -268,26 +254,30 @@ mod tests {
             None,
         );
         assert_eq!(result.level, ComplexityLevel::Multistep);
-        assert_eq!(result.max_graph_depth, 3);
+        assert_eq!(result.max_graph_depth, 2);
     }
 
     #[test]
-    fn fallback_caps_long_open_shape() {
+    fn fallback_caps_long_input_as_multistep() {
         let input = (0..90).map(|_| "word").collect::<Vec<_>>().join(" ");
         let result = ComplexityGate::assess(&input, None);
-        assert_eq!(result.level, ComplexityLevel::OpenEnded);
-        assert_eq!(result.max_graph_depth, 4);
+        assert_eq!(result.level, ComplexityLevel::Multistep);
+        assert_eq!(result.max_graph_depth, 2);
     }
 
     #[test]
     fn model_signal_owns_semantic_level() {
         let signal = ModelComplexitySignal {
-            level: ComplexityLevel::Investigate,
+            level: ComplexityLevel::Multistep,
             confidence: 0.91,
-            reasoning: "bounded inspection".into(),
+            reasoning: "multi-step task".into(),
         };
-        let result = ComplexityGate::assess_model_signal("inspect this module", signal, None);
-        assert_eq!(result.level, ComplexityLevel::Investigate);
+        let result = ComplexityGate::assess_model_signal(
+            "inspect this entire module thoroughly for all issues",
+            signal,
+            None,
+        );
+        assert_eq!(result.level, ComplexityLevel::Multistep);
         assert_eq!(result.max_graph_depth, 2);
         assert_eq!(result.confidence, 0.91);
     }
@@ -295,12 +285,12 @@ mod tests {
     #[test]
     fn contradictory_model_signal_is_downweighted_not_overwritten() {
         let signal = ModelComplexitySignal {
-            level: ComplexityLevel::OpenEnded,
+            level: ComplexityLevel::Multistep,
             confidence: 0.95,
             reasoning: "broad objective".into(),
         };
         let result = ComplexityGate::assess_model_signal("hi", signal, None);
-        assert_eq!(result.level, ComplexityLevel::OpenEnded);
+        assert_eq!(result.level, ComplexityLevel::Multistep);
         assert_eq!(result.confidence, 0.45);
     }
 
@@ -308,9 +298,7 @@ mod tests {
     fn max_depth_method() {
         let gate = ComplexityGate;
         assert_eq!(gate.max_depth(&ComplexityLevel::Direct), 0);
-        assert_eq!(gate.max_depth(&ComplexityLevel::Investigate), 2);
-        assert_eq!(gate.max_depth(&ComplexityLevel::Multistep), 3);
-        assert_eq!(gate.max_depth(&ComplexityLevel::OpenEnded), 4);
+        assert_eq!(gate.max_depth(&ComplexityLevel::Multistep), 2);
     }
 
     #[test]
@@ -333,12 +321,12 @@ mod tests {
     fn scope_reassessment_small_scope_stays() {
         let mix = HashMap::new();
         let result = ComplexityGate::reassess_with_scope(
-            ComplexityLevel::Investigate,
+            ComplexityLevel::Multistep,
             3,
             &mix,
             6,
         );
-        assert_eq!(result.level, ComplexityLevel::Investigate);
+        assert_eq!(result.level, ComplexityLevel::Multistep);
         assert_eq!(result.max_graph_depth, 2);
     }
 
@@ -356,7 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn scope_reassessment_large_scope_upgrades_direct_to_investigate() {
+    fn scope_reassessment_large_scope_upgrades_direct_to_multistep() {
         let mut mix = HashMap::new();
         mix.insert("rs".to_string(), 8);
         mix.insert("toml".to_string(), 2);
@@ -366,23 +354,23 @@ mod tests {
             &mix,
             30,
         );
-        assert_eq!(result.level, ComplexityLevel::Investigate);
+        assert_eq!(result.level, ComplexityLevel::Multistep);
         assert_eq!(result.max_graph_depth, 2);
         assert!(result.reasoning.contains("upgrade"));
     }
 
     #[test]
-    fn scope_reassessment_large_scope_upgrades_investigate_to_multistep() {
+    fn scope_reassessment_large_scope_stays_multistep() {
         let mut mix = HashMap::new();
         mix.insert("md".to_string(), 30);
         let result = ComplexityGate::reassess_with_scope(
-            ComplexityLevel::Investigate,
+            ComplexityLevel::Multistep,
             44,
             &mix,
             88,
         );
         assert_eq!(result.level, ComplexityLevel::Multistep);
-        assert_eq!(result.max_graph_depth, 3);
+        assert_eq!(result.max_graph_depth, 2);
     }
 
     #[test]
@@ -396,77 +384,18 @@ mod tests {
         );
         assert_eq!(result.level, ComplexityLevel::Multistep);
     }
-
-    #[test]
-    fn scope_reassessment_large_scope_upgrades_multistep_to_openended() {
-        let mut mix = HashMap::new();
-        mix.insert("rs".to_string(), 40);
-        mix.insert("md".to_string(), 15);
-        let result = ComplexityGate::reassess_with_scope(
-            ComplexityLevel::Multistep,
-            60,
-            &mix,
-            120,
-        );
-        assert_eq!(result.level, ComplexityLevel::OpenEnded);
-        assert_eq!(result.max_graph_depth, 4);
-    }
-
-    #[test]
-    fn scope_reassessment_openended_stays_openended() {
-        let mut mix = HashMap::new();
-        mix.insert("rs".to_string(), 200);
-        let result = ComplexityGate::reassess_with_scope(
-            ComplexityLevel::OpenEnded,
-            200,
-            &mix,
-            400,
-        );
-        assert_eq!(result.level, ComplexityLevel::OpenEnded);
-        assert_eq!(result.max_graph_depth, 4);
-    }
-
-    #[test]
-    fn scope_reassessment_large_files_high_confidence() {
-        let mix = HashMap::new();
-        let result = ComplexityGate::reassess_with_scope(
-            ComplexityLevel::Investigate,
-            60,
-            &mix,
-            120,
-        );
-        assert_eq!(result.level, ComplexityLevel::Multistep);
-        assert!(result.confidence > 0.75);
-    }
-
-    #[test]
-    fn scope_reassessment_empty_file_type_mix_still_upgrades() {
-        let mix = HashMap::new();
-        let result = ComplexityGate::reassess_with_scope(
-            ComplexityLevel::Direct,
-            11,
-            &mix,
-            22,
-        );
-        assert_eq!(result.level, ComplexityLevel::Investigate);
-    }
 }
-
 
 pub(crate) fn complexity_level_label(level: ComplexityLevel) -> &'static str {
     match level {
         ComplexityLevel::Direct => "DIRECT",
-        ComplexityLevel::Investigate => "INVESTIGATE",
         ComplexityLevel::Multistep => "MULTISTEP",
-        ComplexityLevel::OpenEnded => "OPEN_ENDED",
     }
 }
 
 pub(crate) fn max_iter_for_level(level: ComplexityLevel) -> usize {
     match level {
         ComplexityLevel::Direct => 3,
-        ComplexityLevel::Investigate => 5,
         ComplexityLevel::Multistep => 10,
-        ComplexityLevel::OpenEnded => 20,
     }
 }

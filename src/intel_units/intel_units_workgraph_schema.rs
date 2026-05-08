@@ -2,42 +2,28 @@
 //!
 //! Work Graph Schema Intel — Tasks 763-769.
 //!
-//! A lightweight model call that derives an abstract execution plan from the
-//! user request. The schema is deliberately shallow: 3-5 phases with a small
-//! action vocabulary. The model knows nothing about actual workspace files.
-//! Patterns:
+//! Two-pass planning architecture:
+//!   Pass 1: Comprehensive Planner — produces a detailed numbered outline
+//!           (easier for small models than structured JSON)
+//!   Pass 2: Schema Converter — converts the outline to WorkGraphSchema JSON
+//!           with depth levels assigned from the outline numbering.
 //!
-//! - One intel unit, one role: produce a shallow execution outline
-//! - Model outputs only generic phases, not concrete paths
-//! - Workspace exploration populates the placeholders later
-//! - Shallow JSON so small models can produce it reliably
+//! Planning is done BEFORE the work graph. The graph only executes what
+//! the plan decided. Structure: Objective(depth 0) → SubGoal(depth 1) →
+//! Instruction(depth 2, smallest unit).
 
 use crate::*;
 use serde::{Deserialize, Serialize};
 
 /// A single phase in the work graph schema.
-/// The model fills in ONLY generic information — no actual filenames or paths.
+/// Depth alone determines the role:
+///   0 = Objective (root container)
+///   1 = SubGoal (actionable step, groups its depth-2 children)
+///   2 = Instruction (smallest unit, executed by the model via tool-calling)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SchemaPhase {
-    /// Human-readable label for the phase (shown in transcript, UI).
     pub label: String,
-    /// Action verb from the constrained vocabulary:
-    ///   "discover"  — list/glob a directory to find files
-    ///   "read_all"  — read every file in a discovered scope
-    ///   "read_one"  — read a specific file or resource
-    ///   "shell"     — run a shell command
-    ///   "answer"    — synthesize a final answer from gathered evidence
-    pub action: String,
-    /// Natural-language hint for where to discover or what to read.
-    /// For "discover": "documentation directory"
-    /// For "read_all":  "the discovered documentation files"
-    /// For "read_one":  "the project README"
-    /// The system resolves these to actual paths during exploration.
-    pub scope_hint: String,
-    /// Whether evidence from this phase must be consumed before moving on.
-    /// true for "read_all", "read_one" — evidence must be gathered.
-    /// false for "answer" — no evidence collection needed.
-    pub requires_evidence: bool,
+    pub depth: u8,
 }
 
 /// The complete work graph schema — a flat ordered list of execution phases.
@@ -54,66 +40,50 @@ impl Default for WorkGraphSchema {
 }
 
 impl WorkGraphSchema {
-    /// Whether the schema is non-trivial (has actionable phases).
     pub fn has_phases(&self) -> bool {
         !self.phases.is_empty()
     }
-
-    /// The first phase that requires workspace discovery.
-    pub fn first_discovery_phase(&self) -> Option<&SchemaPhase> {
-        self.phases.iter().find(|p| p.action == "discover")
-    }
-
-    /// Phases that consume discovered scope (need population).
-    pub fn consumable_phases(&self) -> Vec<&SchemaPhase> {
-        self.phases
-            .iter()
-            .filter(|p| p.action == "read_all")
-            .collect()
-    }
 }
 
-/// Fallback schema for Direct/Investigate complexity — single answer phase only.
+/// Fallback schema for Direct complexity — single phase only (depth 0).
 pub(crate) fn direct_schema(raw_objective: &str) -> WorkGraphSchema {
     WorkGraphSchema {
         phases: vec![SchemaPhase {
             label: "Answer the request".to_string(),
-            action: "answer".to_string(),
-            scope_hint: raw_objective.to_string(),
-            requires_evidence: false,
+            depth: 0,
         }],
     }
 }
 
-/// Request a work graph schema from the model.
-/// Uses a focused prompt with a constrained output contract.
-/// The model receives only the user request — no workspace info.
-pub(crate) async fn request_workgraph_schema(
+// ── Two-Pass Planning ───────────────────────────────────────────────────────
+//
+// Pass 1 (Model):  request_comprehensive_plan()   → numbered outline text
+// Pass 2 (Deterministic):  parse_outline_to_schema() → WorkGraphSchema JSON
+// Planning is done BEFORE the work graph. The graph only executes.
+
+/// Request a detailed numbered outline from the model (Pass 1).
+/// Small models produce text outlines more reliably than structured JSON.
+async fn request_comprehensive_plan(
     client: &reqwest::Client,
     profile: &Profile,
     user_request: &str,
-) -> Result<WorkGraphSchema> {
-    // Build a focused prompt: what the unit does, what contract it fulfills.
-    // Principle-first: no examples, the action vocabulary is the contract.
-    /// Build a focused prompt: what the unit does, what contract it fulfills.
-    /// Principle-first: the action vocabulary IS the contract.
-    /// Kept deliberately sparse — <512 output tokens, the model only produces
-    /// a short JSON list.
+) -> Result<String> {
     let system_prompt = "\
-Produce a short JSON execution plan for the user's request.
+Create a comprehensive execution plan for the user's request as a numbered outline.
 
-Output: {\"phases\":[{\"label\":\"...\",\"action\":\"...\",\"scope_hint\":\"...\",\"requires_evidence\":bool}]}
+Format: depth-based numbering
+  1.   = top-level objective (what to achieve)
+   1.1.  = sub-goal (concrete step toward the objective)
+    1.1.1. = instruction (specific action to take)
 
-Actions (use exactly one of these words):
-  discover  — list a directory to find files
-  read_all  — read every file from a discovered scope
-  read_one  — read a single specific resource
-  shell     — run a shell command
-  answer    — synthesize a final answer (always last)
-
-You know nothing about actual workspace files. Never invent filenames or paths.
-3-5 phases. Keep scope_hint under 60 chars.
-Output ONLY valid JSON. No explanation. No markdown.";
+Rules:
+- Include 1-3 levels of depth as needed.
+- Each line describes ONE concrete action.
+- Use action verbs: read, list, find, run, ls, execute, summarize, synthesize.
+- Never invent filenames — use descriptive placeholders instead.
+- Keep lines short (under 80 chars).
+- Place the final synthesis step last.
+- Output ONLY the numbered outline. No preamble, no explanation.";
 
     let user_content = format!("Request: {}", user_request);
     let req = crate::llm_config::chat_request_from_profile(
@@ -124,7 +94,7 @@ Output ONLY valid JSON. No explanation. No markdown.";
         ],
         crate::llm_config::ChatRequestOptions {
             temperature: Some(0.0),
-            max_tokens: Some(256),
+            max_tokens: Some(512),
             stream: Some(false),
             ..Default::default()
         },
@@ -133,37 +103,91 @@ Output ONLY valid JSON. No explanation. No markdown.";
     let chat_url = crate::intel_trait::intel_chat_url(profile)?;
     let resp = crate::ui::ui_chat::chat_once_with_timeout(client, &chat_url, &req, profile.timeout_s)
         .await
-        .context("WorkGraph schema request failed")?;
+        .context("Comprehensive planner request failed")?;
 
     let content = resp
         .choices
         .first()
         .and_then(|c| c.message.content.clone())
-        .unwrap_or_else(|| "{}".to_string());
-    let content = crate::text_utils::strip_thinking_blocks(&content);
+        .unwrap_or_default();
+    Ok(crate::text_utils::strip_thinking_blocks(&content))
+}
 
-    let schema: WorkGraphSchema = serde_json::from_str::<WorkGraphSchema>(&content)
-        .or_else(|_| {
-            if let Some(start) = content.find("```json") {
-                let inner = &content[start + 7..];
-                if let Some(end) = inner.find("```") {
-                    serde_json::from_str(&inner[..end])
-                } else {
-                    Err(serde::de::Error::custom("no closing ```"))
-                }
-            } else if let Some(start) = content.find('{') {
-                if let Some(end) = content.rfind('}') {
-                    serde_json::from_str(&content[start..=end])
-                } else {
-                    Err(serde::de::Error::custom("no closing brace"))
-                }
-            } else {
-                Err(serde::de::Error::custom("no JSON found"))
-            }
-        })
-        .unwrap_or_else(|_| direct_schema(user_request));
+/// Deterministically parse a numbered outline into WorkGraphSchema.
+/// No model call — depth is derived from outline numbering structure.
+fn parse_outline_to_schema(outline: &str) -> WorkGraphSchema {
+    let mut phases: Vec<SchemaPhase> = Vec::new();
 
-    Ok(schema)
+    for line in outline.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let (depth, label) = parse_outline_line(trimmed);
+        if label.is_empty() {
+            continue;
+        }
+
+        let short_label = if label.len() > 80 {
+            format!("{}...", &label[..77])
+        } else {
+            label
+        };
+
+        phases.push(SchemaPhase {
+            label: short_label,
+            depth,
+        });
+    }
+
+    if phases.is_empty() {
+        return WorkGraphSchema::default();
+    }
+    WorkGraphSchema { phases }
+}
+
+/// Extract (depth, label_text) from a numbered outline line.
+fn parse_outline_line(line: &str) -> (u8, String) {
+    let leading_spaces = line.chars().take_while(|c| c.is_whitespace()).count();
+    let rest = &line[leading_spaces..];
+    if let Some((num_part, label)) = rest.split_once(' ') {
+        let cleaned = num_part.trim_end_matches('.');
+        let dot_count = cleaned.chars().filter(|&c| c == '.').count();
+        // "1." = 0 dots → depth 0, "1.1." = 1 dot → depth 1, "1.1.1." = 2 dots → depth 2
+        let depth = dot_count.min(2) as u8;
+        return (depth, label.trim().to_string());
+    }
+
+    // Fallback: use leading spaces (4 spaces per depth level)
+    if leading_spaces > 0 {
+        let depth = ((leading_spaces / 4) as u8).min(2);
+        let label = rest.trim().to_string();
+        if !label.is_empty() {
+            return (depth, label);
+        }
+    }
+
+    (0, String::new())
+}
+
+/// Two-pass request: comprehensive planner → deterministic schema parser.
+/// Falls back to direct schema on planner failure.
+pub(crate) async fn request_workgraph_schema(
+    client: &reqwest::Client,
+    profile: &Profile,
+    user_request: &str,
+) -> Result<WorkGraphSchema> {
+    let outline = request_comprehensive_plan(client, profile, user_request).await?;
+    if outline.trim().is_empty() {
+        return Ok(direct_schema(user_request));
+    }
+    let schema = parse_outline_to_schema(&outline);
+    if schema.has_phases() {
+        Ok(schema)
+    } else {
+        Ok(direct_schema(user_request))
+    }
 }
 
 #[cfg(test)]
@@ -174,7 +198,7 @@ mod tests {
     fn test_direct_schema() {
         let schema = direct_schema("what is 2+2?");
         assert_eq!(schema.phases.len(), 1);
-        assert_eq!(schema.phases[0].action, "answer");
+        assert_eq!(schema.phases[0].depth, 0);
     }
 
     #[test]
@@ -186,38 +210,31 @@ mod tests {
 
     #[test]
     fn test_schema_serde_roundtrip() {
-        let json = r#"{"phases":[{"label":"Discover docs","action":"discover","scope_hint":"documentation directory","requires_evidence":false},{"label":"Read docs","action":"read_all","scope_hint":"the discovered documentation files","requires_evidence":true}]}"#;
+        let json = r#"{"phases":[{"label":"Discover docs","depth":1},{"label":"Read docs","depth":2}]}"#;
         let schema: WorkGraphSchema = serde_json::from_str(json).unwrap();
         assert_eq!(schema.phases.len(), 2);
-        assert_eq!(schema.phases[0].action, "discover");
-        assert_eq!(schema.phases[1].action, "read_all");
-        assert!(!schema.phases[0].requires_evidence);
-        assert!(schema.phases[1].requires_evidence);
+        assert_eq!(schema.phases[0].depth, 1);
+        assert_eq!(schema.phases[1].depth, 2);
+        assert_eq!(schema.phases[0].label, "Discover docs");
         assert!(schema.has_phases());
     }
 
     #[test]
-    fn test_first_discovery_phase() {
-        let json = r#"{"phases":[
-            {"label":"List docs","action":"discover","scope_hint":"docs","requires_evidence":false},
-            {"label":"Read docs","action":"read_all","scope_hint":"discovered docs","requires_evidence":true}
-        ]}"#;
-        let schema: WorkGraphSchema = serde_json::from_str(json).unwrap();
-        let discovery = schema.first_discovery_phase().unwrap();
-        assert_eq!(discovery.action, "discover");
-        assert_eq!(discovery.scope_hint, "docs");
-    }
-
-    #[test]
-    fn test_consumable_phases() {
-        let json = r#"{"phases":[
-            {"label":"Discover","action":"discover","scope_hint":"docs","requires_evidence":false},
-            {"label":"Read all","action":"read_all","scope_hint":"discovered","requires_evidence":true},
-            {"label":"Answer","action":"answer","scope_hint":"synthesize","requires_evidence":false}
-        ]}"#;
-        let schema: WorkGraphSchema = serde_json::from_str(json).unwrap();
-        let consumable = schema.consumable_phases();
-        assert_eq!(consumable.len(), 1);
-        assert_eq!(consumable[0].action, "read_all");
+    fn test_parse_outline() {
+        let outline = "\
+1. Read all docs
+  1.1. List files
+    1.1.1. ls workspace
+  1.2. Read each file
+    1.2.1. read README
+    1.2.2. read AGENTS";
+        let schema = parse_outline_to_schema(outline);
+        assert_eq!(schema.phases.len(), 6);
+        assert_eq!(schema.phases[0].depth, 0); // 1.
+        assert_eq!(schema.phases[1].depth, 1); // 1.1.
+        assert_eq!(schema.phases[2].depth, 2); // 1.1.1.
+        assert_eq!(schema.phases[3].depth, 1); // 1.2.
+        assert_eq!(schema.phases[4].depth, 2); // 1.2.1.
+        assert_eq!(schema.phases[5].depth, 2); // 1.2.2.
     }
 }

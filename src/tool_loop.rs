@@ -1554,7 +1554,12 @@ pub(crate) async fn run_tool_loop(
     // Tasks 763-769: Graph-driven execution with node commitment and relaxed finalization.
     mut work_graph_runner: crate::work_graph_runner::WorkGraphRunner,
 ) -> Result<ToolLoopResult> {
-    let budget = StageBudget::from_complexity(complexity);
+    let mut budget = StageBudget::from_complexity(complexity);
+    // Graph-driven mode: iteration limits don't apply to local models.
+    // Only wall clock and graph completion gate finalization.
+    if work_graph_runner.is_graph_driven() {
+        budget.max_iterations = 1000;
+    }
     let total_timeout = Duration::from_secs(45 * 60); // 45 minutes
     let loop_start = Instant::now();
     let original_user_request = user_message.to_string();
@@ -2933,7 +2938,7 @@ pub(crate) async fn run_tool_loop(
                     if !read_scope_required {
                         read_scope_required = true;
                     }
-                    tui.push_meta_event("COVERAGE", &scope_coverage.render_summary());
+                    tui.push_meta_event("COVERAGE", &work_graph_runner.render_progress());
                 }
 
                 // Tasks 763-769: Sync external coverage into work graph runner.
@@ -2943,30 +2948,26 @@ pub(crate) async fn run_tool_loop(
                     work_graph_runner.sync_external_coverage(&scope_coverage);
                     work_graph_runner.record_tool_call(result.ok);
 
-                    // When ls/glob discovers files, expand read_all graph nodes
-                    // with concrete SubGoal nodes for each discovered path.
-                    let is_discovery = tc.function.name == "ls"
-                        || (tc.function.name == "globbing" || tc.function.name == "glob");
-                    if is_discovery && result.ok && scope_coverage.total() > 0 {
+                    // After ls/glob discovers files, expand the reading SubGoal
+                    // with concrete Instruction nodes — one per discovered file.
+                    // This gives Fix B & Fix C concrete nodes to track.
+                    let is_discovery = result.ok
+                        && (tc.function.name == "ls" || tc.function.name == "glob");
+                    if is_discovery {
                         let paths: Vec<String> = scope_coverage
                             .items
                             .iter()
                             .map(|i| i.item.clone())
                             .collect();
-                        let expanded = work_graph_runner.populate_from_discovery(&paths);
+                        let expanded =
+                            work_graph_runner.expand_instructions_from_discovery(&paths);
                         if expanded > 0 {
+                            work_graph_runner.seed_coverage_from_graph();
                             trace(
                                 args,
                                 &format!(
-                                    "work_graph_runner: expanded {} SubGoal nodes from discovery ({} paths)",
-                                    expanded, paths.len()
-                                ),
-                            );
-                            tui.push_meta_event(
-                                "FOCUS",
-                                &format!(
-                                    "Graph populated: {} items to process",
-                                    work_graph_runner.coverage.total()
+                                    "work_graph_runner: expanded {} instructions from discovery",
+                                    expanded
                                 ),
                             );
                         }
@@ -3175,7 +3176,7 @@ pub(crate) async fn run_tool_loop(
                             } else {
                                 build_scope_coverage_nudge(&scope_coverage)
                             };
-                            tui.push_meta_event("COVERAGE", &scope_coverage.render_summary());
+                            tui.push_meta_event("COVERAGE", &work_graph_runner.render_progress());
                             if graph_incomplete {
                                 tui.push_meta_event(
                                     "FOCUS",
@@ -3268,9 +3269,10 @@ pub(crate) async fn run_tool_loop(
                     loop_summary_tracker.tool_call_ids.push(tc.id.clone());
                     match tc.function.name.as_str() {
                         "read" => {
-                            loop_summary_tracker.successful_reads.push(
-                                crate::tool_repair::extract_path_from_args(&tc.function.arguments),
-                            );
+                            let path = crate::tool_repair::extract_path_from_args(&tc.function.arguments);
+                            loop_summary_tracker.successful_reads.push(path.clone());
+                            // Auto-mark matching graph instruction as done
+                            work_graph_runner.mark_instruction_by_path(&path);
                         }
                         "search" => {
                             loop_summary_tracker
@@ -3569,9 +3571,46 @@ pub(crate) async fn run_tool_loop(
                 }
             }
 
+            // After tool calls: if graph incomplete, inject next pending instructions
+            // so the model stays locked on the plan and doesn't wander off.
+            if work_graph_runner.is_graph_driven()
+                && work_graph_runner.finalization_is_premature()
+            {
+                let pending = work_graph_runner.pending_instruction_labels(5);
+                if !pending.is_empty() {
+                    let remaining: Vec<String> =
+                        pending.iter().map(|l| format!("- {}", l)).collect();
+                    let msg = format!(
+                        "Continue working on the plan. Remaining instructions:\n{}",
+                        remaining.join("\n")
+                    );
+                    messages.push(ChatMessage::simple("system", &msg));
+                }
+            }
+
             continue;
         }
         if !content.trim().is_empty() {
+            // Graph-driven mode: block bare-text answers when work is incomplete.
+            // The model must not finalize before all plan instructions are done.
+            if work_graph_runner.is_graph_driven()
+                && work_graph_runner.finalization_is_premature()
+            {
+                let nudge = work_graph_runner.build_relaxed_continuation();
+                messages.push(ChatMessage::simple("system", &nudge));
+                tui.push_meta_event(
+                    "FOCUS",
+                    "Graph-driven: finalization blocked — work incomplete",
+                );
+                trace(
+                    args,
+                    &format!(
+                        "tool_loop: blocked bare-text finalization graph_incomplete=true"
+                    ),
+                );
+                continue;
+            }
+
             // Check if this looks like an intent-only response without actual evidence
             let trimmed = content.trim();
             if is_intent_only_response(&trimmed) && !has_recent_tool_evidence(&messages) {
@@ -3605,7 +3644,7 @@ pub(crate) async fn run_tool_loop(
                     } else {
                         build_scope_coverage_nudge(&scope_coverage)
                     };
-                    tui.push_meta_event("COVERAGE", &scope_coverage.render_summary());
+                    tui.push_meta_event("COVERAGE", &work_graph_runner.render_progress());
                     if graph_incomplete {
                         tui.push_meta_event(
                             "FOCUS",

@@ -57,9 +57,7 @@ impl BudgetForecaster {
     pub(crate) fn forecast_for_complexity(level: &ComplexityLevel) -> BudgetEnvelope {
         let (max_tokens, max_iterations, context_window_ratio) = match level {
             ComplexityLevel::Direct => (1000, 3, 8),
-            ComplexityLevel::Investigate => (4000, 8, 16),
             ComplexityLevel::Multistep => (8000, 15, 32),
-            ComplexityLevel::OpenEnded => (16000, 30, 64),
         };
         BudgetEnvelope {
             max_tokens,
@@ -90,10 +88,8 @@ impl BudgetForecaster {
     pub(crate) fn envelope_for_type(work_type: &str) -> BudgetEnvelope {
         match work_type.to_uppercase().as_str() {
             "DIRECT" => Self::forecast_for_complexity(&ComplexityLevel::Direct),
-            "INVESTIGATE" => Self::forecast_for_complexity(&ComplexityLevel::Investigate),
             "MULTISTEP" => Self::forecast_for_complexity(&ComplexityLevel::Multistep),
-            "OPEN_ENDED" => Self::forecast_for_complexity(&ComplexityLevel::OpenEnded),
-            _ => Self::forecast_for_complexity(&ComplexityLevel::Investigate),
+            _ => Self::forecast_for_complexity(&ComplexityLevel::Multistep),
         }
     }
 }
@@ -112,24 +108,10 @@ mod tests {
     }
 
     #[test]
-    fn test_investigate_envelope() {
-        let envelope = BudgetForecaster::forecast_for_complexity(&ComplexityLevel::Investigate);
-        assert_eq!(envelope.max_tokens, 4000);
-        assert_eq!(envelope.max_iterations, 8);
-    }
-
-    #[test]
     fn test_multistep_envelope() {
         let envelope = BudgetForecaster::forecast_for_complexity(&ComplexityLevel::Multistep);
         assert_eq!(envelope.max_tokens, 8000);
         assert_eq!(envelope.max_iterations, 15);
-    }
-
-    #[test]
-    fn test_open_ended_envelope() {
-        let envelope = BudgetForecaster::forecast_for_complexity(&ComplexityLevel::OpenEnded);
-        assert_eq!(envelope.max_tokens, 16000);
-        assert_eq!(envelope.max_iterations, 30);
     }
 
     #[test]
@@ -205,16 +187,13 @@ mod tests {
             1000
         );
         assert_eq!(
-            BudgetForecaster::envelope_for_type("INVESTIGATE").max_tokens,
-            4000
-        );
-        assert_eq!(
             BudgetForecaster::envelope_for_type("MULTISTEP").max_tokens,
             8000
         );
+        // Unknown types default to Multistep
         assert_eq!(
-            BudgetForecaster::envelope_for_type("OPEN_ENDED").max_tokens,
-            16000
+            BudgetForecaster::envelope_for_type("investigate").max_tokens,
+            8000
         );
     }
 
@@ -231,18 +210,18 @@ mod tests {
     }
 
     #[test]
-    fn test_envelope_for_type_unknown_defaults_to_investigate() {
+    fn test_envelope_for_type_unknown_defaults_to_multistep() {
         assert_eq!(
             BudgetForecaster::envelope_for_type("unknown_type").max_tokens,
-            4000
+            8000
         );
     }
 
     #[test]
     fn test_envelope_max_context_window_scales_with_complexity() {
         let direct = BudgetForecaster::forecast_for_complexity(&ComplexityLevel::Direct);
-        let open = BudgetForecaster::forecast_for_complexity(&ComplexityLevel::OpenEnded);
-        assert!(direct.max_context_window < open.max_context_window);
+        let multi = BudgetForecaster::forecast_for_complexity(&ComplexityLevel::Multistep);
+        assert!(direct.max_context_window < multi.max_context_window);
     }
 
     #[test]
