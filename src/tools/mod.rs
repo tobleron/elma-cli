@@ -3,6 +3,7 @@
 
 pub mod discovery;
 pub mod helpers;
+pub mod implementations;
 pub mod tool_trait;
 pub mod types;
 pub mod validation;
