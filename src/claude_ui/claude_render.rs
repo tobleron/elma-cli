@@ -761,7 +761,7 @@ impl ClaudeRenderer {
         let thinking = self.streaming.thinking.clone();
         if !thinking.is_empty() {
             let word_count = thinking.split_whitespace().count();
-            let delay_secs = 3.0;
+            let delay_secs = 7.0;
             let now = Instant::now();
             self.thinking_entries.push(ThinkingEntry {
                 content: thinking,

@@ -1855,7 +1855,6 @@ pub(crate) async fn run_tool_loop(
                             );
                             continue;
                         }
-                        tui.remove_last_assistant_message();
                         let final_content = finalize_from_evidence_or_fallback(
                             args,
                             tui,
@@ -2290,7 +2289,6 @@ pub(crate) async fn run_tool_loop(
                     args,
                     "tool_loop: routing voluntary stop through evidence finalizer (Task 601)",
                 );
-                tui.remove_last_assistant_message();
                 let final_content = finalize_from_evidence_or_fallback(
                     args,
                     tui,
