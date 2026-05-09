@@ -163,7 +163,7 @@ pub async fn exec_shell(
     let cmd = command.clone();
     let wd = workdir.clone();
     let mut handle = tokio::task::spawn_blocking(move || {
-        crate::program_utils::run_shell_persistent_blocking(&cmd, &wd, &*c2, &*e2)
+        crate::program_utils::run_shell_persistent_blocking(&cmd, &wd, 30, &*c2, &*e2)
     });
 
     let shell_result: Result<ShellExecutionResult, anyhow::Error> = loop {

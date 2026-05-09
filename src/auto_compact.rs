@@ -117,6 +117,50 @@ impl CompactTracker {
     }
 }
 
+/// Task 788: Ensure tool-call/tool-result integrity.
+/// The OpenAI-style API requires that every assistant message with tool_calls
+/// is followed by tool result messages.
+pub(crate) fn validate_integrity(messages: &mut Vec<ChatMessage>) {
+    let mut i = 0;
+    while i < messages.len() {
+        let tool_calls_to_fix = if let Some(tool_calls) = &messages[i].tool_calls {
+            // Check if this assistant message is followed by at least one tool result
+            let mut has_results = false;
+            if i + 1 < messages.len() && messages[i + 1].role == "tool" {
+                has_results = true;
+            }
+
+            if !has_results {
+                Some(tool_calls.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(tool_calls) = tool_calls_to_fix {
+            // Orphaned tool call! Synthesize results to maintain API structure.
+            for tc in tool_calls.iter().rev() {
+                messages.insert(
+                    i + 1,
+                    ChatMessage {
+                        role: "tool".to_string(),
+                        content: format!(
+                            "Error: Result for tool call {} missing after context compaction.",
+                            tc.id
+                        ),
+                        tool_call_id: Some(tc.id.clone()),
+                        name: Some(tc.function.name.clone()),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        i += 1;
+    }
+}
+
 /// Result of a compact operation.
 pub(crate) struct CompactResult {
     /// The summarized conversation (replaces old messages).
@@ -181,12 +225,33 @@ pub(crate) fn generate_inline_summary(
 
 /// Apply compact: keep system prompt [0] and user message [1] intact,
 /// replace old tool-call pairs with a count-based placeholder.
+/// Task 790: Preserve recent user messages and implement progressive trimming.
 pub(crate) fn apply_compact(
     messages: &[ChatMessage],
     keep_recent_turns: usize,
 ) -> (Vec<ChatMessage>, CompactResult) {
     let result = generate_inline_summary(messages, keep_recent_turns);
     if !result.ok {
+        // Progressive Trimming Fallback (Task 790)
+        // If we can't summarize (e.g. too few turns but still huge),
+        // we drop the oldest turn (after system [0] and user [1]).
+        if messages.len() > 4 {
+            let mut trimmed = messages.to_vec();
+            // Drop indices 2 and 3 (the oldest assistant/tool pair or user/assistant pair)
+            trimmed.drain(2..4);
+            let mut fallback_result = CompactResult {
+                summary: "[Older context dropped via progressive trimming]".to_string(),
+                ok: true,
+                tokens_freed: 0, // Recalculated below
+            };
+            let old_tokens: usize = messages.iter().map(|m| CompactTracker::estimate_tokens(&m.content)).sum();
+            let new_tokens: usize = trimmed.iter().map(|m| CompactTracker::estimate_tokens(&m.content)).sum();
+            fallback_result.tokens_freed = old_tokens.saturating_sub(new_tokens);
+            
+            validate_integrity(&mut trimmed);
+            return (trimmed, fallback_result);
+        }
+        
         return (messages.to_vec(), result);
     }
 
@@ -196,12 +261,38 @@ pub(crate) fn apply_compact(
     let compact_msgs = compact_pairs * 2;
     let cutoff = 2 + compact_msgs;
 
+    // Task 790: User Message Preservation
+    // Identify user messages in the "compacted" section and preserve them
+    // if they are recent enough or important.
+    let mut preserved_user_msgs = Vec::new();
+    let mut preserved_tokens = 0;
+    const MAX_PRESERVE_USER_TOKENS: usize = 1_500;
+
+    for msg in messages[2..cutoff].iter().rev() {
+        if msg.role == "user" && !msg.content.trim().is_empty() {
+            let tokens = CompactTracker::estimate_tokens(&msg.content);
+            if preserved_tokens + tokens <= MAX_PRESERVE_USER_TOKENS {
+                preserved_user_msgs.push(msg.clone());
+                preserved_tokens += tokens;
+            }
+        }
+    }
+    preserved_user_msgs.reverse();
+
     let mut new_messages = vec![
-        messages[0].clone(),
+        messages[0].clone(), // Canonical initial context (Task 788)
         messages[1].clone(),
         ChatMessage::simple("system", &result.summary),
     ];
+    
+    // Add preserved user instructions
+    new_messages.extend(preserved_user_msgs);
+    
+    // Add recent turns
     new_messages.extend_from_slice(&messages[cutoff..]);
+
+    // Ensure API integrity (Task 788)
+    validate_integrity(&mut new_messages);
 
     (new_messages, result)
 }

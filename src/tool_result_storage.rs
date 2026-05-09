@@ -93,21 +93,12 @@ fn build_persisted_wrapper(
         "[persisted-output]\n\
          Tool: {}\n\
          Original size: {} chars\n\
-         Preview: {}\n\
+         Preview:\n\
+         {}\n\n\
          Full output saved to: {}\n\
          Use `read` tool to examine the full output if needed.\n\
          [/persisted-output]",
-        tool_name,
-        original_size,
-        if preview.len() > PREVIEW_SIZE_CHARS {
-            format!(
-                "{}...",
-                preview.chars().take(PREVIEW_SIZE_CHARS).collect::<String>()
-            )
-        } else {
-            preview.to_string()
-        },
-        persisted_path.display()
+        tool_name, original_size, preview, persisted_path.display()
     )
 }
 
@@ -121,6 +112,7 @@ pub(crate) fn apply_tool_result_budget(
     tool_name: &str,
     content: &str,
     threshold_chars: usize,
+    policy: crate::output_truncation::TruncationPolicy,
 ) -> BudgetedResult {
     if content.len() <= threshold_chars {
         return BudgetedResult {
@@ -143,7 +135,7 @@ pub(crate) fn apply_tool_result_budget(
                     path.display()
                 ),
             );
-            let preview = content.chars().take(PREVIEW_SIZE_CHARS).collect::<String>();
+            let preview = crate::output_truncation::truncate_text(content, policy);
             BudgetedResult {
                 content_for_model: build_persisted_wrapper(
                     tool_name,
@@ -222,16 +214,18 @@ pub(crate) fn apply_aggregate_budget(
         // Persist this result
         match persist_result(session, call_id, tool_name, content) {
             Ok(path) => {
-                let preview = content.chars().take(PREVIEW_SIZE_CHARS).collect::<String>();
+                let preview = crate::output_truncation::truncate_text(
+                    content,
+                    crate::output_truncation::TruncationPolicy::HeadAndTail(1000, 1000),
+                );
                 tool_results[idx].2 = build_persisted_wrapper(tool_name, size, &preview, &path);
                 current_total = current_total - size + tool_results[idx].2.len();
             }
             Err(_) => {
                 // Fallback: truncate
-                tool_results[idx].2 = format!(
-                    "{}... [truncated, {} total]",
-                    content.chars().take(PREVIEW_SIZE_CHARS).collect::<String>(),
-                    size
+                tool_results[idx].2 = crate::output_truncation::truncate_text(
+                    content,
+                    crate::output_truncation::TruncationPolicy::Head(PREVIEW_SIZE_CHARS),
                 );
                 current_total = current_total - size + tool_results[idx].2.len();
             }

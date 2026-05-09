@@ -193,62 +193,68 @@ impl DeliverableContract {
     }
 }
 
-// Task 762: Per-turn deliverable contract (replaces global REQUIRED_ARTIFACTS).
-static CURRENT_DELIVERABLE_CONTRACT: OnceLock<RwLock<Option<DeliverableContract>>> =
-    OnceLock::new();
-
-fn current_contract() -> &'static RwLock<Option<DeliverableContract>> {
-    CURRENT_DELIVERABLE_CONTRACT.get_or_init(|| RwLock::new(None))
-}
-
 /// Initialize a fresh deliverable contract for the current turn.
 pub(crate) fn init_deliverable_contract(turn_id: &str) {
-    if let Ok(mut lock) = current_contract().write() {
-        *lock = Some(DeliverableContract::new(turn_id));
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.deliverable_contract.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = Some(DeliverableContract::new(turn_id));
 }
 
 /// Get a clone of the current deliverable contract (if any).
 pub(crate) fn get_deliverable_contract() -> Option<DeliverableContract> {
-    current_contract()
-        .read()
-        .ok()
-        .and_then(|lock| lock.clone())
+    let state = crate::session_state::get_session_state();
+    let lock = state.deliverable_contract.read().ok()?;
+    lock.clone()
 }
 
 /// Require a deliverable in the current contract (with source tracking).
 pub(crate) fn require_deliverable(path: &str, source: &str, workspace_root: &Path) {
-    if let Ok(mut lock) = current_contract().write() {
-        if let Some(ref mut contract) = *lock {
-            contract.require(path, source, workspace_root);
-        }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.deliverable_contract.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    if let Some(ref mut contract) = *lock {
+        contract.require(path, source, workspace_root);
     }
 }
 
 /// Mark a path as touched by a current-turn tool.
 pub(crate) fn mark_deliverable_touched(path: &str) {
-    if let Ok(mut lock) = current_contract().write() {
-        if let Some(ref mut contract) = *lock {
-            contract.mark_touched(path);
-        }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.deliverable_contract.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    if let Some(ref mut contract) = *lock {
+        contract.mark_touched(path);
     }
 }
 
 /// Verify all deliverables in the current contract.
 pub(crate) fn verify_deliverable_contract(workspace_root: &Path) {
-    if let Ok(mut lock) = current_contract().write() {
-        if let Some(ref mut contract) = *lock {
-            contract.verify_all(workspace_root);
-        }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.deliverable_contract.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    if let Some(ref mut contract) = *lock {
+        contract.verify_all(workspace_root);
     }
 }
 
 /// Persist the current deliverable contract.
 pub(crate) fn persist_deliverable_contract(session_root: &Path) {
-    if let Ok(lock) = current_contract().read() {
-        if let Some(ref contract) = *lock {
-            contract.persist(session_root);
-        }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.deliverable_contract.read() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    if let Some(ref contract) = *lock {
+        contract.persist(session_root);
     }
 }
 
@@ -326,47 +332,47 @@ pub(crate) fn find_incomplete_artifacts(workspace_root: &Path) -> Vec<(String, P
     incomplete
 }
 
-// ============================================================================
-// Global state (session-scoped)
-// ============================================================================
-
-static REQUIRED_ARTIFACTS: OnceLock<RwLock<HashSet<String>>> = OnceLock::new();
-
-fn required_artifacts() -> &'static RwLock<HashSet<String>> {
-    REQUIRED_ARTIFACTS.get_or_init(|| RwLock::new(HashSet::new()))
-}
-
 /// Initialize the required artifacts set for a new session.
 pub(crate) fn init_artifact_tracking() {
-    if let Ok(mut lock) = required_artifacts().write() {
-        lock.clear();
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.required_artifacts.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    lock.clear();
 }
 
 /// Register a file path as a required deliverable (Task 688).
 /// Call this when the user explicitly requests that a file be created.
 pub(crate) fn require_artifact(path: &str) {
-    if let Ok(mut lock) = required_artifacts().write() {
-        lock.insert(normalize_path(path));
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.required_artifacts.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    lock.insert(normalize_path(path));
 }
 
 /// Register multiple file paths as required deliverables.
 pub(crate) fn require_artifacts(paths: &[String]) {
-    if let Ok(mut lock) = required_artifacts().write() {
-        for p in paths {
-            lock.insert(normalize_path(p));
-        }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.required_artifacts.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    for p in paths {
+        lock.insert(normalize_path(p));
     }
 }
 
 /// Check if a specific path is a required artifact.
 pub(crate) fn is_required_artifact(path: &str) -> bool {
-    if let Ok(lock) = required_artifacts().read() {
-        lock.contains(&normalize_path(path))
-    } else {
-        false
-    }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.required_artifacts.read() {
+        Ok(l) => l,
+        Err(_) => return false,
+    };
+    lock.contains(&normalize_path(path))
 }
 
 /// Normalize a path for consistent comparison.
@@ -379,13 +385,14 @@ fn normalize_path(path: &str) -> String {
 
 /// Get all currently registered required artifacts.
 pub(crate) fn get_required_artifacts() -> Vec<String> {
-    if let Ok(lock) = required_artifacts().read() {
-        let mut artifacts: Vec<String> = lock.iter().cloned().collect();
-        artifacts.sort();
-        artifacts
-    } else {
-        Vec::new()
-    }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.required_artifacts.read() {
+        Ok(l) => l,
+        Err(_) => return Vec::new(),
+    };
+    let mut artifacts: Vec<String> = lock.iter().cloned().collect();
+    artifacts.sort();
+    artifacts
 }
 
 /// Verify that all required artifacts exist on disk.
@@ -474,18 +481,15 @@ pub(crate) struct ArtifactManifest {
     pub session_id: String,
 }
 
-static ARTIFACT_MANIFEST: OnceLock<RwLock<ArtifactManifest>> = OnceLock::new();
-
-fn artifact_manifest() -> &'static RwLock<ArtifactManifest> {
-    ARTIFACT_MANIFEST.get_or_init(|| RwLock::new(ArtifactManifest::default()))
-}
-
 /// Initialize the artifact manifest for a session.
 pub(crate) fn init_artifact_manifest(session_id: &str) {
-    if let Ok(mut lock) = artifact_manifest().write() {
-        lock.session_id = session_id.to_string();
-        lock.entries.clear();
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.artifact_manifest.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    lock.session_id = session_id.to_string();
+    lock.entries.clear();
 }
 
 /// Register an artifact in the manifest (Task 697).
@@ -494,48 +498,58 @@ pub(crate) fn register_artifact_in_manifest(
     inferred_path: Option<String>,
     artifact_type: &str,
 ) {
-    if let Ok(mut lock) = artifact_manifest().write() {
-        let sid = lock.session_id.clone();
-        lock.entries.push(ArtifactManifestEntry {
-            requested_path: requested_path.to_string(),
-            inferred_path,
-            artifact_type: artifact_type.to_string(),
-            created: false,
-            verified: false,
-            session_id: sid,
-        });
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.artifact_manifest.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let sid = lock.session_id.clone();
+    lock.entries.push(ArtifactManifestEntry {
+        requested_path: requested_path.to_string(),
+        inferred_path,
+        artifact_type: artifact_type.to_string(),
+        created: false,
+        verified: false,
+        session_id: sid,
+    });
 }
 
 /// Mark an artifact as created in the manifest.
 pub(crate) fn mark_artifact_created(requested_path: &str) {
-    if let Ok(mut lock) = artifact_manifest().write() {
-        for entry in &mut lock.entries {
-            if entry.requested_path == requested_path {
-                entry.created = true;
-            }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.artifact_manifest.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    for entry in &mut lock.entries {
+        if entry.requested_path == requested_path {
+            entry.created = true;
         }
     }
 }
 
 /// Mark an artifact as verified.
 pub(crate) fn mark_artifact_verified(requested_path: &str) {
-    if let Ok(mut lock) = artifact_manifest().write() {
-        for entry in &mut lock.entries {
-            if entry.requested_path == requested_path {
-                entry.verified = true;
-            }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.artifact_manifest.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    for entry in &mut lock.entries {
+        if entry.requested_path == requested_path {
+            entry.verified = true;
         }
     }
 }
 
 /// Get the current artifact manifest.
 pub(crate) fn get_artifact_manifest() -> ArtifactManifest {
-    if let Ok(lock) = artifact_manifest().read() {
-        lock.clone()
-    } else {
-        ArtifactManifest::default()
-    }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.artifact_manifest.read() {
+        Ok(l) => l,
+        Err(_) => return ArtifactManifest::default(),
+    };
+    lock.clone()
 }
 
 /// Derive a task-specific filename from user intent and artifact type (Task 697).
@@ -642,9 +656,12 @@ pub(crate) fn build_missing_artifact_notice(missing: &[(String, PathBuf)]) -> St
 
 /// Clear all tracked artifacts (for new sessions).
 pub(crate) fn clear_artifact_tracking() {
-    if let Ok(mut lock) = required_artifacts().write() {
-        lock.clear();
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.required_artifacts.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    lock.clear();
 }
 
 /// Extract file paths from a user request that look like required output artifacts.

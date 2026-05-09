@@ -692,7 +692,7 @@ pub(crate) struct DocumentReadBudget {
 impl Default for DocumentReadBudget {
     fn default() -> Self {
         Self {
-            max_chars: 8000, // Default reasonable limit
+            max_chars: crate::tool_result_storage::DEFAULT_MAX_RESULT_SIZE_CHARS,
             mode: DocumentReadMode::Full,
             focus_sections: None,
         }

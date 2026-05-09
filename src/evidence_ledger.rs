@@ -17,47 +17,55 @@ use std::sync::{OnceLock, RwLock};
 // Global Ledger Holder (session-scoped)
 // ============================================================================
 
-static SESSION_LEDGER: OnceLock<RwLock<Option<EvidenceLedger>>> = OnceLock::new();
-
-fn session_ledger() -> &'static RwLock<Option<EvidenceLedger>> {
-    SESSION_LEDGER.get_or_init(|| RwLock::new(None))
-}
-
 pub(crate) fn init_session_ledger(session_id: &str, base_dir: &PathBuf) {
-    if let Ok(mut lock) = session_ledger().write() {
-        *lock = Some(EvidenceLedger::new(session_id, base_dir));
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.evidence_ledger.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = Some(EvidenceLedger::new(session_id, base_dir));
 }
 
 pub(crate) fn get_session_ledger() -> Option<EvidenceLedger> {
-    session_ledger().read().ok().and_then(|lock| lock.clone())
+    let state = crate::session_state::get_session_state();
+    let lock = state.evidence_ledger.read().ok()?;
+    lock.clone()
 }
 
 pub(crate) fn with_session_ledger<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut EvidenceLedger) -> R,
 {
-    if let Ok(mut lock) = session_ledger().write() {
-        if let Some(ledger) = lock.as_mut() {
-            return Some(f(ledger));
-        }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.evidence_ledger.write() {
+        Ok(l) => l,
+        Err(_) => return None,
+    };
+    if let Some(ledger) = lock.as_mut() {
+        return Some(f(ledger));
     }
     None
 }
 
 pub(crate) fn persist_session_ledger() -> Result<()> {
-    if let Ok(lock) = session_ledger().read() {
-        if let Some(ledger) = lock.as_ref() {
-            return ledger.persist();
-        }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.evidence_ledger.read() {
+        Ok(l) => l,
+        Err(_) => return Ok(()),
+    };
+    if let Some(ledger) = lock.as_ref() {
+        return ledger.persist();
     }
     Ok(())
 }
 
 pub(crate) fn clear_session_ledger() {
-    if let Ok(mut lock) = session_ledger().write() {
-        *lock = None;
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.evidence_ledger.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = None;
 }
 
 // ============================================================================

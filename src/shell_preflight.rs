@@ -56,6 +56,14 @@ pub(crate) enum RiskLevel {
     Dangerous(String),
 }
 
+/// Task 789: Declarative Execution Decision
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Decision {
+    Allow,
+    Prompt,
+    Forbidden(String),
+}
+
 /// Preflight validation result.
 #[derive(Debug, Clone)]
 pub(crate) struct PreflightResult {
@@ -80,187 +88,165 @@ pub(crate) struct UnscopedResult {
     pub(crate) suggestion: Option<String>,
 }
 
-const DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
-    ("rm ", "rm: removes files permanently"),
-    ("rmdir ", "rmdir: removes directories permanently"),
-    (
-        "git reset --hard",
-        "git reset --hard: discards all uncommitted changes",
-    ),
-    (
-        "git clean -f",
-        "git clean: removes untracked files permanently",
-    ),
-    ("dd if=", "dd: low-level disk write, extremely dangerous"),
-    ("> ", "redirect truncates file"),
-    (">> ", "redirect appends to file"),
-    (
-        "chmod -R 777",
-        "chmod -R 777: opens all permissions recursively",
-    ),
-];
+/// Task 789: Declarative Policy Engine
+struct PolicyRule {
+    prefix: Vec<String>,
+    decision: Decision,
+}
 
-const PIPE_DESTRUCTIVE_PATTERNS: &[(&str, &str)] = &[
-    ("| xargs rm", "pipe-to-xargs-rm: bulk deletion"),
-    ("| xargs mv", "pipe-to-xargs-mv: bulk move"),
-    ("| xargs cp ", "pipe-to-xargs-cp: bulk copy overwrite"),
-    (
-        "| xargs chmod",
-        "pipe-to-xargs-chmod: bulk permission change",
-    ),
-    (
-        "| xargs chown",
-        "pipe-to-xargs-chown: bulk ownership change",
-    ),
-    (
-        "| xargs truncate",
-        "pipe-to-xargs-truncate: bulk file truncation",
-    ),
-    ("| xargs shred", "pipe-to-xargs-shred: bulk secure deletion"),
-];
+static EXEC_POLICY: LazyLock<Vec<PolicyRule>> = LazyLock::new(|| {
+    vec![
+        // Allow list (Safe)
+        PolicyRule { prefix: vec!["ls".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["cat".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["head".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["tail".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["wc".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["echo".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["rg".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["grep".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["pwd".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["whoami".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["date".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["tree".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["find".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["stat".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["file".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["du".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["df".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["git".to_string(), "status".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["git".to_string(), "log".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["git".to_string(), "diff".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["git".to_string(), "branch".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["cargo".to_string(), "build".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["cargo".to_string(), "test".to_string()], decision: Decision::Allow },
+        PolicyRule { prefix: vec!["cargo".to_string(), "check".to_string()], decision: Decision::Allow },
+        
+        // Prompt list (Caution)
+        PolicyRule { prefix: vec!["mv".to_string()], decision: Decision::Prompt },
+        PolicyRule { prefix: vec!["cp".to_string()], decision: Decision::Prompt },
+        PolicyRule { prefix: vec!["git".to_string(), "checkout".to_string()], decision: Decision::Prompt },
+        PolicyRule { prefix: vec!["git".to_string(), "commit".to_string()], decision: Decision::Prompt },
+        PolicyRule { prefix: vec!["git".to_string(), "push".to_string()], decision: Decision::Prompt },
+        
+        // Forbidden list (Dangerous)
+        PolicyRule { prefix: vec!["rm".to_string()], decision: Decision::Forbidden("Direct file deletion via rm is blocked. Use the trash tool or a safer approach.".to_string()) },
+        PolicyRule { prefix: vec!["rmdir".to_string()], decision: Decision::Forbidden("Directory deletion via rmdir is blocked. Use the trash tool.".to_string()) },
+        PolicyRule { prefix: vec!["dd".to_string()], decision: Decision::Forbidden("dd is extremely dangerous and blocked.".to_string()) },
+        PolicyRule { prefix: vec!["chmod".to_string()], decision: Decision::Forbidden("Direct permission changes are restricted.".to_string()) },
+        PolicyRule { prefix: vec!["chown".to_string()], decision: Decision::Forbidden("Ownership changes are restricted.".to_string()) },
+        PolicyRule { prefix: vec!["truncate".to_string()], decision: Decision::Forbidden("File truncation is restricted.".to_string()) },
+        PolicyRule { prefix: vec!["shred".to_string()], decision: Decision::Forbidden("Secure deletion is restricted.".to_string()) },
+        PolicyRule { prefix: vec!["sudo".to_string()], decision: Decision::Forbidden("sudo is strictly prohibited.".to_string()) },
+        PolicyRule { prefix: vec!["sh".to_string()], decision: Decision::Forbidden("Nested shell execution is prohibited.".to_string()) },
+        PolicyRule { prefix: vec!["bash".to_string()], decision: Decision::Forbidden("Nested shell execution is prohibited.".to_string()) },
+        PolicyRule { prefix: vec!["zsh".to_string()], decision: Decision::Forbidden("Nested shell execution is prohibited.".to_string()) },
+    ]
+});
 
-/// Commands that are safe to run in bulk via pipe (read-only inspection).
-const PIPE_SAFE_READ_ONLY: &[&str] = &[
-    "| xargs stat",
-    "| xargs ls",
-    "| xargs file",
-    "| xargs wc",
-    "| xargs head",
-    "| xargs tail",
-    "| xargs md5",
-    "| xargs shasum",
-    "| xargs sha256",
-    "| xargs cat",
-    "| xargs grep",
-    "| xargs rg",
-];
+/// Task 789: Split compound commands into individual executable units.
+fn split_compound_commands(command: &str) -> Vec<String> {
+    let mut units = Vec::new();
+    let mut current = String::new();
+    let mut in_quote: Option<char> = None;
+    let chars: Vec<char> = command.chars().collect();
+    let mut i = 0;
 
-/// Destructive keywords that make a while-read loop dangerous.
-const WHILE_LOOP_DESTRUCTIVE_KEYWORDS: &[&str] = &[
-    "rm ",
-    "rm;",
-    "rm\n",
-    "mv ",
-    "mv;",
-    "mv\n",
-    "cp ",
-    "cp;",
-    "cp\n",
-    "chmod ",
-    "chmod;",
-    "chmod\n",
-    "chown ",
-    "chown;",
-    "chown\n",
-    "truncate ",
-    "truncate;",
-    "shred ",
-    "shred;",
-    "> ",
-    ">> ",
-];
-
-pub(crate) fn classify_command(command: &str) -> RiskLevel {
-    let cmd = command.trim();
-    if cmd.is_empty() {
-        return RiskLevel::Safe;
-    }
-
-    // DESTRUCTIVE must be evaluated before safe overrides
-    for (pattern, reason) in PIPE_DESTRUCTIVE_PATTERNS {
-        if cmd.contains(pattern) {
-            return RiskLevel::Dangerous(format!("BULK DESTRUCTIVE: {} pattern detected.", reason));
+    while i < chars.len() {
+        let c = chars[i];
+        if let Some(q) = in_quote {
+            if c == q && (i == 0 || chars[i-1] != '\\') {
+                in_quote = None;
+            }
+            current.push(c);
+        } else if c == '\'' || c == '"' {
+            in_quote = Some(c);
+            current.push(c);
+        } else if (c == '&' && i + 1 < chars.len() && chars[i+1] == '&') 
+               || (c == '|' && i + 1 < chars.len() && chars[i+1] == '|')
+               || (c == ';') {
+            if !current.trim().is_empty() {
+                units.push(current.trim().to_string());
+            }
+            current = String::new();
+            if c == ';' {
+                i += 1;
+            } else {
+                i += 2;
+            }
+            continue;
+        } else if c == '|' && (i + 1 == chars.len() || chars[i+1] != '|') {
+            // Pipe is also a boundary for policy evaluation
+            if !current.trim().is_empty() {
+                units.push(current.trim().to_string());
+            }
+            current = String::new();
+            i += 1;
+            continue;
+        } else {
+            current.push(c);
         }
+        i += 1;
+    }
+    if !current.trim().is_empty() {
+        units.push(current.trim().to_string());
+    }
+    units
+}
+
+fn evaluate_policy(unit: &str) -> Decision {
+    let tokens = match shlex::split(unit) {
+        Some(t) => t,
+        None => return Decision::Forbidden("Malformed shell command (quoting error).".to_string()),
+    };
+    if tokens.is_empty() {
+        return Decision::Allow;
     }
 
-    // While-read loops
-    if cmd.contains("| while read") || cmd.contains("|while read") {
-        for keyword in WHILE_LOOP_DESTRUCTIVE_KEYWORDS {
-            if cmd.contains(keyword) {
-                return RiskLevel::Dangerous(
-                    "BULK DESTRUCTIVE: while-read loop contains destructive operation.".to_string(),
-                );
+    // Check redirection (forbidden in policy Task 789)
+    if unit.contains(">") || unit.contains(">>") {
+        return Decision::Forbidden("Shell redirection (> or >>) is restricted. Use the write tool.".to_string());
+    }
+
+    for rule in EXEC_POLICY.iter() {
+        if tokens.len() >= rule.prefix.len() {
+            let mut match_prefix = true;
+            for (j, p) in rule.prefix.iter().enumerate() {
+                if &tokens[j] != p {
+                    match_prefix = false;
+                    break;
+                }
+            }
+            if match_prefix {
+                return rule.decision.clone();
             }
         }
-        return RiskLevel::Safe;
     }
 
-    // Safe read-only pipes (only relevant when no destructive pipe found above)
-    for pattern in PIPE_SAFE_READ_ONLY {
-        if cmd.contains(pattern) {
-            return RiskLevel::Safe;
+    // Fallback for unknown commands
+    Decision::Prompt
+}
+
+pub(crate) fn classify_command(command: &str) -> RiskLevel {
+    let units = split_compound_commands(command);
+    let mut highest_risk = RiskLevel::Safe;
+
+    for unit in units {
+        let decision = evaluate_policy(&unit);
+        match decision {
+            Decision::Forbidden(reason) => {
+                return RiskLevel::Dangerous(reason);
+            }
+            Decision::Prompt => {
+                if highest_risk == RiskLevel::Safe {
+                    highest_risk = RiskLevel::Caution;
+                }
+            }
+            Decision::Allow => {}
         }
     }
 
-    for (pattern, reason) in DESTRUCTIVE_PATTERNS {
-        if cmd.starts_with(pattern)
-            || cmd.contains(&format!("; {}", pattern))
-            || cmd.contains(&format!("&& {}", pattern))
-        {
-            return RiskLevel::Dangerous(format!("DANGEROUS: {}", reason));
-        }
-    }
-
-    if cmd.starts_with("mv ") {
-        return RiskLevel::Caution;
-    }
-    if cmd.starts_with("cp ") {
-        return RiskLevel::Caution;
-    }
-    if cmd.contains("rm *") || (cmd.starts_with("rm ") && cmd.contains('*')) {
-        return RiskLevel::Dangerous("rm with glob: may delete many files".to_string());
-    }
-
-    let safe_prefixes = [
-        "ls ",
-        "ls\n",
-        "ls",
-        "cat ",
-        "head ",
-        "tail ",
-        "wc ",
-        "echo ",
-        "rg ",
-        "grep ",
-        "pwd",
-        "pwd ",
-        "whoami",
-        "whoami ",
-        "date",
-        "tree ",
-        "find ",
-        "stat ",
-        "file ",
-        "du ",
-        "df ",
-        "du -sh",
-        "find . -type f",
-        "git status",
-        "git log",
-        "git diff",
-        "git branch",
-        "cargo build",
-        "cargo test",
-        "cargo check",
-    ];
-    for prefix in &safe_prefixes {
-        if cmd.starts_with(prefix) {
-            return RiskLevel::Safe;
-        }
-    }
-
-    // Detect analytical find + du + wc patterns (read-only aggregation queries)
-    if cmd.contains("find . -type f") && cmd.contains("| wc -l") {
-        return RiskLevel::Safe;
-    }
-    if cmd.contains("find . -type f") && cmd.contains("du -ch") && cmd.contains("tail -1") {
-        return RiskLevel::Safe;
-    }
-    if cmd.contains("du -sh") && cmd.contains("find . -type f") {
-        return RiskLevel::Safe;
-    }
-
-    RiskLevel::Caution
+    highest_risk
 }
 
 pub(crate) fn detect_unscoped(command: &str, workdir: &PathBuf) -> UnscopedResult {
@@ -333,7 +319,7 @@ fn check_glob_unscoped(cmd: &str, workdir: &PathBuf) -> Option<UnscopedResult> {
 
 fn estimate_find_count(cmd: &str, workdir: &PathBuf) -> usize {
     let dry_cmd = format!("{} -print 2>/dev/null | wc -l", cmd);
-    match crate::program_utils::run_shell_persistent_sync(&dry_cmd, workdir) {
+    match crate::program_utils::run_shell_persistent_sync(&dry_cmd, workdir, 5) {
         Ok(r) => r.inline_text.trim().parse::<usize>().unwrap_or(0),
         Err(_) => 0,
     }

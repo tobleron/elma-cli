@@ -24,15 +24,6 @@ pub(crate) static DEFAULT_EXCLUDED_PATHS: &[&str] = &[
     ".dirac-symbol-index",
 ];
 
-/// Maximum tool result characters before oversized handling is triggered (Task 691).
-pub(crate) const OVERSIZE_RESULT_THRESHOLD_CHARS: usize = 500_000;
-
-/// Global scope constraint for search/glob operations (Task 696).
-static SCOPE_CONSTRAINT: OnceLock<RwLock<Option<ScopeConstraint>>> = OnceLock::new();
-
-fn scope_constraint() -> &'static RwLock<Option<ScopeConstraint>> {
-    SCOPE_CONSTRAINT.get_or_init(|| RwLock::new(None))
-}
 
 /// Defines scope boundaries for search and glob operations (Task 696).
 #[derive(Debug, Clone, Default)]
@@ -79,21 +70,20 @@ impl ScopeConstraint {
         })
     }
 }
-
-/// Set the current scope constraint for the session.
 pub(crate) fn set_scope_constraint(constraint: Option<ScopeConstraint>) {
-    if let Ok(mut lock) = scope_constraint().write() {
-        *lock = constraint;
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.scope_constraint.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = constraint;
 }
 
 /// Get the current scope constraint.
 pub(crate) fn get_scope_constraint() -> Option<ScopeConstraint> {
-    if let Ok(lock) = scope_constraint().read() {
-        lock.clone()
-    } else {
-        None
-    }
+    let state = crate::session_state::get_session_state();
+    let lock = state.scope_constraint.read().ok()?;
+    lock.clone()
 }
 
 /// Narrow a search pattern or path to within the allowed scope (Task 696).
@@ -286,40 +276,6 @@ impl WorkspacePolicy {
     }
 }
 
-/// Handle oversized tool output by generating a compact summary (Task 691).
-/// Returns (summary, original_path) where original_path is Some if the content was persisted.
-pub(crate) fn handle_oversized_output(
-    content: &str,
-    tool_name: &str,
-    session_root: &Path,
-) -> (String, Option<PathBuf>) {
-    if content.len() <= OVERSIZE_RESULT_THRESHOLD_CHARS {
-        return (content.to_string(), None);
-    }
-
-    let line_count = content.lines().count();
-    let char_count = content.len();
-    let preview: String = content.chars().take(2000).collect();
-
-    let evidence_dir = session_root.join("evidence").join("oversized");
-    let _ = std::fs::create_dir_all(&evidence_dir);
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let filename = format!("{}_{}_oversized.txt", tool_name, timestamp);
-    let artifact_path = evidence_dir.join(&filename);
-    let _ = std::fs::write(&artifact_path, content);
-
-    let summary = format!(
-        "[Oversized result: {} chars, {} lines from tool '{}']\n\
-         Preview:\n{}\n...\n\
-         [Full output written to {}]",
-        char_count, line_count, tool_name, preview, artifact_path.display()
-    );
-
-    (summary, Some(artifact_path))
-}
 
 fn glob_match(pattern: &str, path: &str) -> bool {
     if pattern == path {
@@ -420,29 +376,6 @@ mod tests {
         let notice = WorkspacePolicy::default_exclusion_notice();
         assert!(notice.contains(".git"));
         assert!(notice.contains("target"));
-    }
-
-    #[test]
-    fn test_oversized_output_under_threshold() {
-        let content = "small content";
-        let tmp = std::env::temp_dir();
-        let (result, path) = handle_oversized_output(content, "read", &tmp);
-        assert_eq!(result, content);
-        assert!(path.is_none());
-    }
-
-    #[test]
-    fn test_oversized_output_over_threshold() {
-        let content = "x".repeat(OVERSIZE_RESULT_THRESHOLD_CHARS + 1000);
-        let tmp = std::env::temp_dir();
-        let (result, path) = handle_oversized_output(&content, "search", &tmp);
-        assert!(result.starts_with("[Oversized result:"));
-        assert!(result.contains("search"));
-        assert!(result.contains("Preview:"));
-        assert!(path.is_some());
-        let path = path.unwrap();
-        assert!(path.exists());
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

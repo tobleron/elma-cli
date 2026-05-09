@@ -280,7 +280,7 @@ pub(crate) async fn execute_tool_call(
         }
     }
 
-    match tool_name.as_str() {
+    let result = match tool_name.as_str() {
         "ls" => crate::tools::implementations::ls::exec_ls(&args_value, workdir, &call_id, tui),
         "observe" => crate::tools::implementations::observe::exec_observe(&args_value, workdir, &call_id, tui),
         "tool_search" => crate::tools::implementations::tool_search::exec_tool_search(&args_value, &call_id, tui),
@@ -358,7 +358,23 @@ pub(crate) async fn execute_tool_call(
                 signal_killed: None,
             }
         }
+    };
+
+    // Task 786: Centralized Tool Output Capping
+    // Apply budget to the result content before returning
+    let mut result = result;
+    if result.ok {
+        let budgeted = crate::tool_result_storage::apply_tool_result_budget(
+            session,
+            &result.tool_call_id,
+            &result.tool_name,
+            &result.content,
+            crate::tool_result_storage::DEFAULT_MAX_RESULT_SIZE_CHARS,
+            crate::output_truncation::TruncationPolicy::HeadAndTail(1500, 1500),
+        );
+        result.content = budgeted.content_for_model;
     }
+    result
 }
 
 fn canonicalize_tool_args(tool_name: &str, mut args_value: serde_json::Value) -> serde_json::Value {

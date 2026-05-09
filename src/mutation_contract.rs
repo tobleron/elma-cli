@@ -10,34 +10,34 @@
 use crate::*;
 use std::sync::{OnceLock, RwLock};
 
-/// Global flag: whether a mutating tool call has been made this session.
-static HAS_MUTATED: OnceLock<RwLock<bool>> = OnceLock::new();
-
-fn has_mutated_flag() -> &'static RwLock<bool> {
-    HAS_MUTATED.get_or_init(|| RwLock::new(false))
-}
-
 /// Mark that a mutating operation was performed.
 pub(crate) fn mark_mutation_performed() {
-    if let Ok(mut lock) = has_mutated_flag().write() {
-        *lock = true;
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.has_mutated.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = true;
 }
 
 /// Reset the mutation flag (for new sessions/turns).
 pub(crate) fn reset_mutation_flag() {
-    if let Ok(mut lock) = has_mutated_flag().write() {
-        *lock = false;
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.has_mutated.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = false;
 }
 
 /// Check if a mutating operation has been performed.
 pub(crate) fn mutation_performed() -> bool {
-    if let Ok(lock) = has_mutated_flag().read() {
-        *lock
-    } else {
-        false
-    }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.has_mutated.read() {
+        Ok(l) => l,
+        Err(_) => return false,
+    };
+    *lock
 }
 
 /// Check if a user request describes a mutating task that requires execution.

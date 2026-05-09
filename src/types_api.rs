@@ -51,7 +51,7 @@ pub(crate) struct ModelItem {
     pub(crate) model: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub(crate) struct ChatMessage {
     pub(crate) role: String,
     pub(crate) content: String,

@@ -11,27 +11,24 @@ use crate::*;
 use std::collections::HashSet;
 use std::sync::{OnceLock, RwLock};
 
-/// Global flag: whether network is currently disabled.
-static NETWORK_DISABLED: OnceLock<RwLock<bool>> = OnceLock::new();
-
-fn network_disabled_flag() -> &'static RwLock<bool> {
-    NETWORK_DISABLED.get_or_init(|| RwLock::new(true))
-}
-
 /// Set whether network is enabled for the current session.
 pub(crate) fn set_network_enabled(enabled: bool) {
-    if let Ok(mut lock) = network_disabled_flag().write() {
-        *lock = !enabled;
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.network_disabled.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = !enabled;
 }
 
 /// Check if network verification is available.
 pub(crate) fn is_online_verification_available() -> bool {
-    if let Ok(lock) = network_disabled_flag().read() {
-        !*lock
-    } else {
-        false
-    }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.network_disabled.read() {
+        Ok(l) => l,
+        Err(_) => return false,
+    };
+    !*lock
 }
 
 /// Check if a user request contains online verification requirements.

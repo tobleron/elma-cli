@@ -148,6 +148,7 @@ mod program_policy;
 mod program_policy_level;
 mod program_policy_tests;
 mod program_steps;
+mod output_truncation;
 mod program_utils;
 mod project_guidance;
 mod project_init;
@@ -192,6 +193,7 @@ mod shell_exec_policy; // Task 658: Parser-backed shell execution policy and per
 mod shell_preflight; // Task 116: Destructive Command Detection & Preflight
 mod shutdown; // Task 017: Graceful Shutdown And Panic Recovery
 mod skills;
+mod shell_timeout;
 mod snapshot;
 mod sse_stream; // Task 558: SSE byte stream parser
 mod stop_policy;

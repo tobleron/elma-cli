@@ -303,21 +303,23 @@ pub(crate) async fn run_shell_persistent(
 ) -> Result<ShellExecutionResult> {
     let cancelled = std::sync::atomic::AtomicBool::new(false);
     let elapsed = std::sync::atomic::AtomicU64::new(0);
-    run_shell_persistent_blocking(cmd, workdir, &cancelled, &elapsed)
+    run_shell_persistent_blocking(cmd, workdir, 30, &cancelled, &elapsed)
 }
 
 pub(crate) fn run_shell_persistent_sync(
     cmd: &str,
     workdir: &PathBuf,
+    idle_timeout_secs: u64,
 ) -> Result<ShellExecutionResult> {
     let cancelled = std::sync::atomic::AtomicBool::new(false);
     let elapsed = std::sync::atomic::AtomicU64::new(0);
-    run_shell_persistent_blocking(cmd, workdir, &cancelled, &elapsed)
+    run_shell_persistent_blocking(cmd, workdir, idle_timeout_secs, &cancelled, &elapsed)
 }
 
 pub(crate) fn run_shell_persistent_blocking(
     cmd: &str,
     workdir: &PathBuf,
+    idle_timeout_secs: u64,
     cancelled: &std::sync::atomic::AtomicBool,
     elapsed_secs: &std::sync::atomic::AtomicU64,
 ) -> Result<ShellExecutionResult> {
@@ -326,7 +328,7 @@ pub(crate) fn run_shell_persistent_blocking(
     let mut shell = shell_mutex
         .lock()
         .map_err(|_| anyhow::anyhow!("Shell mutex poisoned"))?;
-    match shell.execute_ext(cmd, 30, cancelled, elapsed_secs) {
+    match shell.execute_ext(cmd, idle_timeout_secs, cancelled, elapsed_secs) {
         Ok((exit_code, output)) => {
             let inline_text = sanitize_pty_transcript(output.as_bytes());
             Ok(ShellExecutionResult {

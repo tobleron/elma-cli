@@ -31,10 +31,13 @@ pub async fn exec_git_inspect(
 
     emit_tool_start(&mut tui, "git_inspect", description);
 
-    let output = std::process::Command::new("git")
-        .args(&args)
-        .current_dir(&workdir)
-        .output();
+    let mut cmd = tokio::process::Command::new("git");
+    cmd.args(&args).current_dir(&workdir);
+
+    let output = crate::shell_timeout::ShellTimeout::run_async(
+        cmd,
+        std::time::Duration::from_secs(30),
+    ).await;
 
     match output {
         Ok(o) => {

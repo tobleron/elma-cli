@@ -775,13 +775,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                             // instead of text — these would destroy the original pipeline answer.
                             let trimmed = improved.trim();
                             let is_valid_answer = trimmed.len() >= 20
-                                && !trimmed.starts_with('<')
-                                && !improved.contains("<search_files")
-                                && !improved.contains("<read ")
-                                && !improved.contains("<write ")
-                                && !improved.contains("<glob ")
-                                && !improved.contains("<shell")
-                                && !improved.contains("<bash");
+                                && !crate::strict_tool_parser::StrictToolParser::contains_tool_proposals(&improved);
                             if is_valid_answer {
                                 final_text = improved;
                                 retry_happened = true;
@@ -1103,10 +1097,7 @@ fn verify_finalization(
     if outcome.reason.is_bad_stop() && has_minimal {
         // If the answer looks suspiciously complete but coverage is thin,
         // prepend a partial label.
-        let looks_complete = final_text.len() > 200
-            && !final_text.to_lowercase().contains("partial")
-            && !final_text.to_lowercase().contains("incomplete")
-            && !final_text.to_lowercase().contains("not yet");
+        let looks_complete = final_text.len() > 200;
 
         if looks_complete && coverage_count < 5 && unique_files < 3 {
             tui.push_meta_event(

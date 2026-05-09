@@ -1857,6 +1857,7 @@ pub(crate) async fn run_tool_loop(
                 if result.ok {
                     loop_summary_tracker.tool_calls_made += 1;
                     loop_summary_tracker.tool_call_ids.push(tc.id.clone());
+                    match tc.function.name.as_str() {
                         "read" => {
                             let path = crate::tool_repair::extract_path_from_args(&tc.function.arguments);
                             loop_summary_tracker.successful_reads.push(path.clone());
@@ -1896,6 +1897,7 @@ pub(crate) async fn run_tool_loop(
                         &tc.function.name,
                         &result.content,
                         DEFAULT_MAX_RESULT_SIZE_CHARS,
+                        crate::output_truncation::TruncationPolicy::default(),
                     );
                     let model_content = if budgeted.content_for_model.trim().is_empty()
                         && tc.function.name != "respond"

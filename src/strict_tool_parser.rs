@@ -243,6 +243,39 @@ impl StrictToolParser {
                 | ToolParseErrorType::WrongType { .. }
         )
     }
+
+    /// Check if text contains any tool proposals (JSON or XML tags).
+    /// Used to validate that a "text-only" response hasn't leaked tool calls.
+    pub(crate) fn contains_tool_proposals(text: &str) -> bool {
+        // 1. Check for balanced JSON objects that look like tool calls
+        if let Some(json_str) = find_json_object(text) {
+            // A JSON tool call must have a name and some arguments/input
+            if json_str.contains("\"name\"") && (json_str.contains("\"arguments\"") || json_str.contains("\"input\"")) {
+                return true;
+            }
+        }
+        
+        // 2. Check for structural XML-like tags <tool_name ...>
+        // We look for a pattern that matches <[alpha_numeric] followed by a space or newline.
+        // This avoids matching "less than" symbols in math or code.
+        let chars: Vec<char> = text.chars().collect();
+        for i in 0..chars.len() {
+            if chars[i] == '<' && i + 1 < chars.len() {
+                let mut j = i + 1;
+                let mut has_alpha = false;
+                while j < chars.len() && (chars[j].is_ascii_alphanumeric() || chars[j] == '_') {
+                    has_alpha = true;
+                    j += 1;
+                }
+                if has_alpha && j < chars.len() && (chars[j] == ' ' || chars[j] == '\n' || chars[j] == '\r' || chars[j] == '>') {
+                    // Potential tool tag found
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
 }
 
 /// Standardized error contract for model-facing tool call errors.
@@ -344,7 +377,7 @@ fn extract_json_code_blocks(text: &str) -> Vec<String> {
 }
 
 /// Try to find the first balanced JSON object `{...}` in arbitrary text.
-fn find_json_object(text: &str) -> Option<String> {
+pub(crate) fn find_json_object(text: &str) -> Option<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut start: Option<usize> = None;
     let mut depth: i32 = 0;

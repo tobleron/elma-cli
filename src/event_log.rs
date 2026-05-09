@@ -9,31 +9,27 @@ use serde::{Deserialize, Serialize};
 use std::sync::{OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-static SESSION_EVENT_LOG: OnceLock<RwLock<Option<EventLog>>> = OnceLock::new();
-static CURRENT_TURN_ID: OnceLock<RwLock<Option<String>>> = OnceLock::new();
-
-fn session_event_log() -> &'static RwLock<Option<EventLog>> {
-    SESSION_EVENT_LOG.get_or_init(|| RwLock::new(None))
-}
-
-fn current_turn_id() -> &'static RwLock<Option<String>> {
-    CURRENT_TURN_ID.get_or_init(|| RwLock::new(None))
-}
-
 pub(crate) fn set_current_turn(turn_id: &str) {
-    if let Ok(mut lock) = current_turn_id().write() {
-        *lock = Some(turn_id.to_string());
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.current_turn_id.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = Some(turn_id.to_string());
 }
 
 pub(crate) fn clear_current_turn() {
-    if let Ok(mut lock) = current_turn_id().write() {
-        *lock = None;
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.current_turn_id.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = None;
 }
 
 pub(crate) fn get_current_turn_id() -> Option<String> {
-    current_turn_id().read().ok().and_then(|lock| lock.clone())
+    let state = crate::session_state::get_session_state();
+    state.current_turn_id.read().ok().and_then(|lock| lock.clone())
 }
 
 pub(crate) fn record_lifecycle(event_type: LifecycleEventType, turn_id: Option<&str>) {
@@ -92,43 +88,54 @@ pub(crate) fn record_finalization(
 }
 
 pub(crate) fn persist(session_root: &Path) -> Result<()> {
-    if let Ok(lock) = session_event_log().read() {
-        if let Some(log) = lock.as_ref() {
-            return log.persist(session_root);
-        }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.event_log.read() {
+        Ok(l) => l,
+        Err(_) => return Ok(()),
+    };
+    if let Some(log) = lock.as_ref() {
+        return log.persist(session_root);
     }
     Ok(())
 }
 
 pub(crate) fn init_session_event_log(session_id: &str) {
-    if let Ok(mut lock) = session_event_log().write() {
-        *lock = Some(EventLog::new(session_id));
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.event_log.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = Some(EventLog::new(session_id));
 }
 
 pub(crate) fn get_session_event_log() -> Option<EventLog> {
-    session_event_log()
-        .read()
-        .ok()
-        .and_then(|lock| lock.clone())
+    let state = crate::session_state::get_session_state();
+    let lock = state.event_log.read().ok()?;
+    lock.clone()
 }
 
 pub(crate) fn with_session_event_log<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut EventLog) -> R,
 {
-    if let Ok(mut lock) = session_event_log().write() {
-        if let Some(log) = lock.as_mut() {
-            return Some(f(log));
-        }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.event_log.write() {
+        Ok(l) => l,
+        Err(_) => return None,
+    };
+    if let Some(log) = lock.as_mut() {
+        return Some(f(log));
     }
     None
 }
 
 pub(crate) fn clear_session_event_log() {
-    if let Ok(mut lock) = session_event_log().write() {
-        *lock = None;
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.event_log.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = None;
 }
 
 /// Unique event identifier

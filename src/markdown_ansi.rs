@@ -17,21 +17,23 @@ use crate::*;
 use markdown_to_ansi::Options;
 use std::sync::{OnceLock, RwLock};
 
-static NO_COLOR_FLAG: OnceLock<RwLock<bool>> = OnceLock::new();
-
 pub(crate) fn no_color_enabled() -> bool {
-    if let Ok(lock) = NO_COLOR_FLAG.get_or_init(|| RwLock::new(false)).read() {
-        *lock
-    } else {
-        false
-    }
+    let state = crate::session_state::get_session_state();
+    let lock = match state.no_color.read() {
+        Ok(l) => l,
+        Err(_) => return false,
+    };
+    *lock
 }
 
 /// Set whether ANSI color output should be suppressed (Task 700).
 pub(crate) fn set_no_color(enabled: bool) {
-    if let Ok(mut lock) = NO_COLOR_FLAG.get_or_init(|| RwLock::new(false)).write() {
-        *lock = enabled;
-    }
+    let state = crate::session_state::get_session_state();
+    let mut lock = match state.no_color.write() {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    *lock = enabled;
 }
 
 fn default_options() -> Options {

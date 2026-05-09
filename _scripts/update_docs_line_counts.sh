@@ -1,59 +1,82 @@
-#!/bin/bash
-# Documentation Line Count Audit Tool
+#!/usr/bin/env python3
+import os
+import re
+import subprocess
+import sys
 
-# Files to audit
-CORE_FILES=(
-    "src/app_chat_loop.rs"
-    "src/tool_loop/mod.rs"
-    "src/tool_calling.rs"
-    "src/orchestration_retry.rs"
-    "src/orchestration_planning.rs"
-    "src/evidence_ledger.rs"
-    "src/document_adapter.rs"
-    "src/stop_policy.rs"
-)
+# Architectural Truthfulness Audit (Task 780)
+# This script syncs the Module Map in docs/ARCHITECTURE.md with actual wc -l counts.
 
-echo "--- Architectural Metrics Audit ---"
-printf "%-30s %-10s %-10s\n" "File" "Actual" "Status"
-printf "%-30s %-10s %-10s\n" "------------------------------" "----------" "----------"
+def get_line_count(filepath):
+    try:
+        result = subprocess.run(['wc', '-l', filepath], capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout.strip().split()[0]
+    except Exception:
+        pass
+    return None
 
-EXIT_CODE=0
-
-for file in "${CORE_FILES[@]}"; do
-    if [ ! -f "$file" ]; then
-        printf "%-30s %-10s %-10s\n" "$file" "MISSING" "ERROR"
-        EXIT_CODE=1
-        continue
-    fi
-
-    ACTUAL=$(wc -l < "$file" | tr -d ' ')
-    
-    # Check if ARCHITECTURE.md contains a stale count
-    # Look for | `file` | COUNT |
-    BASENAME=$(basename "$file")
-    DIRNAME=$(dirname "$file")
-    if [ "$DIRNAME" == "src/tool_loop" ]; then
-        SEARCH_KEY="tool_loop/$BASENAME"
-    else
-        SEARCH_KEY="$BASENAME"
-    fi
-
-    DOC_COUNT=$(grep "| \`$SEARCH_KEY\` |" docs/ARCHITECTURE.md | cut -d'|' -f3 | tr -d ' ' | tr -d '[:alpha:]' | tr -d '(' | tr -d ')')
-    
-    if [ -n "$DOC_COUNT" ]; then
-        DIFF=$((ACTUAL - DOC_COUNT))
-        ABS_DIFF=${DIFF#-}
-        THRESHOLD=100
+def find_file(filename):
+    # Direct path check
+    if os.path.exists(os.path.join('src', filename)):
+        return os.path.join('src', filename)
+    if os.path.exists(filename):
+        return filename
         
-        if [ "$ABS_DIFF" -gt "$THRESHOLD" ]; then
-            printf "%-30s %-10s %-10s (Doc says %s, diff %s)\n" "$SEARCH_KEY" "$ACTUAL" "STALE" "$DOC_COUNT" "$DIFF"
-            EXIT_CODE=1
-        else
-            printf "%-30s %-10s %-10s\n" "$SEARCH_KEY" "$ACTUAL" "OK"
-        fi
-    else
-        printf "%-30s %-10s %-10s\n" "$SEARCH_KEY" "$ACTUAL" "NOT_DOC"
-    fi
-done
+    # Recursive search in src
+    for root, dirs, files in os.walk('src'):
+        if filename in files:
+            return os.path.join(root, filename)
+    return None
 
-exit $EXIT_CODE
+def main():
+    arch_file = 'docs/ARCHITECTURE.md'
+    if not os.path.exists(arch_file):
+        print(f"Error: {arch_file} not found")
+        sys.exit(1)
+
+    with open(arch_file, 'r') as f:
+        lines = f.readlines()
+
+    new_lines = []
+    # Match | `file.rs` | 123 | ... |
+    table_regex = re.compile(r'^\| `([^`]+)` \| ([^|]+) \| (.*)\|')
+    
+    updated_count = 0
+    missing_count = 0
+
+    for line in lines:
+        match = table_regex.match(line.strip())
+        if match:
+            filename = match.group(1)
+            # Skip directories
+            if filename.endswith('/'):
+                new_lines.append(line)
+                continue
+                
+            filepath = find_file(filename)
+            if filepath:
+                count = get_line_count(filepath)
+                if count:
+                    new_line = f"| `{filename}` | {count} | {match.group(3)}|\n"
+                    new_lines.append(new_line)
+                    updated_count += 1
+                else:
+                    new_lines.append(line)
+            else:
+                # File not found - mark as MISSING
+                new_line = f"| `{filename}` | MISSING | {match.group(3)}|\n"
+                new_lines.append(new_line)
+                missing_count += 1
+        else:
+            new_lines.append(line)
+
+    with open(arch_file, 'w') as f:
+        f.writelines(new_lines)
+    
+    print(f"Updated {updated_count} modules. {missing_count} modules missing.")
+    if missing_count > 0:
+        print("Warning: Some modules are listed as MISSING. Please audit ARCHITECTURE.md for deleted modules.")
+
+if __name__ == '__main__':
+    main()

@@ -140,10 +140,13 @@ impl Tool for BashTool {
         let command = args.get("command").cloned().unwrap_or_default();
 
         let policy = self.policy();
-        let output = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(&command)
-            .output();
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c").arg(&command);
+        
+        let output = crate::shell_timeout::ShellTimeout::run_sync(
+            cmd,
+            Duration::from_secs(policy.timeout_seconds),
+        );
 
         match output {
             Ok(out) => {

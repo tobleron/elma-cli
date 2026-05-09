@@ -64,7 +64,11 @@ pub async fn exec_search(
     emit_tool_start(&mut tui, "search", &format!("rg pattern={}", pattern));
     emit_tool_progress(&mut tui, "search", "running ripgrep");
 
-    match cmd.output() {
+    let mut t_cmd = tokio::process::Command::from(cmd);
+    match crate::shell_timeout::ShellTimeout::run_async(
+        t_cmd,
+        std::time::Duration::from_secs(30),
+    ).await {
         Ok(output) => {
             let exit_code = output.status.code().unwrap_or(0);
             let success = exit_code == 0 || exit_code == 1;
@@ -93,8 +97,6 @@ pub async fn exec_search(
                 ));
             }
 
-            content = cap_search_output(&content);
-
             emit_tool_result(&mut tui, "search", success, &content);
             if success {
                 ToolExecutionResult::new_ok(call_id, "search", &content)
@@ -110,28 +112,6 @@ pub async fn exec_search(
     }
 }
 
-const SEARCH_OUTPUT_CAP_CHARS: usize = 300_000;
-const SEARCH_OUTPUT_PREVIEW_CHARS: usize = 120_000;
-
-fn cap_search_output(content: &str) -> String {
-    if content.len() <= SEARCH_OUTPUT_CAP_CHARS {
-        return content.to_string();
-    }
-    let preview = content
-        .chars()
-        .take(SEARCH_OUTPUT_PREVIEW_CHARS)
-        .collect::<String>();
-    let total_lines = content.lines().count();
-    let preview_lines = preview.lines().count();
-    format!(
-        "{}\n\n[search output truncated: original_chars={}, original_lines={}, shown_chars={}, shown_lines={}. Narrow the path or pattern for more detail.]",
-        preview.trim_end(),
-        content.len(),
-        total_lines,
-        preview.len(),
-        preview_lines
-    )
-}
 
 fn should_apply_default_search_exclusions(workdir: &PathBuf, requested_path: Option<&str>) -> bool {
     let Some(path) = requested_path else {

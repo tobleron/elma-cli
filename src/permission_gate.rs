@@ -15,15 +15,23 @@ use std::collections::HashSet;
 use std::io::IsTerminal;
 
 /// Tracks which command patterns have been approved in this session.
-struct ApprovalCache {
+#[derive(Clone)]
+pub(crate) struct ApprovalCache {
     /// Approved command prefixes/patterns (e.g., "mv probe_parsing.sh stress_testing/")
-    approved: HashSet<String>,
+    pub approved: HashSet<String>,
     /// Whether we're in non-interactive mode (piped input, scripts)
-    non_interactive: bool,
+    pub non_interactive: bool,
+}
+
+impl Default for ApprovalCache {
+    fn default() -> Self {
+        let non_interactive = !std::io::stdin().is_terminal();
+        Self::new(non_interactive)
+    }
 }
 
 impl ApprovalCache {
-    fn new(non_interactive: bool) -> Self {
+    pub fn new(non_interactive: bool) -> Self {
         Self {
             approved: HashSet::new(),
             non_interactive,
@@ -63,18 +71,10 @@ impl ApprovalCache {
     }
 }
 
-static PERMISSION_CACHE: OnceLock<Mutex<ApprovalCache>> = OnceLock::new();
-
-fn approval_cache() -> &'static Mutex<ApprovalCache> {
-    PERMISSION_CACHE.get_or_init(|| {
-        let non_interactive = !std::io::stdin().is_terminal();
-        Mutex::new(ApprovalCache::new(non_interactive))
-    })
-}
-
 /// Reset the approval cache (called on /reset or new session).
 pub(crate) fn reset_permission_cache() {
-    let mut cache = approval_cache().lock().unwrap_or_else(|e| e.into_inner());
+    let state = crate::session_state::get_session_state();
+    let mut cache = state.permission_cache.lock().unwrap_or_else(|e| e.into_inner());
     cache.approved.clear();
 }
 
@@ -135,7 +135,8 @@ pub(crate) async fn check_permission(
 
     // Check approval cache (single lock acquisition; recover from poisoning)
     let (already_approved, is_non_interactive) = {
-        let cache = approval_cache().lock().unwrap_or_else(|e| e.into_inner());
+        let state = crate::session_state::get_session_state();
+        let cache = state.permission_cache.lock().unwrap_or_else(|e| e.into_inner());
         (cache.is_approved(command), cache.non_interactive)
     };
     if already_approved {
@@ -279,7 +280,8 @@ pub(crate) async fn check_permission(
 
 /// Record that the user approved this command (for session caching).
 pub(crate) fn record_approval(command: &str) {
-    let mut cache = approval_cache().lock().unwrap_or_else(|e| e.into_inner());
+    let state = crate::session_state::get_session_state();
+    let mut cache = state.permission_cache.lock().unwrap_or_else(|e| e.into_inner());
     cache.approve(command);
 }
 
@@ -312,7 +314,8 @@ fn ask_permission(args: &Args, command: &str, risk: &RiskLevel) -> bool {
 
 /// Get a display string for the approval cache (for debug/status).
 pub(crate) fn approval_cache_summary() -> String {
-    let cache = approval_cache().lock().unwrap_or_else(|e| e.into_inner());
+    let state = crate::session_state::get_session_state();
+    let cache = state.permission_cache.lock().unwrap_or_else(|e| e.into_inner());
     if cache.approved.is_empty() {
         "no approvals cached".to_string()
     } else {

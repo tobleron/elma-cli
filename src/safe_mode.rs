@@ -88,22 +88,18 @@ impl std::fmt::Display for SafeMode {
     }
 }
 
-/// Global safe mode state
-static SAFE_MODE_STATE: OnceLock<Mutex<SafeMode>> = OnceLock::new();
-
-fn safe_mode_state() -> &'static Mutex<SafeMode> {
-    SAFE_MODE_STATE.get_or_init(|| Mutex::new(SafeMode::default()))
-}
-
 /// Get the current safe mode
 pub(crate) fn get_safe_mode() -> SafeMode {
-    *safe_mode_state().lock().unwrap_or_else(|e| e.into_inner())
+    let state = crate::session_state::get_session_state();
+    let sm = state.safe_mode.lock().unwrap_or_else(|e| e.into_inner());
+    *sm
 }
 
 /// Set the safe mode
 pub(crate) fn set_safe_mode(mode: SafeMode) {
-    let mut state = safe_mode_state().lock().unwrap_or_else(|e| e.into_inner());
-    *state = mode;
+    let state = crate::session_state::get_session_state();
+    let mut sm = state.safe_mode.lock().unwrap_or_else(|e| e.into_inner());
+    *sm = mode;
 }
 
 /// Parse and set safe mode from string
