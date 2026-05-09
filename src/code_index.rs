@@ -55,9 +55,23 @@ static USE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*(?:pub\s+)?use\s+(.+)
 
 // ── CodeIndex implementation ──────────────────────────────────────────────
 
+impl Default for CodeIndex {
+    fn default() -> Self {
+        CodeIndex {
+            entries: Vec::new(),
+            index_path: PathBuf::new(),
+        }
+    }
+}
+
 impl CodeIndex {
+    /// Create a new empty index with default values.
+    fn new() -> Self {
+        Self::default()
+    }
+
     /// Create a new empty index rooted at `workspace_root/.elma_index/`.
-    pub(crate) fn new(workspace_root: &Path) -> Self {
+    pub(crate) fn new_at(workspace_root: &Path) -> Self {
         let index_path = workspace_root.join(".elma_index");
         CodeIndex {
             entries: Vec::new(),
@@ -214,6 +228,11 @@ pub(crate) fn extract_rust_symbols(
     entries
 }
 
+/// Create a new code indexer with optional rules.
+pub(crate) fn create_indexer(_rules: &str) -> Option<CodeIndex> {
+    Some(CodeIndex::new())
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -303,7 +322,7 @@ impl MyStruct {
     fn method(&self) {}
 }
 impl<T> GenericStruct<T> {
-    fn new() -> Self { todo!() }
+    fn new() -> Self { Default::default() }
 }
 impl MyTrait for MyStruct {
     fn trait_method(&self) {}
@@ -428,14 +447,14 @@ pub(crate) fn helper_function() -> bool {
 
     #[test]
     fn new_creates_empty_index() {
-        let index = CodeIndex::new(Path::new("/tmp/workspace"));
+        let index = CodeIndex::new_at(Path::new("/tmp/workspace"));
         assert!(index.entries.is_empty());
         assert_eq!(index.index_path, Path::new("/tmp/workspace/.elma_index"));
     }
 
     #[test]
     fn search_finds_by_symbol_name() {
-        let mut index = CodeIndex::new(Path::new("/tmp"));
+        let mut index = CodeIndex::new_at(Path::new("/tmp"));
         index.entries = vec![
             CodeIndexEntry {
                 file_path: PathBuf::from("src/main.rs"),
@@ -463,7 +482,7 @@ pub(crate) fn helper_function() -> bool {
 
     #[test]
     fn search_finds_by_file_path() {
-        let mut index = CodeIndex::new(Path::new("/tmp"));
+        let mut index = CodeIndex::new_at(Path::new("/tmp"));
         index.entries = vec![CodeIndexEntry {
             file_path: PathBuf::from("src/main.rs"),
             symbol_name: Some("run".to_string()),
@@ -479,7 +498,7 @@ pub(crate) fn helper_function() -> bool {
 
     #[test]
     fn search_is_case_insensitive() {
-        let mut index = CodeIndex::new(Path::new("/tmp"));
+        let mut index = CodeIndex::new_at(Path::new("/tmp"));
         index.entries = vec![CodeIndexEntry {
             file_path: PathBuf::from("src/main.rs"),
             symbol_name: Some("RunCommand".to_string()),
@@ -496,7 +515,7 @@ pub(crate) fn helper_function() -> bool {
 
     #[test]
     fn search_respects_max_results() {
-        let mut index = CodeIndex::new(Path::new("/tmp"));
+        let mut index = CodeIndex::new_at(Path::new("/tmp"));
         index.entries = vec![
             CodeIndexEntry {
                 file_path: PathBuf::from("a.rs"),
@@ -526,7 +545,7 @@ pub(crate) fn helper_function() -> bool {
         let dir = tempfile::tempdir().unwrap();
         let workspace_root = dir.path();
 
-        let mut index = CodeIndex::new(workspace_root);
+        let mut index = CodeIndex::new_at(workspace_root);
         index.entries = vec![CodeIndexEntry {
             file_path: PathBuf::from("src/main.rs"),
             symbol_name: Some("main".to_string()),
