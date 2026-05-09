@@ -151,13 +151,14 @@ impl TaskManager {
         self.system_memory_kb / 1024
     }
 
-    pub(crate) fn available_memory_mb(&self) -> u64 {
+    pub(crate) async fn available_memory_mb(&self) -> u64 {
         let used_by_tasks = {
-            let tasks = self.tasks.blocking_read();
-            tasks
-                .values()
-                .map(|t| t.blocking_lock().memory_usage_mb)
-                .sum::<u64>()
+            let tasks = self.tasks.read().await;
+            let mut total = 0u64;
+            for t in tasks.values() {
+                total += t.lock().await.memory_usage_mb;
+            }
+            total
         };
         self.system_memory_mb().saturating_sub(used_by_tasks)
     }
@@ -165,10 +166,13 @@ impl TaskManager {
     pub(crate) async fn can_start_task(&self, memory_required_mb: u64) -> bool {
         let active_count = {
             let tasks = self.tasks.read().await;
-            tasks
-                .values()
-                .filter(|t| matches!(t.blocking_lock().status, BackgroundTaskStatus::Running))
-                .count()
+            let mut count = 0usize;
+            for t in tasks.values() {
+                if matches!(t.lock().await.status, BackgroundTaskStatus::Running) {
+                    count += 1;
+                }
+            }
+            count
         };
 
         if active_count >= self.config.max_concurrent {
@@ -179,7 +183,7 @@ impl TaskManager {
             return false;
         }
 
-        if memory_required_mb > self.available_memory_mb() {
+        if memory_required_mb > self.available_memory_mb().await {
             return false;
         }
 
@@ -406,12 +410,20 @@ impl TaskManager {
 
     pub(crate) async fn get_task(&self, id: &str) -> Option<BackgroundTask> {
         let tasks = self.tasks.read().await;
-        tasks.get(id).map(|t| t.blocking_lock().clone())
+        if let Some(t) = tasks.get(id) {
+            Some(t.lock().await.clone())
+        } else {
+            None
+        }
     }
 
     pub(crate) async fn list_tasks(&self) -> Vec<BackgroundTask> {
         let tasks = self.tasks.read().await;
-        tasks.values().map(|t| t.blocking_lock().clone()).collect()
+        let mut result = Vec::new();
+        for t in tasks.values() {
+            result.push(t.lock().await.clone());
+        }
+        result
     }
 
     pub(crate) async fn cancel_task(&self, id: &str) -> Result<(), String> {
@@ -421,18 +433,32 @@ impl TaskManager {
 
     pub(crate) async fn remove_task(&self, id: &str) -> Option<BackgroundTask> {
         let task = self.tasks.write().await.remove(id);
-        task.map(|t| t.blocking_lock().clone())
+        if let Some(t) = task {
+            Some(t.lock().await.clone())
+        } else {
+            None
+        }
     }
 
     pub(crate) async fn clear_completed(&self) {
+        let to_remove: Vec<String> = {
+            let tasks = self.tasks.read().await;
+            let mut ids = Vec::new();
+            for (id, t) in tasks.iter() {
+                let status = t.lock().await.status;
+                if !matches!(
+                    status,
+                    BackgroundTaskStatus::Running | BackgroundTaskStatus::Pending
+                ) {
+                    ids.push(id.clone());
+                }
+            }
+            ids
+        };
         let mut tasks = self.tasks.write().await;
-        tasks.retain(|_, t| {
-            let status = t.blocking_lock().status;
-            matches!(
-                status,
-                BackgroundTaskStatus::Running | BackgroundTaskStatus::Pending
-            )
-        });
+        for id in &to_remove {
+            tasks.remove(id);
+        }
     }
 }
 
