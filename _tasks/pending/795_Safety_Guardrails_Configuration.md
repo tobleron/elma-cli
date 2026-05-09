@@ -1,4 +1,4 @@
-# Task: Implement Safety Options & Guardrails Configuration
+# Task 795: Implement Safety Options & Guardrails Configuration
 
 ## Status
 - **Priority:** Critical

@@ -1,4 +1,4 @@
-# Task: Implement Event-Driven TUI Communication
+# Task 793: Implement Event-Driven TUI Communication
 
 ## Status
 - **Priority:** Medium

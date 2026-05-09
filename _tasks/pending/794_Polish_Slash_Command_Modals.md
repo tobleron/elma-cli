@@ -1,4 +1,4 @@
-# Task: Polishing Slash Command Modal Dialogs
+# Task 794: Polishing Slash Command Modal Dialogs
 
 ## Status
 - **Priority:** High
