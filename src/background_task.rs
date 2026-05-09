@@ -8,6 +8,7 @@
 use crate::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use shlex;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -258,12 +259,22 @@ impl TaskManager {
         let timeout = Duration::from_secs(timeout_seconds);
         let start = Instant::now();
 
-        let mut child = match Command::new("sh")
-            .arg("-c")
-            .arg({
-                let task = task_arc.lock().await;
-                task.command.clone()
-            })
+        let command_str = {
+            let task = task_arc.lock().await;
+            task.command.clone()
+        };
+
+        let parts = shlex::split(&command_str).unwrap_or_default();
+        if parts.is_empty() {
+            let mut task = task_arc.lock().await;
+            task.status = BackgroundTaskStatus::Failed;
+            task.stderr_buffer
+                .push("Failed to parse command or empty command".to_string());
+            return;
+        }
+
+        let mut child = match Command::new(&parts[0])
+            .args(&parts[1..])
             .current_dir(&workdir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -537,5 +548,47 @@ mod tests {
         );
         task.memory_usage_mb = 150;
         assert!(task.is_memory_exceeded());
+    }
+
+    #[tokio::test]
+    async fn test_command_injection_prevention() {
+        let config = BackgroundTaskConfig::default();
+        let manager = TaskManager::new(config);
+
+        // Generate a path that should NOT be created if the fix works
+        let temp_dir = std::env::temp_dir();
+        let canary_file = temp_dir.join(format!("injection_canary_{}", uuid_simple()));
+        let canary_path = canary_file.to_string_lossy();
+
+        // This command attempts injection. With shlex + direct execution,
+        // it should try to execute "echo" with literal arguments like "hello;" and "touch".
+        let injection_cmd = format!("echo hello; touch {}", canary_path);
+
+        let id = manager.create_task(
+            "injection_test".to_string(),
+            injection_cmd.to_string(),
+            temp_dir.clone(),
+            None,
+            None,
+        ).await.unwrap();
+
+        manager.start_task(&id).await.unwrap();
+
+        // Wait for task to finish with a bit more patience
+        let mut completed = false;
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let task = manager.get_task(&id).await.unwrap();
+            if task.status != BackgroundTaskStatus::Running && task.status != BackgroundTaskStatus::Pending {
+                completed = true;
+                break;
+            }
+        }
+
+        assert!(completed, "Task should have completed or failed");
+
+        // If it was executed via sh -c, the canary file would be created.
+        // If it was executed directly, "touch" and the path are just arguments to "echo".
+        assert!(!canary_file.exists(), "Injection vulnerability still exists! Canary file created: {}", canary_path);
     }
 }
