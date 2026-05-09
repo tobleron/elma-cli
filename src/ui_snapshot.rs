@@ -94,7 +94,7 @@ pub(crate) fn render_fixture_lines(state: &UiViewState) -> Vec<String> {
             ClaudeMessage::User { content } => {
                 lines.push(format!("> {}", content));
             }
-            ClaudeMessage::Assistant { content } => {
+            ClaudeMessage::Assistant { content, .. } => {
                 let text = render_assistant_content_plain(content);
                 for line in text.lines() {
                     lines.push(line.to_string());
@@ -386,7 +386,7 @@ mod tests {
         transcript.push(ClaudeMessage::User {
             content: "List files".to_string(),
         });
-        transcript.push(ClaudeMessage::Assistant {
+        transcript.push(ClaudeMessage::Assistant { ephemeral_deadline: None,
             content: AssistantContent {
                 raw_markdown: "Here are the files:\n\n- README.md\n- main.rs".to_string(),
                 blocks: vec![

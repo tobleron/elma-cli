@@ -84,7 +84,7 @@ fn claude_message_to_terminal_line(msg: &ClaudeMessage) -> String {
         ClaudeMessage::User { content } => {
             format!("> {}", content.lines().next().unwrap_or(""))
         }
-        ClaudeMessage::Assistant { content } => {
+        ClaudeMessage::Assistant { content, .. } => {
             let first = content.raw_markdown.lines().next().unwrap_or("");
             format!("● {}", first)
         }
@@ -146,7 +146,7 @@ fn claude_message_to_md_entry(msg: &ClaudeMessage) -> Option<session_write::MdEn
         ClaudeMessage::User { content } => Some(MdEntry::User {
             content: content.clone(),
         }),
-        ClaudeMessage::Assistant { content } => Some(MdEntry::Assistant {
+        ClaudeMessage::Assistant { content, .. } => Some(MdEntry::Assistant {
             content: content.raw_markdown.clone(),
         }),
         ClaudeMessage::ToolStart { name, input } => Some(MdEntry::ToolStart {

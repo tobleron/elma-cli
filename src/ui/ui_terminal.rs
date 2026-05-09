@@ -215,7 +215,7 @@ impl TerminalUI {
                     .unwrap_or(false);
                 if !already_pushed {
                     self.claude.add_output_tokens(content.len());
-                    self.claude.push_message(ClaudeMessage::Assistant {
+                    self.claude.push_message(ClaudeMessage::Assistant { ephemeral_deadline: None,
                         content: crate::claude_ui::AssistantContent::from_markdown(&content),
                     });
                 }
@@ -297,8 +297,8 @@ impl TerminalUI {
         self.pending_draw = true;
     }
 
-    pub(crate) fn finish_content(&mut self) {
-        self.claude.finish_content();
+    pub(crate) fn finish_content(&mut self, is_ephemeral: bool) {
+        self.claude.finish_content(is_ephemeral);
         self.pending_draw = true;
     }
 
@@ -829,7 +829,7 @@ impl TerminalUI {
         for msg in &self.claude.transcript.messages {
             let text = match msg {
                 ClaudeMessage::User { content } => content.as_str(),
-                ClaudeMessage::Assistant { content } => content.raw_markdown.as_str(),
+                ClaudeMessage::Assistant { content, .. } => content.raw_markdown.as_str(),
                 ClaudeMessage::Thinking { content, .. } => content.as_str(),
                 ClaudeMessage::ToolTrace {
                     command, status, ..

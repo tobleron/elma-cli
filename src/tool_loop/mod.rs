@@ -1106,18 +1106,6 @@ pub(crate) async fn run_tool_loop(
                 args,
                 &format!("tool_loop: {} tool call(s)", turn.tool_calls.len()),
             );
-            if !content.trim().is_empty() {
-                let clean_content = crate::text_utils::strip_thinking_blocks(&content);
-                messages.push(ChatMessage {
-                    role: "assistant".to_string(),
-                    content: clean_content,
-                    name: None,
-                    tool_calls: None,
-                    tool_call_id: None,
-                    reasoning_content: turn.reasoning_content.clone(),
-                    summarized: false,
-                });
-            }
 
             for tc in &turn.tool_calls {
                 let sig = tool_signal(tc);

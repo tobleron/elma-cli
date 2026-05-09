@@ -284,7 +284,7 @@ pub(crate) fn event_to_claude_messages(event: &UiRuntimeEvent) -> Vec<ClaudeMess
             vec![]
         }
         UiRuntimeEvent::AssistantFinalAnswer { display, .. } => {
-            vec![ClaudeMessage::Assistant {
+            vec![ClaudeMessage::Assistant { ephemeral_deadline: None,
                 content: AssistantContent::from_markdown(display),
             }]
         }

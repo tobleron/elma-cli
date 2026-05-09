@@ -196,20 +196,19 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
                     }
 
                     if !assistant_delta.is_empty() {
-                        if !thinking_started {
-                            thinking_started = true;
-                            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                        if thinking_started && !in_think_block {
+                            thinking_started = false;
+                            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+                            let _ = save_thinking_display(session, &thinking_accumulated);
                             let _ = tui.pump_ui();
                         }
-                        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
-                            assistant_delta.clone(),
-                        ));
-                        thinking_accumulated.push_str(&assistant_delta);
-
                         content.push_str(&assistant_delta);
                         if !content_started {
                             content_started = true;
                         }
+                        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantContentDelta(
+                            assistant_delta,
+                        ));
                         let _ = tui.pump_ui();
                     }
                 }
@@ -225,7 +224,7 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
         let _ = tui.pump_ui();
     }
     if content_started {
-        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished);
+        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished { is_ephemeral: true });
         let _ = tui.pump_ui();
     }
 
@@ -399,7 +398,7 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
         let _ = tui.pump_ui();
     }
     if content_started {
-        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished);
+        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished { is_ephemeral: false });
         let _ = tui.pump_ui();
     }
 

@@ -40,7 +40,7 @@ pub enum UiEvent {
     ThinkingDelta(String),
     ThinkingFinished,
     AssistantContentDelta(String),
-    AssistantFinished,
+    AssistantFinished { is_ephemeral: bool },
     ToolStarted {
         name: String,
         command: String,

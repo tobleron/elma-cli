@@ -201,7 +201,7 @@ impl ClaudeRenderer {
             ClaudeMessage::User { content } => MdEntry::User {
                 content: content.clone(),
             },
-            ClaudeMessage::Assistant { content } => MdEntry::Assistant {
+            ClaudeMessage::Assistant { content, .. } => MdEntry::Assistant {
                 content: content.raw_markdown.clone(),
             },
             ClaudeMessage::Thinking { content, .. } => MdEntry::Thinking {
@@ -655,8 +655,8 @@ impl ClaudeRenderer {
                 self.start_content(); // Ensure content mode is active
                 self.append_content(&delta);
             }
-            UiEvent::AssistantFinished => {
-                self.finish_content();
+            UiEvent::AssistantFinished { is_ephemeral } => {
+                self.finish_content(is_ephemeral);
             }
             UiEvent::ToolStarted { name, command } => {
                 self.push_message(ClaudeMessage::ToolTrace {
@@ -761,7 +761,7 @@ impl ClaudeRenderer {
         let thinking = self.streaming.thinking.clone();
         if !thinking.is_empty() {
             let word_count = thinking.split_whitespace().count();
-            let delay_secs = 7.0;
+            let delay_secs = 3.0;
             let now = Instant::now();
             self.thinking_entries.push(ThinkingEntry {
                 content: thinking,
@@ -801,11 +801,16 @@ impl ClaudeRenderer {
         self.output_token_count = self.output_token_count.saturating_add(text.len() / 4 + 1);
     }
 
-    pub(crate) fn finish_content(&mut self) {
+    pub(crate) fn finish_content(&mut self, is_ephemeral: bool) {
         self.streaming.finish_content();
 
         if !self.streaming.content.is_empty() {
             self.transcript.push(ClaudeMessage::Assistant {
+                ephemeral_deadline: if is_ephemeral {
+                    Some(Instant::now() + std::time::Duration::from_secs(7))
+                } else {
+                    None
+                },
                 content: AssistantContent::from_markdown(&self.streaming.content),
             });
         }
@@ -879,7 +884,7 @@ impl ClaudeRenderer {
 
     pub(crate) fn last_assistant_message(&self) -> Option<&String> {
         self.transcript.messages.iter().rev().find_map(|m| {
-            if let ClaudeMessage::Assistant { content } = m {
+            if let ClaudeMessage::Assistant { content, .. } = m {
                 Some(&content.raw_markdown)
             } else {
                 None
@@ -2503,7 +2508,7 @@ mod tests {
 
     #[test]
     fn test_assistant_message_prefix() {
-        let msg = ClaudeMessage::Assistant {
+        let msg = ClaudeMessage::Assistant { ephemeral_deadline: None,
             content: AssistantContent::from_markdown("Hello!"),
         };
         let lines = msg.to_lines(false);
@@ -2884,7 +2889,7 @@ pub(crate) fn claude_message_to_transcript_line(msg: &ClaudeMessage) -> String {
         ClaudeMessage::User { content } => {
             format!("> {}\n\n", content)
         }
-        ClaudeMessage::Assistant { content } => {
+        ClaudeMessage::Assistant { content, .. } => {
             format!("● {}\n\n", content.raw_markdown)
         }
         ClaudeMessage::Thinking { content, .. } => {

@@ -68,6 +68,7 @@ pub(crate) enum ClaudeMessage {
     },
     Assistant {
         content: AssistantContent,
+        ephemeral_deadline: Option<Instant>,
     },
     ToolStart {
         name: String,
@@ -189,7 +190,7 @@ impl ClaudeMessage {
                     Span::raw(content_str),
                 ])]
             }
-            ClaudeMessage::Assistant { content } => {
+            ClaudeMessage::Assistant { content, .. } => {
                 // Gutter uses 3 visual chars (|_ + space). Reserve 6 for safety
                 // so ratatui never needs to wrap a content line at column 0.
                 let gutter = 6;
@@ -683,7 +684,7 @@ impl ClaudeMessage {
                 }
                 lines
             }
-            ClaudeMessage::Assistant { content } => {
+            ClaudeMessage::Assistant { content, .. } => {
                 let rendered = render_markdown_to_ansi(&content.raw_markdown);
                 let mut md_lines = rendered.lines();
                 let first = md_lines.next().unwrap_or_default();
@@ -1155,7 +1156,7 @@ impl ClaudeTranscript {
     pub(crate) fn replace_last_assistant_message(&mut self, content: AssistantContent) {
         self.dirty = true;
         for msg in self.messages.iter_mut().rev() {
-            if let ClaudeMessage::Assistant { content: ref mut c } = msg {
+            if let ClaudeMessage::Assistant { content: ref mut c, .. } = msg {
                 *c = content;
                 return;
             }
@@ -1215,6 +1216,19 @@ impl ClaudeTranscript {
     /// Returns rendered lines plus a parallel vector mapping each line to its
     /// source message index (for click-to-expand and other hit-testing).
     pub(crate) fn render_ratatui(&mut self, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
+        let now = std::time::Instant::now();
+        let old_len = self.messages.len();
+        self.messages.retain(|msg| {
+            if let ClaudeMessage::Assistant { ephemeral_deadline: Some(deadline), .. } = msg {
+                *deadline > now
+            } else {
+                true
+            }
+        });
+        if self.messages.len() != old_len {
+            self.dirty = true;
+        }
+
         if !self.dirty && self.cached_width == width {
             return (self.cached_lines.clone(), self.cached_mapping.clone());
         }
@@ -1305,6 +1319,7 @@ impl ClaudeTranscript {
 
     pub(crate) fn render(&self) -> Vec<String> {
         let mut lines = Vec::new();
+        let now = std::time::Instant::now();
         for (i, msg) in self.messages.iter().enumerate() {
             // Thinking, System, and Notice messages live in right panel — not transcript
             if matches!(
@@ -1314,6 +1329,11 @@ impl ClaudeTranscript {
                     | ClaudeMessage::Notice(_)
             ) {
                 continue;
+            }
+            if let ClaudeMessage::Assistant { ephemeral_deadline: Some(deadline), .. } = msg {
+                if *deadline <= now {
+                    continue;
+                }
             }
             lines.extend(msg.to_lines(self.thinking_expanded_for_index(i)));
         }

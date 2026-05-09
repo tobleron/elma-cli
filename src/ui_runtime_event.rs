@@ -232,7 +232,7 @@ impl From<crate::claude_ui::UiEvent> for UiRuntimeEvent {
             crate::claude_ui::UiEvent::AssistantContentDelta(s) => {
                 UiRuntimeEvent::AssistantContentDelta(s)
             }
-            crate::claude_ui::UiEvent::AssistantFinished => {
+            crate::claude_ui::UiEvent::AssistantFinished { .. } => {
                 UiRuntimeEvent::AssistantContentFinished
             }
             crate::claude_ui::UiEvent::ToolStarted { name, command } => {
