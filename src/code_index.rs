@@ -65,11 +65,6 @@ impl Default for CodeIndex {
 }
 
 impl CodeIndex {
-    /// Create a new empty index with default values.
-    fn new() -> Self {
-        Self::default()
-    }
-
     /// Create a new empty index rooted at `workspace_root/.elma_index/`.
     pub(crate) fn new_at(workspace_root: &Path) -> Self {
         let index_path = workspace_root.join(".elma_index");
@@ -226,11 +221,6 @@ pub(crate) fn extract_rust_symbols(
     }
 
     entries
-}
-
-/// Create a new code indexer with optional rules.
-pub(crate) fn create_indexer(_rules: &str) -> Option<CodeIndex> {
-    Some(CodeIndex::new())
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
