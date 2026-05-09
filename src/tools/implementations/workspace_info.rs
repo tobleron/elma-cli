@@ -82,6 +82,7 @@ pub fn exec_workspace_info(
         ("docker-compose.yml", "Docker Compose"),
         (".github/workflows", "GitHub Actions CI"),
     ];
+
     let mut found = false;
     for (file, label) in checks {
         if workdir.join(file).exists() {
@@ -147,16 +148,16 @@ pub fn exec_workspace_info(
         ("_tasks/_tasks.md", 1200),
         ("_tasks/_guidelines.md", 1200),
     ];
+
     let mut guidance_section = String::new();
     for (rel_path, max_chars) in &guidance_files {
         let full_path = workdir.join(rel_path);
-        if full_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&full_path) {
-                let trimmed: String = content.chars().take(*max_chars).collect();
-                guidance_section.push_str(&format!("\n### {}\n```\n{}\n```\n", rel_path, trimmed));
-                if content.chars().count() > *max_chars {
-                    guidance_section.push_str("...(truncated)\n");
-                }
+        if let Ok(content) = std::fs::read_to_string(&full_path) {
+            let mut chars = content.chars();
+            let trimmed: String = chars.by_ref().take(*max_chars).collect();
+            guidance_section.push_str(&format!("\n### {}\n```\n{}\n```\n", rel_path, trimmed));
+            if chars.next().is_some() {
+                guidance_section.push_str("...(truncated)\n");
             }
         }
     }
