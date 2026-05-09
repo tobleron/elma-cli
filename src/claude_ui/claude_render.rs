@@ -1895,12 +1895,15 @@ fn wrap_text_at_width(text: &str, width: usize) -> Vec<String> {
         let mut remaining = para;
         while remaining.chars().count() > width {
             let mut split_at = width;
-            if let Some(pos) = remaining[..width].rfind(' ') {
+            let char_indices: Vec<usize> = remaining.char_indices().map(|(i, _)| i).collect();
+            let boundary = if width < char_indices.len() { char_indices[width] } else { remaining.len() };
+            
+            if let Some(pos) = remaining[..boundary].rfind(' ') {
                 split_at = pos + 1;
+            } else {
+                split_at = boundary;
             }
-            if split_at == 0 {
-                split_at = width;
-            }
+
             let left = remaining[..split_at].trim_end().to_string();
             if !left.is_empty() {
                 lines.push(left);
