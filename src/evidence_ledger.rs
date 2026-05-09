@@ -774,6 +774,7 @@ fn heuristic_grounding_check(draft: &str, ledger: &EvidenceLedger) -> EvidenceVe
 
         let mut supporting = Vec::new();
         for entry in &ledger.entries {
+            // Level 1: Summary check (fast)
             let summary_words: Vec<_> = entry
                 .summary
                 .split_whitespace()
@@ -789,8 +790,25 @@ fn heuristic_grounding_check(draft: &str, ledger: &EvidenceLedger) -> EvidenceVe
                     })
                 })
                 .count();
+            
             if overlap >= 2 {
                 supporting.push(entry.id.clone());
+                continue;
+            }
+
+            // Level 2: Deep check (if summary failed but raw data exists)
+            if let Some(ref raw_path) = entry.raw_path {
+                if let Ok(content) = std::fs::read_to_string(raw_path) {
+                    let content_lower = content.to_lowercase();
+                    let matches = draft_words.iter()
+                        .filter(|w| w.len() > 4) // Only significant words
+                        .filter(|w| content_lower.contains(&w.to_lowercase()))
+                        .count();
+                    
+                    if matches >= 3 {
+                        supporting.push(entry.id.clone());
+                    }
+                }
             }
         }
 

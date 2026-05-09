@@ -40,6 +40,37 @@ pub fn count_tokens(text: &str) -> usize {
     cl100k().encode_with_special_tokens(text).len()
 }
 
+pub(crate) fn count_request_tokens(req: &crate::types_api::ChatCompletionRequest) -> usize {
+    let mut total = 0;
+    for m in &req.messages {
+        total += count_tokens(&m.content);
+        if let Some(ref name) = m.name {
+            total += count_tokens(name);
+        }
+        if let Some(ref tool_calls) = m.tool_calls {
+            for tc in tool_calls {
+                total += count_tokens(&tc.function.name);
+                total += count_tokens(&tc.function.arguments);
+            }
+        }
+    }
+    if let Some(ref tools) = req.tools {
+        for tool in tools {
+            // Count tool name and description
+            total += count_tokens(&tool.function.name);
+            total += count_tokens(&tool.function.description);
+            // Rough estimate for the JSON schema
+            if let Some(ref params) = tool.function.parameters {
+                let json = serde_json::to_string(params).unwrap_or_default();
+                total += count_tokens(&json);
+            }
+        }
+    }
+    // Overhead for system/tool messages (approx 3 tokens per message)
+    total += req.messages.len() * 3;
+    total
+}
+
 pub fn count_tokens_for_model(text: &str, tokenizer: TokenizerKind) -> TokenEstimate {
     match tokenizer {
         TokenizerKind::Cl100kBase | TokenizerKind::Tiktoken => TokenEstimate {

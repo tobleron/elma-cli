@@ -34,8 +34,7 @@ fn is_response_truncated(text: &str) -> bool {
     }
 
     // Check if the text ends mid-sentence (no proper ending punctuation)
-    // Common endings: . ! ? " ') ] }
-    // Also check for common cut-off patterns like "as" at the end
+    // Common endings: . ! ? " ') ] } , - : ` | _
     if let Some(last_char) = trimmed.chars().last() {
         let ends_properly = last_char == '.'
             || last_char == '!'
@@ -44,7 +43,13 @@ fn is_response_truncated(text: &str) -> bool {
             || last_char == '\''
             || last_char == ')'
             || last_char == ']'
-            || last_char == '}';
+            || last_char == '}'
+            || last_char == ','
+            || last_char == '-'
+            || last_char == ':'
+            || last_char == '`'
+            || last_char == '|'
+            || last_char == '_';
 
         if !ends_properly {
             return true;
@@ -243,25 +248,44 @@ async fn chat_once_base(
 
         match attempt_chat_request(client, chat_url, &effective_req, timeout_secs).await {
             AttemptOutcome::Success(mut resp) => {
-                // Always check if the response appears truncated
-                let truncated = resp
+                // Determine if the server signaled truncation via finish_reason
+                let server_signaled_length = resp.choices.first()
+                    .and_then(|c| c.finish_reason.as_deref())
+                    .map(|r| r == "length")
+                    .unwrap_or(false);
+
+                let server_signaled_stop = resp.choices.first()
+                    .and_then(|c| c.finish_reason.as_deref())
+                    .map(|r| r == "stop")
+                    .unwrap_or(false);
+
+                // Check if the response appears truncated by our heuristics
+                let heuristic_truncated = resp
                     .choices
                     .first()
                     .and_then(|c| c.message.content.as_ref())
                     .map(|content| is_response_truncated(content))
                     .unwrap_or(false);
 
+                // We retry if the server said "length" OR if our heuristic says it's truncated
+                // BUT only if the server didn't explicitly say "stop" (trust the model).
+                let truncated = server_signaled_length || (heuristic_truncated && !server_signaled_stop);
+
                 if truncated {
                     append_trace_log_line(&format!(
-                        "[HTTP_RETRY] response appears truncated (attempt {}/{}), retrying with increased max_tokens...",
+                        "[HTTP_RETRY] response appears truncated (server_length={} heuristic={} stop_signaled={}) (attempt {}/{}), retrying...",
+                        server_signaled_length,
+                        heuristic_truncated,
+                        server_signaled_stop,
                         attempt + 1,
                         max_attempts,
                     ));
                     // Retry with increased max_tokens (not on last attempt)
                     if attempt + 1 < max_attempts {
-                        // Update effective_req directly so the next iteration uses it
+                        // Update effective_req directly so the next iteration uses it.
+                        // Increase the limit to something reasonable for long tool calls.
                         effective_req.max_tokens =
-                            effective_req.max_tokens.saturating_mul(2).min(4096);
+                            effective_req.max_tokens.saturating_mul(2).min(16384);
                         // Also try without grammar if it was injected
                         effective_req.grammar = None;
 
@@ -279,6 +303,12 @@ async fn chat_once_base(
             AttemptOutcome::RetryableError(err) => {
                 if err.contains("timeout") || err.contains("Tokio timeout") {
                     is_timeout = true;
+                }
+                if err.contains("parse error") || err.contains("json.exception") || err.contains("Failed to parse tool call") {
+                    append_trace_log_line("[HTTP_ERROR] server failed to parse tool call JSON. Assuming context limit exhaustion.");
+                    return Err(crate::diagnostics::ElmaDiagnostic::ModelApiContextLimitExceeded {
+                        last_error: err,
+                    }.into());
                 }
                 last_error = format!("{} (attempt {}/{})", err, attempt + 1, max_attempts);
                 if attempt + 1 < max_attempts {

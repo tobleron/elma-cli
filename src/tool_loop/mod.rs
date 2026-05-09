@@ -160,20 +160,8 @@ pub(crate) fn tool_signal(tc: &ToolCall) -> String {
                 .to_string();
             format!("query:{}", query)
         }
-        "respond" => {
-            let answer = parsed
-                .get("answer")
-                .or_else(|| parsed.get("content"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let snippet: String = answer.chars().take(40).collect();
-            format!("respond:{}", snippet)
-        }
         other => format!("{other}:{}", tc.function.arguments),
     };
-    if fn_name == "respond" {
-        return key;
-    }
     if fn_name == "shell" {
         format!(
             "{fn_name}:{}",
@@ -784,7 +772,7 @@ pub(crate) async fn run_tool_loop(
                 append_trace_log_line(&format!("[TOOL_LOOP_STREAM_FALLBACK] {}", error));
                 let mut fallback_req = req;
                 fallback_req.stream = false;
-                let resp = await_with_busy_input(
+                let resp_result = await_with_busy_input(
                     tui,
                     crate::ui_chat::chat_once_with_timeout(
                         client,
@@ -793,7 +781,28 @@ pub(crate) async fn run_tool_loop(
                         runtime_llm_config().tool_loop_timeout_s,
                     ),
                 )
-                .await?;
+                .await;
+                
+                let resp = match resp_result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        if let Some(crate::diagnostics::ElmaDiagnostic::ModelApiContextLimitExceeded { last_error }) = e.downcast_ref::<crate::diagnostics::ElmaDiagnostic>() {
+                            append_trace_log_line(&format!("[TOOL_LOOP] Context limit exceeded during fallback. Forcing compaction: {}", last_error));
+                            let (new_messages, result) = if let Some(cfg) = summarizer_cfg {
+                                apply_compact_with_summarizer(&messages, 3, client, chat_url, cfg).await
+                            } else {
+                                apply_compact(&messages, 3)
+                            };
+                            messages = new_messages;
+                            if result.ok {
+                                tracker.record_success();
+                                tui.push_meta_event("COMPACTION", &format!("Emergency compact triggered: {} tokens freed", result.tokens_freed));
+                            }
+                            continue;
+                        }
+                        return Err(e);
+                    }
+                };
                 let choice = resp.choices.get(0).context("No choices in response")?;
                 crate::event_log::record_model_event(
                     crate::event_log::ModelEventType::ModelResponseReceived,
@@ -1060,8 +1069,7 @@ pub(crate) async fn run_tool_loop(
 
             for tc in &turn.tool_calls {
                 let sig = tool_signal(tc);
-                if tc.function.name != "respond"
-                    && tc.function.name != "workspace_info"
+                if tc.function.name != "workspace_info"
                     && tc.function.name != "tool_search"
                 {
                     if let Some((ok, prev)) = tool_outcomes.get(&sig) {
@@ -1148,7 +1156,8 @@ pub(crate) async fn run_tool_loop(
                                 }
                                 if alt_hint.is_empty() {
                                     alt_hint = format!(
-                                        "You have already read `{}`. {} consecutive duplicate reads detected.\nUse glob or search to discover new files, then read them.",
+                                        "You have already read `{}` and the content is in your context. {} consecutive duplicate reads detected.\n\
+                                         STOP reading the same files. If you are stuck, use `glob` or `search` to find NEW files, or proceed to `respond` using the facts you already gathered.",
                                         if current_path.is_empty() {
                                             "this file"
                                         } else {
@@ -1169,7 +1178,7 @@ pub(crate) async fn run_tool_loop(
                             }
                             messages.push(ChatMessage::simple(
                                 "system",
-                                &format!("Already completed earlier — same result: {}", prev),
+                                "This call is a duplicate of a successful previous turn. You already have this information in your message history. Do NOT repeat the same call; instead, use the existing evidence to move forward.",
                             ));
                             continue;
                         } else {
@@ -1596,8 +1605,7 @@ pub(crate) async fn run_tool_loop(
                     }
                 }
 
-                if tc.function.name != "respond"
-                    && tc.function.name != "update_todo_list"
+                if tc.function.name != "update_todo_list"
                     && tc.function.name != "tool_search"
                 {
                     let source = match tc.function.name.as_str() {
@@ -1683,152 +1691,14 @@ pub(crate) async fn run_tool_loop(
                     crate::tool_repair::reset_empty_read_validation_failures();
                 }
 
-                if tc.function.name != "respond" && tc.function.name != "update_todo_list" {
+                if tc.function.name != "update_todo_list" {
                     stop_policy.mark_real_tool_call();
                     stop_policy.reset_respond_counter();
                 }
 
-                if tc.function.name == "respond"
-                    && evidence_required
-                    && !stop_policy.has_real_tool_calls_this_turn()
-                {
-                    let correction = "You must collect evidence before answering.\n\
-                        Use search, read, or shell to gather facts. Do not call 'respond' yet.";
-                    result.content = correction.to_string();
-                    trace(
-                        args,
-                        "tool_loop: evidence_required gate blocked respond before evidence",
-                    );
-                }
 
-                if tc.function.name == "respond" {
-                    stop_policy.increment_respond_counter();
-                    if stop_policy.consecutive_respond_calls() >= 3
-                        && !stop_policy.has_real_tool_calls_this_turn()
-                    {
-                        messages.push(ChatMessage::simple(
-                            "user",
-                            "! You have called 'respond' 3 times without collecting any evidence. \
-                             You have not used search, read, shell, or any other tool to gather facts. \
-                             Call a real tool now to answer the user's question, or reply with 'I cannot answer this.'",
-                        ));
-                        stop_policy.reset_respond_counter();
-                        trace(
-                            args,
-                            "tool_loop: injected respond abuse correction after 3 consecutive responds",
-                        );
-                    }
-                }
 
-                if tc.function.name == "respond"
-                    && !result.content.is_empty()
-                    && !stop_policy.has_real_tool_calls_this_turn()
-                {
-                    if let Some(ledger) = crate::evidence_ledger::get_session_ledger() {
-                        if ledger.entries_count() > 0 {
-                            let verdict = crate::evidence_ledger::enforce_evidence_grounding(
-                                &result.content,
-                                &ledger,
-                            );
-                            let ungrounded = verdict.ungrounded_claims();
-                            if !ungrounded.is_empty() {
-                                let reasons: Vec<&str> =
-                                    ungrounded.iter().map(|c| c.statement.as_str()).collect();
-                                let msg = format!(
-                                    "ungrounded claims without evidence: {}",
-                                    reasons.join(" | ")
-                                );
-                                trace(args, &format!("tool_loop: respond {}", msg));
-                                tui.push_meta_event("EVIDENCE", &msg);
-                                let correction = format!(
-                                    "! Your previous response contains claims not supported by evidence. \
-                                     You must call a real tool (shell, search, read) to gather facts \
-                                     before making factual statements. Do not fabricate information."
-                                );
-                                result.content = correction;
-                                trace(args, "tool_loop: respond blocked by evidence gate");
-                            }
-                        }
-                    }
-                }
-
-                if tc.function.name == "respond"
-                    && !result.content.is_empty()
-                    && (stop_policy.has_real_tool_calls_this_turn()
-                        || has_recent_tool_evidence(&messages))
-                {
-                    let raw_content = normalize_final_answer_candidate(&result.content);
-                    if !raw_content.is_empty() {
-                        let coverage_incomplete =
-                            scope_coverage_blocks_finalization(read_scope_required, &scope_coverage);
-                        let graph_incomplete =
-                            work_graph_runner.finalization_is_premature();
-                        if coverage_incomplete || graph_incomplete {
-                            sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
-                            let nudge = if graph_incomplete {
-                                let mut msg = work_graph_runner.build_relaxed_continuation();
-                                if coverage_incomplete {
-                                    msg.push_str(&format!(
-                                        "\n\n{}",
-                                        build_scope_coverage_nudge(&scope_coverage)
-                                    ));
-                                }
-                                msg
-                            } else {
-                                build_scope_coverage_nudge(&scope_coverage)
-                            };
-                            tui.push_meta_event("COVERAGE", &work_graph_runner.render_progress());
-                            if graph_incomplete {
-                                tui.push_meta_event(
-                                    "FOCUS",
-                                    "Graph-driven: finalization blocked — work incomplete",
-                                );
-                            }
-                            messages.push(ChatMessage::simple("system", &nudge));
-                            trace(
-                                args,
-                                &format!(
-                                    "tool_loop: blocked respond finalization coverage_incomplete={} graph_incomplete={}",
-                                    coverage_incomplete, graph_incomplete
-                                ),
-                            );
-                            continue;
-                        }
-                        let final_content = finalize_from_evidence_or_fallback(
-                            args,
-                            tui,
-                            client,
-                            chat_url,
-                            model_id,
-                            &original_user_request,
-                            &messages,
-                            workdir,
-                            max_tokens,
-                            None,
-                        )
-                        .await;
-                        let trimmed_final = normalize_final_answer_candidate(&final_content);
-                        sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
-                        return Ok(ToolLoopResult {
-                            final_answer: if final_answer_needs_retry(&trimmed_final) {
-                                build_fallback_from_recent_tool_evidence(&messages, None)
-                            } else {
-                                trimmed_final
-                            },
-                            iterations: stop_policy.iteration(),
-                            tool_calls_made: stop_policy.total_tool_calls(),
-                            stopped_by_max: false,
-                            stop_outcome: None,
-                            total_elapsed_s: loop_start.elapsed().as_secs() as f64,
-                            timeout_reason: None,
-                            evidence_progress_summary: build_evidence_progress_summary(&messages),
-                            loop_summary: loop_summary_tracker.clone(),
-                        });
-                    }
-                }
-
-                let store_for_dedup = tc.function.name != "respond"
-                    && tc.function.name != "workspace_info"
+                let store_for_dedup = tc.function.name != "workspace_info"
                     && tc.function.name != "tool_search";
 
                 if store_for_dedup {
@@ -1900,7 +1770,7 @@ pub(crate) async fn run_tool_loop(
                         crate::output_truncation::TruncationPolicy::default(),
                     );
                     let model_content = if budgeted.content_for_model.trim().is_empty()
-                        && tc.function.name != "respond"
+                        && tc.function.name != "workspace_info"
                     {
                         "(empty result)".to_string()
                     } else {
@@ -2199,6 +2069,32 @@ pub(crate) async fn run_tool_loop(
                 continue;
             }
             if has_recent_tool_evidence(&messages) {
+                if let Some(ledger) = crate::evidence_ledger::get_session_ledger() {
+                    if ledger.entries_count() > 0 {
+                        let verdict = crate::evidence_ledger::enforce_evidence_grounding(
+                            &content,
+                            &ledger,
+                        );
+                        let ungrounded = verdict.ungrounded_claims();
+                        if !ungrounded.is_empty() {
+                            let reasons: Vec<&str> =
+                                ungrounded.iter().map(|c| c.statement.as_str()).collect();
+                            let msg = format!(
+                                "ungrounded claims without evidence: {}",
+                                reasons.join(" | ")
+                            );
+                            trace(args, &format!("tool_loop: bare text {}", msg));
+                            tui.push_meta_event("EVIDENCE", &msg);
+                            let correction = format!(
+                                "! Your previous response contains claims not supported by evidence. \
+                                 You must call a real tool (shell, search, read) to gather facts \
+                                 before making factual statements. Do not fabricate information."
+                            );
+                            messages.push(ChatMessage::simple("user", &correction));
+                            continue;
+                        }
+                    }
+                }
                 let coverage_incomplete =
                     scope_coverage_blocks_finalization(read_scope_required, &scope_coverage);
                 let graph_incomplete = work_graph_runner.finalization_is_premature();
@@ -2378,88 +2274,9 @@ mod tests {
         assert_eq!(normalize_final_answer_candidate(raw), "Answer");
     }
 
-    #[test]
-    fn tool_signal_respond_non_empty() {
-        let tc = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"Searching for undo tasks in the project"}"#.to_string(),
-            },
-        };
-        let sig = tool_signal(&tc);
-        assert!(!sig.is_empty(), "respond_signal_should_be_non_empty");
-        assert!(
-            sig.starts_with("respond:"),
-            "respond_signal_should_have_prefix"
-        );
-        assert!(
-            sig.contains("Searching"),
-            "respond_signal_should_contain_answer_snippet"
-        );
-    }
 
-    #[test]
-    fn tool_signal_respond_truncates() {
-        let long_answer = "a".repeat(100);
-        let tc = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: format!(r#"{{"answer":"{}"}}"#, long_answer),
-            },
-        };
-        let sig = tool_signal(&tc);
-        assert!(
-            sig.len() <= "respond:".len() + 40,
-            "respond_signal_should_be_truncated_to_40_chars_plus_prefix"
-        );
-        assert_eq!(sig.len(), "respond:".len() + 40);
-    }
 
-    #[test]
-    fn tool_signal_respond_different_messages_different_signals() {
-        let tc1 = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"Searching for tasks"}"#.to_string(),
-            },
-        };
-        let tc2 = ToolCall {
-            id: "c2".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"Found the files"}"#.to_string(),
-            },
-        };
-        assert_ne!(tool_signal(&tc1), tool_signal(&tc2));
-    }
 
-    #[test]
-    fn tool_signal_respond_identical_messages_identical_signals() {
-        let tc1 = ToolCall {
-            id: "c1".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"I am searching..."}"#.to_string(),
-            },
-        };
-        let tc2 = ToolCall {
-            id: "c2".to_string(),
-            call_type: "function".to_string(),
-            function: ToolFunctionCall {
-                name: "respond".to_string(),
-                arguments: r#"{"answer":"I am searching..."}"#.to_string(),
-            },
-        };
-        assert_eq!(tool_signal(&tc1), tool_signal(&tc2));
-    }
 
     #[test]
     fn broad_read_scope_blocks_until_discovered_files_are_covered() {

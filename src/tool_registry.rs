@@ -52,15 +52,8 @@ mod tests {
         let r = get_registry();
         assert!(r.get("shell").is_some());
         assert!(r.get("read").is_some());
-        assert!(r.get("respond").is_some());
     }
 
-    #[test]
-    fn test_wrapper_build_current_tools_includes_respond() {
-        let tools = build_current_tools();
-        let names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
-        assert!(names.contains(&"respond".to_string()));
-    }
 
     #[test]
     fn test_tool_executor_parity() {
@@ -74,7 +67,6 @@ mod tests {
             "ls",
             "patch",
             "search",
-            "respond",
             "update_todo_list",
             "edit",
             "write",
@@ -106,9 +98,6 @@ mod tests {
             );
         }
         for tool in registry.available_tools() {
-            if tool.function.name == "respond" {
-                continue;
-            }
             assert!(
                 executor_handles.contains(&tool.function.name.as_str()),
                 "tool {} is in registry but has no executor handler",

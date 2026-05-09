@@ -60,4 +60,11 @@ pub enum ElmaDiagnostic {
         help("The model API failed repeatedly. Last error: {last_error}")
     )]
     ModelApiError { last_error: String },
+
+    #[error("Context limit exceeded or backend parsing failed due to truncation")]
+    #[diagnostic(
+        code(elma::api::context_limit),
+        help("The model generated a response that exceeded the context limit and crashed the server parser. Last error: {last_error}")
+    )]
+    ModelApiContextLimitExceeded { last_error: String },
 }

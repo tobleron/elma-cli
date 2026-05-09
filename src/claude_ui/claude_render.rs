@@ -99,6 +99,11 @@ pub(crate) struct ClaudeRenderer {
     // Token count tracking for animated token counters
     input_token_count: usize,
     output_token_count: usize,
+    // Visual counters for smooth incrementing animation
+    visual_input_token_count: usize,
+    visual_output_token_count: usize,
+    // Task: Accumulation — track tokens from previous turns
+    turn_start_output_tokens: usize,
     // Latest budget/stop notice text for thinking panel footer
     last_notice_text: Option<String>,
     // Instruction coverage progress (Task 790)
@@ -167,6 +172,9 @@ impl ClaudeRenderer {
             thinking_scroll: 0,
             input_token_count: 0,
             output_token_count: 0,
+            visual_input_token_count: 0,
+            visual_output_token_count: 0,
+            turn_start_output_tokens: 0,
             last_notice_text: None,
             coverage_progress: None,
             cached_input_key: (String::new(), 0),
@@ -468,6 +476,9 @@ impl ClaudeRenderer {
     }
 
     pub(crate) fn update_input_tokens(&mut self, input: usize) {
+        // Overwrite with the latest context estimate. This prevents the "weird"
+        // astronomical numbers (like 444k) when multiple tool-loop turns each
+        // send the entire history.
         self.input_token_count = input;
     }
 
@@ -644,8 +655,7 @@ impl ClaudeRenderer {
                 // The transcript thinking row starts when real reasoning begins.
             }
             UiEvent::UserSubmitted(content) => {
-                self.input_token_count = crate::token_counter::count_tokens(&content).max(1);
-                self.output_token_count = 0;
+                self.turn_start_output_tokens = self.output_token_count;
                 self.push_message(ClaudeMessage::User { content });
             }
             UiEvent::ThinkingStarted => {
@@ -775,8 +785,8 @@ impl ClaudeRenderer {
     pub(crate) fn sync_streaming_tokens(&mut self) {
         let thinking_tokens = crate::token_counter::count_tokens(&self.streaming.thinking);
         let content_tokens = crate::token_counter::count_tokens(&self.streaming.content);
-        // We assume output_token_count for a turn is primarily thinking + content
-        self.output_token_count = thinking_tokens.saturating_add(content_tokens);
+        // Task: Accumulation — add current turn tokens to turn_start base
+        self.output_token_count = self.turn_start_output_tokens.saturating_add(thinking_tokens).saturating_add(content_tokens);
         self.streaming_batch_bytes = 0;
         self.last_batch_sync = Instant::now();
     }
@@ -825,22 +835,28 @@ impl ClaudeRenderer {
         
         // Task 779 Phase 2: Batch counting for streaming performance
         self.streaming_batch_bytes = self.streaming_batch_bytes.saturating_add(text.len());
-        if self.streaming_batch_bytes >= 1024 || self.last_batch_sync.elapsed() >= Duration::from_millis(500) {
+        if self.streaming_batch_bytes >= 256 || self.last_batch_sync.elapsed() >= Duration::from_millis(100) {
             self.sync_streaming_tokens();
         }
     }
 
     pub(crate) fn finish_content(&mut self, is_ephemeral: bool) {
-        self.streaming.finish_content();
+        // Task 779: Final sync of tokens BEFORE taking the content
+        self.sync_streaming_tokens();
+        // Record this as the new base for the next iteration (if any)
+        self.turn_start_output_tokens = self.output_token_count;
 
-        if !self.streaming.content.is_empty() {
-            self.transcript.push(ClaudeMessage::Assistant {
+        self.streaming.finish_content();
+        let content = std::mem::take(&mut self.streaming.content);
+        if !content.is_empty() {
+            let assistant = AssistantContent::from_markdown(&content);
+            self.push_message(ClaudeMessage::Assistant {
+                content: assistant,
                 ephemeral_deadline: if is_ephemeral {
-                    Some(Instant::now() + std::time::Duration::from_secs(7))
+                    Some(Instant::now() + Duration::from_secs(120))
                 } else {
                     None
                 },
-                content: AssistantContent::from_markdown(&self.streaming.content),
             });
         }
 
@@ -1090,6 +1106,26 @@ impl ClaudeRenderer {
     pub(crate) fn render_ratatui(&mut self, f: &mut Frame) {
         let theme = current_theme();
         self.anim_frame = self.anim_frame.wrapping_add(1);
+
+        // Task 781: Animate token counters (smoothly increment towards target)
+        // Rapid increment: jump by 5% of remaining distance + a small constant
+        if self.visual_input_token_count < self.input_token_count {
+            let diff = self.input_token_count - self.visual_input_token_count;
+            let step = (diff / 10).max(17).min(diff);
+            self.visual_input_token_count += step;
+        } else if self.visual_input_token_count > self.input_token_count {
+            // If it decreased (e.g. new turn), we jump back immediately to show the new start
+            self.visual_input_token_count = self.input_token_count;
+        }
+
+        if self.visual_output_token_count < self.output_token_count {
+            let diff = self.output_token_count - self.visual_output_token_count;
+            let step = (diff / 5).max(3).min(diff);
+            self.visual_output_token_count += step;
+        } else if self.visual_output_token_count > self.output_token_count {
+            self.visual_output_token_count = self.output_token_count;
+        }
+
         let area = f.size();
 
         // Always repaint the full frame background so stale rows from prior
@@ -1569,8 +1605,8 @@ impl ClaudeRenderer {
                 f,
                 &self.footer_model,
                 self.anim_frame,
-                self.input_token_count,
-                self.output_token_count,
+                self.visual_input_token_count,
+                self.visual_output_token_count,
                 is_processing,
                 &self.logo_groups,
                 &self.coverage_progress,

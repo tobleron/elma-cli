@@ -121,18 +121,28 @@ fn word_wrap_lines(text: &str, width: usize) -> Vec<String> {
     for para in text.split('\n') {
         let mut remaining = para;
         while remaining.chars().count() > width {
-            let mut split_at = width;
-            // Try to break at last space within width
-            if let Some(pos) = remaining[..width].rfind(' ') {
-                split_at = pos;
+            // Find the byte index for the 'width' character safely
+            let byte_pos = remaining
+                .char_indices()
+                .nth(width)
+                .map(|(i, _)| i)
+                .unwrap_or(remaining.len());
+
+            let mut split_at_byte = byte_pos;
+
+            // Try to break at last space within the char width
+            if let Some(pos) = remaining[..byte_pos].rfind(' ') {
+                split_at_byte = pos;
             }
-            // But if no space found, break at width
-            if split_at == 0 {
-                split_at = width;
+
+            // But if no space found, break at byte_pos
+            if split_at_byte == 0 {
+                split_at_byte = byte_pos;
             }
-            let left = &remaining[..split_at];
+
+            let left = &remaining[..split_at_byte];
             lines.push(left.trim_end().to_string());
-            remaining = remaining[split_at..].trim_start();
+            remaining = remaining[split_at_byte..].trim_start();
         }
         if !remaining.is_empty() {
             lines.push(remaining.to_string());

@@ -57,7 +57,18 @@ fn summarize_read(raw: &str, extra: &SummarizeExtra) -> String {
     let lines = raw.lines().count();
     let bytes = raw.len();
 
-    format!("read: {path} → {lines} lines, {bytes}B")
+    let first_line = raw
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    let key_finding = if first_line.len() > 120 {
+        &first_line[..120]
+    } else {
+        first_line
+    };
+
+    format!("read: {path} → {lines} lines, {bytes}B. Content: {key_finding}")
 }
 
 fn summarize_search(raw: &str, extra: &SummarizeExtra) -> String {

@@ -49,7 +49,7 @@ Ground all answers in tool output.
 Tool workflow:
 1. Discover capabilities with tool_search
 2. Execute: shell, read, search, glob, ls, fetch, write, edit, patch, update_todo_list
-3. Use respond when you have sufficient evidence.
+3. When you have sufficient evidence, DO NOT call any tools. Output your final answer as bare plain text.
 
 Prefer `rg` for search — it respects .gitignore.
 Begin with the most direct source of truth. Collect evidence until sufficient.
@@ -138,7 +138,7 @@ mod tests {
 
         // This hash represents the approved version of the prompt.
         // Update it ONLY after user review and scenario validation.
-        let approved_hash: u64 = 0x997d4e679e3ad77b;
+        let approved_hash: u64 = 0xfec9650ad7eb4a60;
 
         // If this assertion fails, the prompt has been modified.
         // See the module documentation for the change process.

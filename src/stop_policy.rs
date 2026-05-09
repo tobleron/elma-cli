@@ -1241,74 +1241,7 @@ mod tests {
         assert!(hint3.contains("read") || hint3.contains("search"));
     }
 
-    // ── T333: Respond abuse guard tests ──
 
-    #[test]
-    fn respond_counter_increments() {
-        let budget = StageBudget::default();
-        let mut policy = StopPolicy::new(budget);
-        assert_eq!(policy.consecutive_respond_calls(), 0);
-        policy.increment_respond_counter();
-        assert_eq!(policy.consecutive_respond_calls(), 1);
-        policy.increment_respond_counter();
-        policy.increment_respond_counter();
-        assert_eq!(policy.consecutive_respond_calls(), 3);
-    }
-
-    #[test]
-    fn respond_counter_resets_on_real_tool() {
-        let budget = StageBudget::default();
-        let mut policy = StopPolicy::new(budget);
-        policy.increment_respond_counter();
-        policy.increment_respond_counter();
-        assert_eq!(policy.consecutive_respond_calls(), 2);
-        policy.reset_respond_counter();
-        assert_eq!(policy.consecutive_respond_calls(), 0);
-        assert_eq!(policy.consecutive_respond_only_turns, 0);
-    }
-
-    #[test]
-    fn mark_real_tool_call_sets_flag() {
-        let budget = StageBudget::default();
-        let mut policy = StopPolicy::new(budget);
-        assert!(!policy.has_real_tool_calls_this_turn());
-        policy.mark_real_tool_call();
-        assert!(policy.has_real_tool_calls_this_turn());
-    }
-
-    #[test]
-    fn start_iteration_resets_real_tool_flag() {
-        let budget = StageBudget::default();
-        let mut policy = StopPolicy::new(budget);
-        policy.mark_real_tool_call();
-        assert!(policy.has_real_tool_calls_this_turn());
-        policy.start_iteration();
-        assert!(!policy.has_real_tool_calls_this_turn());
-    }
-
-    #[test]
-    fn respond_only_turns_stops_at_5() {
-        let budget = StageBudget::default();
-        let mut policy = StopPolicy::new(budget);
-        assert!(policy.record_respond_only_turn().is_none());
-        assert!(policy.record_respond_only_turn().is_none());
-        assert!(policy.record_respond_only_turn().is_none());
-        assert!(policy.record_respond_only_turn().is_none());
-        let outcome = policy.record_respond_only_turn();
-        assert!(outcome.is_some());
-        assert_eq!(outcome.unwrap().reason, StopReason::RespondAbuse);
-    }
-
-    #[test]
-    fn respond_only_turns_resets_with_counter() {
-        let budget = StageBudget::default();
-        let mut policy = StopPolicy::new(budget);
-        policy.record_respond_only_turn();
-        policy.record_respond_only_turn();
-        assert_eq!(policy.consecutive_respond_only_turns, 2);
-        policy.reset_respond_counter();
-        assert_eq!(policy.consecutive_respond_only_turns, 0);
-    }
 
     #[test]
     fn test_is_struggling_detection() {
@@ -1340,23 +1273,17 @@ mod tests {
         assert!(policy3.is_struggling());
     }
 
-    #[test]
-    fn respond_abuse_reason_has_hint() {
-        let hint = next_step_hint(&StopReason::RespondAbuse);
-        assert!(hint.contains("search") || hint.contains("read") || hint.contains("shell"));
-    }
+
 
     // ── Task 761: Stop reason classification tests ──
 
     #[test]
     fn test_is_bad_stop_respond_abuse() {
-        assert!(StopReason::RespondAbuse.is_bad_stop());
         assert!(StopReason::IterationLimitReached.is_bad_stop());
         assert!(StopReason::StageBudgetExceeded.is_bad_stop());
         assert!(StopReason::RepeatedToolFailure.is_bad_stop());
         assert!(StopReason::RepeatedNoNewEvidence.is_bad_stop());
         assert!(StopReason::ModelProgressStalled.is_bad_stop());
-        assert!(StopReason::RespondOnlyStagnation.is_bad_stop());
     }
 
     #[test]
@@ -1367,82 +1294,12 @@ mod tests {
     #[test]
     fn test_is_clean_stop() {
         assert!(StopReason::UserInterrupted.is_clean_stop());
-        assert!(!StopReason::RespondAbuse.is_clean_stop());
         assert!(!StopReason::IterationLimitReached.is_clean_stop());
     }
 
     // ── Regression tests ──
 
-    #[test]
-    fn regression_chat_loop_should_trigger_respond_abuse() {
-        let budget = StageBudget {
-            max_stagnation_cycles: 10,
-            ..Default::default()
-        };
-        let mut policy = StopPolicy::new(budget);
-        // Simulate 5 respond-only turns
-        for _ in 0..4 {
-            assert!(policy.record_respond_only_turn().is_none());
-        }
-        let outcome = policy.record_respond_only_turn();
-        assert!(outcome.is_some());
-        assert_eq!(outcome.unwrap().reason, StopReason::RespondAbuse);
-    }
 
-    #[test]
-    fn regression_read_read_respond_workflow_does_not_stop() {
-        let budget = StageBudget {
-            max_stagnation_cycles: 8,
-            ..Default::default()
-        };
-        let mut policy = StopPolicy::new(budget);
-
-        // Simulate: 3 normal tool calls (read, read, respond) — should not stop
-        let calls = vec![
-            ToolCall {
-                id: "c1".to_string(),
-                call_type: "function".to_string(),
-                function: ToolFunctionCall {
-                    name: "read".to_string(),
-                    arguments: r#"{"path":"a"}"#.to_string(),
-                },
-            },
-            ToolCall {
-                id: "c2".to_string(),
-                call_type: "function".to_string(),
-                function: ToolFunctionCall {
-                    name: "read".to_string(),
-                    arguments: r#"{"path":"b"}"#.to_string(),
-                },
-            },
-            ToolCall {
-                id: "c3".to_string(),
-                call_type: "function".to_string(),
-                function: ToolFunctionCall {
-                    name: "respond".to_string(),
-                    arguments: r#"{"content":"done"}"#.to_string(),
-                },
-            },
-        ];
-
-        // Each call registers as a new signal
-        policy.start_iteration();
-        assert!(policy.record_tool_calls(&calls[..1]).is_none());
-        policy.register_signal("read:a".to_string());
-        policy.record_new_signals();
-
-        policy.start_iteration();
-        assert!(policy.record_tool_calls(&calls[1..2]).is_none());
-        policy.register_signal("read:b".to_string());
-        policy.record_new_signals();
-
-        policy.start_iteration();
-        assert!(policy.record_tool_calls(&calls[2..]).is_none());
-        policy.register_signal("respond:done".to_string());
-        policy.record_new_signals();
-
-        assert!(policy.check_should_stop().is_none());
-    }
 
     #[test]
     fn regression_same_tool_different_commands_should_not_stagnate() {

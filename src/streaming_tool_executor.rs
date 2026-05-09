@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 /// Whether a tool is safe to run concurrently with other tools.
 /// Read-only tools are safe; shell/mutation tools are not.
 pub(crate) fn is_concurrency_safe(tool_name: &str) -> bool {
-    matches!(tool_name, "read" | "search" | "respond")
+    matches!(tool_name, "read" | "search")
 }
 
 /// Result from the streaming executor.

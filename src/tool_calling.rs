@@ -291,7 +291,7 @@ pub(crate) async fn execute_tool_call(
         "edit" => crate::tools::implementations::edit::exec_edit(&args_value, workdir, &call_id, tui),
         "write" => crate::tools::implementations::write::exec_write(&args_value, workdir, &call_id, tui),
         "search" => crate::tools::implementations::search::exec_search(&args_value, workdir, &call_id, tui).await,
-        "respond" => crate::tools::implementations::respond::exec_respond(&args_value, &call_id, tui),
+
         "update_todo_list" => crate::tools::implementations::update_todo_list::exec_update_todo_list(&args_value, &call_id, tui),
         "stat" => crate::tools::implementations::stat::exec_stat(&args_value, workdir, &call_id, tui),
         "backup" => crate::tools::implementations::backup::exec_backup(&args_value, workdir, &call_id, tui),

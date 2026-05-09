@@ -17,7 +17,7 @@ pub mod observe;
 pub mod patch;
 pub mod read;
 pub mod repo_map;
-pub mod respond;
+
 pub mod run_node;
 pub mod run_python;
 pub mod search;

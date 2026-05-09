@@ -189,6 +189,9 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
     req.stream = true;
     req.reasoning_format = Some("auto".to_string());
 
+    let input_estimate: usize = crate::token_counter::count_request_tokens(&req);
+    tui.update_input_tokens(input_estimate);
+
     let response = client
         .post(chat_url.clone())
         .json(&req)
