@@ -20,11 +20,12 @@ pub(crate) async fn handle_provider_config(runtime: &mut AppRuntime) -> Result<(
     println!();
     println!("=== Provider Configuration ===");
     println!();
-    println!("Current endpoint: {}", runtime.profiles.elma_cfg.base_url);
-    println!("Detected model:   {}", runtime.model_id);
+    println!("Current endpoint: {}", runtime.config.profiles.elma_cfg.base_url);
+    println!("Detected model:   {}", runtime.config.model_id);
     println!(
         "Context window:   {}",
         runtime
+            .config
             .ctx_max
             .map(|n| n.to_string())
             .unwrap_or_else(|| "unknown".to_string())
@@ -33,7 +34,7 @@ pub(crate) async fn handle_provider_config(runtime: &mut AppRuntime) -> Result<(
 
     let base_url = match prompt_text("Enter endpoint URL (or press Enter to keep current):") {
         Some(url) if !url.is_empty() => url,
-        Some(_) => runtime.profiles.elma_cfg.base_url.clone(),
+        Some(_) => runtime.config.profiles.elma_cfg.base_url.clone(),
         None => {
             println!("(cancelled)");
             return Ok(());
@@ -63,8 +64,8 @@ pub(crate) async fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> R
     if args_trimmed.is_empty() {
         // Show current config
         println!("\n=== Current API Configuration ===");
-        println!("Endpoint: {}", runtime.profiles.elma_cfg.base_url);
-        println!("Model:    {}", runtime.model_id);
+        println!("Endpoint: {}", runtime.config.profiles.elma_cfg.base_url);
+        println!("Model:    {}", runtime.config.model_id);
         println!();
         println!("Usage: /api <endpoint_url> [model_id]");
         println!("  /api http://localhost:8080/v1");
@@ -86,7 +87,7 @@ pub(crate) async fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> R
     }
 
     let base = Url::parse(new_base_url).context("Invalid base URL")?;
-    let endpoint_profile = probe_endpoint_runtime(&runtime.client, &base)
+    let endpoint_profile = probe_endpoint_runtime(&runtime.config.client, &base)
         .await
         .context("Model endpoint health probe failed")?;
     let model_id = new_model_id
@@ -94,24 +95,24 @@ pub(crate) async fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> R
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| endpoint_profile.model_id.clone());
 
-    runtime.chat_url = base
+    runtime.config.chat_url = base
         .join("/v1/chat/completions")
         .context("Failed to build chat URL")?;
-    runtime.ctx_max = endpoint_profile.ctx_max;
-    runtime.model_id = model_id;
+    runtime.config.ctx_max = endpoint_profile.ctx_max;
+    runtime.config.model_id = model_id;
 
     let cfg_root = config_root_path(&runtime.args.config_root)?;
-    runtime.model_cfg_dir = ensure_model_config_folder(&cfg_root, new_base_url, &runtime.model_id)?;
-    runtime.profiles = crate::app_bootstrap::load_profiles(&runtime.model_cfg_dir)?;
+    runtime.config.model_cfg_dir = ensure_model_config_folder(&cfg_root, new_base_url, &runtime.config.model_id)?;
+    runtime.config.profiles = crate::app_bootstrap::load_profiles(&runtime.config.model_cfg_dir)?;
     crate::app_bootstrap::sync_and_upgrade_profiles(
         &runtime.args,
-        &runtime.model_cfg_dir,
+        &runtime.config.model_cfg_dir,
         new_base_url,
-        &runtime.model_id,
-        &mut runtime.profiles,
+        &runtime.config.model_id,
+        &mut runtime.config.profiles,
     )?;
-    set_json_outputter_profile(Some(runtime.profiles.json_outputter_cfg.clone()));
-    set_final_answer_extractor_profile(Some(runtime.profiles.final_answer_extractor_cfg.clone()));
+    set_json_outputter_profile(Some(runtime.config.profiles.json_outputter_cfg.clone()));
+    set_final_answer_extractor_profile(Some(runtime.config.profiles.final_answer_extractor_cfg.clone()));
 
     if let Ok(elma_path) = elma_config_path() {
         let cfg = ElmaProjectConfig {
@@ -124,7 +125,7 @@ pub(crate) async fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> R
     }
 
     // Persist updated provider profile
-    let provider = crate::llm_provider::LlmProvider::detect(new_base_url, Some(&runtime.model_id));
+    let provider = crate::llm_provider::LlmProvider::detect(new_base_url, Some(&runtime.config.model_id));
     let provider_profile = crate::models_api::ProviderProfile::from_endpoint(
         new_base_url,
         &endpoint_profile,
@@ -134,19 +135,20 @@ pub(crate) async fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> R
         false,
         "reconfig",
     );
-    let _ = crate::models_api::save_provider_profile(&runtime.model_cfg_dir, &provider_profile);
+    let _ = crate::models_api::save_provider_profile(&runtime.config.model_cfg_dir, &provider_profile);
 
     println!("\nAPI configuration updated");
     println!("  Endpoint: {}", new_base_url);
-    println!("  Model:    {} (detected)", runtime.model_id);
+    println!("  Model:    {} (detected)", runtime.config.model_id);
     println!(
         "  Context:  {}",
         runtime
+            .config
             .ctx_max
             .map(|n| n.to_string())
             .unwrap_or_else(|| "unknown".to_string())
     );
-    println!("  Config:   {}", runtime.model_cfg_dir.display());
+    println!("  Config:   {}", runtime.config.model_cfg_dir.display());
     println!();
 
     Ok(())
@@ -154,7 +156,7 @@ pub(crate) async fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> R
 
 async fn configure_auxiliary_endpoint(runtime: &AppRuntime, helper_url: &str) -> Result<()> {
     let base = Url::parse(helper_url).context("Invalid helper endpoint URL")?;
-    let endpoint_profile = probe_endpoint_runtime(&runtime.client, &base)
+    let endpoint_profile = probe_endpoint_runtime(&runtime.config.client, &base)
         .await
         .context("Helper endpoint health probe failed")?;
     let cfg_root = config_root_path(&runtime.args.config_root)?;
@@ -169,31 +171,31 @@ async fn configure_auxiliary_endpoint(runtime: &AppRuntime, helper_url: &str) ->
 
 /// Show current goal state (Task 014: Multi-Turn Goal Persistence)
 pub(crate) fn handle_show_goals(runtime: &AppRuntime) -> Result<()> {
-    if !runtime.goal_state.has_active_goal() {
+    if !runtime.state.goal_state.has_active_goal() {
         eprintln!("No active goal. Start by giving me a task!");
         return Ok(());
     }
 
     println!("\n=== Current Goal ===");
-    if let Some(ref objective) = runtime.goal_state.active_objective {
+    if let Some(ref objective) = runtime.state.goal_state.active_objective {
         println!("Objective: {}", objective);
     }
 
-    if !runtime.goal_state.completed_subgoals.is_empty() {
+    if !runtime.state.goal_state.completed_subgoals.is_empty() {
         println!("\nCompleted:");
-        for subgoal in &runtime.goal_state.completed_subgoals {
+        for subgoal in &runtime.state.goal_state.completed_subgoals {
             println!("  ✓ {}", subgoal);
         }
     }
 
-    if !runtime.goal_state.pending_subgoals.is_empty() {
+    if !runtime.state.goal_state.pending_subgoals.is_empty() {
         println!("\nPending:");
-        for subgoal in &runtime.goal_state.pending_subgoals {
+        for subgoal in &runtime.state.goal_state.pending_subgoals {
             println!("  ○ {}", subgoal);
         }
     }
 
-    if let Some(ref reason) = runtime.goal_state.blocked_reason {
+    if let Some(ref reason) = runtime.state.goal_state.blocked_reason {
         println!("\n⚠ Blocked: {}", reason);
     }
 
@@ -205,7 +207,7 @@ pub(crate) fn handle_show_goals(runtime: &AppRuntime) -> Result<()> {
 pub(crate) fn handle_discover_tools(runtime: &AppRuntime) -> Result<()> {
     println!("\nDiscovering workspace tools...");
 
-    match tool_discovery::discover_workspace_tools(&runtime.repo) {
+    match tool_discovery::discover_workspace_tools(&runtime.workspace.repo) {
         Ok(registry) => {
             println!("{}", registry.format_for_display());
             println!("(tools cached for this session)");
@@ -221,8 +223,8 @@ pub(crate) fn handle_discover_tools(runtime: &AppRuntime) -> Result<()> {
 pub(crate) fn handle_manual_snapshot(runtime: &mut AppRuntime) -> Result<()> {
     operator_trace(&runtime.args, "creating a recovery snapshot");
     let snapshot = match create_workspace_snapshot(
-        &runtime.session,
-        &runtime.repo,
+        &runtime.state.session,
+        &runtime.workspace.repo,
         "manual snapshot",
         false,
     ) {
@@ -267,7 +269,7 @@ pub(crate) fn handle_manual_rollback(runtime: &mut AppRuntime, snapshot_id: &str
         &runtime.args,
         &format!("rolling back to snapshot {}", snapshot_id),
     );
-    let result = match rollback_workspace_snapshot(&runtime.session, &runtime.repo, snapshot_id) {
+    let result = match rollback_workspace_snapshot(&runtime.state.session, &runtime.workspace.repo, snapshot_id) {
         Ok(result) => result,
         Err(error) => {
             print_elma_message(&runtime.args, &format!("Rollback failed: {error}"));
@@ -303,7 +305,7 @@ pub(crate) async fn handle_runtime_tune(runtime: &mut AppRuntime) -> Result<()> 
         &runtime.args,
         &format!(
             "tuning {} and activating the best profile set",
-            runtime.model_id
+            runtime.config.model_id
         ),
     );
     let mut tune_args = runtime.args.clone();
@@ -311,24 +313,24 @@ pub(crate) async fn handle_runtime_tune(runtime: &mut AppRuntime) -> Result<()> 
     tune_args.calibrate = false;
     let winner = optimize_model(
         &tune_args,
-        &runtime.client,
-        &runtime.chat_url,
-        &runtime.profiles.elma_cfg.base_url,
-        &runtime.model_cfg_dir,
-        &runtime.model_id,
+        &runtime.config.client,
+        &runtime.config.chat_url,
+        &runtime.config.profiles.elma_cfg.base_url,
+        &runtime.config.model_cfg_dir,
+        &runtime.config.model_id,
     )
     .await?;
 
-    runtime.profiles = app_bootstrap::load_profiles(&runtime.model_cfg_dir)?;
-    set_json_outputter_profile(Some(runtime.profiles.json_outputter_cfg.clone()));
-    set_final_answer_extractor_profile(Some(runtime.profiles.final_answer_extractor_cfg.clone()));
+    runtime.config.profiles = app_bootstrap::load_profiles(&runtime.config.model_cfg_dir)?;
+    set_json_outputter_profile(Some(runtime.config.profiles.json_outputter_cfg.clone()));
+    set_final_answer_extractor_profile(Some(runtime.config.profiles.final_answer_extractor_cfg.clone()));
     refresh_runtime_workspace(runtime)?;
 
     print_elma_message(
         &runtime.args,
         &format!(
             "Tuning complete for {}. Activated score {:.3}. Certified: {}.",
-            runtime.model_id, winner.score, winner.report.summary.certified
+            runtime.config.model_id, winner.score, winner.report.summary.certified
         ),
     );
     println!();

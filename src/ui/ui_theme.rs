@@ -52,7 +52,7 @@ pub(crate) fn default_theme() -> Theme {
         fg: ColorToken(255, 255, 255),             // White
         fg_dim: ColorToken(128, 128, 128),         // Grey
         accent_primary: ColorToken(0, 220, 80),    // Clean shell green
-        accent_secondary: ColorToken(0, 200, 140), // Deep teal green
+        accent_secondary: ColorToken(255, 180, 100), // Pale orange
         success: ColorToken(0, 255, 0),            // Green
         error: ColorToken(255, 0, 0),              // Red
         warning: ColorToken(255, 255, 0),          // Yellow

@@ -23,6 +23,7 @@ use crate::*;
 /// and build-time hash verification.
 fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String {
     let turn_summaries: Vec<String> = runtime
+        .state
         .messages
         .iter()
         .filter(|m| m.name.as_deref() == Some("turn_summary"))
@@ -30,8 +31,9 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
         .collect();
     let conversation = if !turn_summaries.is_empty() {
         format!("\n## Previous turns\n{}", turn_summaries.join("\n---\n"))
-    } else if !runtime.messages.is_empty() {
+    } else if !runtime.state.messages.is_empty() {
         let last_msgs: Vec<String> = runtime
+            .state
             .messages
             .iter()
             .rev()
@@ -56,10 +58,10 @@ fn build_tool_calling_system_prompt(runtime: &AppRuntime, _line: &str) -> String
 }
 
 fn build_skill_context(runtime: &AppRuntime) -> String {
-    let primary = runtime.execution_plan.primary_skill();
+    let primary = runtime.state.execution_plan.primary_skill();
     match primary {
         SkillId::RepoExplorer => {
-            if let Ok(overview) = repo_explorer::explore_repo(&runtime.repo) {
+            if let Ok(overview) = repo_explorer::explore_repo(&runtime.workspace.repo) {
                 repo_explorer::render_repo_overview(&overview)
             } else {
                 "(repo exploration unavailable)".to_string()
@@ -89,7 +91,7 @@ fn build_skill_context(runtime: &AppRuntime) -> String {
             )
         }
         SkillId::TaskSteward => {
-            let inventory = task_steward::scan_task_inventory(&runtime.repo);
+            let inventory = task_steward::scan_task_inventory(&runtime.workspace.repo);
             task_steward::render_inventory_summary(&inventory)
         }
         SkillId::General => "(general mode — no specialized context)".to_string(),
@@ -128,12 +130,12 @@ pub(crate) async fn run_tool_calling_pipeline(
 
     // Task 761: Build structured turn context instead of concatenating evidence into the user line
     let mut turn_ctx = crate::turn_context_packet::CurrentTurnContext::new(line);
-    if let Some(ref prior_evidence) = runtime.last_evidence_summary {
+    if let Some(ref prior_evidence) = runtime.state.last_evidence_summary {
         trace(
             &runtime.args,
             "tool_loop: injected cross-cycle evidence summary (via CurrentTurnContext)",
         );
-        let hints = if let Some(ref stop_outcome) = runtime.last_stop_outcome {
+        let hints = if let Some(ref stop_outcome) = runtime.state.last_stop_outcome {
             Some(format!("Previous stop reason: {}", stop_outcome.reason.as_str()))
         } else {
             None
@@ -161,9 +163,9 @@ pub(crate) async fn run_tool_calling_pipeline(
         // Request a work graph schema from the model — shallow outline of
         // execution phases. The model knows nothing about actual workspace
         // files; it produces only generic actions (discover/read_all/answer).
-        let schema_profile = &runtime.profiles.orchestrator_cfg;
+        let schema_profile = &runtime.config.profiles.orchestrator_cfg;
         match crate::intel_units::request_workgraph_schema(
-            &runtime.client,
+            &runtime.config.client,
             schema_profile,
             line,
         )
@@ -202,21 +204,21 @@ pub(crate) async fn run_tool_calling_pipeline(
 
     let result = run_tool_loop(
         &runtime.args,
-        &runtime.client,
-        &runtime.chat_url,
-        &runtime.model_id,
+        &runtime.config.client,
+        &runtime.config.chat_url,
+        &runtime.config.model_id,
         &system_prompt,
         &model_message,
         &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-        &runtime.session,
+        &runtime.state.session,
         0.2, // temperature — low for reliability
         16384,
         tui,
-        Some(&runtime.profiles.summarizer_cfg),
+        Some(&runtime.config.profiles.summarizer_cfg),
         context_hint,
         evidence_required,
-        runtime.ctx_max,
-        &runtime.goal_state,
+        runtime.config.ctx_max,
+        &runtime.state.goal_state,
         complexity,
         // Task 761: Pass raw user request separately for artifact extraction
         Some(line),
@@ -227,8 +229,8 @@ pub(crate) async fn run_tool_calling_pipeline(
 
     tui.complete_status("Done");
 
-    runtime.last_stop_outcome = result.stop_outcome.clone();
-    runtime.last_evidence_summary = result.evidence_progress_summary.clone();
+    runtime.state.last_stop_outcome = result.stop_outcome.clone();
+    runtime.state.last_evidence_summary = result.evidence_progress_summary.clone();
 
     // Task 610: Evidence ledger clearing moved to app_chat_loop.rs after
     // continuity and evidence contradiction checks so has_evidence is still

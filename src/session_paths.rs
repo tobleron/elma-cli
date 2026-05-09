@@ -23,7 +23,7 @@
 //!   runtime_tasks/*.json       — duplicate of session.json.runtime_task
 //!   workspace.txt              — duplicate of session.json.runtime.workspace
 //!   workspace_brief.txt        — same as above
-//!   project_guidance.txt       — duplicate of session.json.runtime.guidance_snapshot
+//!   project_guidance.txt       — duplicate of session.json.runtime.workspace.guidance_snapshot
 //!   evidence/{id}/ledger.json  — duplicate of session.json.evidence
 //!   summaries/*.md             — duplicate of session.json.turn_summaries
 //!

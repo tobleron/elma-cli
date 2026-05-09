@@ -2,7 +2,7 @@
 //!
 //! App Bootstrap - Core Bootstrap Function
 
-use crate::app::{AppRuntime, LoadedProfiles};
+use crate::app::{AppRuntime, LoadedProfiles, ProviderConfig, SessionState, TuiHandle, WorkspaceContext};
 use crate::app_bootstrap_modes::*;
 use crate::app_bootstrap_profiles::*;
 use crate::dirs::ElmaPaths;
@@ -341,30 +341,36 @@ pub(crate) async fn bootstrap_app(args: Args) -> Result<Option<AppRuntime>> {
     );
 
     Ok(Some(AppRuntime {
-        args,
-        client,
-        chat_url,
-        model_id,
-        model_cfg_dir,
-        ctx_max,
-        session,
-        repo,
-        ws,
-        ws_brief,
-        guidance,
-        system_content,
-        messages,
-        profiles,
-        goal_state,
-        execution_plan: ExecutionPlanSelection::simple_general(),
-        active_runtime_task,
-        last_stop_outcome: None,
-        last_evidence_summary: None,
-        verbose: false,
-        retry_attempt: 0,
-        tool_registry: tool_discovery::ToolRegistry::new(),
-        execution_profile,
-        turn_count: 0,
+        args: args.clone(),
+        config: ProviderConfig {
+            client,
+            chat_url,
+            model_id: model_id.clone(),
+            model_cfg_dir,
+            ctx_max,
+            profiles,
+            execution_profile,
+        },
+        state: SessionState {
+            session: session.clone(),
+            messages,
+            goal_state,
+            execution_plan: ExecutionPlanSelection::simple_general(),
+            active_runtime_task,
+            last_stop_outcome: None,
+            last_evidence_summary: None,
+            turn_count: 0,
+            retry_attempt: 0,
+        },
+        workspace: WorkspaceContext {
+            repo,
+            ws,
+            ws_brief,
+            guidance,
+            system_content,
+            tool_registry: tool_discovery::ToolRegistry::new(),
+        },
+        tui: TuiHandle { verbose: false },
     }))
 }
 

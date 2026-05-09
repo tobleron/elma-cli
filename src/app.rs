@@ -50,32 +50,47 @@ pub(crate) struct LoadedProfiles {
     pub(crate) router_cal: RouterCalibration,
 }
 
-pub(crate) struct AppRuntime {
-    pub(crate) args: Args,
+pub(crate) struct ProviderConfig {
     pub(crate) client: reqwest::Client,
     pub(crate) chat_url: Url,
     pub(crate) model_id: String,
     pub(crate) model_cfg_dir: PathBuf,
     pub(crate) ctx_max: Option<u64>,
+    pub(crate) profiles: LoadedProfiles,
+    pub(crate) execution_profile: ExecutionProfile,
+}
+
+pub(crate) struct SessionState {
     pub(crate) session: SessionPaths,
+    pub(crate) messages: Vec<ChatMessage>,
+    pub(crate) goal_state: GoalState,
+    pub(crate) execution_plan: ExecutionPlanSelection,
+    pub(crate) active_runtime_task: Option<RuntimeTaskRecord>,
+    pub(crate) last_stop_outcome: Option<StopOutcome>,
+    pub(crate) last_evidence_summary: Option<String>,
+    pub(crate) turn_count: u32,
+    pub(crate) retry_attempt: u32,
+}
+
+pub(crate) struct WorkspaceContext {
     pub(crate) repo: PathBuf,
     pub(crate) ws: String,
     pub(crate) ws_brief: String,
     pub(crate) guidance: GuidanceSnapshot,
     pub(crate) system_content: String,
-    pub(crate) messages: Vec<ChatMessage>,
-    pub(crate) profiles: LoadedProfiles,
-    pub(crate) goal_state: GoalState,
-    pub(crate) execution_plan: ExecutionPlanSelection,
-    pub(crate) active_runtime_task: Option<RuntimeTaskRecord>,
-    pub(crate) last_stop_outcome: Option<StopOutcome>,
-    /// Task 590: Cross-cycle evidence summary for continuity retries.
-    pub(crate) last_evidence_summary: Option<String>,
-    pub(crate) verbose: bool,
-    pub(crate) retry_attempt: u32,
     pub(crate) tool_registry: tool_discovery::ToolRegistry,
-    pub(crate) execution_profile: ExecutionProfile,
-    pub(crate) turn_count: u32,
+}
+
+pub(crate) struct TuiHandle {
+    pub(crate) verbose: bool,
+}
+
+pub(crate) struct AppRuntime {
+    pub(crate) args: Args,
+    pub(crate) config: ProviderConfig,
+    pub(crate) state: SessionState,
+    pub(crate) workspace: WorkspaceContext,
+    pub(crate) tui: TuiHandle,
 }
 
 pub(crate) async fn run(args: Args) -> Result<()> {
@@ -85,10 +100,11 @@ pub(crate) async fn run(args: Args) -> Result<()> {
 
     // Auto-cleanup old sessions (older than 30 days)
     let sessions_root = runtime
+        .state
         .session
         .root
         .parent()
-        .unwrap_or(&runtime.session.root)
+        .unwrap_or(&runtime.state.session.root)
         .to_path_buf();
     if let Ok((count, size)) = crate::session_gc::auto_cleanup_sessions(&sessions_root, 30) {
         if count > 0 {
@@ -98,13 +114,13 @@ pub(crate) async fn run(args: Args) -> Result<()> {
 
     let result = crate::app_chat_loop::run_chat_loop(&mut runtime).await;
     // Finalize session status (Task 282: index update)
-    let session_root = runtime.session.root.clone();
+    let session_root = runtime.state.session.root.clone();
     match &result {
         Ok(()) => {
             let _ = crate::write_session_status(
                 &session_root,
                 "completed",
-                runtime.turn_count,
+                runtime.state.turn_count,
                 None,
                 None,
             );
@@ -113,7 +129,7 @@ pub(crate) async fn run(args: Args) -> Result<()> {
             let _ = crate::write_session_status(
                 &session_root,
                 "error",
-                runtime.turn_count,
+                runtime.state.turn_count,
                 None,
                 Some(&e.to_string()),
             );

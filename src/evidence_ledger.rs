@@ -396,29 +396,17 @@ impl EvidenceLedger {
         self.entries.last().map(|e| e.summary.clone())
     }
 
-    /// Atomic write: write to temp file, fsync, rename.
-    fn atomic_write(path: &std::path::Path, content: &str) -> Result<()> {
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, content).with_context(|| format!("write {}", tmp.display()))?;
-        // Attempt fsync for durability (best-effort on some platforms)
-        if let Ok(file) = std::fs::File::open(&tmp) {
-            let _ = file.sync_all();
-        }
-        std::fs::rename(&tmp, path)
-            .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))
-    }
-
     pub(crate) fn persist(&self) -> Result<()> {
         let session_root = PathBuf::from(&self.base_dir);
 
         // Atomic write to session.json.evidence
-        let _ = crate::session_write::mutate_session_doc(&session_root, |doc| {
+        crate::session_write::mutate_session_doc(&session_root, |doc| {
             let compact = serde_json::json!({
                 "entries": serde_json::to_value(&self.entries).unwrap_or_default(),
                 "claims": serde_json::to_value(&self.claims).unwrap_or_default(),
             });
             doc["evidence"] = compact;
-        });
+        })?;
 
         // Atomic write to evidence/ dir
         let evidence_dir = session_root.join("evidence").join(&self.session_id);
@@ -426,13 +414,10 @@ impl EvidenceLedger {
             .with_context(|| format!("mkdir {}", evidence_dir.display()))?;
         let ledger_path = evidence_dir.join("ledger.json");
         let json = serde_json::to_string_pretty(self).context("Failed to serialize ledger")?;
-        let tmp = ledger_path.with_extension("tmp");
-        std::fs::write(&tmp, &json).with_context(|| format!("write {}", tmp.display()))?;
-        if let Ok(file) = std::fs::File::open(&tmp) {
-            let _ = file.sync_all();
-        }
-        std::fs::rename(&tmp, &ledger_path)
-            .with_context(|| format!("rename {} -> {}", tmp.display(), ledger_path.display()))
+        
+        crate::atomic_write::atomic_write(&ledger_path, &json)?;
+
+        Ok(())
     }
 
     /// Attempt to load evidence from session.json (new canonical path).

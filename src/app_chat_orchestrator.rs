@@ -17,7 +17,7 @@ pub(crate) async fn build_program(
         runtime,
         line,
         complexity_level,
-        runtime.profiles.orchestrator_cfg.temperature,
+        runtime.config.profiles.orchestrator_cfg.temperature,
         tui,
     )
     .await

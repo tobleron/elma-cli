@@ -85,7 +85,7 @@ pub(crate) fn persist_guidance_snapshot(
         return Ok(());
     }
 
-    // Primary: store in session.json.runtime.guidance_snapshot
+    // Primary: store in session.json.runtime.workspace.guidance_snapshot
     use crate::session_write::mutate_session_doc;
     let _ = mutate_session_doc(&session.root, |doc| {
         if doc.get("runtime").is_none() {

@@ -73,7 +73,7 @@ async fn handle_chat_command(
     match line {
         "/exit" | "/quit" => Ok(false),
         "/clear" => {
-            runtime.messages.truncate(1);
+            runtime.state.messages.truncate(1);
             tui.clear_messages();
             tui.add_claude_message(crate::claude_ui::ClaudeMessage::System {
                 content: "Conversation cleared".to_string(),
@@ -98,7 +98,7 @@ async fn handle_chat_command(
         }
 
         "/reset" => {
-            runtime.messages.truncate(1);
+            runtime.state.messages.truncate(1);
             crate::permission_gate::reset_permission_cache();
             crate::command_budget::reset_budget();
             crate::shell_preflight::clear_confirmation_cache();
@@ -118,7 +118,7 @@ async fn handle_chat_command(
             handled!()
         }
         "/reset-goals" => {
-            runtime.goal_state.clear();
+            runtime.state.goal_state.clear();
             tui.add_message(MessageRole::Assistant, "(goals reset)".to_string());
             handled!()
         }
@@ -127,10 +127,10 @@ async fn handle_chat_command(
             handled!()
         }
         "/verbose" => {
-            runtime.verbose = !runtime.verbose;
+            runtime.tui.verbose = !runtime.tui.verbose;
             tui.add_message(
                 MessageRole::Assistant,
-                format!("(verbose {})", if runtime.verbose { "on" } else { "off" }).to_string(),
+                format!("(verbose {})", if runtime.tui.verbose { "on" } else { "off" }).to_string(),
             );
             handled!()
         }
@@ -202,13 +202,13 @@ async fn handle_chat_command(
                  ENDPOINT: {}\n\
                  APPROVAL: auto\n\
                  WORKSPACE: {}",
-                runtime.model_id,
-                runtime.model_id,
-                runtime.chat_url,
-                if runtime.ws_brief.is_empty() {
+                runtime.config.model_id,
+                runtime.config.model_id,
+                runtime.config.chat_url,
+                if runtime.workspace.ws_brief.is_empty() {
                     "."
                 } else {
-                    &runtime.ws_brief
+                    &runtime.workspace.ws_brief
                 },
             );
             tui.set_modal(ModalState::Settings {
@@ -226,9 +226,10 @@ async fn handle_chat_command(
             let usage_content = format!(
                 "Model: {}\n\
                  Context: {} / {} tokens",
-                runtime.model_id,
+                runtime.config.model_id,
                 "0",
                 runtime
+                    .config
                     .ctx_max
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "unknown".to_string()),
@@ -262,7 +263,7 @@ async fn handle_chat_command(
         "/compact" => {
             tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactBoundary);
             tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactSummary {
-                message_count: runtime.messages.len(),
+                message_count: runtime.state.messages.len(),
                 context_preview: Some("manual compact".to_string()),
             });
             handled!()
@@ -284,12 +285,14 @@ async fn handle_chat_command(
 /// Open the session picker modal with current session list.
 fn open_session_picker(runtime: &mut AppRuntime, tui: &mut TerminalUI) {
     let sessions_root = runtime
+        .state
         .session
         .root
         .parent()
         .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| runtime.session.root.clone());
+        .unwrap_or_else(|| runtime.state.session.root.clone());
     let current_id = runtime
+        .state
         .session
         .root
         .file_name()
@@ -374,10 +377,10 @@ fn try_workspace_discovery(runtime: &mut AppRuntime, line: &str) -> Option<Disco
         }
     }
 
-    runtime.ws = format!(
+    runtime.workspace.ws = format!(
         "### GROUNDED WORKSPACE DISCOVERY ({path})\n{}\n\n{}",
         output.trim(),
-        runtime.ws
+        runtime.workspace.ws
     );
 
     Some(DiscoveryMetrics {
@@ -395,6 +398,7 @@ pub(crate) async fn execute_tool(
     use tool_discovery::ToolCapability;
 
     let tool = runtime
+        .workspace
         .tool_registry
         .get_tool(tool_name)
         .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", tool_name))?;
@@ -415,7 +419,7 @@ pub(crate) async fn execute_tool(
     let output = tokio::process::Command::new("sh")
         .arg("-c")
         .arg(&cmd)
-        .current_dir(&runtime.repo)
+        .current_dir(&runtime.workspace.repo)
         .output()
         .await
         .with_context(|| format!("Failed to execute tool: {}", tool_name))?;
@@ -453,7 +457,7 @@ fn has_edit_result(step_results: &[StepResult]) -> bool {
 
 
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
-    let mut tui = TerminalUI::new(Some(runtime.session.root.clone()))
+    let mut tui = TerminalUI::new(Some(runtime.state.session.root.clone()))
         .context("Failed to initialize Terminal UI")?;
 
     // Initialize safe mode from CLI flag / env var
@@ -466,47 +470,50 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
     // Set header info (replaces noisy startup banner)
     let session_name = runtime
+        .state
         .session
         .root
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| runtime.session.root.display().to_string());
+        .unwrap_or_else(|| runtime.state.session.root.display().to_string());
     let endpoint = runtime
+        .config
         .chat_url
         .host_str()
         .map(|h| {
             let port = runtime
+                .config
                 .chat_url
                 .port()
                 .map(|p| format!(":{}", p))
                 .unwrap_or_default();
-            format!("{}://{}{}", runtime.chat_url.scheme(), h, port)
+            format!("{}://{}{}", runtime.config.chat_url.scheme(), h, port)
         })
-        .unwrap_or_else(|| runtime.chat_url.to_string());
-    let ws_name = if runtime.ws_brief.is_empty() {
+        .unwrap_or_else(|| runtime.config.chat_url.to_string());
+    let ws_name = if runtime.workspace.ws_brief.is_empty() {
         std::env::current_dir()
             .ok()
             .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
             .unwrap_or_else(|| ".".to_string())
     } else {
-        runtime.ws_brief.clone()
+        runtime.workspace.ws_brief.clone()
     };
     tui.set_header_info(HeaderInfo {
-        model: runtime.model_id.clone(),
+        model: runtime.config.model_id.clone(),
         endpoint,
         route: String::new(),
         workspace: ws_name,
         session: session_name,
         workflow: String::new(),
         stage: None,
-        verbose: runtime.verbose,
+        verbose: runtime.tui.verbose,
     });
 
     // Initial update for the status bar
     tui.update_status(
-        runtime.model_id.clone(),
+        runtime.config.model_id.clone(),
         0,
-        runtime.ctx_max.unwrap_or(0),
+        runtime.config.ctx_max.unwrap_or(0),
         0, // tokens_in
         0, // tokens_out
         "⏱ 0.0s".to_string(),
@@ -540,27 +547,28 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Clear previous turn's status thread (respects min-visible window)
         tui.clear_status();
 
-        runtime.turn_count += 1;
+        runtime.state.turn_count += 1;
 
         tui.add_message(MessageRole::User, line.to_string());
         runtime
+            .state
             .messages
             .push(ChatMessage::simple("user", &line.to_string()));
-        let _ = save_user_prompt_display(&runtime.session, line);
+        let _ = save_user_prompt_display(&runtime.state.session, line);
 
         // T305: Seed goals from multi-step request on first turn
-        if turn_number == 0 && !runtime.goal_state.has_active_goal() {
-            seed_goals_if_multi_step(line, &mut runtime.goal_state);
-            let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
+        if turn_number == 0 && !runtime.state.goal_state.has_active_goal() {
+            seed_goals_if_multi_step(line, &mut runtime.state.goal_state);
+            let _ = save_goal_state(&runtime.state.session.root, &runtime.state.goal_state);
         }
 
         // Phase 2 (Task 310): Apply pending turn summary from previous turn
         if let Ok(Some((turn_num, summary))) =
-            crate::session_write::load_pending_turn_summary(&runtime.session.root)
+            crate::session_write::load_pending_turn_summary(&runtime.state.session.root)
         {
             let mut user_msg_count = 0;
             let mut boundary_idx = 0;
-            for (i, msg) in runtime.messages.iter().enumerate() {
+            for (i, msg) in runtime.state.messages.iter().enumerate() {
                 if msg.role == "user" && msg.name != Some("turn_summary".to_string()) {
                     user_msg_count += 1;
                     if user_msg_count == turn_num + 1 {
@@ -569,11 +577,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                     }
                 }
             }
-            for msg in runtime.messages.iter_mut().take(boundary_idx) {
+            for msg in runtime.state.messages.iter_mut().take(boundary_idx) {
                 msg.mark_summarized();
             }
-            crate::effective_history::inject_turn_summary(&mut runtime.messages, &summary);
-            let _ = crate::session_write::mark_summary_applied(&runtime.session.root, turn_num);
+            crate::effective_history::inject_turn_summary(&mut runtime.state.messages, &summary);
+            let _ = crate::session_write::mark_summary_applied(&runtime.state.session.root, turn_num);
         }
 
         // Show activity indicator while processing
@@ -615,10 +623,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         };
 
         // Tool discovery and execution (Task 015: Autonomous Tool Discovery)
-        if runtime.tool_registry.needs_discovery() {
-            if let Ok(registry) = tool_discovery::discover_workspace_tools(&runtime.repo) {
+        if runtime.workspace.tool_registry.needs_discovery() {
+            if let Ok(registry) = tool_discovery::discover_workspace_tools(&runtime.workspace.repo) {
                 let ws_count = registry.available_tools().len();
-                runtime.tool_registry = registry;
+                runtime.workspace.tool_registry = registry;
                 tui.push_meta_event("TOOLS", &format!("workspace_tools={} available={}+ tools via tool_search", ws_count, crate::tool_registry::default_tool_count()));
             }
         }
@@ -632,7 +640,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             "SHELL",
             "pending",
         );
-        crate::continuity::apply_model_threshold(&mut continuity_tracker, &runtime.model_id);
+        crate::continuity::apply_model_threshold(&mut continuity_tracker, &runtime.config.model_id);
 
         trace(
             &runtime.args,
@@ -717,6 +725,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             crate::complexity_gate::ComplexityLevel::Direct
         );
         let already_retried = runtime
+            .state
             .messages
             .last()
             .map(|m| m.content.contains("[continuity_retry]"))
@@ -745,22 +754,23 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 line, evidence_count, gap_reason
             );
             runtime
+                .state
                 .messages
                 .push(ChatMessage::simple("user", &retry_msg));
 
             // Lightweight text-only request with full conversation as context
-            let profile = crate::llm_config::ad_hoc_profile(&runtime.model_id, "continuity_retry");
+            let profile = crate::llm_config::ad_hoc_profile(&runtime.config.model_id, "continuity_retry");
             let req = crate::llm_config::chat_request_from_profile(
                 &profile,
-                runtime.messages.clone(),
+                runtime.state.messages.clone(),
                 crate::llm_config::ChatRequestOptions {
                     stream: Some(false),
                     ..crate::llm_config::ChatRequestOptions::default()
                 },
             );
             match crate::ui::ui_chat::chat_once_with_timeout(
-                &runtime.client,
-                &runtime.chat_url,
+                &runtime.config.client,
+                &runtime.config.chat_url,
                 &req,
                 profile.timeout_s,
             )
@@ -780,6 +790,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                                 final_text = improved;
                                 retry_happened = true;
                                 runtime
+                                    .state
                                     .messages
                                     .push(ChatMessage::simple("assistant", &final_text));
                             } else {
@@ -813,15 +824,15 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
 
         // Task 603: Detect and correct evidence contradictions in the final answer
         let final_text =
-            crate::final_answer::correct_evidence_contradictions(&final_text, &runtime.messages);
+            crate::final_answer::correct_evidence_contradictions(&final_text, &runtime.state.messages);
 
         // Task 761: Finalization verification — block polished answers for bad
         // stop reasons with insufficient coverage. Produce clearly labeled
         // partial-progress reports instead of answers that read like completion.
         let (final_text, _finalization_status) = verify_finalization(
             &final_text,
-            runtime.last_stop_outcome.as_ref(),
-            runtime.verbose,
+            runtime.state.last_stop_outcome.as_ref(),
+            runtime.tui.verbose,
             &mut tui,
         );
 
@@ -829,8 +840,8 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // after all processing and evidence exists, build a transparent answer.
         let final_text = if final_text.trim().is_empty() && has_evidence {
             build_best_effort_answer(
-                runtime.last_stop_outcome.as_ref(),
-                runtime.last_evidence_summary.as_deref(),
+                runtime.state.last_stop_outcome.as_ref(),
+                runtime.state.last_evidence_summary.as_deref(),
             )
         } else {
             final_text
@@ -850,9 +861,10 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 tui.add_message(MessageRole::Assistant, display_text);
             }
             runtime
+                .state
                 .messages
                 .push(ChatMessage::simple("assistant", &final_text));
-            let _ = save_final_answer_display(&runtime.session, &final_text);
+            let _ = save_final_answer_display(&runtime.state.session, &final_text);
         }
 
         // Clear activity indicator now that processing is complete
@@ -868,7 +880,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Estimate tokens from message content (~4 chars per token)
         let mut tokens_in: u64 = 0;
         let mut tokens_out: u64 = 0;
-        for msg in &runtime.messages {
+        for msg in &runtime.state.messages {
             let est = TerminalUI::estimate_tokens(&msg.content);
             if msg.role == "assistant" {
                 tokens_out += est;
@@ -879,9 +891,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         // Use API-reported tokens if available, otherwise use estimates
         let ctx_tokens = final_usage_total.unwrap_or(tokens_in + tokens_out);
         tui.update_status(
-            runtime.model_id.clone(),
+            runtime.config.model_id.clone(),
             ctx_tokens,
-            runtime.ctx_max.unwrap_or(0),
+            runtime.config.ctx_max.unwrap_or(0),
             tokens_in,
             tokens_out,
             turn_timer.format(),
@@ -891,11 +903,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             &mut queued_inputs,
             maybe_save_formula_memory(
                 &runtime.args,
-                &runtime.client,
-                &runtime.chat_url,
-                &runtime.profiles.memory_gate_cfg,
-                &runtime.model_id,
-                &runtime.model_cfg_dir,
+                &runtime.config.client,
+                &runtime.config.chat_url,
+                &runtime.config.profiles.memory_gate_cfg,
+                &runtime.config.model_id,
+                &runtime.config.model_cfg_dir,
                 line,
                 "AUTO",
                 &gate_assessment.to_types_api(),
@@ -910,10 +922,11 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
         if has_edit_result(&step_results) {
             refresh_runtime_workspace(runtime)?;
         }
-        let _ = save_goal_state(&runtime.session.root, &runtime.goal_state);
+        let _ = save_goal_state(&runtime.state.session.root, &runtime.state.goal_state);
 
         // Phase 1 (Task 310): Spawn background turn summarizer (fire-and-forget)
         let mut turn_number = runtime
+            .state
             .messages
             .iter()
             .filter(|m| m.role == "user" && m.name != Some("turn_summary".to_string()))
@@ -936,14 +949,14 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             })
             .collect();
         {
-            let session_root = runtime.session.root.clone();
-            let client = runtime.client.clone();
-            let summarizer_cfg = runtime.profiles.turn_summary_cfg.clone();
+            let session_root = runtime.state.session.root.clone();
+            let client = runtime.config.client.clone();
+            let summarizer_cfg = runtime.config.profiles.turn_summary_cfg.clone();
             let final_text_clone = final_text.clone();
             let user_message_clone = line.to_string();
-            let model_id = runtime.model_id.clone();
-            let session_root = runtime.session.root.clone();
-            let last_evidence = runtime.last_evidence_summary.clone().unwrap_or_default();
+            let model_id = runtime.config.model_id.clone();
+            let session_root = runtime.state.session.root.clone();
+            let last_evidence = runtime.state.last_evidence_summary.clone().unwrap_or_default();
             let session_id = session_root
                 .file_name()
                 .map(|s| s.to_string_lossy().to_string())
@@ -1030,9 +1043,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            crate::session_write::write_left_chat_render(&runtime.session.root, &lines, width);
+            crate::session_write::write_left_chat_render(&runtime.state.session.root, &lines, width);
             crate::session_write::append_left_chat_frame(
-                &runtime.session.root,
+                &runtime.state.session.root,
                 (turn_number + 1) as usize,
                 width as usize,
                 lines.len(),
@@ -1047,7 +1060,7 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     {
         let lines = tui.visible_transcript_lines();
         let width = tui.terminal_width();
-        crate::session_write::write_left_chat_render(&runtime.session.root, &lines, width);
+        crate::session_write::write_left_chat_render(&runtime.state.session.root, &lines, width);
     }
 
     // Mark TUI as inactive

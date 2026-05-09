@@ -71,26 +71,26 @@ pub(crate) fn print_final_output(
 }
 
 pub(crate) fn refresh_runtime_workspace(runtime: &mut AppRuntime) -> Result<()> {
-    runtime.ws = gather_workspace_context(&runtime.repo);
-    runtime.ws_brief = gather_workspace_brief(&runtime.repo);
-    runtime.system_content = rebuild_system_content(
-        &runtime.profiles.elma_cfg.system_prompt,
-        &runtime.ws,
-        &runtime.ws_brief,
-        &runtime.guidance,
-        &runtime.model_id,
-        runtime.chat_url.as_str(),
+    runtime.workspace.ws = gather_workspace_context(&runtime.workspace.repo);
+    runtime.workspace.ws_brief = gather_workspace_brief(&runtime.workspace.repo);
+    runtime.workspace.system_content = rebuild_system_content(
+        &runtime.config.profiles.elma_cfg.system_prompt,
+        &runtime.workspace.ws,
+        &runtime.workspace.ws_brief,
+        &runtime.workspace.guidance,
+        &runtime.config.model_id,
+        runtime.config.chat_url.as_str(),
     );
-    if let Some(system_message) = runtime.messages.first_mut() {
+    if let Some(system_message) = runtime.state.messages.first_mut() {
         if system_message.role == "system" {
-            system_message.content = runtime.system_content.clone();
+            system_message.content = runtime.workspace.system_content.clone();
         }
     }
     persist_runtime_workspace_intel(
         &runtime.args,
-        &runtime.session,
-        &runtime.ws,
-        &runtime.ws_brief,
+        &runtime.state.session,
+        &runtime.workspace.ws,
+        &runtime.workspace.ws_brief,
     )?;
     Ok(())
 }
