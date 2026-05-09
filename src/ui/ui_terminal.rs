@@ -59,6 +59,8 @@ pub(crate) struct TerminalUI {
     selected_background_task: Option<String>,
     // Double-key chord state
     esc_armed_until: Option<Instant>,
+    // ESC interrupt: set to true when user presses ESC during model execution
+    interrupt_requested: bool,
     ctrl_c_armed_until: Option<Instant>,
     ctrl_d_armed_until: Option<Instant>,
     // Text selection is the default; mouse capture can be toggled with Ctrl+Shift+S
@@ -151,6 +153,7 @@ impl TerminalUI {
                 is_active: false,
             },
             esc_armed_until: None,
+            interrupt_requested: false,
             ctrl_c_armed_until: None,
             ctrl_d_armed_until: None,
             queued_submissions: VecDeque::new(),
@@ -860,6 +863,35 @@ impl TerminalUI {
     }
 
     // --- Drawing ---
+
+    /// Drain the event channel for ESC presses during model execution.
+    /// Returns true if an ESC interrupt was detected (and resets the flag).
+    /// Does NOT consume ESC when a modal, picker, or permission prompt is active
+    /// (those have their own ESC handlers in run_input_loop / poll_busy_submission).
+    pub(crate) fn drain_interrupt(&mut self) -> bool {
+        // Only operate during execution: no modal, no picker, no permission prompt.
+        if self.state.modal.is_some()
+            || self.claude.is_picker_active()
+            || self.permission_tx.is_some()
+        {
+            return false;
+        }
+
+        while let Ok(event) = self.event_rx.try_recv() {
+            if let Event::Key(key) = event {
+                if key.kind == KeyEventKind::Press && key.code == KeyCode::Esc {
+                    self.interrupt_requested = true;
+                    return true;
+                }
+            }
+            // Non-ESC events during execution are discarded.
+            // (User shouldn't be typing during model thinking — input area shows spinner.)
+        }
+
+        let was_interrupted = self.interrupt_requested;
+        self.interrupt_requested = false;
+        was_interrupted
+    }
 
     /// Non-blocking UI pump — call between async steps to keep UI alive.
     /// Forces a redraw if pending, and briefly polls for resize events.

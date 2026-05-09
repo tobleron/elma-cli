@@ -263,6 +263,12 @@ pub(crate) fn ui_reducer(state: &mut UiViewState, event: &UiRuntimeEvent) {
         UiRuntimeEvent::CoverageProgress { .. } => {}
         UiRuntimeEvent::ComplexityReassessed { .. } => {}
 
+        // ── Interrupt ──────────────────────────────────────────────────
+        UiRuntimeEvent::UserInterrupt => {
+            // ESC interrupt during model execution — handled in chat loop.
+            // The reducer just acknowledges; the chat loop does the heavy lifting.
+        }
+
         // ── Compact (passthrough to transcript) ─────────────────────────
         UiRuntimeEvent::CompactBoundary => {}
         UiRuntimeEvent::CompactSummary { .. } => {}

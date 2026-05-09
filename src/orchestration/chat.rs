@@ -32,6 +32,19 @@ impl<'a> ChatStateMachine<'a> {
         }
     }
 
+    /// Check for user interrupt (ESC key) and handle it if detected.
+    /// Returns `true` if the turn should be aborted.
+    fn check_interrupt(&mut self) -> Result<bool> {
+        if self.tui.drain_interrupt() {
+            self.tui.set_activity("Stopped", "ESC — stopping...");
+            self.tui.push_stop_notice("Interrupted by user (Esc)");
+            self.tui.push_meta_event("INTERRUPT", "user_esc_during_execution");
+            self.tui.pump_ui()?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     pub(crate) async fn run(mut self) -> Result<()> {
         // Initialize safe mode from CLI flag / env var
         if self.runtime.args.disable_guards {
@@ -189,6 +202,9 @@ impl<'a> ChatStateMachine<'a> {
 
         // Immediate redraw so user sees submitted message + busy state
         self.tui.pump_ui()?;
+        if self.check_interrupt()? {
+            return Ok(());
+        }
 
         // Task 760: Initial shape-based complexity assessment before discovery
         let initial_gate =
@@ -256,6 +272,10 @@ impl<'a> ChatStateMachine<'a> {
         self.tui.set_activity("Planning", "Planning...");
         self.tui.pump_ui()?;
 
+        if self.check_interrupt()? {
+            return Ok(());
+        }
+
         let program = build_program(
             self.runtime,
             line,
@@ -268,6 +288,10 @@ impl<'a> ChatStateMachine<'a> {
 
         // Redraw after planning so user sees the plan before execution
         self.tui.pump_ui()?;
+
+        if self.check_interrupt()? {
+            return Ok(());
+        }
 
         self.tui.set_activity("Responding", "Responding...");
         self.tui.pump_ui()?;

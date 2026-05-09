@@ -92,6 +92,8 @@ pub(crate) enum UiRuntimeEvent {
         message_count: usize,
         context_preview: Option<String>,
     },
+    /// User pressed ESC to stop the current turn mid-execution.
+    UserInterrupt,
     ExitRequested,
     ExitConfirmed,
 
@@ -197,6 +199,7 @@ impl UiRuntimeEvent {
             UiRuntimeEvent::SessionResumed { .. } => "session_resume",
             UiRuntimeEvent::CompactBoundary => "compact",
             UiRuntimeEvent::CompactSummary { .. } => "compact_summary",
+            UiRuntimeEvent::UserInterrupt => "user_interrupt",
             UiRuntimeEvent::ExitRequested => "exit_request",
             UiRuntimeEvent::ExitConfirmed => "exit_confirm",
             UiRuntimeEvent::RouteNotice { .. } => "route",
