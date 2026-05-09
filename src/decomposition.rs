@@ -208,3 +208,54 @@ pub fn aggregate_results(child_results: &[StepResult]) -> String {
 
     summary
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_aggregate_results_empty() {
+        let results: Vec<StepResult> = vec![];
+        let summary = aggregate_results(&results);
+        assert_eq!(summary, "Completed 0/0 child units.\n\n");
+    }
+
+    #[test]
+    fn test_aggregate_results_mixed() {
+        let results = vec![
+            StepResult {
+                id: "step-1".to_string(),
+                ok: true,
+                summary: "Success 1".to_string(),
+                ..Default::default()
+            },
+            StepResult {
+                id: "step-2".to_string(),
+                ok: false,
+                summary: "Failure 2".to_string(),
+                ..Default::default()
+            },
+        ];
+        let summary = aggregate_results(&results);
+        let expected = "Completed 1/2 child units.\n\n\
+                        Step 1: step-1\n  Status: OK\n  Summary: Success 1\n\n\
+                        Step 2: step-2\n  Status: FAILED\n  Summary: Failure 2\n\n";
+        assert_eq!(summary, expected);
+    }
+
+    #[test]
+    fn test_aggregate_results_all_ok() {
+        let results = vec![
+            StepResult {
+                id: "step-1".to_string(),
+                ok: true,
+                summary: "All good".to_string(),
+                ..Default::default()
+            },
+        ];
+        let summary = aggregate_results(&results);
+        let expected = "Completed 1/1 child units.\n\n\
+                        Step 1: step-1\n  Status: OK\n  Summary: All good\n\n";
+        assert_eq!(summary, expected);
+    }
+}
