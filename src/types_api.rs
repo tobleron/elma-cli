@@ -2,6 +2,7 @@
 //!
 //! Types - API and Runtime Types
 
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -313,6 +314,28 @@ pub(crate) struct BatchPlan {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct ProbabilityDecision {
+    pub(crate) choice: String,
+    pub(crate) source: String,
+    pub(crate) distribution: HashMap<String, f64>,
+    pub(crate) margin: f64,
+    pub(crate) entropy: f64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub(crate) struct RouteDecision {
+    pub(crate) route: String,
+    pub(crate) source: String,
+    pub(crate) distribution: HashMap<String, f64>,
+    pub(crate) margin: f64,
+    pub(crate) entropy: f64,
+    pub(crate) speech_act: ProbabilityDecision,
+    pub(crate) workflow: ProbabilityDecision,
+    pub(crate) mode: ProbabilityDecision,
+    pub(crate) evidence_required: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub(crate) struct ComplexityAssessment {
     #[serde(default)]
     pub(crate) complexity: String,
@@ -410,6 +433,12 @@ pub(crate) struct OutcomeVerificationVerdict {
     pub(crate) status: String,
     #[serde(default)]
     pub(crate) reason: String,
+    #[serde(default)]
+    pub(crate) answered_request: bool,
+    #[serde(default)]
+    pub(crate) faithful_to_evidence: bool,
+    #[serde(default)]
+    pub(crate) plain_text: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

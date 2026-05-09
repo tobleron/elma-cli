@@ -52,11 +52,10 @@ impl CreativeRecovery {
 
 fn randish() -> f64 {
     // Deterministic pseudo-random for reproducibility.
-    static mut COUNTER: u64 = 0;
-    unsafe {
-        COUNTER = COUNTER.wrapping_add(1);
-        (COUNTER as f64) / (u64::MAX as f64)
-    }
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let val = COUNTER.fetch_add(1, Ordering::Relaxed);
+    (val as f64) / (u64::MAX as f64)
 }
 
 pub(crate) struct ReasoningTuner;

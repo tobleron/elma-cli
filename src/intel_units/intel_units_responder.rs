@@ -231,7 +231,6 @@ impl IntelUnit for ResultPresenterUnit {
             &self.profile,
             crate::intel_narrative::build_result_presenter_narrative(
                 &context.user_message,
-                &context.route_decision,
                 &runtime_context,
                 &evidence_mode,
                 &response_advice,
@@ -337,7 +336,6 @@ impl IntelUnit for ExpertAdvisorUnit {
             &self.profile,
             crate::intel_narrative::build_expert_advisor_narrative(
                 &context.user_message,
-                &context.route_decision,
                 &evidence_mode,
                 &reply_instructions,
                 &step_results,

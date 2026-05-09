@@ -155,53 +155,7 @@ impl ContinuityTracker {
             .unwrap_or(true)
     }
 
-    /// Pre-execution routing check: does the route match a known pattern?
-    pub fn check_route_alignment(&mut self, route_decision: &crate::types_core::RouteDecision) {
-        let route = route_decision.route.to_uppercase();
-        let intent_lower = self.original_intent.to_lowercase();
 
-        // Simple factual questions should not use complex routes
-        let is_simple_factual = intent_lower.len() < 60
-            && !intent_lower.contains("write")
-            && !intent_lower.contains("create")
-            && !intent_lower.contains("edit")
-            && !intent_lower.contains("build");
-        let is_complex_route = route == "MASTERPLAN" || route == "PLAN";
-
-        if is_simple_factual && is_complex_route {
-            self.add_checkpoint(
-                "routing",
-                ContinuityVerdict::Drifted(
-                    "Simple factual question routed to complex planning route".into(),
-                ),
-                &format!(
-                    "intent='{}' route={} entropy={:.2}",
-                    self.original_intent, route, route_decision.entropy
-                ),
-            );
-        } else if route_decision.entropy > 0.8 && route_decision.margin < 0.15 {
-            self.add_checkpoint(
-                "routing",
-                ContinuityVerdict::Drifted(format!(
-                    "High entropy ({:.2}) and low margin ({:.2}) suggest uncertain routing",
-                    route_decision.entropy, route_decision.margin
-                )),
-                &format!(
-                    "entropy={:.2} margin={:.2}",
-                    route_decision.entropy, route_decision.margin
-                ),
-            );
-        } else {
-            self.add_checkpoint(
-                "routing",
-                ContinuityVerdict::Aligned,
-                &format!(
-                    "route={} entropy={:.2} margin={:.2}",
-                    route, route_decision.entropy, route_decision.margin
-                ),
-            );
-        }
-    }
 
     /// Post-execution check: verify final answer is non-empty and
     /// has a reasonable relationship to the original intent.
@@ -347,50 +301,7 @@ mod tests {
         assert_eq!(ContinuityVerdict::Mismatch("x".into()).score(), 0.0);
     }
 
-    #[test]
-    fn test_route_alignment_simple_factual() {
-        let mut ct = ContinuityTracker::new("What is 2+2?".to_string(), "CHAT", "direct");
-        let route = crate::types_core::RouteDecision {
-            route: "CHAT".to_string(),
-            source: "test".to_string(),
-            distribution: vec![],
-            margin: 0.9,
-            entropy: 0.1,
-            ..Default::default()
-        };
-        ct.check_route_alignment(&route);
-        assert!(ct.last_checkpoint_is_aligned());
-    }
 
-    #[test]
-    fn test_route_alignment_flags_complex_route() {
-        let mut ct = ContinuityTracker::new("What is 2+2?".to_string(), "CHAT", "direct");
-        let route = crate::types_core::RouteDecision {
-            route: "MASTERPLAN".to_string(),
-            source: "test".to_string(),
-            distribution: vec![],
-            margin: 0.9,
-            entropy: 0.1,
-            ..Default::default()
-        };
-        ct.check_route_alignment(&route);
-        assert!(!ct.last_checkpoint_is_aligned());
-    }
-
-    #[test]
-    fn test_route_alignment_flags_high_entropy() {
-        let mut ct = ContinuityTracker::new("Build a web app".to_string(), "WORKFLOW", "direct");
-        let route = crate::types_core::RouteDecision {
-            route: "WORKFLOW".to_string(),
-            source: "test".to_string(),
-            distribution: vec![],
-            margin: 0.1,  // low margin = uncertain
-            entropy: 0.9, // high entropy
-            ..Default::default()
-        };
-        ct.check_route_alignment(&route);
-        assert!(!ct.last_checkpoint_is_aligned());
-    }
 
     #[test]
     fn test_trigger_fallback() {

@@ -72,7 +72,7 @@ pub(crate) async fn evaluate_runtime_scenario(
         &memories,
         &conversation_messages,
     )
-    .await;
+    .await?;
 
     let (scope_eval_ok, scope_eval_reason) = evaluate_scope(&scope, &scenario);
 
@@ -83,7 +83,7 @@ pub(crate) async fn evaluate_runtime_scenario(
             &resources.orchestrator_cfg,
             &user_message,
             &decision,
-            workflow_plan.as_ref(),
+            Some(&workflow_plan),
             &complexity,
             &scope,
             &formula,
@@ -101,7 +101,7 @@ pub(crate) async fn evaluate_runtime_scenario(
         &resources.orchestrator_cfg,
         &user_message,
         &decision,
-        workflow_plan.as_ref(),
+        Some(&workflow_plan),
         &complexity,
         &scope,
         &formula,
@@ -152,7 +152,7 @@ pub(crate) async fn evaluate_runtime_scenario(
                 &scenario,
                 &user_message,
                 &decision,
-                workflow_plan.as_ref(),
+                Some(&workflow_plan),
                 &complexity,
                 &scope,
                 &formula,

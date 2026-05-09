@@ -194,7 +194,6 @@ pub(crate) async fn handle_shell_step(
     let status_unit = StatusMessageUnit::new(status_message_cfg.clone());
     if let Ok(context) = IntelContext::new(
         "executing".to_string(),
-        neutral_route_decision(),
         String::new(),
         String::new(),
         Vec::new(),

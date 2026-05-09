@@ -112,39 +112,9 @@ impl JsonRepairUnit {
         original_json: &str,
         problems: &[String],
     ) -> Result<String> {
-        let route_decision = RouteDecision {
-            route: "DECIDE".to_string(),
-            source: "json_repair".to_string(),
-            distribution: vec![("DECIDE".to_string(), 1.0)],
-            margin: 1.0,
-            entropy: 0.0,
-            speech_act: ProbabilityDecision {
-                choice: "INSTRUCT".to_string(),
-                source: "json_repair".to_string(),
-                distribution: vec![("INSTRUCT".to_string(), 1.0)],
-                margin: 1.0,
-                entropy: 0.0,
-            },
-            workflow: ProbabilityDecision {
-                choice: "WORKFLOW".to_string(),
-                source: "json_repair".to_string(),
-                distribution: vec![("WORKFLOW".to_string(), 1.0)],
-                margin: 1.0,
-                entropy: 0.0,
-            },
-            mode: ProbabilityDecision {
-                choice: "DECIDE".to_string(),
-                source: "json_repair".to_string(),
-                distribution: vec![("DECIDE".to_string(), 1.0)],
-                margin: 1.0,
-                entropy: 0.0,
-            },
-            evidence_required: false,
-        };
 
         let context = IntelContext::new(
             original_json.to_string(),
-            route_decision,
             problems.join("\n"),
             String::new(),
             Vec::new(),

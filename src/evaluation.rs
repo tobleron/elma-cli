@@ -1,4 +1,5 @@
 use crate::*;
+use crate::tune_scenario_helpers::*;
 
 pub(crate) async fn evaluate_routing_suite(
     args: &Args,
@@ -114,6 +115,10 @@ pub(crate) async fn evaluate_candidate_dir(
         parse_failure_count: report.summary.all_ok.total - report.summary.all_ok.correct,
         latency_avg_ms: 0.0, // Task 009: Will be measured in repeated evaluations
     })
+}
+
+pub(crate) fn score_efficiency_report(report: &EfficiencyReport) -> f64 {
+    report.summary.overall_efficiency
 }
 
 pub(crate) fn make_candidate_dir(run_root: &Path, name: &str) -> Result<PathBuf> {

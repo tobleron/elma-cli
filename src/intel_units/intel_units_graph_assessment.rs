@@ -162,7 +162,6 @@ mod tests {
             .fallback(
                 &IntelContext::new(
                     String::new(),
-                    crate::RouteDecision::default(),
                     String::new(),
                     String::new(),
                     Vec::new(),

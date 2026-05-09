@@ -222,7 +222,7 @@ impl ApproachEngine {
             // Generate new approach with different strategy
             let new_id = ApproachId::new();
             let strategy_hint =
-                crate::orchestration_retry::strategy_for_failure_by_label(failure_class);
+                crate::approach_rehydration::ApproachRehydrator::strategy_for_failure_by_label(failure_class);
             let reason = format!(
                 "Approach failed after {} attempts (failure: {}). Starting new approach.",
                 approach_failures, failure_class

@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 
 // Re-export schema definitions
 mod schemas;
-mod schemas_verdicts;
+pub(crate) mod schemas_verdicts;
 pub(crate) use schemas::*;
 pub(crate) use schemas_verdicts::*;
 
@@ -199,11 +199,17 @@ pub(crate) fn default_outcome_verdict(exit_code: i32) -> OutcomeVerificationVerd
         OutcomeVerificationVerdict {
             status: "ok".to_string(),
             reason: "Step completed successfully (exit code 0)".to_string(),
+            answered_request: false,
+            faithful_to_evidence: false,
+            plain_text: false,
         }
     } else {
         OutcomeVerificationVerdict {
             status: "retry".to_string(),
             reason: format!("Step failed with exit code {}", exit_code),
+            answered_request: false,
+            faithful_to_evidence: false,
+            plain_text: false,
         }
     }
 }

@@ -214,7 +214,7 @@ impl TerminalUI {
                     .map(|raw| crate::final_answer::process_final_answer_display(raw) == content)
                     .unwrap_or(false);
                 if !already_pushed {
-                    self.claude.add_output_tokens(content.len());
+                    self.claude.add_output_tokens(&content);
                     self.claude.push_message(ClaudeMessage::Assistant { ephemeral_deadline: None,
                         content: crate::claude_ui::AssistantContent::from_markdown(&content),
                     });
@@ -239,7 +239,7 @@ impl TerminalUI {
     /// Replace the content of the last assistant message in-place (Task 602).
     /// Used by continuity retry to overwrite a streamed wrong answer.
     pub(crate) fn replace_last_assistant_message(&mut self, content: String) {
-        self.claude.add_output_tokens(content.len());
+        self.claude.add_output_tokens(&content);
         let assistant = crate::claude_ui::AssistantContent::from_markdown(&content);
         self.claude.replace_last_assistant_message(assistant);
         // Also write the updated answer to session.md
@@ -926,8 +926,8 @@ impl TerminalUI {
         }
 
         // Estimate the current model budget (base from last update + streaming)
-        let streaming_tokens = (self.claude.streaming.thinking.len() / 4
-            + self.claude.streaming.content.len() / 4) as u64;
+        // We use the batched output_token_count from ClaudeRenderer (Task 779)
+        let streaming_tokens = self.claude.output_token_count() as u64;
         let model_context_tokens_estimate = self.state.footer.context_current + streaming_tokens;
         let transcript_tokens_estimate = self.transcript_token_estimate;
 

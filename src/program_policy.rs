@@ -4,12 +4,19 @@
 //!
 //! Task 044: Added execution level validation.
 
-use crate::execution_ladder::ExecutionLevel;
 use crate::*;
 
 // Re-export level validation functions to maintain the same public API
 pub use crate::program_policy_level::*;
 use thiserror::Error;
+ 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum ExecutionLevel {
+    Action,
+    Task,
+    Plan,
+    MasterPlan,
+}
 
 #[derive(Error, Debug)]
 pub(crate) enum PolicyError {
@@ -17,30 +24,30 @@ pub(crate) enum PolicyError {
     MaxStepsExceeded { count: usize, max: usize },
     #[error("Program has {ratio}% duplicate steps (max: 50%). This indicates a planning loop.")]
     DuplicateStepRatio { ratio: usize },
-    #[error("{level:?} request should not have {structure} structure")]
+    #[error("Request should not have {structure} structure at level {level:?}")]
     InvalidLevelStructure {
-        level: ExecutionLevel,
         structure: String,
-    },
-    #[error("{level:?} request has too {bound} steps: {count} (expected {expected})")]
-    StepCountMismatch {
         level: ExecutionLevel,
+    },
+    #[error("Request has too {bound} steps: {count} (expected {expected}) at level {level:?}")]
+    StepCountMismatch {
         bound: String,
         count: usize,
         expected: String,
-    },
-    #[error("{level:?} level request must have explicit {step_type} step")]
-    MissingRequiredStep {
         level: ExecutionLevel,
+    },
+    #[error("Level request must have explicit {step_type} step at level {level:?}")]
+    MissingRequiredStep {
         step_type: String,
+        level: ExecutionLevel,
     },
     #[error("Program must have Reply step")]
     MissingReplyStep,
-    #[error("Formula '{formula}' not allowed for {level:?} level (allowed: {allowed})")]
+    #[error("Formula '{formula}' not allowed for this level (allowed: {allowed}) at level {level:?}")]
     FormulaNotAllowed {
         formula: String,
-        level: ExecutionLevel,
         allowed: String,
+        level: ExecutionLevel,
     },
     #[error("Request requires workspace evidence but program has no shell/read/search step")]
     MissingEvidenceSteps,
@@ -219,7 +226,6 @@ pub(crate) fn derive_risk_from_common(common: &StepCommon) -> DerivedRisk {
 }
 
 pub(crate) fn request_requires_workspace_evidence(
-    route_decision: &RouteDecision,
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
 ) -> bool {
@@ -252,11 +258,10 @@ pub(crate) fn step_results_have_workspace_evidence(step_results: &[StepResult]) 
 
 pub(crate) fn validate_evidence_requirements(
     program: &Program,
-    route_decision: &RouteDecision,
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
 ) -> Result<(), PolicyError> {
-    if request_requires_workspace_evidence(route_decision, complexity, formula)
+    if request_requires_workspace_evidence(complexity, formula)
         && !program_has_workspace_evidence_steps(program)
     {
         return Err(PolicyError::MissingEvidenceSteps);
@@ -467,59 +472,6 @@ pub(crate) fn evaluate_program_for_scenario(
     }
 }
 
-pub(crate) fn capability_guard_threshold(route_decision: &RouteDecision) -> bool {
-    route_decision
-        .speech_act
-        .choice
-        .eq_ignore_ascii_case("CAPABILITY_CHECK")
-        && probability_of(&route_decision.speech_act.distribution, "CAPABILITY_CHECK") >= 0.65
-}
-
-pub(crate) fn apply_capability_guard(
-    program: &mut Program,
-    route_decision: &RouteDecision,
-    guards_enabled: bool,
-) -> bool {
-    if !guards_enabled {
-        return false;
-    }
-
-    if !capability_guard_threshold(route_decision) {
-        return false;
-    }
-    let has_non_reply = program
-        .steps
-        .iter()
-        .any(|s| !matches!(s, Step::Reply { .. }));
-    if !has_non_reply {
-        return false;
-    }
-
-    let existing_reply = program.steps.iter().find_map(|s| match s {
-        Step::Reply { instructions, .. } => Some(instructions.clone()),
-        _ => None,
-    });
-    let instructions = existing_reply.unwrap_or_else(|| {
-        "Answer the user's capability question in plain text. Do not execute commands. If helpful, say what Elma can do in this workspace and that you can do it if the user asks.".to_string()
-    });
-    program.steps = vec![Step::Reply {
-        id: "r_cap".to_string(),
-        instructions,
-        common: StepCommon {
-            purpose: "answer capability question without executing".to_string(),
-            depends_on: Vec::new(),
-            success_condition:
-                "the user receives a plain-text capability answer with no command execution"
-                    .to_string(),
-            parent_id: None,
-            depth: None,
-            unit_type: None,
-            interrupt_behavior: InterruptBehavior::Graceful,
-            ..Default::default()
-        },
-    }];
-    true
-}
 
 /// Validate step flags consistency (Task 265)
 pub(crate) fn validate_step_flags(program: &Program) -> Vec<String> {

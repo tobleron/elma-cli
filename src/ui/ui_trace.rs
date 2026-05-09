@@ -191,18 +191,10 @@ pub(crate) fn print_elma_message(args: &Args, text: &str) {
 }
 
 pub(crate) fn describe_operator_intent(
-    route: &RouteDecision,
+    route: &str,
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
 ) -> String {
-    if route
-        .speech_act
-        .choice
-        .eq_ignore_ascii_case("CAPABILITY_CHECK")
-        && probability_of(&route.speech_act.distribution, "CAPABILITY_CHECK") >= 0.65
-    {
-        return "answering a capability question".to_string();
-    }
     let pattern = if !formula.primary.trim().is_empty() {
         formula.primary.trim()
     } else if !complexity.suggested_pattern.trim().is_empty() {
@@ -221,7 +213,7 @@ pub(crate) fn describe_operator_intent(
         "plan_reply" => "building a concrete plan".to_string(),
         "masterplan_reply" => "building an overall plan".to_string(),
         "reply" | "reply_only" => "answering directly".to_string(),
-        _ => match route.route.as_str() {
+        _ => match route {
             "SHELL" => "working through the workspace".to_string(),
             "PLAN" => "building a concrete plan".to_string(),
             "MASTERPLAN" => "building an overall plan".to_string(),

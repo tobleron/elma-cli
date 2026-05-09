@@ -2,6 +2,7 @@
 //!
 //! Claim check and repair semantics verification.
 
+use crate::json_error_handler::schemas_verdicts::*;
 use crate::*;
 pub(crate) use verification_evidence::{
     has_downstream_dependents, has_verified_downstream_evidence,
@@ -64,22 +65,6 @@ pub(crate) async fn guard_repair_semantics_once(
     chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, narrative)).await
 }
 
-pub(crate) async fn check_execution_sufficiency_once(
-    client: &reqwest::Client,
-    chat_url: &Url,
-    cfg: &Profile,
-    _user_message: &str,
-    _route_decision: &RouteDecision,
-    program: &Program,
-    step_results: &[StepResult],
-) -> Result<ExecutionSufficiencyVerdict> {
-    let narrative = crate::intel_narrative::build_sufficiency_narrative(
-        &program.objective,
-        program,
-        step_results,
-    );
-    chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, narrative)).await
-}
 
 fn truncate_output(s: &String) -> &str {
     &s[..s.len().min(200)]
@@ -94,81 +79,6 @@ fn outcome_verifier_configs(cfg: &Profile) -> (Profile, Profile, Profile, Profil
         default_verify_checker_config(base, model),
         default_json_repair_config(base, model),
     )
-}
-
-pub(crate) async fn verify_outcome_match_intent(
-    args: &Args,
-    client: &reqwest::Client,
-    chat_url: &Url,
-    outcome_verifier_cfg: &Profile,
-    user_message: &str,
-    _route_decision: &RouteDecision,
-    _objective: &str,
-    step: &Step,
-    step_result: &StepResult,
-) -> Result<OutcomeVerificationVerdict> {
-    let reasoning = format!(
-        "User request: {}\nStep purpose: {}\nStep result: exit_code={:?}, output={:?}",
-        user_message,
-        step.purpose(),
-        step_result.exit_code,
-        step_result.raw_output.as_ref().map(truncate_output)
-    );
-
-    let (text_gen_cfg, json_conv_cfg, verify_cfg, repair_cfg) =
-        outcome_verifier_configs(outcome_verifier_cfg);
-
-    let text = match generate_text_from_reasoning(client, chat_url, &text_gen_cfg, &reasoning).await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            trace(args, &format!("text_generator_failed error={}", e));
-            reasoning
-        }
-    };
-
-    let schema_desc = r#"{"type":"object","required":["status","reason"],"properties":{"status":{"enum":["ok","retry"]},"reason":{"type":"string","minLength":1}}}"#;
-    let json_str =
-        match convert_text_to_json(client, chat_url, &json_conv_cfg, &text, schema_desc).await {
-            Ok(j) => j,
-            Err(e) => {
-                trace(args, &format!("json_converter_failed error={}", e));
-                return Ok(default_outcome_verdict(step_result.exit_code.unwrap_or(0)));
-            }
-        };
-
-    let verify_result = match verify_json(client, chat_url, &verify_cfg, &json_str).await {
-        Ok(r) => r,
-        Err(e) => {
-            trace(args, &format!("verify_checker_failed error={}", e));
-            return parse_verdict_from_json(&json_str, step_result);
-        }
-    };
-
-    let final_json = if verify_result.status == "problems" && !verify_result.problems.is_empty() {
-        match repair_json(
-            client,
-            chat_url,
-            &repair_cfg,
-            &json_str,
-            &verify_result.problems,
-        )
-        .await
-        {
-            Ok(repaired) => {
-                trace(args, "json_repaired successfully");
-                repaired
-            }
-            Err(e) => {
-                trace(args, &format!("json_repair_failed error={}", e));
-                json_str
-            }
-        }
-    } else {
-        trace(args, "json_verification_passed");
-        json_str
-    };
-    parse_verdict_from_json(&final_json, step_result)
 }
 
 fn parse_verdict_from_json(
@@ -231,13 +141,16 @@ fn handle_schema_error(
     args: &Args,
     result: &mut StepResult,
     verdict: &OutcomeVerificationVerdict,
-    schema_err: &SchemaValidationError,
+    schema_err: &anyhow::Error,
 ) -> bool {
     record_json_failure(args, "outcome_schema");
     if let Ok(json) = serde_json::to_value(verdict) {
-        let errors = match schema_err {
-            SchemaValidationError::ValidationErrors(errs) => errs.clone(),
-            _ => vec![schema_err.to_string()],
+        let errors = if let Some(SchemaValidationError::ValidationErrors(errs)) =
+            schema_err.downcast_ref::<SchemaValidationError>()
+        {
+            errs.clone()
+        } else {
+            vec![schema_err.to_string()]
         };
         if let Some(fixed) = deterministic_fix_outcome_verdict(args, verdict, &errors) {
             log_fallback_usage(
@@ -297,7 +210,7 @@ pub(crate) async fn verify_nontrivial_step_outcomes(
     chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
-    route_decision: &RouteDecision,
+    route: &str,
     program: &Program,
     step_results: &mut [StepResult],
 ) -> bool {
@@ -332,7 +245,7 @@ pub(crate) async fn verify_nontrivial_step_outcomes(
             chat_url,
             cfg,
             user_message,
-            route_decision,
+            route,
             &program.objective,
             step,
             result,
@@ -441,7 +354,7 @@ pub(crate) async fn gate_formula_memory_once(
     chat_url: &Url,
     cfg: &Profile,
     user_message: &str,
-    route_decision: &RouteDecision,
+    route: &str,
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
     scope: &ScopePlan,
@@ -449,7 +362,7 @@ pub(crate) async fn gate_formula_memory_once(
     step_results: &[StepResult],
 ) -> Result<MemoryGateVerdict> {
     let payload = serde_json::json!({
-        "user_message": user_message, "route": route_decision.route,
+        "user_message": user_message, "route": route,
         "complexity": complexity.complexity, "formula": formula.primary,
         "scope_objective": scope.objective, "program_objective": program.objective,
         "program_signature": program_signature(program),
@@ -482,4 +395,55 @@ pub(crate) async fn preflight_command_once(
         "command_lookup": command_lookup,
     });
     chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, payload.to_string())).await
+}
+pub(crate) async fn verify_outcome_match_intent(
+    args: &Args,
+    client: &reqwest::Client,
+    chat_url: &Url,
+    cfg: &Profile,
+    user_message: &str,
+    route: &str,
+    objective: &str,
+    step: &Step,
+    result: &StepResult,
+) -> Result<OutcomeVerificationVerdict> {
+    let narrative = crate::intel_narrative::build_outcome_verification_narrative(
+        user_message,
+        route,
+        objective,
+        step,
+        result,
+    );
+    chat_json_with_repair(client, chat_url, &mk_intel_req(cfg, narrative)).await
+}
+
+fn validate_outcome_verdict(_args: &Args, verdict: &OutcomeVerificationVerdict) -> Result<()> {
+    if verdict.status.is_empty() {
+        return Err(anyhow::anyhow!("Missing 'status' field in verdict"));
+    }
+    let s = verdict.status.to_lowercase();
+    if s != "ok" && s != "retry" {
+        return Err(anyhow::anyhow!("Invalid status: {}", verdict.status));
+    }
+    Ok(())
+}
+
+fn default_outcome_verdict(exit_code: i32) -> OutcomeVerificationVerdict {
+    if exit_code == 0 {
+        OutcomeVerificationVerdict {
+            status: "ok".to_string(),
+            reason: "default: exit_code 0".to_string(),
+            answered_request: false,
+            faithful_to_evidence: false,
+            plain_text: false,
+        }
+    } else {
+        OutcomeVerificationVerdict {
+            status: "retry".to_string(),
+            reason: format!("default: non-zero exit code {}", exit_code),
+            answered_request: false,
+            faithful_to_evidence: false,
+            plain_text: false,
+        }
+    }
 }

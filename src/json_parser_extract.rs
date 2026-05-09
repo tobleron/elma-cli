@@ -269,11 +269,11 @@ pub(crate) fn extract_label(
     raw: &str,
     pairs: &'static [(&'static str, &'static str)],
 ) -> Option<&'static str> {
-    let result = super::parse_intel_output(raw, pairs);
-    result.label.and_then(|label| {
+    let result = crate::json_parser::parse_intel_output(raw, pairs);
+    result.label.as_deref().and_then(|label| {
         pairs
             .iter()
-            .find(|(_, l)| l.eq_ignore_ascii_case(&label))
+            .find(|(_, l)| l.eq_ignore_ascii_case(label))
             .map(|(_, l)| *l)
     })
 }

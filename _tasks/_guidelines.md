@@ -46,15 +46,17 @@ If all recovery options fail, Elma should stop honestly, explain the exact block
 
 ## Long-Running Autonomy
 
-Elma is designed to continue until the user request is resolved or a real blocker is reached. Runtime budgets must favor completion:
+Elma is designed to continue until the user request is resolved or a real blocker is reached. Runtime budgets favor completion:
 
+- **No Wall-Clock Limits**: Elma does not stop based on elapsed time. She continues as long as progress is being made.
+- **Autonomous Persistence**: The agent performs long autonomous runs without stopping until the objective's finalization criteria are met or a structural blocker is reached.
 - High iteration ceilings for open-ended work.
 - Stagnation detection that changes strategy before stopping.
 - Approach branching after repeated failure.
 - Completion contracts that prevent polished partial answers.
 - Trace and transcript rows that show routing, budget, compaction, retries, coverage, stop reasons, and finalization decisions.
 
-Stopping is acceptable only when the system can explain why further autonomous work is not currently productive.
+Stopping is acceptable only when the system can explain why further autonomous work is not currently productive (e.g., real stagnation or budget exhaustion).
 
 ## What Success Looks Like
 

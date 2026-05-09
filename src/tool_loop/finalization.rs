@@ -96,7 +96,6 @@ pub(crate) fn build_fallback_from_recent_tool_evidence(
             StopReason::IterationLimitReached
                 | StopReason::StageBudgetExceeded
                 | StopReason::TaskBudgetExceeded
-                | StopReason::WallClockExceeded
         )
     );
 

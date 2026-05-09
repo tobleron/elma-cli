@@ -5,6 +5,7 @@
 //! Provides iterative program refinement based on execution feedback.
 //! This enables Elma to autonomously revise plans when objectives are not achieved.
 
+use crate::tune_scenario_helpers::*;
 use crate::*;
 
 /// Context for program refinement
@@ -246,9 +247,8 @@ pub async fn refine_program(
 
     // Parse the response as a Program
     // Use extract_first_json_object to handle models that wrap JSON in markdown or add prose
-    let json_str =
-        crate::routing::extract_first_json_object(&response_text).unwrap_or(&response_text);
-    parse_json_loose(json_str).context("Failed to parse refined program from model response")
+    let json_str = crate::json_parser_extract::extract_json_from_text(&response_text).unwrap_or_else(|| response_text.clone());
+    crate::json_parser::parse_model_json::<Program>(&json_str).context("Failed to parse refined program from model response")
 }
 
 /// Truncate text to maximum length

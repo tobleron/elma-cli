@@ -24,7 +24,6 @@ mod app_bootstrap_modes;
 mod app_bootstrap_profiles;
 mod app_chat;
 mod app_chat_core;
-mod app_chat_fast_paths;
 mod app_chat_handlers;
 mod app_chat_helpers;
 mod app_chat_loop;
@@ -77,7 +76,6 @@ mod event_log; // Task 470: Action-Observation Event Log
 mod evidence_ledger; // Task 287: Evidence Ledger
 mod evidence_summary; // Task 287: Evidence Summarization
 mod execution;
-mod execution_ladder; // Execution ladder for minimum-sufficient orchestration
 mod execution_profiles; // Task 459: Sandboxed Execution Profile System
 mod execution_steps;
 mod execution_steps_compat;
@@ -109,9 +107,6 @@ mod input_controller; // Task 637: Input controller
 mod input_parser; // Task 013: Smart Input Prefixes And Command Modes
 mod instruction_repair; // Task 391: Instruction-Level Repair And Result Recombiner
 mod intel_narrative; // Narrative transformation for intel units
-mod intel_narrative_advanced; // Advanced assessment narrative functions
-mod intel_narrative_intent; // Intent analysis narrative functions
-mod intel_narrative_planning; // Planning-related narrative functions
 mod intel_narrative_steps; // Step-related narrative functions and helpers
 mod intel_narrative_utils; // Shared narrative utility helpers
 mod intel_trait; // Intel unit trait and interfaces
@@ -142,13 +137,6 @@ mod optimization_eval;
 mod optimization_tune;
 mod orchestration;
 mod orchestration_core;
-mod orchestration_helpers;
-mod orchestration_loop;
-mod orchestration_loop_helpers; // Orchestration Loop - Helper Functions
-mod orchestration_loop_reviewers;
-mod orchestration_loop_verdicts;
-mod orchestration_planning; // Planning Prior and Hierarchical Decomposition Module
-mod orchestration_retry; // Retry orchestration and meta-review
 mod patch_executor; // Task 455: Patch Tool Multi-File Atomic
 mod paths;
 mod permission_gate; // Task 117: Permission Gate for Destructive Commands
@@ -172,17 +160,11 @@ mod pubsub; // Task 019: Generic Pub/Sub Broker
 mod reasoning_visibility; // Task 642: Reasoning Visibility Policy
 pub mod recipes; // Task 451: Recipe And Subrecipe Workflow System
 mod refinement;
-mod reflection;
 mod remote_daemon; // Task 684: Remote daemon channel and notification integrations
 mod repo_explorer; // Task 196: Repo explorer and analyzer skill
 mod repo_map; // Task 463: Symbol Aware Repo Map And Tag Cache
 mod retry; // Task 570: Bounded retry with exponential backoff
 mod provider_recovery; // Task 693: Provider finalization recovery
-mod routing;
-mod routing_calc;
-mod routing_config; // Routing configuration for confidence-based decisions
-mod routing_infer;
-mod routing_parse;
 mod runtime_task;
 mod safe_mode; // Task 272: Safe Mode Toggle System For Permission Levels
 mod safe_operations; // Task 692: Safe file operation planning and verification
@@ -214,7 +196,6 @@ mod snapshot;
 mod sse_stream; // Task 558: SSE byte stream parser
 mod stop_policy;
 mod storage;
-mod strategy; // Multi-strategy planning with fallback chains (Task 010)
 mod stream_types; // Task 558: SSE streaming types
 mod streaming_tool_executor; // Task 115: Streaming Token Execution
 mod strict_tool_parser; // Task 645: Strict tool argument parsing and model-facing error contracts
@@ -242,10 +223,9 @@ mod trash;
 mod tune;
 mod tune_runtime;
 mod tune_scenario;
-mod tune_scenario_helpers;
 mod tune_setup;
 mod tune_summary;
-mod tuning_support;
+mod tune_scenario_helpers;
 mod types;
 mod types_api;
 mod types_core;
@@ -280,7 +260,6 @@ pub(crate) use document_adapter::*; // Task 197: Document intelligence
 pub(crate) use errors::*;
 pub(crate) use evaluation::*;
 pub(crate) use execution::*;
-pub(crate) use execution_ladder::*; // Execution ladder types and functions
 pub(crate) use file_scout::*; // Task 198: File scout
 pub(crate) use guardrails::*; // State-aware guardrails (Task 011)
 pub(crate) use guardrails_refinement::*; // Guardrails refinement phase (Task 011)
@@ -294,7 +273,6 @@ pub(crate) use metrics::*;
 pub(crate) use models_api::*;
 pub(crate) use optimization::*;
 pub(crate) use orchestration::*;
-pub(crate) use orchestration_helpers::*;
 pub(crate) use paths::*;
 pub(crate) use profile_sets::*;
 pub(crate) use program::*;
@@ -305,10 +283,8 @@ pub(crate) use prompt_constants::*;
 pub(crate) use protected_paths::*;
 pub(crate) use reasoning_visibility::*;
 pub(crate) use refinement::*;
-pub(crate) use reflection::*;
 pub(crate) use repo_explorer::*; // Task 196: Repo explorer
 pub(crate) use retry::*;
-pub(crate) use routing::*;
 pub(crate) use runtime_task::*;
 pub(crate) use sanitize::*;
 pub(crate) use scenarios::*;
@@ -320,12 +296,10 @@ pub(crate) use skills::*;
 pub(crate) use snapshot::*;
 pub(crate) use stop_policy::*;
 pub(crate) use storage::*;
-pub(crate) use strategy::*; // Multi-strategy planning (Task 010)
 pub(crate) use task_steward::*; // Task 202: Task steward
 pub(crate) use text_utils::*;
 pub(crate) use thinking_content::*;
 pub(crate) use tune::*;
-pub(crate) use tuning_support::*;
 pub(crate) use types::*;
 pub(crate) use ui::*;
 pub(crate) use verification::*;

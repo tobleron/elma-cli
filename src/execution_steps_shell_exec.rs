@@ -134,7 +134,6 @@ async fn compact_evidence_via_unit(
     let unit = EvidenceCompactorUnit::new(compactor_cfg.clone());
     let context = IntelContext::new(
         objective.to_string(),
-        neutral_route_decision(),
         output.to_string(),
         String::new(),
         Vec::new(),
@@ -160,7 +159,6 @@ async fn classify_artifacts_via_unit(
     let unit = ArtifactClassifierUnit::new(classifier_cfg.clone());
     let context = IntelContext::new(
         objective.to_string(),
-        neutral_route_decision(),
         evidence.to_string(),
         String::new(),
         Vec::new(),
@@ -185,7 +183,6 @@ async fn repair_command_via_unit(
     let unit = CommandRepairUnit::new(repair_cfg.clone());
     let context = IntelContext::new(
         cmd.to_string(),
-        neutral_route_decision(),
         summarize_shell_output(output),
         String::new(),
         Vec::new(),

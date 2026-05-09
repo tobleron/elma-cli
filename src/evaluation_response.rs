@@ -2,6 +2,7 @@
 //!
 //! Response evaluation suite for calibration.
 
+use crate::tune_scenario_helpers::*;
 use crate::*;
 
 pub(crate) async fn evaluate_response_suite_impl(
@@ -128,14 +129,14 @@ pub(crate) async fn evaluate_response_suite_impl(
             &memories,
             &conversation_messages,
         )
-        .await;
+        .await?;
         let (mut program, _) = match orchestrate_program_once(
             client,
             chat_url,
             &orchestrator_cfg,
             &user_message,
             &decision,
-            workflow_plan.as_ref(),
+            Some(&workflow_plan),
             &complexity,
             &scope,
             &formula,
@@ -168,7 +169,7 @@ pub(crate) async fn evaluate_response_suite_impl(
             &repo,
             program,
             &decision,
-            workflow_plan.as_ref(),
+            Some(&workflow_plan),
             &complexity,
             &scope,
             &formula,

@@ -179,6 +179,19 @@ impl ApproachRehydrator {
 
         FailureTaxonomy::Unknown
     }
+
+    /// Provide a strategy hint based on a failure class label.
+    pub(crate) fn strategy_for_failure_by_label(label: &str) -> &'static str {
+        match label {
+            "permission_denied" => "Request permission or use alternative path",
+            "timeout" => "Decompose into smaller steps with shorter timeouts",
+            "stagnation" => "Change approach strategy to avoid repetition",
+            "model_error" => "Retry with lower temperature and stricter output format",
+            "context_limit" => "Compact context, trim history, retry with minimal context",
+            "tool_error" => "Retry with alternative tool or approach",
+            _ => "Retry with enhanced diagnostics and error capture",
+        }
+    }
 }
 
 #[cfg(test)]

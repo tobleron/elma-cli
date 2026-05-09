@@ -11,20 +11,24 @@ mod tests {
     use crate::*;
 
     fn test_probability_decision(choice: &str) -> ProbabilityDecision {
+        let mut distribution = std::collections::HashMap::new();
+        distribution.insert(choice.to_string(), 1.0);
         ProbabilityDecision {
             choice: choice.to_string(),
             source: "test".to_string(),
-            distribution: vec![(choice.to_string(), 1.0)],
+            distribution,
             margin: 1.0,
             entropy: 0.0,
         }
     }
 
     fn test_route_decision(route: &str) -> RouteDecision {
+        let mut distribution = std::collections::HashMap::new();
+        distribution.insert(route.to_string(), 1.0);
         RouteDecision {
             route: route.to_string(),
             source: "test".to_string(),
-            distribution: vec![(route.to_string(), 1.0)],
+            distribution,
             margin: 1.0,
             entropy: 0.0,
             speech_act: test_probability_decision("INSTRUCT"),
@@ -539,7 +543,7 @@ mod tests {
             },
         ]);
 
-        let result = validate_evidence_requirements(&program, &route, &complexity, &formula);
+        let result = validate_evidence_requirements(&program, &complexity, &formula);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -612,7 +616,7 @@ mod tests {
             },
         ]);
 
-        assert!(validate_evidence_requirements(&program, &route, &complexity, &formula).is_ok());
+        assert!(validate_evidence_requirements(&program, &complexity, &formula).is_ok());
     }
 
     #[test]

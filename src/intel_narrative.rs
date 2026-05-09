@@ -10,7 +10,7 @@
 //! - Single point of change for narrative format updates
 //! - Future-proof: can swap to model-based narrative without changing callers
 
-use crate::{Program, RouteDecision, StepResult};
+use crate::{Program, StepResult};
 use serde_json::Value;
 
 // Re-export for external callers and bring into local scope
@@ -18,13 +18,7 @@ pub(crate) use crate::intel_narrative_steps::{
     build_step_results_narrative, build_steps_narrative, step_detail, step_id, step_kind,
     step_purpose, step_result_text,
 };
-// Re-export planning narratives
-pub(crate) use crate::intel_narrative_planning::{
-    build_action_needs_narrative, build_claim_check_narrative, build_complexity_narrative,
-    build_evidence_needs_narrative, build_formula_selector_narrative,
-    build_rename_suggester_narrative, build_scope_builder_narrative, build_selector_narrative,
-    build_workflow_planner_narrative,
-};
+// Planning narratives re-exports removed (missing file)
 use crate::intel_narrative_utils::{format_conversation_excerpt, render_json_value};
 
 // Re-export test helpers
@@ -37,7 +31,6 @@ pub(crate) use crate::intel_narrative_utils::{fallback_text, snippet};
 /// Build evidence mode classifier narrative.
 pub(crate) fn build_evidence_mode_narrative(
     user_message: &str,
-    route_decision: &RouteDecision,
     reply_instructions: &str,
     step_results: &[StepResult],
     has_command_request: bool,
@@ -46,7 +39,6 @@ pub(crate) fn build_evidence_mode_narrative(
 ) -> String {
     build_evidence_mode_narrative_with_ledger(
         user_message,
-        route_decision,
         reply_instructions,
         step_results,
         has_command_request,
@@ -58,7 +50,6 @@ pub(crate) fn build_evidence_mode_narrative(
 
 pub(crate) fn build_evidence_mode_narrative_with_ledger(
     user_message: &str,
-    route_decision: &RouteDecision,
     reply_instructions: &str,
     step_results: &[StepResult],
     has_command_request: bool,
@@ -72,10 +63,6 @@ pub(crate) fn build_evidence_mode_narrative_with_ledger(
         r#"USER MESSAGE:
 {user_message}
 
-ROUTE CONTEXT:
-- route: {route}
-- speech_act_choice: {speech_act}
-
 REPLY INSTRUCTIONS:
 {reply_instructions}
 
@@ -87,8 +74,6 @@ EXECUTION SIGNALS:
 STEP RESULTS:
 {step_results_narrative}"#,
         user_message = user_message.trim(),
-        route = route_decision.route,
-        speech_act = route_decision.speech_act.choice,
         reply_instructions = reply_instructions.trim(),
         has_command_request = has_command_request,
         has_command_execution = has_command_execution,
@@ -149,7 +134,6 @@ ARTIFACT EVIDENCE TO CLASSIFY:
 
 pub(crate) fn build_result_presenter_narrative(
     user_message: &str,
-    route_decision: &RouteDecision,
     runtime_context: &Value,
     evidence_mode: &Value,
     response_advice: &Value,
@@ -164,10 +148,6 @@ pub(crate) fn build_result_presenter_narrative(
     format!(
         r#"USER MESSAGE:
 {user_message}
-
-ROUTE CONTEXT:
-- route: {route}
-- speech_act: {speech_act}
 
 RUNTIME CONTEXT:
 {runtime_context}
@@ -206,8 +186,6 @@ PRESENTATION RULES:
    - Unread files are NOT confirmed evidence. If you cite a file you haven't read, it MUST be [assumed].
    - Prefer verified evidence over assumptions in the main report list."#,
         user_message = user_message.trim(),
-        route = route_decision.route,
-        speech_act = route_decision.speech_act.choice,
         runtime_context = render_json_value(runtime_context),
         evidence_mode = render_json_value(evidence_mode),
         response_advice = render_json_value(response_advice),
@@ -221,7 +199,6 @@ PRESENTATION RULES:
 
 pub(crate) fn build_expert_advisor_narrative(
     user_message: &str,
-    route_decision: &RouteDecision,
     evidence_mode: &Value,
     reply_instructions: &Value,
     step_results: &Value,
@@ -229,10 +206,6 @@ pub(crate) fn build_expert_advisor_narrative(
     format!(
         r#"USER MESSAGE:
 {user_message}
-
-ROUTE CONTEXT:
-- route: {route}
-- speech_act: {speech_act}
 
 EVIDENCE MODE:
 {evidence_mode}
@@ -248,11 +221,71 @@ Return compact response advice that helps Elma present the outcome in the most u
 Identify if the evidence is sufficient, partial, or missing.
 Advise on the most direct and honest posture."#,
         user_message = user_message.trim(),
-        route = route_decision.route,
-        speech_act = route_decision.speech_act.choice,
         evidence_mode = render_json_value(evidence_mode),
         reply_instructions = render_json_value(reply_instructions),
         step_results = render_json_value(step_results),
+    )
+}
+
+pub(crate) fn build_selector_narrative(
+    user_message: &str,
+    purpose: &Value,
+    instructions: &Value,
+    evidence: &Value,
+) -> String {
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+PURPOSE:
+{purpose}
+
+INSTRUCTIONS:
+{instructions}
+
+EVIDENCE TO SELECT FROM:
+{evidence}
+
+YOUR TASK:
+Identify items from the evidence that match the instructions and purpose.
+Answer with ONLY a valid JSON object containing:
+- items: list of selected item identifiers
+- reason: one short sentence explaining the selection"#,
+        user_message = user_message.trim(),
+        purpose = render_json_value(purpose),
+        instructions = render_json_value(instructions),
+        evidence = render_json_value(evidence),
+    )
+}
+
+pub(crate) fn build_rename_suggester_narrative(
+    user_message: &str,
+    purpose: &Value,
+    instructions: &Value,
+    evidence: &Value,
+) -> String {
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+PURPOSE:
+{purpose}
+
+INSTRUCTIONS:
+{instructions}
+
+EVIDENCE FOR CONTEXT:
+{evidence}
+
+YOUR TASK:
+Suggest a new name/identifier based on the instructions and evidence.
+Answer with ONLY a valid JSON object containing:
+- identifier: the suggested new name
+- reason: one short sentence explaining the suggestion"#,
+        user_message = user_message.trim(),
+        purpose = render_json_value(purpose),
+        instructions = render_json_value(instructions),
+        evidence = render_json_value(evidence),
     )
 }
 
@@ -427,6 +460,90 @@ Answer with ONLY: {{"status": "ok" or "retry", "reason": "one short sentence"}}"
         objective = objective.trim(),
         steps_narrative = steps_narrative,
         task_description = task_description,
+    )
+}
+
+/// Build outcome verification narrative.
+pub(crate) fn build_outcome_verification_narrative(
+    user_message: &str,
+    route: &str,
+    objective: &str,
+    step: &crate::Step,
+    result: &crate::StepResult,
+) -> String {
+    let step_detail = crate::intel_narrative_steps::step_detail(step);
+    let step_purpose = crate::intel_narrative_steps::step_purpose(step);
+    let step_result = result
+        .raw_output
+        .as_deref()
+        .map(crate::intel_narrative_utils::snippet)
+        .unwrap_or_else(|| "none".to_string());
+
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+ROUTE:
+{route}
+
+OBJECTIVE:
+{objective}
+
+STEP TO VERIFY:
+- type: {step_type}
+- detail: {step_detail}
+- purpose: {step_purpose}
+
+OBSERVED RESULT:
+- ok: {ok}
+- exit_code: {exit_code:?}
+- output snippet: {step_result}
+
+YOUR TASK:
+Does this result satisfy the step's purpose and contribute correctly to the objective?
+Answer with ONLY: {{"status": "ok" or "retry", "reason": "one short sentence"}}"#,
+        user_message = user_message.trim(),
+        route = route,
+        objective = objective.trim(),
+        step_type = crate::intel_narrative_steps::step_kind(step),
+        step_detail = step_detail,
+        step_purpose = step_purpose,
+        ok = result.ok,
+        exit_code = result.exit_code,
+        step_result = step_result,
+    )
+}
+
+/// Build claim check narrative.
+pub(crate) fn build_claim_check_narrative(
+    user_message: &str,
+    evidence_mode: &str,
+    draft_response: &str,
+    step_results: &[crate::StepResult],
+) -> String {
+    let step_results_narrative = crate::intel_narrative_steps::build_step_results_narrative(step_results, None);
+
+    format!(
+        r#"USER MESSAGE:
+{user_message}
+
+EVIDENCE MODE:
+{evidence_mode}
+
+DRAFT RESPONSE TO CHECK:
+{draft_response}
+
+OBSERVED STEP RESULTS:
+{step_results_narrative}
+
+YOUR TASK:
+Does the draft response contain any claims not supported by the observed step results?
+Identify any missing key points from the evidence.
+Answer with ONLY: {{"status": "ok" or "retry", "reason": "...", "unsupported_claims": [], "missing_points": [], "rewrite_instructions": "..."}}"#,
+        user_message = user_message.trim(),
+        evidence_mode = evidence_mode,
+        draft_response = draft_response.trim(),
+        step_results_narrative = step_results_narrative,
     )
 }
 

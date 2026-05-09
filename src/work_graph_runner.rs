@@ -302,6 +302,7 @@ impl WorkGraphRunner {
                 graph.set_node_status(&progress.node_id, NodeStatus::Succeeded);
             }
         }
+        self.current_progress = None;
     }
 
     /// Mark the current node as Failed.
@@ -311,6 +312,7 @@ impl WorkGraphRunner {
                 graph.set_node_status(&progress.node_id, NodeStatus::Failed);
             }
         }
+        self.current_progress = None;
     }
 
     /// Mark the current node as Skipped (budget exhausted, not relevant).
@@ -320,6 +322,7 @@ impl WorkGraphRunner {
                 graph.set_node_status(&progress.node_id, NodeStatus::Skipped);
             }
         }
+        self.current_progress = None;
     }
 
     // ── approach retry tracking ──────────────────────────────────────────
@@ -687,6 +690,11 @@ impl WorkGraphRunner {
         if let Some(ref mut graph) = self.graph {
             for id in &matching {
                 graph.set_node_status(id, NodeStatus::Succeeded);
+                if let Some(ref progress) = self.current_progress {
+                    if progress.node_id == *id {
+                        self.current_progress = None;
+                    }
+                }
             }
         }
         !matching.is_empty()

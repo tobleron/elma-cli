@@ -3,6 +3,7 @@
 //! Model Optimization - Tuning Module
 
 use crate::app_bootstrap_profiles::load_profiles;
+use crate::tune_scenario_helpers::*;
 use crate::*;
 
 // Private helpers for optimize_model

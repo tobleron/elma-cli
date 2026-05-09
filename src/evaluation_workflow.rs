@@ -2,6 +2,7 @@
 //!
 //! Workflow evaluation suite for calibration.
 
+use crate::tune_scenario_helpers::*;
 use crate::*;
 
 pub(crate) async fn evaluate_workflow_suite_impl(
@@ -115,7 +116,7 @@ pub(crate) async fn evaluate_workflow_suite_impl(
             &memories,
             &conversation_messages,
         )
-        .await;
+        .await?;
 
         let (mut program, _) = match orchestrate_program_once(
             client,
@@ -123,7 +124,7 @@ pub(crate) async fn evaluate_workflow_suite_impl(
             &orchestrator_cfg,
             &user_message,
             &decision,
-            workflow_plan.as_ref(),
+            Some(&workflow_plan),
             &complexity,
             &scope,
             &formula,
@@ -156,7 +157,7 @@ pub(crate) async fn evaluate_workflow_suite_impl(
             &orchestrator_cfg,
             &user_message,
             &decision,
-            workflow_plan.as_ref(),
+            Some(&workflow_plan),
             &complexity,
             &scope,
             &formula,
@@ -188,7 +189,7 @@ pub(crate) async fn evaluate_workflow_suite_impl(
                 &repo,
                 program,
                 &decision,
-                workflow_plan.as_ref(),
+                Some(&workflow_plan),
                 &complexity,
                 &scope,
                 &formula,

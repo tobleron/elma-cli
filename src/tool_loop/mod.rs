@@ -298,7 +298,6 @@ pub(crate) async fn run_tool_loop(
     if work_graph_runner.is_graph_driven() {
         budget.max_iterations = 1000;
     }
-    let total_timeout = Duration::from_secs(45 * 60);
     let loop_start = Instant::now();
     let original_user_request = user_message.to_string();
     let artifact_request = raw_user_request.unwrap_or(user_message);
@@ -427,55 +426,7 @@ pub(crate) async fn run_tool_loop(
             Some(&turn_id),
         );
 
-        let elapsed = loop_start.elapsed();
-        if elapsed > total_timeout {
-            let elapsed_mins = elapsed.as_secs() as f64 / 60.0;
-            let timeout_reason = format!(
-                "45-minute timeout exceeded after {:.1} minutes",
-                elapsed_mins
-            );
-            trace(args, &format!("tool_loop: TIMEOUT {}", timeout_reason));
-            crate::event_log::record_finalization(
-                crate::event_log::FinalizationEventType::FinalAnswerPrepared,
-                &turn_id,
-                "timeout",
-            );
-            crate::event_log::record_lifecycle(
-                crate::event_log::LifecycleEventType::TurnFinished,
-                Some(&turn_id),
-            );
-            crate::event_log::clear_current_turn();
-            let _ = crate::event_log::persist(&sess.root);
-            tui.push_stop_notice(&format!("Timeout: {}", timeout_reason));
-            tui.push_meta_event(
-                "STOP",
-                &format!("Stopping: {}", timeout_reason),
-            );
-            sync_loop_summary_coverage(&mut loop_summary_tracker, &scope_coverage);
-            return Ok(ToolLoopResult {
-                final_answer: format!(
-                    "⏱️ **Timeout After {:.1} Minutes**\n\n\
-                     The task was cancelled due to exceeding the 45-minute time limit.\n\n\
-                     **Time spent:** {:.1} minutes\n\
-                     **Iterations completed:** {}\n\
-                     **Tool calls made:** {}\n\n\
-                     **Cause:** Slow model response time (local model)\n\n\
-                     Try simplifying the request or breaking it into smaller steps.",
-                    elapsed_mins,
-                    elapsed_mins,
-                    stop_policy.iteration(),
-                    stop_policy.total_tool_calls()
-                ),
-                iterations: stop_policy.iteration(),
-                tool_calls_made: stop_policy.total_tool_calls(),
-                stopped_by_max: false,
-                stop_outcome: None,
-                total_elapsed_s: elapsed.as_secs() as f64,
-                timeout_reason: Some(timeout_reason),
-                evidence_progress_summary: build_evidence_progress_summary(&messages),
-                loop_summary: loop_summary_tracker.clone(),
-            });
-        }
+        // T303: Iteration starts
 
         if let Some(outcome) = stop_policy.start_iteration() {
             trace(
@@ -1615,8 +1566,8 @@ pub(crate) async fn run_tool_loop(
                     if !read_scope_required {
                         read_scope_required = true;
                     }
-                    tui.push_meta_event("COVERAGE", &work_graph_runner.render_progress());
                 }
+                tui.push_meta_event("COVERAGE", &work_graph_runner.render_progress());
 
                 if work_graph_runner.is_graph_driven() {
                     work_graph_runner.sync_external_coverage(&scope_coverage);
@@ -1906,11 +1857,18 @@ pub(crate) async fn run_tool_loop(
                 if result.ok {
                     loop_summary_tracker.tool_calls_made += 1;
                     loop_summary_tracker.tool_call_ids.push(tc.id.clone());
-                    match tc.function.name.as_str() {
                         "read" => {
                             let path = crate::tool_repair::extract_path_from_args(&tc.function.arguments);
                             loop_summary_tracker.successful_reads.push(path.clone());
                             work_graph_runner.mark_instruction_by_path(&path);
+                        }
+                        "shell" => {
+                            // If a shell command succeeded, we likely finished the current instruction
+                            // unless it's a long-running multi-command sequence.
+                            if work_graph_runner.is_graph_driven() {
+                                work_graph_runner.mark_current_node_succeeded();
+                                trace(args, "work_graph_runner: marked current node succeeded after shell tool success");
+                            }
                         }
                         "search" => {
                             loop_summary_tracker

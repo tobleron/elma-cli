@@ -37,7 +37,6 @@ pub(crate) enum StopReason {
     RepeatedSameConclusion,
     RespondAbuse,
     RespondOnlyStagnation,
-    WallClockExceeded,
     ModelProgressStalled,
     UserInterrupted,
 }
@@ -54,7 +53,6 @@ impl StopReason {
             StopReason::RepeatedSameConclusion => "repeated_same_conclusion",
             StopReason::RespondAbuse => "respond_abuse",
             StopReason::RespondOnlyStagnation => "respond_only_stagnation",
-            StopReason::WallClockExceeded => "wall_clock_exceeded",
             StopReason::ModelProgressStalled => "model_progress_stalled",
             StopReason::UserInterrupted => "user_interrupted",
         }
@@ -102,7 +100,6 @@ impl StopReason {
                 | StopReason::RepeatedNoNewEvidence
                 | StopReason::RepeatedSameCommand
                 | StopReason::RepeatedSameConclusion
-                | StopReason::WallClockExceeded
                 | StopReason::ModelProgressStalled
         )
     }
@@ -132,7 +129,6 @@ pub(crate) struct StageBudget {
     pub max_iterations: usize,
     pub max_repeated_failures: usize,
     pub max_stagnation_cycles: usize,
-    pub max_wall_clock_s: u64,
 }
 
 impl Default for StageBudget {
@@ -142,7 +138,6 @@ impl Default for StageBudget {
             max_iterations: 20, // Default cap for safety
             max_repeated_failures: 6,
             max_stagnation_cycles: 8,
-            max_wall_clock_s: 300,
         }
     }
 }
@@ -254,14 +249,6 @@ impl StopPolicy {
             return Some(self.build_outcome(
                 StopReason::IterationLimitReached,
                 format!("Iteration limit reached ({}/{}). The model has used the maximum number of tool loops allowed for this complexity tier.", self.iteration - 1, self.budget.max_iterations),
-            ));
-        }
-
-        let elapsed = self.start_time.elapsed().as_secs();
-        if elapsed > self.budget.max_wall_clock_s {
-            return Some(self.build_outcome(
-                StopReason::WallClockExceeded,
-                "Wall-clock budget exhausted. The stage has run longer than the configured maximum.",
             ));
         }
 
@@ -613,14 +600,6 @@ Consider: (1) using a different tool (read/search instead of shell), (2) narrowi
             ));
         }
 
-        let elapsed = self.start_time.elapsed().as_secs();
-        if elapsed > self.budget.max_wall_clock_s {
-            return Some(self.build_outcome(
-                StopReason::WallClockExceeded,
-                "Wall-clock budget exhausted.",
-            ));
-        }
-
         if self.max_consecutive_failures() >= self.budget.max_repeated_failures {
             return Some(self.build_outcome(
                 StopReason::RepeatedToolFailure,
@@ -730,9 +709,6 @@ fn next_step_hint(reason: &StopReason) -> String {
         }
         StopReason::RespondOnlyStagnation => {
             "Status updates alone do not solve tasks. Gather evidence from the workspace.".to_string()
-        }
-        StopReason::WallClockExceeded => {
-            "Run the step again with a tighter scope, or split it into smaller chunks.".to_string()
         }
         StopReason::ModelProgressStalled => {
             "Restart the turn with a simpler, more direct prompt.".to_string()
@@ -1379,7 +1355,6 @@ mod tests {
         assert!(StopReason::StageBudgetExceeded.is_bad_stop());
         assert!(StopReason::RepeatedToolFailure.is_bad_stop());
         assert!(StopReason::RepeatedNoNewEvidence.is_bad_stop());
-        assert!(StopReason::WallClockExceeded.is_bad_stop());
         assert!(StopReason::ModelProgressStalled.is_bad_stop());
         assert!(StopReason::RespondOnlyStagnation.is_bad_stop());
     }
@@ -1539,20 +1514,4 @@ mod tests {
         assert!(!policy.goal_consistency_check_needed());
     }
 
-    #[test]
-    fn regression_wall_clock_budget_stops_after_timeout() {
-        let budget = StageBudget {
-            max_wall_clock_s: 1,
-            ..Default::default()
-        };
-        let mut policy = StopPolicy::new(budget);
-        // Set start_time to a past time to simulate wall clock expiry
-        policy.start_time = std::time::Instant::now() - std::time::Duration::from_secs(2);
-        let outcome = policy.start_iteration();
-        assert!(
-            outcome.is_some(),
-            "wall clock budget should trigger stop when exceeded"
-        );
-        assert_eq!(outcome.unwrap().reason.as_str(), "wall_clock_exceeded");
-    }
 }

@@ -44,7 +44,6 @@ impl AnswerContinuityUnit {
         );
         let context = IntelContext::new(
             narrative,
-            crate::RouteDecision::default(),
             String::new(),
             String::new(),
             Vec::new(),
@@ -185,7 +184,6 @@ mod tests {
         let unit = AnswerContinuityUnit::new(profile);
         let ctx = IntelContext::new(
             "test".to_string(),
-            crate::RouteDecision::default(),
             String::new(),
             String::new(),
             Vec::new(),

@@ -170,7 +170,7 @@ pub(crate) async fn maybe_save_formula_memory(
     model_id: &str,
     model_cfg_dir: &PathBuf,
     line: &str,
-    route_decision: &RouteDecision,
+    route: &str,
     complexity: &ComplexityAssessment,
     formula: &FormulaSelection,
     scope: &ScopePlan,
@@ -211,7 +211,7 @@ pub(crate) async fn maybe_save_formula_memory(
         );
         return Ok(());
     }
-    if request_requires_workspace_evidence(route_decision, complexity, formula)
+    if request_requires_workspace_evidence(complexity, formula)
         && !step_results_have_workspace_evidence(step_results)
     {
         trace(
@@ -221,14 +221,14 @@ pub(crate) async fn maybe_save_formula_memory(
         return Ok(());
     }
     if step_results.iter().all(|result| result.ok)
-        && !route_decision.route.eq_ignore_ascii_case("CHAT")
+        && !route.eq_ignore_ascii_case("CHAT")
     {
         let gate = gate_formula_memory_once(
             client,
             chat_url,
             memory_gate_cfg,
             line,
-            route_decision,
+            route,
             complexity,
             formula,
             scope,
@@ -258,7 +258,7 @@ pub(crate) async fn maybe_save_formula_memory(
             model_id: model_id.to_string(),
             active_run_id,
             user_message: line.to_string(),
-            route: route_decision.route.clone(),
+            route: route.to_string(),
             complexity: complexity.complexity.clone(),
             formula: if formula.primary.trim().is_empty() {
                 complexity.suggested_pattern.clone()

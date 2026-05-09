@@ -2,7 +2,7 @@
 //! App Chat - Program Orchestration and Resolution
 
 use crate::app::*;
-use crate::app_chat_fast_paths::*;
+
 use crate::app_chat_handlers::*;
 use crate::app_chat_helpers::*;
 use crate::*;
@@ -10,21 +10,13 @@ use crate::*;
 pub(crate) async fn build_program(
     runtime: &mut AppRuntime,
     line: &str,
-    route_decision: &RouteDecision,
-    workflow_plan: Option<&WorkflowPlannerOutput>,
-    complexity: &ComplexityAssessment,
-    scope: &ScopePlan,
-    formula: &FormulaSelection,
+    complexity_level: &str,
     tui: &mut crate::ui_terminal::TerminalUI,
 ) -> Program {
     build_program_with_temp(
         runtime,
         line,
-        route_decision,
-        workflow_plan,
-        complexity,
-        scope,
-        formula,
+        complexity_level,
         runtime.profiles.orchestrator_cfg.temperature,
         tui,
     )
@@ -34,23 +26,19 @@ pub(crate) async fn build_program(
 pub(crate) async fn build_program_with_temp(
     runtime: &mut AppRuntime,
     line: &str,
-    route_decision: &RouteDecision,
-    _workflow_plan: Option<&WorkflowPlannerOutput>,
-    _complexity: &ComplexityAssessment,
-    _scope: &ScopePlan,
-    _formula: &FormulaSelection,
+    complexity_level: &str,
     _temperature: f64,
     tui: &mut crate::ui_terminal::TerminalUI,
 ) -> Program {
     // Tool-calling pipeline: model plans and executes tools directly (no Maestro)
-    let context_hint = route_decision.route.as_str();
+    let context_hint = "SHELL";
     match crate::orchestration_core::run_tool_calling_pipeline(
         runtime,
         line,
         tui,
         context_hint,
-        route_decision.evidence_required,
-        _complexity.complexity.as_str(),
+        false, // evidence_required (always false in tool-calling-first routing)
+        complexity_level,
     )
     .await
     {
@@ -111,48 +99,24 @@ pub(crate) async fn build_program_with_temp(
     }
 }
 
-pub(crate) async fn resolve_final_text(
-    runtime: &AppRuntime,
-    line: &str,
-    route_decision: &RouteDecision,
-    step_results: &[StepResult],
-    final_reply: &mut Option<String>,
-    tui: Option<&mut crate::ui_terminal::TerminalUI>,
-) -> Result<(String, Option<u64>)> {
-    let reply_instructions = final_reply.clone().unwrap_or_else(|| {
-        "Respond to the user in plain terminal text. Use any step outputs as evidence.".to_string()
-    });
-    let presenter_cfg = match crate::ui_state::current_response_mode() {
-        crate::ui_state::ResponseMode::Concise => &runtime.profiles.result_presenter_concise_cfg,
-        crate::ui_state::ResponseMode::Long => &runtime.profiles.result_presenter_long_cfg,
-    };
-    let (final_text, usage) = generate_final_answer_once(
-        &runtime.client,
-        &runtime.chat_url,
-        &runtime.profiles.elma_cfg,
-        &runtime.profiles.evidence_mode_cfg,
-        &runtime.profiles.expert_advisor_cfg,
-        presenter_cfg,
-        &runtime.profiles.claim_checker_cfg,
-        &runtime.profiles.formatter_cfg,
-        &runtime.system_content,
-        &runtime.model_id,
-        runtime.chat_url.as_str(),
-        line,
-        route_decision,
-        step_results,
-        &reply_instructions,
-        &runtime.ws,
-        &runtime.ws_brief,
-        tui,
-    )
-    .await?;
-
-    let preserved = orchestration_helpers::preserve_exact_grounded_path(
-        final_text,
-        step_results,
-        &reply_instructions,
-    );
-
-    Ok((preserved, usage))
+fn build_direct_reply_program(line: &str) -> Program {
+    Program {
+        objective: line.to_string(),
+        steps: vec![Step::Respond {
+            id: "r1".to_string(),
+            instructions: "I encountered an error and could not process your request.".to_string(),
+            common: StepCommon {
+                purpose: "direct grounded reply".to_string(),
+                depends_on: Vec::new(),
+                success_condition: "the user receives a direct truthful answer".to_string(),
+                parent_id: None,
+                depth: None,
+                unit_type: None,
+                is_read_only: true,
+                is_destructive: false,
+                is_concurrency_safe: true,
+                interrupt_behavior: InterruptBehavior::Graceful,
+            },
+        }],
+    }
 }

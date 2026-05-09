@@ -5,6 +5,115 @@ use futures::stream::StreamExt;
 use crate::session_display::save_thinking_display;
 use crate::ui_trace::append_trace_log_line;
 
+const THINK_OPEN_TAG: &str = "<think>";
+const THINK_CLOSE_TAG: &str = "</think>";
+const THINKING_OPEN_TAG: &str = "<thinking>";
+const THINKING_CLOSE_TAG: &str = "</thinking>";
+const REASONING_OPEN_TAG: &str = "<reasoning>";
+const REASONING_CLOSE_TAG: &str = "</reasoning>";
+const THOUGHT_OPEN_TAG: &str = "<thought>";
+const THOUGHT_CLOSE_TAG: &str = "</thought>";
+
+fn match_reasoning_open(rest: &str) -> Option<usize> {
+    [
+        THINK_OPEN_TAG,
+        THINKING_OPEN_TAG,
+        REASONING_OPEN_TAG,
+        THOUGHT_OPEN_TAG,
+    ]
+    .into_iter()
+    .find_map(|tag| rest.starts_with(tag).then_some(tag.len()))
+}
+
+fn match_reasoning_close(rest: &str) -> Option<usize> {
+    [
+        THINK_CLOSE_TAG,
+        THINKING_CLOSE_TAG,
+        REASONING_CLOSE_TAG,
+        THOUGHT_CLOSE_TAG,
+    ]
+    .into_iter()
+    .find_map(|tag| rest.starts_with(tag).then_some(tag.len()))
+}
+
+fn has_reasoning_tag_prefix(rest: &str) -> bool {
+    [
+        THINK_OPEN_TAG,
+        THINK_CLOSE_TAG,
+        THINKING_OPEN_TAG,
+        THINKING_CLOSE_TAG,
+        REASONING_OPEN_TAG,
+        REASONING_CLOSE_TAG,
+        THOUGHT_OPEN_TAG,
+        THOUGHT_CLOSE_TAG,
+    ]
+    .into_iter()
+    .any(|tag| tag.starts_with(rest))
+}
+
+pub(crate) fn process_stream_content_chunk(
+    chunk: &str,
+    in_think_block: &mut bool,
+    pending_tag: &mut String,
+) -> (String, String) {
+    let mut input = String::with_capacity(pending_tag.len() + chunk.len());
+    input.push_str(pending_tag);
+    input.push_str(chunk);
+    pending_tag.clear();
+
+    let mut assistant = String::new();
+    let mut thinking = String::new();
+    let mut i = 0usize;
+
+    while i < input.len() {
+        let rest = &input[i..];
+        let Some(rel_lt) = rest.find('<') else {
+            if *in_think_block {
+                thinking.push_str(rest);
+            } else {
+                assistant.push_str(rest);
+            }
+            break;
+        };
+
+        if rel_lt > 0 {
+            let before = &rest[..rel_lt];
+            if *in_think_block {
+                thinking.push_str(before);
+            } else {
+                assistant.push_str(before);
+            }
+            i += rel_lt;
+        }
+
+        let rest = &input[i..];
+        if let Some(tag_len) = match_reasoning_open(rest) {
+            *in_think_block = true;
+            i += tag_len;
+            continue;
+        }
+        if let Some(tag_len) = match_reasoning_close(rest) {
+            *in_think_block = false;
+            i += tag_len;
+            continue;
+        }
+
+        if has_reasoning_tag_prefix(rest) {
+            pending_tag.push_str(rest);
+            break;
+        }
+
+        if *in_think_block {
+            thinking.push('<');
+        } else {
+            assistant.push('<');
+        }
+        i += 1;
+    }
+
+    (assistant, thinking)
+}
+
 pub(crate) struct ToolLoopModelTurn {
     pub content: String,
     pub content_raw: String,
@@ -175,7 +284,7 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
                 if let Some(raw_content) = delta.get("content").and_then(|v| v.as_str()) {
                     content_raw.push_str(raw_content);
                     let (assistant_delta, thinking_delta) =
-                        crate::orchestration_helpers::process_stream_content_chunk(
+                        process_stream_content_chunk(
                             raw_content,
                             &mut in_think_block,
                             &mut pending_think_tag,
@@ -253,7 +362,7 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
     let input_estimate: usize = req
         .messages
         .iter()
-        .map(|m| m.content.len() / 2)
+        .map(|m| crate::token_counter::count_tokens(&m.content))
         .sum::<usize>()
         .max(1);
     tui.update_input_tokens(input_estimate);
@@ -339,7 +448,7 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
                 if let Some(text) = delta.get("content").and_then(|c| c.as_str()) {
                     content.push_str(text);
                     let (assistant_delta, thinking_delta) =
-                        crate::orchestration_helpers::process_stream_content_chunk(
+                        process_stream_content_chunk(
                             text,
                             &mut in_think_block,
                             &mut pending_think_tag,
@@ -376,7 +485,7 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
 
     if !pending_think_tag.is_empty() {
         let (assistant_delta, thinking_delta) =
-            crate::orchestration_helpers::process_stream_content_chunk(
+            process_stream_content_chunk(
                 "",
                 &mut in_think_block,
                 &mut pending_think_tag,

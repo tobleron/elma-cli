@@ -482,7 +482,7 @@ async fn parse_json_response_with_repaired<T: DeserializeOwned + 'static>(
     req: &ChatCompletionRequest,
     text: &str,
 ) -> Result<(T, String)> {
-    match parse_json_loose(text) {
+    match crate::json_parser::parse_model_json::<T>(text) {
         Ok(parsed) => Ok((parsed, text.to_string())),
         Err(parse_error) => {
             let repair_profile =
@@ -496,7 +496,7 @@ async fn parse_json_response_with_repaired<T: DeserializeOwned + 'static>(
                     &[format!("Parse failure: {}", parse_error)],
                 )
                 .await?;
-            let parsed = parse_json_loose(&repaired)
+            let parsed = crate::json_parser::parse_model_json::<T>(&repaired)
                 .context("JSON parsing failed after model-based repair")?;
             Ok((parsed, repaired))
         }

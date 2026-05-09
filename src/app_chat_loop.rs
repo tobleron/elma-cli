@@ -3,7 +3,7 @@
 //! App Chat - Main Chat Loop Orchestration
 
 use crate::app::*;
-use crate::app_chat_fast_paths::*;
+
 use crate::app_chat_handlers::*;
 use crate::app_chat_helpers::*;
 use crate::app_chat_orchestrator::*;
@@ -45,8 +45,6 @@ where
 async fn apply_policy_fallback(
     _runtime: &AppRuntime,
     _line: &str,
-    _route_decision: &RouteDecision,
-    _ladder: &ExecutionLadderAssessment,
     _complexity: &ComplexityAssessment,
     _scope: &ScopePlan,
     _formula: &FormulaSelection,
@@ -308,53 +306,6 @@ fn open_session_picker(runtime: &mut AppRuntime, tui: &mut TerminalUI) {
 
 // --- Helpers extracted from run_chat_loop ---
 
-async fn annotate_and_classify(
-    runtime: &AppRuntime,
-    line: &str,
-) -> Result<(String, RouteDecision)> {
-    let intent = annotate_user_intent(
-        &runtime.client,
-        &runtime.chat_url,
-        &runtime.profiles.intent_helper_cfg,
-        line,
-        &runtime.messages,
-    )
-    .await
-    .unwrap_or_else(|e| {
-        trace_verbose(
-            runtime.verbose,
-            &format!("intent_helper_failed error={}", e),
-        );
-        "unknown intent".to_string()
-    });
-    let intent_only = intent.lines().last().unwrap_or(&intent).trim().to_string();
-    let rephrased = format!("{}\n[intent: {}]", line, intent_only);
-    trace(&runtime.args, &format!("intent_annotation={}", rephrased));
-    let decision = infer_route_prior(
-        &runtime.client,
-        &runtime.chat_url,
-        &runtime.profiles.speech_act_cfg,
-        &runtime.profiles.router_cfg,
-        &runtime.profiles.mode_router_cfg,
-        &runtime.profiles.router_cal,
-        &rephrased,
-        &runtime.ws,
-        &runtime.ws_brief,
-        &runtime.messages,
-        None,
-    )
-    .await?;
-    show_process_step_verbose(
-        runtime.verbose,
-        "CLASSIFY",
-        &format!(
-            "speech={} route={} (entropy={:.2})",
-            decision.speech_act.choice, decision.route, decision.entropy
-        ),
-    );
-    trace_route_decision(&runtime.args, &decision);
-    Ok((rephrased, decision))
-}
 
 /// Metrics from workspace discovery, used for scope-based complexity reassessment.
 struct DiscoveryMetrics {
@@ -495,123 +446,11 @@ fn trace_workflow_plan(args: &Args, plan: &WorkflowPlannerOutput) {
     );
 }
 
-fn apply_shape_fallbacks(
-    runtime: &AppRuntime,
-    line: &str,
-    ladder: &ExecutionLadderAssessment,
-    program: &mut Program,
-) {
-    let try_path = || extract_first_path_from_user_text(line);
-    let is_plan = ladder.level == ExecutionLevel::Plan;
-    let is_master = ladder.level == ExecutionLevel::MasterPlan;
-
-    // Task 453 Category 1: Remove stress-test shape fallbacks
-    // These were exercise markers, not production user features
-}
 
 fn has_edit_result(step_results: &[StepResult]) -> bool {
     step_results.iter().any(|s| s.kind == "edit" && s.ok)
 }
 
-async fn run_reflection_loop(
-    runtime: &mut AppRuntime,
-    program: Program,
-    line: &str,
-    route_decision: &RouteDecision,
-    workflow_plan: Option<&WorkflowPlannerOutput>,
-    complexity: &ComplexityAssessment,
-    scope: &ScopePlan,
-    formula: &FormulaSelection,
-    rephrased_objective: &str,
-    tui: &mut TerminalUI,
-) -> Program {
-    let is_trivial = route_decision.route.eq_ignore_ascii_case("CHAT")
-        && formula.primary.eq_ignore_ascii_case("reply_only");
-    if is_trivial {
-        return program;
-    }
-
-    let features = ClassificationFeatures::from(route_decision);
-    let (mut program, mut attempts, mut temp) =
-        (program, 0u32, runtime.profiles.orchestrator_cfg.temperature);
-    while attempts < 3 {
-        let result = reflect_on_program(
-            &runtime.client,
-            &runtime.chat_url,
-            &runtime.profiles.reflection_cfg,
-            &program,
-            &features,
-            &runtime.ws,
-            rephrased_objective,
-        )
-        .await;
-        let ok = match result {
-            Ok(r) => {
-                trace(
-                    &runtime.args,
-                    &format!(
-                        "reflection_confidence={:.2} concerns={} missing={} attempt={}",
-                        r.confidence_score,
-                        r.concerns.len(),
-                        r.missing_points.len(),
-                        attempts + 1
-                    ),
-                );
-                show_process_step_verbose(
-                    runtime.verbose,
-                    "REFLECT",
-                    &format!(
-                        "confidence={:.0}%{}",
-                        r.confidence_score * 100.0,
-                        if !r.is_confident { "!" } else { "" }
-                    ),
-                );
-                if !r.is_confident || r.confidence_score < 0.6 {
-                    trace_verbose(
-                        runtime.verbose,
-                        &format!("reflection_warnings={:?}", r.concerns),
-                    );
-                }
-                r.confidence_score >= 0.51
-            }
-            Err(e) => {
-                trace_verbose(runtime.verbose, &format!("reflection_failed error={}", e));
-                false
-            }
-        };
-        if ok {
-            break;
-        }
-        attempts += 1;
-        if attempts < 3 {
-            temp = (temp + 0.2).min(0.8);
-            trace(
-                &runtime.args,
-                &format!(
-                    "program_regenerate orchestrator_temp={temp} reason=reflection_confidence_below_51_percent"
-                ),
-            );
-            program = build_program_with_temp(
-                runtime,
-                line,
-                route_decision,
-                workflow_plan,
-                complexity,
-                scope,
-                formula,
-                temp,
-                tui,
-            )
-            .await;
-        } else {
-            trace(
-                &runtime.args,
-                "reflection_max_attempts_reached proceeding_with_low_confidence_program",
-            );
-        }
-    }
-    program
-}
 
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     let mut tui = TerminalUI::new(Some(runtime.session.root.clone()))
@@ -784,123 +623,20 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             }
         }
 
-        // LLM-driven route inference replaces the old line.len() < 30 heuristic.
-        // annotate_and_classify calls infer_route_prior for speech-act, workflow,
-        // and mode classification. On failure, fall back to conservative defaults
-        // that ALLOW tool access (safe uncertainty).
-        // Route classification is no longer needed. The model has all tools
-        // and decides what to call via the tool loop. Routing was only used
-        // to gate tool access and set execution mode — both now unnecessary.
+        let complexity_label = complexity_level_label(gate_assessment.level);
         let rephrased_objective = line.to_string();
-        let route_decision = RouteDecision {
-            route: "SHELL".to_string(),
-            source: "direct_tool_calling".to_string(),
-            margin: 0.0,
-            entropy: 0.0,
-            distribution: vec![("SHELL".to_string(), 1.0)],
-            speech_act: ProbabilityDecision {
-                choice: "INSTRUCT".to_string(),
-                source: "direct".to_string(),
-                distribution: vec![("INSTRUCT".to_string(), 1.0)],
-                margin: 1.0,
-                entropy: 0.0,
-            },
-            workflow: ProbabilityDecision {
-                choice: "WORKFLOW".to_string(),
-                source: "direct".to_string(),
-                distribution: vec![("WORKFLOW".to_string(), 1.0)],
-                margin: 1.0,
-                entropy: 0.0,
-            },
-            mode: ProbabilityDecision {
-                choice: "EXECUTE".to_string(),
-                source: "direct".to_string(),
-                distribution: vec![("EXECUTE".to_string(), 1.0)],
-                margin: 1.0,
-                entropy: 0.0,
-            },
-            evidence_required: false,
-        };
 
         // Task 380: Create continuity tracker with route alignment check
         let mut continuity_tracker = crate::continuity::ContinuityTracker::new(
             line.to_string(),
-            &route_decision.route,
+            "SHELL",
             "pending",
         );
         crate::continuity::apply_model_threshold(&mut continuity_tracker, &runtime.model_id);
-        continuity_tracker.check_route_alignment(&route_decision);
-        if !continuity_tracker.last_checkpoint_is_aligned() {
-            trace(
-                &runtime.args,
-                &format!(
-                    "continuity_route_drift score={:.2} reason={:?}",
-                    continuity_tracker.alignment_score,
-                    continuity_tracker.checkpoints.last().map(|c| &c.reason)
-                ),
-            );
-        }
-
-        let needs_tools = route_decision.evidence_required
-            || route_decision.speech_act.choice != "CHAT"
-            || route_decision.route != "CHAT";
-        // Task 760: Use the (possibly scope-reassessed) complexity level.
-        let complexity_label = complexity_level_label(gate_assessment.level);
-        let max_iter = max_iter_for_level(gate_assessment.level);
-        let complexity = ComplexityAssessment {
-            complexity: complexity_label.to_string(),
-            needs_evidence: route_decision.evidence_required,
-            needs_tools,
-            needs_decision: max_iter >= 12,
-            needs_plan: max_iter >= 6,
-            risk: if max_iter >= 12 {
-                "MEDIUM"
-            } else {
-                "LOW"
-            }
-            .to_string(),
-            suggested_pattern: if needs_tools {
-                "inspect_reply"
-            } else {
-                "reply_only"
-            }
-            .to_string(),
-        };
-        let scope = ScopePlan::default();
-        let formula = FormulaSelection {
-            primary: if needs_tools {
-                "inspect_reply"
-            } else {
-                "reply_only"
-            }
-            .to_string(),
-            alternatives: Vec::new(),
-            reason: format!("LLM-route: speech_act={}", route_decision.speech_act.choice),
-            memory_id: String::new(),
-        };
-        let ladder = ExecutionLadderAssessment::new(
-            match gate_assessment.level {
-                crate::complexity_gate::ComplexityLevel::Direct => ExecutionLevel::Action,
-                crate::complexity_gate::ComplexityLevel::Multistep => ExecutionLevel::Plan,
-            },
-            format!("complexity_gate (source={})", route_decision.source),
-            route_decision.evidence_required,
-            max_iter >= 12,
-            max_iter >= 12,
-            max_iter >= 6,
-            if max_iter >= 12 {
-                "MEDIUM"
-            } else {
-                "LOW"
-            }
-            .to_string(),
-            complexity_label.to_string(),
-        );
-        let workflow_plan: Option<WorkflowPlannerOutput> = None;
 
         trace(
             &runtime.args,
-            &format!("planning_source=maestro ladder_level={:?}", ladder.level),
+            &format!("complexity_level={}", complexity_label),
         );
         trace(
             &runtime.args,
@@ -910,117 +646,47 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             ),
         );
 
-        let hierarchy_goal: Option<Masterplan> = None;
-
         tui.set_activity("Planning", "Planning...");
         tui.pump_ui()?;
 
         let mut program = build_program(
             runtime,
             line,
-            &route_decision,
-            workflow_plan.as_ref(),
-            &complexity,
-            &scope,
-            &formula,
+            complexity_label,
             &mut tui,
         )
         .await;
 
-        // Skip capability guard and policy validation for Maestro-generated programs
-        // The Maestro + Orchestrator pipeline self-validates step generation
-
-        apply_shape_fallbacks(runtime, line, &ladder, &mut program);
-        // Skip reflection loop — Maestro + Orchestrator self-validate step generation
-        // program = build_program_with_temp(...);  // disabled
+        let step_results: Vec<StepResult> = Vec::new();
 
         // Redraw after planning so user sees the plan before execution
         tui.pump_ui()?;
 
-        // Tool-calling pipeline produces a single Respond step with pre-built answer.
-        // Detect this and skip the legacy orchestration retry chain.
-        // All other programs (including CHAT+reply_only) go through retry orchestration.
-        let is_tool_calling_result = program.steps.len() == 1
-            && matches!(&program.steps[0], Step::Respond { instructions, .. } if !instructions.trim().is_empty());
+        tui.set_activity("Responding", "Responding...");
+        tui.pump_ui()?;
 
-        let mut loop_outcome = if is_tool_calling_result {
-            tui.set_activity("Responding", "Responding...");
-            tui.pump_ui()?;
-            AutonomousLoopOutcome {
-                program: program.clone(),
-                step_results: vec![],
-                final_reply: None,
-                reasoning_clean: true,
-            }
-        } else {
-            tui.set_activity("Executing", "Executing...");
-            tui.pump_ui()?;
-            orchestrate_with_retries(
+        // Tool-calling pipeline produces a single Respond step with pre-built answer.
+        let mut final_text = String::new();
+        let final_usage_total: Option<u64> = None;
+        if let Some(Step::Respond { instructions, .. }) = program.steps.first() {
+            final_text = instructions.clone();
+            trace(
                 &runtime.args,
-                &runtime.client,
-                &runtime.chat_url,
-                &runtime.session,
-                &runtime.repo,
-                program,
-                &route_decision,
-                workflow_plan.as_ref(),
-                &complexity,
-                &scope,
-                &formula,
-                &runtime.ws,
-                &runtime.ws_brief,
-                &runtime.messages,
-                &runtime.profiles,
-                runtime.args.max_retries,
-                runtime.args.retry_temp_step,
-                runtime.args.max_retry_temp,
-                Some(&mut tui),
-            )
-            .await?
-        };
-        let (mut program, mut step_results, mut final_reply, reasoning_clean) = (
-            loop_outcome.program,
-            loop_outcome.step_results,
-            loop_outcome.final_reply,
-            loop_outcome.reasoning_clean,
-        );
+                &format!("tool_calling_answer_used length={}", final_text.len()),
+            );
+        } else {
+            // Error fallback
+            final_text = "I encountered an error and could not process your request.".to_string();
+        }
 
         // Clear coordinator status after execution
         tui.set_coordinator_status("".to_string(), false);
 
-        // Extract final_text and usage (thinking is stripped by isolate_reasoning_fields)
-        let (final_text, final_usage_total) = if is_tool_calling_result {
-            let answer = match &program.steps[0] {
-                Step::Respond { instructions, .. } => instructions.clone(),
-                _ => String::new(),
-            };
-            trace(
-                &runtime.args,
-                &format!("tool_calling_answer_used length={}", answer.len()),
-            );
-            (answer, None)
-        } else {
-            resolve_final_text(
-                runtime,
-                line,
-                &route_decision,
-                &step_results,
-                &mut final_reply,
-                Some(&mut tui),
-            )
-            .await?
-        };
-
         // Task 380 / Task 598: Post-execution continuity check.
-        // For direct tool-calling, step_results is empty — derive evidence
-        // from the evidence ledger instead.
-        let has_evidence = if !step_results.is_empty() {
-            step_results.iter().any(|r| r.ok)
-        } else {
-            crate::evidence_ledger::get_session_ledger()
-                .map(|l| l.entries_count() > 0)
-                .unwrap_or(false)
-        };
+        // For direct tool-calling, derive evidence from the evidence ledger.
+        let has_evidence = crate::evidence_ledger::get_session_ledger()
+            .map(|l| l.entries_count() > 0)
+            .unwrap_or(false);
         continuity_tracker.check_final_answer(&final_text, has_evidence);
         trace(
             &runtime.args,
@@ -1237,13 +903,13 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 &runtime.model_id,
                 &runtime.model_cfg_dir,
                 line,
-                &route_decision,
-                &complexity,
-                &formula,
-                &scope,
+                "AUTO",
+                &gate_assessment.to_types_api(),
+                &FormulaSelection::default(),
+                &ScopePlan::default(),
                 &program,
-                &step_results,
-                reasoning_clean,
+                &Vec::new(),
+                false,
             ),
         )
         .await?;
@@ -1282,9 +948,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
             let final_text_clone = final_text.clone();
             let user_message_clone = line.to_string();
             let model_id = runtime.model_id.clone();
-            let session_id = runtime
-                .session
-                .root
+            let session_root = runtime.session.root.clone();
+            let last_evidence = runtime.last_evidence_summary.clone().unwrap_or_default();
+            let session_id = session_root
                 .file_name()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "unknown".to_string());
@@ -1313,10 +979,9 @@ pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
                 let client = client;
                 let context = match crate::intel_trait::IntelContext::new(
                     user_message_clone,
-                    route_decision,
+                    last_evidence,
                     String::new(),
-                    String::new(),
-                    Vec::new(),
+                    vec![],
                     client,
                 )
                 .with_extra("final_text", &final_text_clone)
@@ -1472,7 +1137,6 @@ fn verify_finalization(
             ),
         );
     }
-
     (final_text.to_string(), FinalizationStatus::Normal)
 }
 

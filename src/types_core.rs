@@ -485,7 +485,7 @@ pub(crate) struct EfficiencyReport {
     pub(crate) scenarios: Vec<EfficiencyScenarioResult>,
 }
 
-#[derive(Debug, Clone, derive_more::Display)]
+#[derive(Debug, Clone, Default, derive_more::Display)]
 #[display(fmt = "ProgramEvaluation(parsed={parsed}, shape_ok={shape_ok}, policy_ok={policy_ok})")]
 pub(crate) struct ProgramEvaluation {
     pub(crate) parsed: bool,
@@ -546,50 +546,6 @@ pub(crate) struct ParameterBands {
     pub max_tokens: (u32, u32),
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
-pub(crate) struct RouteDecision {
-    pub(crate) route: String,
-    pub(crate) source: String,
-    pub(crate) distribution: Vec<(String, f64)>,
-    pub(crate) margin: f64,
-    pub(crate) entropy: f64,
-    pub(crate) speech_act: ProbabilityDecision,
-    pub(crate) workflow: ProbabilityDecision,
-    pub(crate) mode: ProbabilityDecision,
-    pub(crate) evidence_required: bool, // Task 290: Block respond if no tool results for fact-queries
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct ClassificationFeatures {
-    pub(crate) speech_act_probs: Vec<(String, f64)>,
-    pub(crate) workflow_probs: Vec<(String, f64)>,
-    pub(crate) mode_probs: Vec<(String, f64)>,
-    pub(crate) route_probs: Vec<(String, f64)>,
-    pub(crate) entropy: f64,
-    pub(crate) suggested_route: String,
-}
-
-impl From<&RouteDecision> for ClassificationFeatures {
-    fn from(decision: &RouteDecision) -> Self {
-        Self {
-            speech_act_probs: decision.speech_act.distribution.clone(),
-            workflow_probs: decision.workflow.distribution.clone(),
-            mode_probs: decision.mode.distribution.clone(),
-            route_probs: decision.distribution.clone(),
-            entropy: decision.entropy,
-            suggested_route: decision.route.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
-pub(crate) struct ProbabilityDecision {
-    pub(crate) choice: String,
-    pub(crate) source: String,
-    pub(crate) distribution: Vec<(String, f64)>,
-    pub(crate) margin: f64,
-    pub(crate) entropy: f64,
-}
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Program {

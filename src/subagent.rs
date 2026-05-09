@@ -112,7 +112,7 @@ impl SubagentDelegator {
             task.result = Some(SubagentResult {
                 output: task.instruction.clone(),
                 tool_calls: 0,
-                tokens_used: task.instruction.len() as u64 / 4,
+                tokens_used: crate::token_counter::count_tokens(&task.instruction) as u64,
                 duration_ms: elapsed.as_millis() as u64,
             });
         });

@@ -3,6 +3,7 @@
 //! Calibration summary report generation.
 
 use crate::tune::{RuntimeAggregation, TuneResources};
+use crate::tune_scenario_helpers::*;
 use crate::*;
 
 pub(crate) fn write_tune_reports(

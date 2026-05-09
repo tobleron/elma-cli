@@ -27,6 +27,23 @@ pub(crate) struct ComplexityAssessment {
     pub(crate) max_graph_depth: usize,
 }
 
+impl ComplexityAssessment {
+    pub(crate) fn to_types_api(&self) -> crate::types_api::ComplexityAssessment {
+        crate::types_api::ComplexityAssessment {
+            complexity: match self.level {
+                ComplexityLevel::Direct => "DIRECT".to_string(),
+                ComplexityLevel::Multistep => "MULTISTEP".to_string(),
+            },
+            needs_evidence: true,
+            needs_tools: true,
+            needs_decision: true,
+            needs_plan: self.level == ComplexityLevel::Multistep,
+            risk: "LOW".to_string(),
+            suggested_pattern: "AUTO".to_string(),
+        }
+    }
+}
+
 /// Model-provided complexity signal after strict JSON/intel-unit parsing.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ModelComplexitySignal {
@@ -319,7 +336,7 @@ mod tests {
 
     #[test]
     fn scope_reassessment_small_scope_stays() {
-        let mix = HashMap::new();
+        let mix = std::collections::HashMap::new();
         let result = ComplexityGate::reassess_with_scope(
             ComplexityLevel::Multistep,
             3,

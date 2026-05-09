@@ -5,6 +5,8 @@
 //! Contains helper functions for baseline evaluation and stability checking.
 
 use crate::*;
+ 
+pub(crate) const ACTIVATION_MARGIN: f64 = 0.02;
 
 pub(crate) fn make_baseline_report(
     name: &str,

@@ -144,7 +144,6 @@ async fn select_items_via_unit(
     let evidence = budget_evidence(evidence);
     let context = IntelContext::new(
         objective.into(),
-        neutral_route_decision(),
         evidence.clone(),
         String::new(),
         Vec::new(),

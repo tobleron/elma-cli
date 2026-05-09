@@ -2,7 +2,7 @@
 //!
 //! App Chat - Core Functions (re-exports from split modules)
 
-pub(crate) use crate::app_chat_fast_paths::*;
+
 pub(crate) use crate::app_chat_orchestrator::*;
 
 use crate::app_chat_handlers::*;

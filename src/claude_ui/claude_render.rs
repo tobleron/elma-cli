@@ -101,6 +101,8 @@ pub(crate) struct ClaudeRenderer {
     output_token_count: usize,
     // Latest budget/stop notice text for thinking panel footer
     last_notice_text: Option<String>,
+    // Instruction coverage progress (Task 790)
+    coverage_progress: Option<String>,
     // Cached input wrapping (Task 631)
     cached_input_key: (String, usize),
     cached_wrapped_input: Vec<String>,
@@ -108,6 +110,9 @@ pub(crate) struct ClaudeRenderer {
     transcript_buffer: Vec<String>,
     markdown_buffer: Vec<crate::session_write::MdEntry>,
     last_flush: Instant,
+    // Task 779: Batching for streaming token counts
+    streaming_batch_bytes: usize,
+    last_batch_sync: Instant,
     // Pre-computed logo groups (Task 630C)
     logo_groups: Vec<[&'static str; 4]>,
 }
@@ -163,11 +168,14 @@ impl ClaudeRenderer {
             input_token_count: 0,
             output_token_count: 0,
             last_notice_text: None,
+            coverage_progress: None,
             cached_input_key: (String::new(), 0),
             cached_wrapped_input: Vec::new(),
             transcript_buffer: Vec::new(),
             markdown_buffer: Vec::new(),
             last_flush: Instant::now(),
+            streaming_batch_bytes: 0,
+            last_batch_sync: Instant::now(),
             logo_groups: vec![
                 ["┏━╸", "╻  ", "┏┳┓", "┏━┓"],
                 ["┣╸ ", "┃  ", "┃┃┃", "┣━┫"],
@@ -191,7 +199,11 @@ impl ClaudeRenderer {
             }
         }
         if let ClaudeMessage::System { ref content } = msg {
-            self.last_notice_text = Some(content.clone());
+            if content.starts_with("[COVERAGE]") {
+                self.coverage_progress = Some(content.clone());
+            } else {
+                self.last_notice_text = Some(content.clone());
+            }
         }
 
         // Generate transcript data before consuming msg
@@ -442,6 +454,14 @@ impl ClaudeRenderer {
         self.thinking_scroll = pos;
     }
 
+    pub(crate) fn output_token_count(&self) -> usize {
+        self.output_token_count
+    }
+
+    pub(crate) fn input_token_count(&self) -> usize {
+        self.input_token_count
+    }
+
     pub(crate) fn set_token_counts(&mut self, input: usize, output: usize) {
         self.input_token_count = input;
         self.output_token_count = output;
@@ -451,17 +471,9 @@ impl ClaudeRenderer {
         self.input_token_count = input;
     }
 
-    pub(crate) fn add_output_tokens(&mut self, chars: usize) {
-        self.output_token_count = self.output_token_count.saturating_add(chars / 4 + 1);
-    }
-
-    /// Increment output token count by delta chars (used during streaming)
-    pub(crate) fn inc_output_tokens(&mut self, delta_chars: usize) {
-        if delta_chars > 0 {
-            self.output_token_count = self
-                .output_token_count
-                .saturating_add((delta_chars / 3).max(1));
-        }
+    pub(crate) fn add_output_tokens(&mut self, text: &str) {
+        let count = crate::token_counter::count_tokens(text);
+        self.output_token_count = self.output_token_count.saturating_add(count);
     }
 
     pub(crate) fn set_transcript_expanded(&mut self, expanded: bool) {
@@ -632,7 +644,7 @@ impl ClaudeRenderer {
                 // The transcript thinking row starts when real reasoning begins.
             }
             UiEvent::UserSubmitted(content) => {
-                self.input_token_count = (content.len() / 2).max(1);
+                self.input_token_count = crate::token_counter::count_tokens(&content).max(1);
                 self.output_token_count = 0;
                 self.push_message(ClaudeMessage::User { content });
             }
@@ -752,8 +764,21 @@ impl ClaudeRenderer {
     pub(crate) fn append_thinking(&mut self, text: &str) {
         self.streaming.append_thinking(text);
         self.transcript.append_live_thinking(text);
-        // Animate output token counter: roughly 1 token per 4 chars of thinking
-        self.output_token_count = self.output_token_count.saturating_add(text.len() / 4 + 1);
+        
+        // Task 779 Phase 2: Batch counting for streaming performance
+        self.streaming_batch_bytes = self.streaming_batch_bytes.saturating_add(text.len());
+        if self.streaming_batch_bytes >= 1024 || self.last_batch_sync.elapsed() >= Duration::from_millis(500) {
+            self.sync_streaming_tokens();
+        }
+    }
+
+    pub(crate) fn sync_streaming_tokens(&mut self) {
+        let thinking_tokens = crate::token_counter::count_tokens(&self.streaming.thinking);
+        let content_tokens = crate::token_counter::count_tokens(&self.streaming.content);
+        // We assume output_token_count for a turn is primarily thinking + content
+        self.output_token_count = thinking_tokens.saturating_add(content_tokens);
+        self.streaming_batch_bytes = 0;
+        self.last_batch_sync = Instant::now();
     }
 
     pub(crate) fn finish_thinking(&mut self) {
@@ -797,8 +822,12 @@ impl ClaudeRenderer {
 
     pub(crate) fn append_content(&mut self, text: &str) {
         self.streaming.append_content(text);
-        // Animate output token counter: roughly 1 token per 4 chars of content
-        self.output_token_count = self.output_token_count.saturating_add(text.len() / 4 + 1);
+        
+        // Task 779 Phase 2: Batch counting for streaming performance
+        self.streaming_batch_bytes = self.streaming_batch_bytes.saturating_add(text.len());
+        if self.streaming_batch_bytes >= 1024 || self.last_batch_sync.elapsed() >= Duration::from_millis(500) {
+            self.sync_streaming_tokens();
+        }
     }
 
     pub(crate) fn finish_content(&mut self, is_ephemeral: bool) {
@@ -1544,6 +1573,7 @@ impl ClaudeRenderer {
                 self.output_token_count,
                 is_processing,
                 &self.logo_groups,
+                &self.coverage_progress,
             );
 
             // Render thinking section only if ctrl+t (reasoning) is active
@@ -1926,6 +1956,7 @@ fn render_right_panel_info(
     output_tokens: usize,
     is_processing: bool,
     logo_groups: &[[&'static str; 4]],
+    coverage_progress: &Option<String>,
 ) {
     let theme = current_theme();
     let dim = Style::default().fg(theme.fg_dim.to_ratatui_color());
@@ -2029,6 +2060,31 @@ fn render_right_panel_info(
                 truncate_to_width(&format!("{}{}", pad, model), text_width),
                 dim,
             )]));
+        }
+    }
+
+    // ── Instruction Coverage (Task 790) ──
+    // Rendered as a dedicated progress bar in the info panel
+    if let Some(ref cov) = coverage_progress {
+        all_lines.push(Line::from(""));
+        // Expected format: "[COVERAGE] Inst: X/Y"
+        let parts: Vec<&str> = cov.split(':').collect();
+        if parts.len() >= 2 {
+            let counts: Vec<&str> = parts[1].trim().split('/').collect();
+            if counts.len() == 2 {
+                let done: f64 = counts[0].trim().parse().unwrap_or(0.0);
+                let total: f64 = counts[1].trim().parse().unwrap_or(1.0);
+                let fraction = if total > 0.0 { done / total } else { 0.0 };
+                
+                all_lines.push(render_progress_bar_line(
+                    "INST",
+                    fraction,
+                    text_width.saturating_sub(12),
+                    anim_frame,
+                    &theme,
+                    pad,
+                ));
+            }
         }
     }
 

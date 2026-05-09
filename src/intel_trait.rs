@@ -40,9 +40,6 @@ pub(crate) struct IntelContext {
     /// Original user message
     pub user_message: String,
 
-    /// Route decision with probability distributions
-    pub route_decision: RouteDecision,
-
     /// Workspace facts (file tree, recent files, etc.)
     pub workspace_facts: String,
 
@@ -74,7 +71,6 @@ pub(crate) struct IntelContext {
 impl IntelContext {
     pub fn new(
         user_message: String,
-        route_decision: RouteDecision,
         workspace_facts: String,
         workspace_brief: String,
         conversation_excerpt: Vec<ChatMessage>,
@@ -82,7 +78,6 @@ impl IntelContext {
     ) -> Self {
         Self {
             user_message,
-            route_decision,
             workspace_facts,
             workspace_brief,
             conversation_excerpt,
@@ -273,17 +268,6 @@ fn extract_bool_fields(output: &IntelOutput, a: &str, b: &str) -> (bool, bool) {
     )
 }
 
-#[cfg(test)]
-fn test_prob_decision(choice: &str) -> ProbabilityDecision {
-    ProbabilityDecision {
-        choice: choice.to_string(),
-        source: "test".to_string(),
-        distribution: vec![(choice.to_string(), 1.0)],
-        margin: 1.0,
-        entropy: 0.0,
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ComplexityOutput {
     pub assessment: ComplexityAssessment,
@@ -395,26 +379,6 @@ pub(crate) fn intel_chat_url(profile: &Profile) -> Result<Url> {
     Ok(joined)
 }
 
-pub(crate) fn neutral_route_decision() -> RouteDecision {
-    let base = ProbabilityDecision {
-        choice: String::new(),
-        source: "compat_wrapper".to_string(),
-        distribution: Vec::new(),
-        margin: 0.0,
-        entropy: 1.0,
-    };
-    RouteDecision {
-        route: String::new(),
-        source: "compat_wrapper".to_string(),
-        distribution: Vec::new(),
-        margin: 0.0,
-        entropy: 1.0,
-        speech_act: base.clone(),
-        workflow: base.clone(),
-        mode: base,
-        evidence_required: false,
-    }
-}
 
 pub(crate) fn apply_profile_grammar(
     profile: &Profile,
@@ -593,29 +557,15 @@ mod tests {
 
     #[test]
     fn test_intel_context_builder() {
-        let pd = |c: &str| test_prob_decision(c);
-        let route_decision = RouteDecision {
-            route: "CHAT".to_string(),
-            source: "test".to_string(),
-            distribution: vec![("CHAT".to_string(), 1.0)],
-            margin: 1.0,
-            entropy: 0.0,
-            speech_act: pd("CHAT"),
-            workflow: pd("CHAT"),
-            mode: pd("INSPECT"),
-            evidence_required: false,
-        };
         let client = reqwest::Client::new();
         let context = IntelContext::new(
             "test message".to_string(),
-            route_decision.clone(),
             "workspace facts".to_string(),
             "workspace brief".to_string(),
             vec![],
             client.clone(),
         );
         assert_eq!(context.user_message, "test message");
-        assert_eq!(context.route_decision.route, "CHAT");
         assert!(context.complexity.is_none());
 
         let ctx = context.with_complexity(ComplexityAssessment {

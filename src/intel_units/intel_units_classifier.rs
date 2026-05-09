@@ -47,7 +47,6 @@ impl IntelUnit for EvidenceModeUnit {
             .unwrap_or_else(|| {
                 serde_json::json!({
                     "user_message": context.user_message,
-                    "route": context.route_decision.route,
                 })
                 .to_string()
             });

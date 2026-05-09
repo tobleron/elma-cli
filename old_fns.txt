@@ -1,0 +1,50 @@
+    fn broad_read_scope_blocks_until_discovered_files_are_covered
+    fn build_continuation_message
+    fn detects_tool_call_markup
+    fn fallback_uses_recent_tool_content
+    fn finalization_evidence_is_bounded_and_recent
+    fn ls_scope_paths_are_concrete_workspace_files
+    fn normalize_final_answer_strips_think_and_tool_call_blocks
+    fn normalizes_shell_signal_session_ids
+    fn shell_scope_output_registers_concrete_workspace_files_when_active
+    fn tool_signal_respond_different_messages_different_signals
+    fn tool_signal_respond_identical_messages_identical_signals
+    fn tool_signal_respond_non_empty
+    fn tool_signal_respond_truncates
+    fn tool_signal_uses_semantic_fields
+async fn await_with_busy_input<T, F>
+async fn finalize_from_evidence_or_fallback
+async fn request_final_answer_from_evidence
+async fn request_final_answer_without_tools
+async fn request_tool_loop_final_answer_streaming
+async fn request_tool_loop_model_turn_streaming
+async fn synthesize_missing_artifacts
+fn append_streaming_tool_call_delta
+fn build_artifact_fallback_from_tool_evidence
+fn build_bounded_final_evidence
+fn build_evidence_progress_summary
+fn build_fallback_from_recent_tool_evidence
+fn build_partial_artifact_completion_answer
+fn build_recent_tool_summary
+fn build_required_artifact_completion_answer
+fn build_scope_coverage_nudge
+fn concrete_workspace_file_path
+fn extract_line_scope_paths
+fn extract_ls_scope_paths
+fn extract_read_paths_from_args
+fn final_answer_needs_retry
+fn finish_streaming_tool_calls
+fn has_recent_tool_evidence
+fn is_intent_only_response
+fn is_tool_call_markup
+fn normalize_final_answer_candidate
+fn persist_missing_required_artifacts
+fn read_call_requests_broad_scope
+fn scope_coverage_blocks_finalization
+fn scope_coverage_pair
+fn sync_loop_summary_coverage
+fn tool_signal
+fn truncate_chars
+fn update_scope_coverage_from_tool
+pub
+pub
