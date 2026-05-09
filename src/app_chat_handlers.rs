@@ -5,7 +5,259 @@
 use crate::app::AppRuntime;
 // use crate::app_bootstrap_profiles::save_all_profiles;  // Deprecated
 use crate::app_chat_helpers::refresh_runtime_workspace;
+use crate::ui_terminal::{TerminalUI, MessageRole};
 use crate::*;
+
+/// Returns true if the command was handled (should continue loop), false if not a command.
+pub(crate) async fn handle_chat_command(
+    runtime: &mut AppRuntime,
+    line: &str,
+    tui: &mut TerminalUI,
+) -> Result<bool> {
+    if line.is_empty() {
+        return Ok(true);
+    }
+    macro_rules! handled {
+        () => {
+            Ok(true)
+        };
+    }
+    match line {
+        "/exit" | "/quit" => Ok(false),
+        "/clear" => {
+            runtime.state.messages.truncate(1);
+            tui.clear_messages();
+            tui.add_claude_message(crate::claude_ui::ClaudeMessage::System {
+                content: "Conversation cleared".to_string(),
+            });
+            handled!()
+        }
+        "/sessions" | "/resume" => {
+            open_session_picker(runtime, tui);
+            handled!()
+        }
+        "/tasks" => {
+            let lines = tui.todo_render_lines();
+            if lines.is_empty() {
+                tui.add_message(
+                    MessageRole::Assistant,
+                    "(no tasks yet — task list appears during multi-step work)".to_string(),
+                );
+            } else {
+                tui.add_message(MessageRole::Assistant, lines.join("\n"));
+            }
+            handled!()
+        }
+
+        "/reset" => {
+            runtime.state.messages.truncate(1);
+            crate::permission_gate::reset_permission_cache();
+            crate::command_budget::reset_budget();
+            crate::shell_preflight::clear_confirmation_cache();
+            tui.add_message(MessageRole::Assistant, "(history reset, permission cache cleared, command budget reset, confirmation cache cleared)".to_string());
+            handled!()
+        }
+        "/snapshot" => {
+            handle_manual_snapshot(runtime)?;
+            handled!()
+        }
+        "/tune" => {
+            handle_runtime_tune(runtime).await?;
+            handled!()
+        }
+        "/goals" => {
+            handle_show_goals(runtime)?;
+            handled!()
+        }
+        "/reset-goals" => {
+            runtime.state.goal_state.clear();
+            tui.add_message(MessageRole::Assistant, "(goals reset)".to_string());
+            handled!()
+        }
+        "/tools" => {
+            handle_discover_tools(runtime)?;
+            handled!()
+        }
+        "/verbose" => {
+            runtime.tui.verbose = !runtime.tui.verbose;
+            tui.add_message(
+                MessageRole::Assistant,
+                format!("(verbose {})", if runtime.tui.verbose { "on" } else { "off" }).to_string(),
+            );
+            handled!()
+        }
+        "/reasoning" => {
+            let new_state = crate::toggle_show_reasoning();
+            tui.notify(&format!(
+                "Reasoning {}",
+                if new_state { "ON" } else { "OFF" }
+            ));
+            handled!()
+        }
+        "/expand-thinking" => {
+            let expanded = tui.claude_transcript_expanded();
+            tui.set_claude_transcript_expanded(!expanded);
+            tui.notify(&format!(
+                "Thinking {}",
+                if !expanded { "EXPANDED" } else { "COLLAPSED" }
+            ));
+            handled!()
+        }
+        "/help" => {
+            use crate::ui_state::ModalState;
+            let help_content = format!(
+                "GLOBAL:\n\
+                 Ctrl+C     Clear input / quit\n\
+                 Ctrl+L     Sessions\n\
+                 Ctrl+N     New session\n\
+                 Ctrl+Shift+S Toggle mouse capture (scroll vs select text)\n\n\
+                 CHAT:\n\
+                 Enter      Send message\n\
+                Ctrl+J     New line\n\
+                 Tab        Cycle autocomplete\n\
+                 Page Up/Dn Scroll history\n\
+                 Up/Down    History / navigate\n\n\
+                 INPUT:\n\
+                 Ctrl+←/→   Jump word\n\
+                 Ctrl+W     Delete word\n\
+                 Ctrl+U     Delete to line start\n\
+                 Home/End   Start / end of line\n\n\
+                 THINKING:\n\
+                 Ctrl+T     Expand/collapse all thinking threads\n\
+                 Ctrl+O     Toggle task list\n\n\
+                 SLASH COMMANDS:\n\
+                 /help      Show this help\n\
+                 /models    Switch model/provider\n\
+                 /provider  Configure endpoint (IP/port)\n\
+                 /usage     Token and cost stats\n\
+                 /expand-thinking Expand all thinking\n\
+                 /approve   Tool approval policy\n\
+                 /compact   Compact context\n\
+                 /reset     Clear history\n\
+                 /snapshot  Create snapshot\n\
+                 /tune      Model tuning\n\
+                 /tools     Discover tools\n\
+                 /verbose   Toggle verbose\n\
+                 /reasoning Toggle reasoning visibility\n\
+                 /exit      Quit Elma"
+            );
+            tui.set_modal(ModalState::Help {
+                content: help_content,
+            });
+            handled!()
+        }
+        "/settings" => {
+            use crate::ui_state::ModalState;
+            let settings_content = format!(
+                "PROVIDER: {}\n\
+                 MODEL: {}\n\
+                 ENDPOINT: {}\n\
+                 APPROVAL: auto\n\
+                 WORKSPACE: {}",
+                runtime.config.model_id,
+                runtime.config.model_id,
+                runtime.config.chat_url,
+                if runtime.workspace.ws_brief.is_empty() {
+                    "."
+                } else {
+                    &runtime.workspace.ws_brief
+                },
+            );
+            tui.set_modal(ModalState::Settings {
+                content: settings_content,
+            });
+            handled!()
+        }
+        "/provider" => {
+            // Task 438: Interactive provider endpoint configuration
+            handle_provider_config(runtime).await?;
+            handled!()
+        }
+        "/usage" => {
+            use crate::ui_state::ModalState;
+            let usage_content = format!(
+                "Model: {}\n\
+                 Context: {} / {} tokens",
+                runtime.config.model_id,
+                "0",
+                runtime
+                    .config
+                    .ctx_max
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+            );
+            tui.set_modal(ModalState::Usage {
+                content: usage_content,
+            });
+            handled!()
+        }
+        "/approve" => {
+            // Cycle approval policy: Off → Ask → On → Off
+            use crate::safe_mode;
+            let current = safe_mode::get_safe_mode();
+            let next = match current {
+                safe_mode::SafeMode::Off => safe_mode::SafeMode::Ask,
+                safe_mode::SafeMode::Ask => safe_mode::SafeMode::On,
+                safe_mode::SafeMode::On => safe_mode::SafeMode::Off,
+            };
+            safe_mode::set_safe_mode(next);
+            let label = match next {
+                safe_mode::SafeMode::Off => "off (yolo — approve all)",
+                safe_mode::SafeMode::Ask => "ask (auto — prompt for destructive)",
+                safe_mode::SafeMode::On => "on (review — ask before every tool)",
+            };
+            tui.add_message(
+                MessageRole::Assistant,
+                format!("(approval policy: {})", label),
+            );
+            handled!()
+        }
+        "/compact" => {
+            tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactBoundary);
+            tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactSummary {
+                message_count: runtime.state.messages.len(),
+                context_preview: Some("manual compact".to_string()),
+            });
+            handled!()
+        }
+        _ => {
+            if let Some(id) = line.strip_prefix("/rollback") {
+                handle_manual_rollback(runtime, id.trim())?;
+                return handled!();
+            }
+            if let Some(a) = line.strip_prefix("/api") {
+                handle_api_config(runtime, a).await?;
+                return handled!();
+            }
+            Ok(true)
+        }
+    }
+}
+
+/// Open the session picker modal with current session list.
+pub(crate) fn open_session_picker(runtime: &mut AppRuntime, tui: &mut TerminalUI) {
+    let sessions_root = runtime
+        .state
+        .session
+        .root
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| runtime.state.session.root.clone());
+    let current_id = runtime
+        .state
+        .session
+        .root
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string());
+    let entries =
+        crate::session_browser::load_session_picker_entries(&sessions_root, current_id.as_deref());
+    tui.set_modal(crate::ui_state::ModalState::SessionPicker {
+        entries,
+        selected: 0,
+        filter: String::new(),
+        error: None,
+    });
+}
 
 /// Handle /provider command - interactive endpoint configuration.
 pub(crate) async fn handle_provider_config(runtime: &mut AppRuntime) -> Result<()> {

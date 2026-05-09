@@ -114,6 +114,7 @@ pub(crate) fn process_stream_content_chunk(
     (assistant, thinking)
 }
 
+#[derive(Default)]
 pub(crate) struct ToolLoopModelTurn {
     pub content: String,
     pub content_raw: String,

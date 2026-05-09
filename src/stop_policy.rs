@@ -104,6 +104,15 @@ impl StopReason {
         )
     }
 
+    pub(crate) fn is_budget_stop(&self) -> bool {
+        matches!(
+            self,
+            StopReason::IterationLimitReached
+                | StopReason::StageBudgetExceeded
+                | StopReason::TaskBudgetExceeded
+        )
+    }
+
     /// Task 761: Whether this stop reason is a clean user-initiated stop
     /// where the answer should pass through with minimal modification.
     pub(crate) fn is_clean_stop(&self) -> bool {
@@ -170,7 +179,7 @@ pub(crate) struct StopOutcome {
 /// Central stop-policy tracker. Created once per tool-loop execution and
 /// queried before each iteration to decide whether execution must halt.
 pub(crate) struct StopPolicy {
-    budget: StageBudget,
+    pub(crate) budget: StageBudget,
     iteration: usize,
     total_tool_calls: usize,
     stagnation_runs: usize,

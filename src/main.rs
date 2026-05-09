@@ -15,6 +15,7 @@ pub(crate) use std::process::Command;
 pub(crate) use std::sync::{Mutex, OnceLock};
 pub(crate) use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+mod orchestration;
 mod abstractions; // Task 576: Injectable abstractions for testing
 mod agent_fsm; // Task 562: Agent FSM lifecycle
 mod app;
@@ -135,7 +136,6 @@ mod online_verification; // Task 694: Online verification policy and tool routin
 mod optimization;
 mod optimization_eval;
 mod optimization_tune;
-mod orchestration;
 mod orchestration_core;
 mod patch_executor; // Task 455: Patch Tool Multi-File Atomic
 mod paths;
