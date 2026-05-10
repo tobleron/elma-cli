@@ -40,6 +40,7 @@ pub(crate) async fn execute_tools_batch(
     user_message: &str,
     interrupt_behavior: InterruptBehavior,
     shutdown: Option<Arc<Shutdown>>,
+    available_tokens: Option<usize>,
 ) -> StreamingExecResult {
     if tool_calls.is_empty() {
         return StreamingExecResult {
@@ -156,6 +157,7 @@ pub(crate) async fn execute_tools_batch(
                 &chat_url,
                 &user_message,
                 None,
+                available_tokens,
             )
             .await
         }));
@@ -248,6 +250,7 @@ pub(crate) async fn execute_tools_batch(
             chat_url,
             user_message,
             None,
+            available_tokens,
         )
         .await;
         if !result.ok {

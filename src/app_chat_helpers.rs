@@ -5,32 +5,6 @@
 use crate::app::AppRuntime;
 use crate::*;
 
-/// Task 014: Truncate output to prevent infinite token repetition
-/// Maximum 2000 characters, truncated at last complete sentence.
-fn truncate_output(text: &str) -> String {
-    const MAX_CHARS: usize = 2000;
-
-    if text.len() <= MAX_CHARS {
-        return text.to_string();
-    }
-
-    // Truncate at MAX_CHARS using char indices to avoid UTF-8 boundary issues
-    let truncated: String = text.chars().take(MAX_CHARS).collect();
-
-    // Find last sentence boundary (., !, ?, or newline)
-    let last_boundary = truncated
-        .char_indices()
-        .rfind(|(_, c)| matches!(c, '.' | '!' | '?' | '\n'));
-
-    let result = match last_boundary {
-        Some((pos, '\n')) => truncated[..pos].to_string(),
-        Some((pos, _)) => truncated[..=pos].to_string(),
-        None => truncated.to_string(),
-    };
-
-    format!("{} (truncated)", result.trim())
-}
-
 pub(crate) fn print_final_output(
     args: &Args,
     ctx_max: Option<u64>,
@@ -38,8 +12,10 @@ pub(crate) fn print_final_output(
     final_text: &str,
     effort_timer: Option<&crate::ui_effort::EffortTimer>,
 ) {
-    // Task 014: Truncate output to prevent infinite repetition bugs
-    let truncated_text = truncate_output(final_text);
+    let truncated_text = crate::output_truncation::truncate_text(
+        final_text,
+        crate::output_truncation::TruncationPolicy::Sentence(256_000),
+    );
     print_elma_message(args, &truncated_text);
 
     // Intel unit failure count (warning color — model reliability tracking)
@@ -288,43 +264,3 @@ pub(crate) async fn maybe_save_formula_memory(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_truncate_output_short_text() {
-        let text = "Hello, this is a short message.";
-        let result = truncate_output(text);
-        assert_eq!(result, text);
-        assert!(!result.contains("(truncated)"));
-    }
-
-    #[test]
-    fn test_truncate_output_long_text() {
-        // Create text longer than 2000 chars
-        let text = "A".repeat(3000) + ". The end.";
-        let result = truncate_output(&text);
-        assert!(result.len() < 3000);
-        assert!(result.contains("(truncated)"));
-    }
-
-    #[test]
-    fn test_truncate_output_at_sentence() {
-        // Text that should truncate at sentence boundary
-        let text = "First sentence. Second sentence. ".repeat(100);
-        let result = truncate_output(&text);
-        assert!(result.contains("(truncated)"));
-        // Should end at a sentence boundary
-        assert!(result.ends_with(". (truncated)") || result.ends_with("(truncated)"));
-    }
-
-    #[test]
-    fn test_truncate_output_infinite_repetition() {
-        // Simulate the S001 bug with repeated tokens
-        let text = "<font color='blue'>...".repeat(500);
-        let result = truncate_output(&text);
-        assert!(result.len() <= 2020); // 2000 + " (truncated)"
-        assert!(result.contains("(truncated)"));
-    }
-}

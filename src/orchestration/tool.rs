@@ -916,6 +916,8 @@ impl<'a> ToolStateMachine<'a> {
             &tc.function.name,
         );
 
+        let available_tokens = self.available_tokens();
+
         let result = crate::tool_calling::execute_tool_call(
             self.args,
             &tc,
@@ -925,6 +927,7 @@ impl<'a> ToolStateMachine<'a> {
             self.chat_url,
             self.user_message,
             Some(&mut *self.tui),
+            available_tokens,
         )
         .await;
 
@@ -961,6 +964,12 @@ impl<'a> ToolStateMachine<'a> {
         self.handle_tool_result_logic(&tc, &result);
 
         Ok(())
+    }
+
+    fn available_tokens(&self) -> Option<usize> {
+        self.ctx_max.map(|max| {
+            max.saturating_sub(self.tracker.total_tokens as u64) as usize
+        })
     }
 
     fn handle_read_stuck_hint(&mut self, tc: &ToolCall) {
@@ -1121,6 +1130,7 @@ impl<'a> ToolStateMachine<'a> {
                 ),
             },
         };
+        let available_tokens = self.available_tokens();
         let _ = crate::tool_calling::execute_tool_call(
             self.args,
             &repaired_tc,
@@ -1130,6 +1140,7 @@ impl<'a> ToolStateMachine<'a> {
             self.chat_url,
             self.user_message,
             Some(&mut *self.tui),
+            available_tokens,
         )
         .await;
         self.messages.push(ChatMessage::simple(
@@ -1163,6 +1174,7 @@ impl<'a> ToolStateMachine<'a> {
                     arguments: format!(r#"{{"command": "{}"}}"#, fallback_cmd),
                 },
             };
+            let available_tokens = self.available_tokens();
             let fallback_result = crate::tool_calling::execute_tool_call(
                 self.args,
                 &fallback_tc,
@@ -1172,6 +1184,7 @@ impl<'a> ToolStateMachine<'a> {
                 self.chat_url,
                 self.user_message,
                 Some(&mut *self.tui),
+                available_tokens,
             )
             .await;
             if fallback_result.ok {
@@ -1220,6 +1233,7 @@ impl<'a> ToolStateMachine<'a> {
                     arguments: format!(r#"{{"command": "{}"}}"#, fallback_cmd),
                 },
             };
+            let available_tokens = self.available_tokens();
             let result = crate::tool_calling::execute_tool_call(
                 self.args,
                 &fallback_tc,
@@ -1229,6 +1243,7 @@ impl<'a> ToolStateMachine<'a> {
                 self.chat_url,
                 self.user_message,
                 Some(&mut *self.tui),
+                available_tokens,
             )
             .await;
 

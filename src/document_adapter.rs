@@ -1720,6 +1720,8 @@ pub(crate) enum FileKind {
     Document,
     /// Structured data (.csv, .tsv)
     Data,
+    /// Log and output files (.log, .out, .err)
+    Log,
     /// Binary or unsupported
     Binary,
 }
@@ -1746,6 +1748,7 @@ pub(crate) fn classify_file(path: &str) -> FileClassification {
         "md" | "txt" | "html" | "htm" | "xml" | "rst" | "adoc" | "org" | "pdf"
         | "epub" | "docx" | "rtf" => FileKind::Document,
         "csv" | "tsv" => FileKind::Data,
+        "log" | "out" | "err" => FileKind::Log,
         _ => {
             if ext.is_empty() && !file_name.starts_with('.') {
                 FileKind::Document
@@ -1760,6 +1763,7 @@ pub(crate) fn classify_file(path: &str) -> FileClassification {
         FileKind::Document => format!("Sections in {}", path),
         FileKind::Data => format!("Rows/columns in {}", path),
         FileKind::Config => format!("Values in {}", path),
+        FileKind::Log => format!("Log entries in {}", path),
         FileKind::Binary => format!("Binary file: {}", path),
     };
 
@@ -1799,6 +1803,13 @@ pub(crate) fn retrieval_instruction(class: &FileClassification, query: &str) -> 
                 class.path, query
             )
         }
+        FileKind::Log => {
+            format!(
+                "Inspect log file `{}`. Search for entries relevant to: \"{}\". \
+                 Use `shell` with `grep` or `tail` if the file is large.",
+                class.path, query
+            )
+        }
         FileKind::Binary => {
             format!(
                 "File `{}` appears to be binary or unsupported. \
@@ -1816,6 +1827,7 @@ pub(crate) fn build_router_notice(path: &str, kind: &FileKind, source: &str) -> 
         FileKind::Document => "document",
         FileKind::Data => "data",
         FileKind::Config => "config",
+        FileKind::Log => "log",
         FileKind::Binary => "binary/unsupported",
     };
     format!("[ROUTER] file={} kind={} source={}", path, kind_label, source)
