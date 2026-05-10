@@ -120,6 +120,10 @@ pub(crate) enum UiRuntimeEvent {
         tool_name: String,
         match_type: String,
     },
+    MetaEvent {
+        category: String,
+        message: String,
+    },
     SystemNotice {
         message: String,
         level: String,
@@ -129,6 +133,13 @@ pub(crate) enum UiRuntimeEvent {
     Resize {
         cols: usize,
         rows: usize,
+    },
+    HeaderInfoUpdated {
+        model: String,
+        endpoint: String,
+        workspace: String,
+        session: String,
+        verbose: bool,
     },
 
     // ── Footer ──────────────────────────────────────────────────────────────
@@ -142,6 +153,7 @@ pub(crate) enum UiRuntimeEvent {
         context_max: u64,
     },
     FooterElapsed(u64),
+    FooterEffort(String),
 
     // ── Background tasks ────────────────────────────────────────────────────
     BackgroundTaskAdded {
@@ -205,11 +217,14 @@ impl UiRuntimeEvent {
             UiRuntimeEvent::StopReasonNotice { .. } => "stop_reason",
             UiRuntimeEvent::RetryNotice { .. } => "retry",
             UiRuntimeEvent::ToolDiscoveryNotice { .. } => "tool_discovery",
+            UiRuntimeEvent::MetaEvent { .. } => "meta_event",
             UiRuntimeEvent::SystemNotice { .. } => "system",
             UiRuntimeEvent::Resize { .. } => "resize",
+            UiRuntimeEvent::HeaderInfoUpdated { .. } => "header_info",
             UiRuntimeEvent::FooterModelUpdated { .. } => "footer_model",
             UiRuntimeEvent::FooterTokenCounts { .. } => "footer_tokens",
             UiRuntimeEvent::FooterElapsed(_) => "footer_elapsed",
+            UiRuntimeEvent::FooterEffort(_) => "footer_effort",
             UiRuntimeEvent::BackgroundTaskAdded { .. } => "bg_task_add",
             UiRuntimeEvent::BackgroundTaskUpdated { .. } => "bg_task_update",
             UiRuntimeEvent::BackgroundTaskRemoved { .. } => "bg_task_remove",

@@ -1,7 +1,10 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
+
+pub static UI_EVENT_BUS: LazyLock<Broker<crate::ui_runtime_event::UiRuntimeEvent>> =
+    LazyLock::new(|| Broker::new(EventType("ui")));
 
 pub struct Event<T: Clone + Send + 'static> {
     pub ty: EventType,

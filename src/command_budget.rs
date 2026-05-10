@@ -79,9 +79,11 @@ impl CommandBudget {
 
         // Per-turn shell call limit - with higher limit for analytical commands
         let current_turn_calls = self.turn_shell_calls.load(Ordering::Relaxed);
+        let session_state = crate::session_state::get_session_state();
+        let settings = session_state.safety_settings.lock().unwrap();
         let max_turn_calls = match risk {
-            shell_preflight::RiskLevel::Safe => MAX_ANALYTICAL_SHELL_CALLS_PER_TURN,
-            _ => MAX_SHELL_CALLS_PER_TURN,
+            shell_preflight::RiskLevel::Safe => settings.max_shell_calls_per_turn + 5,
+            _ => settings.max_shell_calls_per_turn,
         };
         if current_turn_calls >= max_turn_calls {
             return Err(format!(

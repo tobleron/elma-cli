@@ -342,6 +342,65 @@ pub(crate) enum ModalState {
     },
     /// Splash screen on startup.
     Splash { content: String },
+    /// List of tools with descriptions (Task 794).
+    ToolList {
+        tools: Vec<(String, String)>,
+        selected: usize,
+    },
+    /// List of goals and subgoals (Task 794).
+    GoalList {
+        objective: Option<String>,
+        completed: Vec<String>,
+        pending: Vec<String>,
+    },
+    /// Generic list selector (Task 794).
+    ListSelector {
+        title: String,
+        /// List of (label, value) pairs
+        options: Vec<(String, String)>,
+        selected: usize,
+        /// Command to issue when an option is selected (e.g., "/switch-model {}")
+        on_select_cmd: Option<String>,
+    },
+    /// Detailed usage/token breakdown (Task 794).
+    UsageReport {
+        model: String,
+        input_tokens: u64,
+        output_tokens: u64,
+        context_tokens: u64,
+        context_max: u64,
+        cost_est: f64,
+    },
+    /// Model and Provider selection (Task 794).
+    ModelSelector {
+        models: Vec<String>,
+        selected: usize,
+        base_url: String,
+    },
+    /// Model performance/cost profile selection (Task 794).
+    TuneSelector {
+        profiles: Vec<(String, String)>, // (name, description)
+        selected: usize,
+    },
+    /// Safety and guardrails configuration (Task 795).
+    SafetySettings {
+        approval_policy: String, // "Off", "Ask", "On"
+        shell_preflight: bool,
+        command_budget: usize,
+        confirm_cache_count: usize,
+        selected_index: usize,
+    },
+    /// List of snapshots (Task 794).
+    SnapshotList {
+        snapshots: Vec<(String, u64, String)>,
+        selected: usize,
+    },
+    /// Interactive provider configuration (Task 794).
+    ProviderConfig {
+        base_url: String,
+        helper_url: String,
+        selected_index: usize, // 0=base, 1=helper, 2=save, 3=cancel
+    },
 }
 
 /// Viewport / scroll state.

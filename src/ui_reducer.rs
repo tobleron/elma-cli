@@ -262,10 +262,15 @@ pub(crate) fn ui_reducer(state: &mut UiViewState, event: &UiRuntimeEvent) {
         // ── Operational visibility (passthrough to transcript) ──────────
         UiRuntimeEvent::CoverageProgress { .. } => {}
         UiRuntimeEvent::ComplexityReassessed { .. } => {}
+        UiRuntimeEvent::MetaEvent { .. } => {}
 
         // ── Compact (passthrough to transcript) ─────────────────────────
         UiRuntimeEvent::CompactBoundary => {}
         UiRuntimeEvent::CompactSummary { .. } => {}
+
+        // ── Header/Footer ───────────────────────────────────────────────
+        UiRuntimeEvent::HeaderInfoUpdated { .. } => {}
+        UiRuntimeEvent::FooterEffort(_) => {}
     }
 }
 
@@ -397,6 +402,11 @@ pub(crate) fn event_to_claude_messages(event: &UiRuntimeEvent) -> Vec<ClaudeMess
             }]
         }
         UiRuntimeEvent::ToolDiscoveryNotice { .. } => vec![],
+        UiRuntimeEvent::MetaEvent { category, message } => {
+            vec![ClaudeMessage::System {
+                content: format!("[{}] {}", category, message),
+            }]
+        }
         UiRuntimeEvent::RouteNotice { .. } => vec![],
         _ => vec![],
     }

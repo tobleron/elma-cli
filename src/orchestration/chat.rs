@@ -44,14 +44,9 @@ impl<'a> ChatStateMachine<'a> {
         self.setup_header();
 
         // Initial update for the status bar
-        self.tui.update_status(
-            self.runtime.config.model_id.clone(),
-            0,
-            self.runtime.config.ctx_max.unwrap_or(0),
-            0, // tokens_in
-            0, // tokens_out
-            "⏱ 0.0s".to_string(),
-        );
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::FooterModelUpdated {
+            model: self.runtime.config.model_id.clone(),
+        }).await;
 
         let res = loop {
             let line = self.get_next_input().await?;
@@ -105,16 +100,13 @@ impl<'a> ChatStateMachine<'a> {
         } else {
             self.runtime.workspace.ws_brief.clone()
         };
-        self.tui.set_header_info(HeaderInfo {
+        let _ = tokio::runtime::Handle::current().block_on(crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::HeaderInfoUpdated {
             model: self.runtime.config.model_id.clone(),
             endpoint,
-            route: String::new(),
             workspace: ws_name,
             session: session_name,
-            workflow: String::new(),
-            stage: None,
             verbose: self.runtime.tui.verbose,
-        });
+        }));
     }
 
     async fn get_next_input(&mut self) -> Result<Option<String>> {
@@ -141,15 +133,16 @@ impl<'a> ChatStateMachine<'a> {
     }
 
     async fn execute_turn(&mut self, line: &str) -> Result<()> {
+        use crate::ui_runtime_event::UiRuntimeEvent;
         // Task 107: Start effort timer for this turn
         let turn_timer = crate::ui_effort::EffortTimer::start();
 
-        // Clear previous turn's status thread (respects min-visible window)
-        self.tui.clear_status();
+        // Task 793: Notify turn started
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::TurnStarted).await;
 
         self.runtime.state.turn_count += 1;
 
-        self.tui.add_message(MessageRole::User, line.to_string());
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::UserSubmitted(line.to_string())).await;
         self.runtime
             .state
             .messages
@@ -185,7 +178,7 @@ impl<'a> ChatStateMachine<'a> {
         }
 
         // Show activity indicator while processing
-        self.tui.set_activity("Thinking", "Thinking...");
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::ThinkingStarted).await;
 
         // Immediate redraw so user sees submitted message + busy state
         self.tui.pump_ui()?;
@@ -209,13 +202,13 @@ impl<'a> ChatStateMachine<'a> {
             if reassessed.level != initial_gate.level {
                 let original_label = complexity_level_label(initial_gate.level);
                 let new_label = complexity_level_label(reassessed.level);
-                self.tui.push_meta_event(
-                    "COMPLEXITY",
-                    &format!(
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::SystemNotice {
+                    message: format!(
                         "scope_upgrade {}->{} files={} work_est={}",
                         original_label, new_label, metrics.file_count, estimated_work
                     ),
-                );
+                    level: "info".to_string(),
+                }).await;
             }
             reassessed
         } else {
@@ -227,7 +220,10 @@ impl<'a> ChatStateMachine<'a> {
             if let Ok(registry) = tool_discovery::discover_workspace_tools(&self.runtime.workspace.repo) {
                 let ws_count = registry.available_tools().len();
                 self.runtime.workspace.tool_registry = registry;
-                self.tui.push_meta_event("TOOLS", &format!("workspace_tools={} available={}+ tools via tool_search", ws_count, crate::tool_registry::default_tool_count()));
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::ToolDiscoveryNotice {
+                    tool_name: format!("workspace_tools={}", ws_count),
+                    match_type: "discovery".to_string(),
+                }).await;
             }
         }
 
@@ -253,7 +249,10 @@ impl<'a> ChatStateMachine<'a> {
             ),
         );
 
-        self.tui.set_activity("Planning", "Planning...");
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::SystemNotice {
+            message: "Planning...".to_string(),
+            level: "info".to_string(),
+        }).await;
         self.tui.pump_ui()?;
 
         let program = build_program(
@@ -269,7 +268,7 @@ impl<'a> ChatStateMachine<'a> {
         // Redraw after planning so user sees the plan before execution
         self.tui.pump_ui()?;
 
-        self.tui.set_activity("Responding", "Responding...");
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::AssistantContentStarted).await;
         self.tui.pump_ui()?;
 
         // Tool-calling pipeline produces a single Respond step with pre-built answer.
@@ -286,8 +285,7 @@ impl<'a> ChatStateMachine<'a> {
             final_text = "I encountered an error and could not process your request.".to_string();
         }
 
-        // Clear coordinator status after execution
-        self.tui.set_coordinator_status("".to_string(), false);
+        // Task 793: Coordinator status handled via state
 
         // Task 380 / Task 598: Post-execution continuity check.
         // For direct tool-calling, derive evidence from the evidence ledger.
@@ -394,10 +392,10 @@ impl<'a> ChatStateMachine<'a> {
                         &self.runtime.args,
                         &format!("continuity_retry_failed_nonfatal error={}", e),
                     );
-                    self.tui.push_meta_event(
-                        "RECOVERY",
-                        "Continuity retry failed; keeping the best answer already prepared.",
-                    );
+                    let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::SystemNotice {
+                        message: "Continuity retry failed; keeping the best answer already prepared.".to_string(),
+                        level: "warning".to_string(),
+                    }).await;
                 }
             }
         }
@@ -434,11 +432,10 @@ impl<'a> ChatStateMachine<'a> {
 
         // Show assistant response
         if !final_text.is_empty() {
-            if retry_happened {
-                self.tui.replace_last_assistant_message(display_text);
-            } else {
-                self.tui.add_message(MessageRole::Assistant, display_text);
-            }
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::AssistantFinalAnswer {
+                raw: final_text.clone(),
+                display: display_text,
+            }).await;
             self.runtime
                 .state
                 .messages
@@ -446,8 +443,8 @@ impl<'a> ChatStateMachine<'a> {
             let _ = save_final_answer_display(&self.runtime.state.session, &final_text);
         }
 
-        // Clear activity indicator
-        self.tui.clear_activity();
+        // Task 793: Turn finished
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(UiRuntimeEvent::AssistantContentFinished).await;
 
         // Task 610: Clear evidence ledger at end of turn
         crate::evidence_ledger::clear_session_ledger();
@@ -499,7 +496,7 @@ impl<'a> ChatStateMachine<'a> {
         Ok(())
     }
 
-    fn update_status_bar(&mut self, turn_timer: &crate::ui_effort::EffortTimer, final_usage_total: Option<u64>) {
+    fn update_status_bar(&mut self, _turn_timer: &crate::ui_effort::EffortTimer, final_usage_total: Option<u64>) {
         let mut tokens_in: u64 = 0;
         let mut tokens_out: u64 = 0;
         for msg in &self.runtime.state.messages {
@@ -511,14 +508,17 @@ impl<'a> ChatStateMachine<'a> {
             }
         }
         let ctx_tokens = final_usage_total.unwrap_or(tokens_in + tokens_out);
-        self.tui.update_status(
-            self.runtime.config.model_id.clone(),
-            ctx_tokens,
-            self.runtime.config.ctx_max.unwrap_or(0),
-            tokens_in,
-            tokens_out,
-            turn_timer.format(),
-        );
+
+        let _ = tokio::runtime::Handle::current().block_on(crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::FooterTokenCounts {
+            input_tokens: tokens_in,
+            output_tokens: tokens_out,
+            context_current: ctx_tokens,
+            context_max: self.runtime.config.ctx_max.unwrap_or(0),
+        }));
+
+        let _ = tokio::runtime::Handle::current().block_on(crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::FooterEffort(
+            _turn_timer.format()
+        )));
     }
 
     fn spawn_summarizer(&self, line: &str, final_text: &str, step_results: &[StepResult]) {

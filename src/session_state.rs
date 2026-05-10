@@ -15,8 +15,25 @@ use crate::artifact_verifier::{DeliverableContract, ArtifactManifest};
 use crate::permission_gate::ApprovalCache;
 use crate::command_budget::CommandBudget;
 
+pub(crate) struct SafetySettings {
+    pub shell_redirection_blocked: bool,
+    pub path_escape_blocked: bool,
+    pub max_shell_calls_per_turn: usize,
+}
+
+impl Default for SafetySettings {
+    fn default() -> Self {
+        Self {
+            shell_redirection_blocked: true,
+            path_escape_blocked: true,
+            max_shell_calls_per_turn: 10,
+        }
+    }
+}
+
 pub(crate) struct SessionState {
     pub safe_mode: Mutex<SafeMode>,
+    pub safety_settings: Mutex<SafetySettings>,
     pub has_mutated: RwLock<bool>,
     pub scope_constraint: RwLock<Option<ScopeConstraint>>,
     pub network_disabled: RwLock<bool>,
@@ -35,6 +52,7 @@ impl SessionState {
     pub fn new() -> Self {
         Self {
             safe_mode: Mutex::new(SafeMode::default()),
+            safety_settings: Mutex::new(SafetySettings::default()),
             has_mutated: RwLock::new(false),
             scope_constraint: RwLock::new(None),
             network_disabled: RwLock::new(false),

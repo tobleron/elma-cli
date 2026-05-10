@@ -25,6 +25,27 @@ pub(crate) async fn handle_chat_command(
     match line {
         "/exit" | "/quit" => Ok(false),
         "/clear" => {
+            tui.set_modal(crate::ui_state::ModalState::Confirm {
+                title: "Clear Transcript".to_string(),
+                message: "Are you sure you want to clear the conversation transcript? This will not reset your session state.".to_string(),
+            });
+            handled!()
+        }
+        "/models" => {
+            let base_url = runtime.config.profiles.elma_cfg.base_url.clone();
+            let models = crate::models_api::fetch_all_model_ids(
+                &runtime.config.client,
+                &Url::parse(&base_url).unwrap(),
+            )
+            .await?;
+            tui.set_modal(crate::ui_state::ModalState::ModelSelector {
+                models,
+                selected: 0,
+                base_url,
+            });
+            handled!()
+        }
+        "/confirm-clear" => {
             runtime.state.messages.truncate(1);
             tui.clear_messages();
             tui.add_claude_message(crate::claude_ui::ClaudeMessage::System {
@@ -50,6 +71,13 @@ pub(crate) async fn handle_chat_command(
         }
 
         "/reset" => {
+            tui.set_modal(crate::ui_state::ModalState::Confirm {
+                title: "Reset Session".to_string(),
+                message: "Are you sure you want to reset the session? This will clear history, permissions, and budgets.".to_string(),
+            });
+            handled!()
+        }
+        "/confirm-reset" => {
             runtime.state.messages.truncate(1);
             crate::permission_gate::reset_permission_cache();
             crate::command_budget::reset_budget();
@@ -58,15 +86,31 @@ pub(crate) async fn handle_chat_command(
             handled!()
         }
         "/snapshot" => {
-            handle_manual_snapshot(runtime)?;
+            let snapshots = crate::snapshot::list_session_snapshots(&runtime.state.session)?;
+            tui.set_modal(crate::ui_state::ModalState::SnapshotList {
+                snapshots,
+                selected: 0,
+            });
             handled!()
         }
         "/tune" => {
-            handle_runtime_tune(runtime).await?;
+            tui.set_modal(crate::ui_state::ModalState::TuneSelector {
+                profiles: vec![
+                    ("Balanced".to_string(), "Standard performance and cost.".to_string()),
+                    ("Fast".to_string(), "Prioritize speed over complexity.".to_string()),
+                    ("Creative".to_string(), "Higher temperature for exploration.".to_string()),
+                    ("Precise".to_string(), "Low temperature for analytical tasks.".to_string()),
+                ],
+                selected: 0,
+            });
             handled!()
         }
         "/goals" => {
-            handle_show_goals(runtime)?;
+            tui.set_modal(crate::ui_state::ModalState::GoalList {
+                objective: runtime.state.goal_state.active_objective.clone(),
+                completed: runtime.state.goal_state.completed_subgoals.clone(),
+                pending: runtime.state.goal_state.pending_subgoals.clone(),
+            });
             handled!()
         }
         "/reset-goals" => {
@@ -75,7 +119,14 @@ pub(crate) async fn handle_chat_command(
             handled!()
         }
         "/tools" => {
-            handle_discover_tools(runtime)?;
+            let registry = tool_discovery::discover_workspace_tools(&runtime.workspace.repo)?;
+            let tools = registry.tools.iter().map(|(name, cap)| {
+                (name.clone(), cap.description.clone())
+            }).collect();
+            tui.set_modal(crate::ui_state::ModalState::ToolList {
+                tools,
+                selected: 0,
+            });
             handled!()
         }
         "/verbose" => {
@@ -169,47 +220,55 @@ pub(crate) async fn handle_chat_command(
             handled!()
         }
         "/provider" => {
-            // Task 438: Interactive provider endpoint configuration
-            handle_provider_config(runtime).await?;
-            handled!()
-        }
-        "/usage" => {
-            use crate::ui_state::ModalState;
-            let usage_content = format!(
-                "Model: {}\n\
-                 Context: {} / {} tokens",
-                runtime.config.model_id,
-                "0",
-                runtime
-                    .config
-                    .ctx_max
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "unknown".to_string()),
-            );
-            tui.set_modal(ModalState::Usage {
-                content: usage_content,
+            let base_url = runtime.config.profiles.elma_cfg.base_url.clone();
+            // Optional: load helper URL from config if it exists
+            let cfg_root = config_root_path(&runtime.args.config_root)?;
+            let helper_url = if let Ok(cfg) = load_or_create_runtime_llm_config(&cfg_root) {
+                if cfg.auxiliary_enabled { cfg.auxiliary_base_url } else { String::new() }
+            } else {
+                String::new()
+            };
+
+            tui.set_modal(crate::ui_state::ModalState::ProviderConfig {
+                base_url,
+                helper_url,
+                selected_index: 0,
             });
             handled!()
         }
-        "/approve" => {
-            // Cycle approval policy: Off → Ask → On → Off
-            use crate::safe_mode;
-            let current = safe_mode::get_safe_mode();
-            let next = match current {
-                safe_mode::SafeMode::Off => safe_mode::SafeMode::Ask,
-                safe_mode::SafeMode::Ask => safe_mode::SafeMode::On,
-                safe_mode::SafeMode::On => safe_mode::SafeMode::Off,
-            };
-            safe_mode::set_safe_mode(next);
-            let label = match next {
-                safe_mode::SafeMode::Off => "off (yolo — approve all)",
-                safe_mode::SafeMode::Ask => "ask (auto — prompt for destructive)",
-                safe_mode::SafeMode::On => "on (review — ask before every tool)",
-            };
-            tui.add_message(
-                MessageRole::Assistant,
-                format!("(approval policy: {})", label),
-            );
+        "/usage" => {
+            let mut input_tokens = 0;
+            let mut output_tokens = 0;
+            for msg in &runtime.state.messages {
+                let est = crate::token_counter::count_tokens(&msg.content) as u64;
+                if msg.role == "assistant" {
+                    output_tokens += est;
+                } else {
+                    input_tokens += est;
+                }
+            }
+
+            tui.set_modal(crate::ui_state::ModalState::UsageReport {
+                model: runtime.config.model_id.clone(),
+                input_tokens,
+                output_tokens,
+                context_tokens: input_tokens + output_tokens,
+                context_max: runtime.config.ctx_max.unwrap_or(0),
+                cost_est: (input_tokens as f64 * 0.000003) + (output_tokens as f64 * 0.000015), // Rough estimate
+            });
+            handled!()
+        }
+        "/approve" | "/approve-refresh" => {
+            let current = crate::safe_mode::get_safe_mode();
+            let session_state = crate::session_state::get_session_state();
+            let settings = session_state.safety_settings.lock().unwrap();
+            tui.set_modal(crate::ui_state::ModalState::SafetySettings {
+                approval_policy: current.display().to_string(),
+                shell_preflight: settings.shell_redirection_blocked,
+                command_budget: settings.max_shell_calls_per_turn,
+                confirm_cache_count: crate::shell_preflight::confirmation_cache_count(),
+                selected_index: 0,
+            });
             handled!()
         }
         "/compact" => {
@@ -259,55 +318,6 @@ pub(crate) fn open_session_picker(runtime: &mut AppRuntime, tui: &mut TerminalUI
     });
 }
 
-/// Handle /provider command - interactive endpoint configuration.
-pub(crate) async fn handle_provider_config(runtime: &mut AppRuntime) -> Result<()> {
-    use crate::ui_interact::prompt_text;
-    use std::io::IsTerminal;
-
-    if !std::io::stderr().is_terminal() {
-        eprintln!("Error: /provider requires interactive terminal");
-        return Ok(());
-    }
-
-    println!();
-    println!("=== Provider Configuration ===");
-    println!();
-    println!("Current endpoint: {}", runtime.config.profiles.elma_cfg.base_url);
-    println!("Detected model:   {}", runtime.config.model_id);
-    println!(
-        "Context window:   {}",
-        runtime
-            .config
-            .ctx_max
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "unknown".to_string())
-    );
-    println!();
-
-    let base_url = match prompt_text("Enter endpoint URL (or press Enter to keep current):") {
-        Some(url) if !url.is_empty() => url,
-        Some(_) => runtime.config.profiles.elma_cfg.base_url.clone(),
-        None => {
-            println!("(cancelled)");
-            return Ok(());
-        }
-    };
-
-    let helper_url = match prompt_text("Optional helper endpoint URL (Enter to disable/skip):") {
-        Some(url) => url,
-        None => {
-            println!("(cancelled)");
-            return Ok(());
-        }
-    };
-
-    handle_api_config(runtime, &base_url).await?;
-    if !helper_url.trim().is_empty() {
-        configure_auxiliary_endpoint(runtime, helper_url.trim()).await?;
-    }
-
-    Ok(())
-}
 
 /// Handle /api command - configure endpoint and model settings
 pub(crate) async fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> Result<()> {
@@ -389,24 +399,10 @@ pub(crate) async fn handle_api_config(runtime: &mut AppRuntime, args: &str) -> R
     );
     let _ = crate::models_api::save_provider_profile(&runtime.config.model_cfg_dir, &provider_profile);
 
-    println!("\nAPI configuration updated");
-    println!("  Endpoint: {}", new_base_url);
-    println!("  Model:    {} (detected)", runtime.config.model_id);
-    println!(
-        "  Context:  {}",
-        runtime
-            .config
-            .ctx_max
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "unknown".to_string())
-    );
-    println!("  Config:   {}", runtime.config.model_cfg_dir.display());
-    println!();
-
     Ok(())
 }
 
-async fn configure_auxiliary_endpoint(runtime: &AppRuntime, helper_url: &str) -> Result<()> {
+pub(crate) async fn configure_auxiliary_endpoint(runtime: &AppRuntime, helper_url: &str) -> Result<()> {
     let base = Url::parse(helper_url).context("Invalid helper endpoint URL")?;
     let endpoint_profile = probe_endpoint_runtime(&runtime.config.client, &base)
         .await

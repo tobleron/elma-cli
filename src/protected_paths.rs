@@ -41,6 +41,14 @@ impl ProtectedPaths {
     pub fn check_command_paths(command: &str) -> Option<String> {
         let parts: Vec<&str> = command.split_whitespace().collect();
         for part in &parts {
+            let session_state = crate::session_state::get_session_state();
+            let settings = session_state.safety_settings.lock().unwrap();
+            if settings.path_escape_blocked && part.contains("..") {
+                return Some(format!(
+                    "Path escape (..) is restricted in current safety settings: {}",
+                    part
+                ));
+            }
             if part.starts_with('/') || part.starts_with('.') || part.contains("..") {
                 continue;
             }

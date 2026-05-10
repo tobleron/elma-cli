@@ -160,6 +160,27 @@ fn next_snapshot_seq(snapshots_dir: &Path) -> Result<u32> {
     Ok(max_n + 1)
 }
 
+pub(crate) fn list_session_snapshots(session: &SessionPaths) -> Result<Vec<(String, u64, String)>> {
+    let mut out = Vec::new();
+    if !session.artifacts_dir.exists() {
+        return Ok(out);
+    }
+    for ent in std::fs::read_dir(&session.artifacts_dir)? {
+        let ent = ent?;
+        if !ent.file_type()?.is_dir() {
+            continue;
+        }
+        let manifest_path = ent.path().join("manifest.toml");
+        if manifest_path.exists() {
+            if let Ok(m) = load_snapshot_manifest(&manifest_path) {
+                out.push((m.snapshot_id, m.created_unix_s, m.reason));
+            }
+        }
+    }
+    out.sort_by_key(|(_, ts, _)| *ts);
+    Ok(out)
+}
+
 fn collect_snapshot_relative_files(repo_root: &Path) -> Result<(bool, String, Vec<PathBuf>)> {
     if is_git_workspace(repo_root) {
         let files = limit_snapshot_files(repo_root, collect_git_snapshot_files(repo_root)?)?;

@@ -32,6 +32,15 @@ pub(crate) fn clear_confirmation_cache() {
     }
 }
 
+/// Get the number of confirmed commands in the cache.
+pub(crate) fn confirmation_cache_count() -> usize {
+    if let Ok(cache) = CONFIRMED_COMMANDS.lock() {
+        cache.len()
+    } else {
+        0
+    }
+}
+
 /// Confirm a command for one-time execution (after dry-run preview).
 pub(crate) fn confirm_command(command: &str) {
     if let Ok(mut cache) = CONFIRMED_COMMANDS.lock() {
@@ -204,7 +213,9 @@ fn evaluate_policy(unit: &str) -> Decision {
     }
 
     // Check redirection (forbidden in policy Task 789)
-    if unit.contains(">") || unit.contains(">>") {
+    let session_state = crate::session_state::get_session_state();
+    let settings = session_state.safety_settings.lock().unwrap();
+    if settings.shell_redirection_blocked && (unit.contains(">") || unit.contains(">>")) {
         return Decision::Forbidden("Shell redirection (> or >>) is restricted. Use the write tool.".to_string());
     }
 

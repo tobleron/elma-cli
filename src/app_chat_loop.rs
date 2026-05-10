@@ -9,6 +9,7 @@ use crate::*;
 
 pub(crate) async fn run_chat_loop(runtime: &mut AppRuntime) -> Result<()> {
     let tui = TerminalUI::new(Some(runtime.state.session.root.clone()))
+        .await
         .context("Failed to initialize Terminal UI")?;
 
     let state_machine = ChatStateMachine::new(runtime, tui);

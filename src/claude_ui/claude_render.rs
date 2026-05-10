@@ -1088,6 +1088,131 @@ impl ClaudeRenderer {
                 }
                 ("Sessions".to_string(), text)
             }
+            crate::ui_state::ModalState::ToolList { tools, selected } => {
+                let mut text = String::new();
+                for (i, (name, desc)) in tools.iter().enumerate() {
+                    let marker = if i == *selected { "▸ " } else { "  " };
+                    text.push_str(&format!("{}{}\n", marker, name));
+                    if i == *selected {
+                        text.push_str(&format!("    {}\n", desc));
+                    }
+                }
+                ("Tools".to_string(), text)
+            }
+            crate::ui_state::ModalState::GoalList {
+                objective,
+                completed,
+                pending,
+            } => {
+                let mut text = String::new();
+                if let Some(obj) = objective {
+                    text.push_str(&format!("Objective: {}\n\n", obj));
+                }
+                if !completed.is_empty() {
+                    text.push_str("Completed:\n");
+                    for g in completed {
+                        text.push_str(&format!("  ✓ {}\n", g));
+                    }
+                    text.push_str("\n");
+                }
+                if !pending.is_empty() {
+                    text.push_str("Pending:\n");
+                    for g in pending {
+                        text.push_str(&format!("  ○ {}\n", g));
+                    }
+                }
+                ("Goals".to_string(), text)
+            }
+            crate::ui_state::ModalState::ListSelector {
+                title,
+                options,
+                selected,
+                ..
+            } => {
+                let mut text = String::new();
+                for (i, (label, _)) in options.iter().enumerate() {
+                    let marker = if i == *selected { "▸ " } else { "  " };
+                    text.push_str(&format!("{}{}\n", marker, label));
+                }
+                (title.clone(), text)
+            }
+            crate::ui_state::ModalState::UsageReport {
+                model,
+                input_tokens,
+                output_tokens,
+                context_tokens,
+                context_max,
+                cost_est,
+            } => {
+                let text = format!(
+                    "Model: {}\nInput Tokens: {}\nOutput Tokens: {}\nContext: {} / {}\nCost: ${:.4}",
+                    model, input_tokens, output_tokens, context_tokens, context_max, cost_est
+                );
+                ("Usage".to_string(), text)
+            }
+            crate::ui_state::ModalState::ModelSelector { models, selected, ..  } => {
+                let mut text = String::new();
+                for (i, m) in models.iter().enumerate() {
+                    let marker = if i == *selected { "▸ " } else { "  " };
+                    text.push_str(&format!("{}{}\n", marker, m));
+                }
+                ("Switch Model".to_string(), text)
+            }
+            crate::ui_state::ModalState::TuneSelector { profiles, selected } => {
+                let mut text = String::new();
+                for (i, (name, desc)) in profiles.iter().enumerate() {
+                    let marker = if i == *selected { "▸ " } else { "  " };
+                    text.push_str(&format!("{}{}: {}\n", marker, name, desc));
+                }
+                ("Tuning".to_string(), text)
+            }
+            crate::ui_state::ModalState::SnapshotList { snapshots, selected } => {
+                let mut text = String::new();
+                for (i, (id, _, reason)) in snapshots.iter().enumerate() {
+                    let marker = if i == *selected { "▸ " } else { "  " };
+                    text.push_str(&format!("{}{} - {}\n", marker, id, reason));
+                }
+                ("Snapshots".to_string(), text)
+            }
+            crate::ui_state::ModalState::SafetySettings {
+                approval_policy,
+                shell_preflight,
+                command_budget,
+                confirm_cache_count,
+                selected_index,
+            } => {
+                let options = vec![
+                    format!("Approval Policy: {}", approval_policy),
+                    format!("Shell Preflight: {}", if *shell_preflight { "ON" } else { "OFF" }),
+                    format!("Command Budget: {}", command_budget),
+                    format!("Confirmation Cache: {} items", confirm_cache_count),
+                    "Clear Cache".to_string(),
+                ];
+                let mut text = String::new();
+                for (i, opt) in options.iter().enumerate() {
+                    let marker = if i == *selected_index { "▸ " } else { "  " };
+                    text.push_str(&format!("{}{}\n", marker, opt));
+                }
+                ("Safety Settings".to_string(), text)
+            }
+            crate::ui_state::ModalState::ProviderConfig {
+                base_url,
+                helper_url,
+                selected_index,
+            } => {
+                let options = vec![
+                    format!("Endpoint: {}", base_url),
+                    format!("Helper:   {}", helper_url),
+                    " [ Save ] ".to_string(),
+                    " [ Cancel ] ".to_string(),
+                ];
+                let mut text = String::new();
+                for (i, opt) in options.iter().enumerate() {
+                    let marker = if i == *selected_index { "▸ " } else { "  " };
+                    text.push_str(&format!("{}{}\n", marker, opt));
+                }
+                ("Provider Config".to_string(), text)
+            }
         };
 
         let block = ratatui::widgets::Block::default()

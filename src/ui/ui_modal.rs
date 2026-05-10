@@ -27,7 +27,7 @@ pub(crate) fn render_modal(
     let content_lines = match modal {
         ModalState::Confirm { title, message } => render_confirm_box(title, message, screen_width),
         ModalState::Help { content } => render_help_box(content, screen_width),
-        ModalState::Select { title, options } => render_select_box(title, options, screen_width),
+        ModalState::Select { title, options } => render_select_box(title, options, screen_width, 0),
         ModalState::Settings { content } => render_settings_box(content, screen_width),
         ModalState::Usage { content } => render_usage_box(content, screen_width),
         ModalState::ToolApproval {
@@ -56,6 +56,62 @@ pub(crate) fn render_modal(
             filter,
             error,
         } => render_session_picker(entries, *selected, filter, error, screen_width),
+        ModalState::ToolList { tools, selected } => {
+            render_tool_list(tools, *selected, screen_width)
+        }
+        ModalState::GoalList {
+            objective,
+            completed,
+            pending,
+        } => render_goal_list(objective.as_deref(), completed, pending, screen_width),
+        ModalState::ListSelector { title, options, selected, .. } => {
+            let display_options: Vec<String> = options.iter().map(|(label, _)| label.clone()).collect();
+            render_select_box(title, &display_options, screen_width, *selected)
+        }
+        ModalState::UsageReport {
+            model,
+            input_tokens,
+            output_tokens,
+            context_tokens,
+            context_max,
+            cost_est,
+        } => render_usage_report(
+            model,
+            *input_tokens,
+            *output_tokens,
+            *context_tokens,
+            *context_max,
+            *cost_est,
+            screen_width,
+        ),
+        ModalState::ModelSelector { models, selected, ..  } => {
+            render_select_box("Switch Model", models, screen_width, *selected)
+        }
+        ModalState::TuneSelector { profiles, selected } => {
+            render_tune_selector(profiles, *selected, screen_width)
+        }
+        ModalState::SafetySettings {
+            approval_policy,
+            shell_preflight,
+            command_budget,
+            confirm_cache_count,
+            selected_index,
+        } => render_safety_settings(
+            approval_policy,
+            *shell_preflight,
+            *command_budget,
+            *confirm_cache_count,
+            *selected_index,
+            screen_width,
+        ),
+        ModalState::SnapshotList { snapshots, selected } => {
+            render_snapshot_list(snapshots, *selected, screen_width)
+        }
+        ModalState::ProviderConfig {
+            base_url,
+            helper_url,
+            selected_index,
+        } => render_provider_config(base_url, helper_url, *selected_index, screen_width),
     };
 
     // Center vertically: calculate padding
@@ -157,26 +213,47 @@ fn render_help_box(content: &str, _screen_width: usize) -> Vec<String> {
 }
 
 /// Render a selection box.
-fn render_select_box(title: &str, options: &[String], _screen_width: usize) -> Vec<String> {
+fn render_select_box(title: &str, options: &[String], _screen_width: usize, selected: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
+    let theme = current_theme();
 
     // Title
     let title_line = format!(
         " {} ",
-        fg_bold_token(current_theme().accent_secondary, title)
+        fg_bold_token(theme.accent_secondary, title)
     );
     lines.push(title_line);
 
     lines.push(String::new()); // spacer
 
     // Options
-    for (i, opt) in options.iter().enumerate() {
-        let prefix = if i == 0 {
-            fg_bold_token(current_theme().accent_secondary, "▸")
+    let max_visible = 12;
+    let start = if selected >= max_visible {
+        selected - max_visible + 1
+    } else {
+        0
+    };
+
+    for i in start..(start + max_visible).min(options.len()) {
+        let opt = &options[i];
+        let marker = if i == selected {
+            fg_bold_token(theme.accent_secondary, "▸")
         } else {
             dim(" ")
         };
-        lines.push(format!("  {} {}", prefix, opt));
+        let row = if i == selected {
+            fg_bold_token(theme.fg, opt)
+        } else {
+            dim(opt)
+        };
+        lines.push(format!("  {} {}", marker, row));
+    }
+
+    if options.len() > max_visible {
+        lines.push(format!(
+            "  {}",
+            dim(&format!("... ({} more)", options.len() - max_visible))
+        ));
     }
 
     lines.push(String::new()); // spacer
@@ -471,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_render_select_box() {
-        let lines = render_select_box("Select", &["opt1".to_string(), "opt2".to_string()], 80);
+        let lines = render_select_box("Select", &["opt1".to_string(), "opt2".to_string()], 80, 0);
         assert!(lines.iter().any(|l| l.contains("opt1")));
         assert!(lines.iter().any(|l| l.contains("opt2")));
     }
@@ -618,6 +695,333 @@ fn render_session_picker(
         ));
     }
 
+    lines
+}
+
+fn render_tool_list(
+    tools: &[(String, String)],
+    selected: usize,
+    _screen_width: usize,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let theme = current_theme();
+
+    lines.push(format!(
+        " {} ",
+        fg_bold_token(theme.accent_secondary, "Available Tools")
+    ));
+    lines.push(String::new());
+
+    if tools.is_empty() {
+        lines.push(dim("  (no tools discovered)"));
+    } else {
+        let max_visible = 10;
+        let start = if selected >= max_visible {
+            selected - max_visible + 1
+        } else {
+            0
+        };
+
+        for i in start..(start + max_visible).min(tools.len()) {
+            let (name, desc) = &tools[i];
+            let marker = if i == selected {
+                fg_bold_token(theme.accent_secondary, "▸")
+            } else {
+                dim(" ")
+            };
+            lines.push(format!("  {} {}", marker, fg_bold_token(theme.fg, name)));
+            if i == selected {
+                let wrapped = wrap_ansi(desc, 50);
+                for wline in wrapped {
+                    lines.push(format!("      {}", dim(&wline)));
+                }
+            }
+        }
+        if tools.len() > max_visible {
+            lines.push(format!(
+                "  {}",
+                dim(&format!("... ({} more)", tools.len() - max_visible))
+            ));
+        }
+    }
+
+    lines.push(String::new());
+    lines.push(format!("  {}", dim("↑/↓ to navigate · Esc to close")));
+    lines
+}
+
+fn render_goal_list(
+    objective: Option<&str>,
+    completed: &[String],
+    pending: &[String],
+    _screen_width: usize,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let theme = current_theme();
+
+    lines.push(format!(" {} ", fg_bold_token(theme.warning, "Active Goals")));
+    lines.push(String::new());
+
+    if let Some(obj) = objective {
+        lines.push(format!("  {}", fg_bold_token(theme.fg, "Objective:")));
+        let wrapped = wrap_ansi(obj, 55);
+        for wline in wrapped {
+            lines.push(format!("    {}", wline));
+        }
+        lines.push(String::new());
+    }
+
+    if !completed.is_empty() {
+        lines.push(format!("  {}", fg_bold_token(theme.success, "Completed:")));
+        for goal in completed {
+            lines.push(format!("    {} {}", fg_token(theme.success, "✓"), dim(goal)));
+        }
+        lines.push(String::new());
+    }
+
+    if !pending.is_empty() {
+        lines.push(format!("  {}", fg_bold_token(theme.accent_secondary, "Pending:")));
+        for goal in pending {
+            lines.push(format!("    {} {}", fg_token(theme.accent_secondary, "○"), goal));
+        }
+        lines.push(String::new());
+    }
+
+    if objective.is_none() && completed.is_empty() && pending.is_empty() {
+        lines.push(dim("  (no active goals)"));
+        lines.push(String::new());
+    }
+
+    lines.push(format!("  {}", dim("Esc to close")));
+    lines
+}
+
+fn render_usage_report(
+    model: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    context_tokens: u64,
+    context_max: u64,
+    cost_est: f64,
+    _screen_width: usize,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let theme = current_theme();
+
+    lines.push(format!(" {} ", fg_bold_token(theme.warning, "Session Usage")));
+    lines.push(String::new());
+
+    lines.push(format!("  Model:   {}", fg_bold_token(theme.fg, model)));
+    lines.push(format!(
+        "  Tokens:  {} in · {} out",
+        fg_bold_token(theme.fg, &input_tokens.to_string()),
+        fg_bold_token(theme.fg, &output_tokens.to_string())
+    ));
+
+    let ctx_pct = if context_max > 0 {
+        (context_tokens * 100) / context_max
+    } else {
+        0
+    };
+    lines.push(format!(
+        "  Context: {} / {} tokens ({}%)",
+        fg_bold_token(theme.fg, &context_tokens.to_string()),
+        context_max,
+        ctx_pct
+    ));
+
+    lines.push(format!(
+        "  Cost:    ${:.4} (est)",
+        fg_bold_token(theme.success, &cost_est.to_string())
+    ));
+
+    lines.push(String::new());
+    lines.push(format!("  {}", dim("Esc to close")));
+    lines
+}
+
+fn render_tune_selector(
+    profiles: &[(String, String)],
+    selected: usize,
+    _screen_width: usize,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let theme = current_theme();
+
+    lines.push(format!(" {} ", fg_bold_token(theme.accent_secondary, "Performance Profiles")));
+    lines.push(String::new());
+
+    for i in 0..profiles.len() {
+        let (name, desc) = &profiles[i];
+        let marker = if i == selected {
+            fg_bold_token(theme.accent_secondary, "▸")
+        } else {
+            dim(" ")
+        };
+        let row = if i == selected {
+            fg_bold_token(theme.fg, name)
+        } else {
+            dim(name)
+        };
+        lines.push(format!("  {} {}", marker, row));
+        if i == selected {
+            let wrapped = wrap_ansi(desc, 50);
+            for wline in wrapped {
+                lines.push(format!("      {}", dim(&wline)));
+            }
+        }
+    }
+
+    lines.push(String::new());
+    lines.push(format!("  {}", dim("↑/↓ to navigate · Enter to apply · Esc to close")));
+    lines
+}
+
+fn render_safety_settings(
+    approval_policy: &str,
+    shell_preflight: bool,
+    command_budget: usize,
+    confirm_cache_count: usize,
+    selected_index: usize,
+    _screen_width: usize,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let theme = current_theme();
+
+    lines.push(format!(" {} ", fg_bold_token(theme.warning, "Safety Settings")));
+    lines.push(String::new());
+
+    let session_state = crate::session_state::get_session_state();
+    let settings = session_state.safety_settings.lock().unwrap();
+
+    let options = [
+        format!("Approval Policy: {}", fg_bold_token(theme.fg, approval_policy)),
+        format!("Shell Preflight: {}", if shell_preflight { fg_bold_token(theme.success, "ON") } else { dim("OFF") }),
+        format!("Command Budget:  {}", fg_bold_token(theme.fg, &command_budget.to_string())),
+        format!("Path Escapes:    {}", if settings.path_escape_blocked { fg_bold_token(theme.success, "BLOCKED") } else { dim("ALLOWED") }),
+        format!("Confirmed Cmds:  {} cached", confirm_cache_count),
+        "Clear Confirmation Cache".to_string(),
+    ];
+
+    for (i, opt) in options.iter().enumerate() {
+        let marker = if i == selected_index {
+            fg_bold_token(theme.warning, "▸")
+        } else {
+            dim(" ")
+        };
+        let row = if i == selected_index {
+            fg_bold_token(theme.fg, opt)
+        } else {
+            dim(opt)
+        };
+        lines.push(format!("  {} {}", marker, row));
+    }
+
+    lines.push(String::new());
+    lines.push(format!("  {}", dim("↑/↓ to navigate · Enter/Space to toggle · Esc to close")));
+    lines
+}
+
+fn render_snapshot_list(
+    snapshots: &[(String, u64, String)],
+    selected: usize,
+    _screen_width: usize,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let theme = current_theme();
+
+    lines.push(format!(
+        " {} ",
+        fg_bold_token(theme.accent_secondary, "Work Snapshots")
+    ));
+    lines.push(String::new());
+
+    if snapshots.is_empty() {
+        lines.push(dim("  (no snapshots in this session)"));
+    } else {
+        let max_visible = 10;
+        let start = if selected >= max_visible {
+            selected - max_visible + 1
+        } else {
+            0
+        };
+
+        for i in start..(start + max_visible).min(snapshots.len()) {
+            let (id, ts, reason) = &snapshots[i];
+            let marker = if i == selected {
+                fg_bold_token(theme.accent_secondary, "▸")
+            } else {
+                dim(" ")
+            };
+            let age = format_relative_age(*ts);
+            lines.push(format!(
+                "  {} {} {} {}",
+                marker,
+                fg_bold_token(theme.fg, id),
+                dim(&age),
+                dim(reason)
+            ));
+        }
+    }
+
+    lines.push(String::new());
+    lines.push(format!("  {}", dim("↑/↓ to navigate · Enter to restore · Esc to close")));
+    lines
+}
+
+fn render_provider_config(
+    base_url: &str,
+    helper_url: &str,
+    selected_index: usize,
+    _screen_width: usize,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let theme = current_theme();
+
+    lines.push(format!(
+        " {} ",
+        fg_bold_token(theme.accent_secondary, "Provider Configuration")
+    ));
+    lines.push(String::new());
+
+    let labels = ["Endpoint URL:", "Helper URL:", " [ Save ] ", " [ Cancel ] "];
+
+    for (i, label) in labels.iter().enumerate() {
+        let is_selected = i == selected_index;
+        let marker = if is_selected {
+            fg_bold_token(theme.accent_secondary, "▸")
+        } else {
+            dim(" ")
+        };
+
+        if i < 2 {
+            // Input fields
+            let value = if i == 0 { base_url } else { helper_url };
+            let row = if is_selected {
+                format!("{} {}", fg_bold_token(theme.fg, label), fg_bold_token(theme.success, value))
+            } else {
+                format!("{} {}", dim(label), dim(value))
+            };
+            lines.push(format!("  {} {}", marker, row));
+        } else {
+            // Buttons
+            if i == 2 {
+                lines.push(String::new());
+            }
+            let row = if is_selected {
+                fg_bold_token(theme.accent_secondary, label)
+            } else {
+                dim(label)
+            };
+            lines.push(format!("  {} {}", marker, row));
+        }
+    }
+
+    lines.push(String::new());
+    lines.push(format!(
+        "  {}",
+        dim("↑/↓ to navigate · Type to edit · Enter to select")
+    ));
     lines
 }
 

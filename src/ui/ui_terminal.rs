@@ -76,6 +76,8 @@ pub(crate) struct TerminalUI {
     // Rate limiting for draw()
     last_draw_time: Instant,
     min_frame_interval: Duration,
+    // Event bus receiver
+    event_bus_rx: tokio::sync::broadcast::Receiver<crate::ui_runtime_event::UiRuntimeEvent>,
 }
 
 #[cfg(unix)]
@@ -95,7 +97,7 @@ fn is_stdout_tty() -> bool {
 impl TerminalUI {
     /// Initialize the terminal UI: enter raw mode, alternate screen, hide cursor.
     /// Falls back to non-interactive mode if stdin is not a terminal.
-    pub(crate) fn new(session_root: Option<PathBuf>) -> io::Result<Self> {
+    pub(crate) async fn new(session_root: Option<PathBuf>) -> io::Result<Self> {
         let is_interactive = is_stdin_tty() && is_stdout_tty();
         let (cols, rows) = if is_interactive {
             let _ = terminal::enable_raw_mode();
@@ -136,6 +138,8 @@ impl TerminalUI {
             });
         }
 
+        let event_bus_rx = crate::pubsub::UI_EVENT_BUS.subscribe("terminal_ui").await;
+
         Ok(Self {
             state: UIState::new(),
             input: TextInput::new(10),
@@ -163,6 +167,7 @@ impl TerminalUI {
             session_root,
             last_draw_time: Instant::now(),
             min_frame_interval: Duration::from_millis(40),
+            event_bus_rx,
         })
     }
 
@@ -864,6 +869,86 @@ impl TerminalUI {
     /// Non-blocking UI pump — call between async steps to keep UI alive.
     /// Forces a redraw if pending, and briefly polls for resize events.
     pub(crate) fn pump_ui(&mut self) -> io::Result<()> {
+        // Drain event bus
+        while let Ok(event) = self.event_bus_rx.try_recv() {
+            use crate::ui_runtime_event::UiRuntimeEvent;
+
+            // Handle transcript-related events via the shared logic
+            for msg in crate::ui_reducer::event_to_claude_messages(&event) {
+                self.add_claude_message(msg);
+            }
+
+            // Handle specific state updates from events that are not just transcript messages
+            match event {
+                UiRuntimeEvent::TurnStarted => {
+                    self.clear_status();
+                }
+                UiRuntimeEvent::ThinkingStarted => {
+                    self.start_thinking();
+                    self.set_activity("Thinking", "Thinking...");
+                }
+                UiRuntimeEvent::ThinkingDelta(text) => {
+                    self.append_thinking(&text);
+                }
+                UiRuntimeEvent::ThinkingFinished => {
+                    self.finish_thinking();
+                    self.finish_activity();
+                }
+                UiRuntimeEvent::AssistantContentStarted => {
+                    self.start_content();
+                    self.set_activity("Responding", "Responding...");
+                }
+                UiRuntimeEvent::AssistantContentDelta(text) => {
+                    self.append_content(&text);
+                }
+                UiRuntimeEvent::AssistantContentFinished => {
+                    self.finish_content(false);
+                    self.finish_activity();
+                }
+                UiRuntimeEvent::FooterModelUpdated { model } => {
+                    self.state.footer.model = model;
+                    self.pending_draw = true;
+                }
+                UiRuntimeEvent::FooterTokenCounts {
+                    input_tokens,
+                    output_tokens,
+                    context_current,
+                    context_max,
+                } => {
+                    self.state.footer.context_current = context_current;
+                    self.state.footer.context_max = context_max;
+                    self.state.footer.tokens_in = input_tokens;
+                    self.state.footer.tokens_out = output_tokens;
+                    self.pending_draw = true;
+                }
+                UiRuntimeEvent::Resize { cols, rows } => {
+                    self.claude.terminal_width = cols;
+                    self.claude.terminal_height = rows;
+                    self.previous_claude_screen = None;
+                    self.pending_draw = true;
+                }
+                UiRuntimeEvent::HeaderInfoUpdated {
+                    model,
+                    endpoint,
+                    workspace,
+                    session,
+                    verbose,
+                } => {
+                    self.state.header.model = model;
+                    self.state.header.endpoint = endpoint;
+                    self.state.header.workspace = workspace;
+                    self.state.header.session = session;
+                    self.state.header.verbose = verbose;
+                    self.pending_draw = true;
+                }
+                UiRuntimeEvent::FooterEffort(effort) => {
+                    self.state.footer.effort = effort;
+                    self.pending_draw = true;
+                }
+                _ => {}
+            }
+        }
+
         // Keep repainting while the status thread is active (spinner animation)
         if self.state.status_thread.is_working() {
             self.pending_draw = true;
@@ -1148,15 +1233,25 @@ impl TerminalUI {
                         }
                         KeyCode::Enter => {
                             // For confirm modals, treat Enter as confirmation.
-                            if let Some(ModalState::Confirm { .. }) = self.state.modal {
-                                self.state.clear_modal();
-                                self.pending_draw = true;
-                                let input = self.input.content_trimmed();
-                                self.input.clear();
-                                if input.is_empty() {
-                                    continue;
+                            if let Some(ms) = &self.state.modal {
+                                if let ModalState::Confirm { title, .. } = ms {
+                                    let cmd = match title.as_str() {
+                                        "Clear Transcript" => "/confirm-clear",
+                                        "Reset Session" => "/confirm-reset",
+                                        _ => "",
+                                    };
+                                    self.state.clear_modal();
+                                    self.pending_draw = true;
+                                    if !cmd.is_empty() {
+                                        return Ok(Some(cmd.to_string()));
+                                    }
+                                    let input = self.input.content_trimmed();
+                                    self.input.clear();
+                                    if input.is_empty() {
+                                        continue;
+                                    }
+                                    return Ok(Some(input));
                                 }
-                                return Ok(Some(input));
                             }
                             // For tool approval, accept selected option.
                             if let Some(ModalState::ToolApproval { selected, .. }) =
@@ -1195,6 +1290,104 @@ impl TerminalUI {
                             {
                                 self.state.clear_modal();
                                 self.pending_draw = true;
+                            }
+                            // Generic list selector
+                            if let Some(ms) = &self.state.modal {
+                                match ms {
+                                    ModalState::ListSelector {
+                                        options,
+                                        selected,
+                                        on_select_cmd,
+                                        ..
+                                    } => {
+                                        if let Some(cmd_template) = on_select_cmd {
+                                            let (_, selected_val) = &options[*selected];
+                                            let cmd = cmd_template.replace("{}", selected_val);
+                                            self.state.clear_modal();
+                                            self.pending_draw = true;
+                                            return Ok(Some(cmd));
+                                        }
+                                    }
+                                    ModalState::ModelSelector { models, selected, base_url } => {
+                                        let model = &models[*selected];
+                                        let cmd = format!("/api {} {}", base_url, model);
+                                        self.state.clear_modal();
+                                        self.pending_draw = true;
+                                        return Ok(Some(cmd));
+                                    }
+                                    ModalState::SnapshotList { snapshots, selected } => {
+                                        let (id, _, _) = &snapshots[*selected];
+                                        let cmd = format!("/rollback {}", id);
+                                        self.state.clear_modal();
+                                        self.pending_draw = true;
+                                        return Ok(Some(cmd));
+                                    }
+                                    ModalState::ProviderConfig {
+                                        base_url,
+                                        helper_url,
+                                        selected_index,
+                                    } => {
+                                        if *selected_index == 2 {
+                                            // Save: we use a special format that handle_api_config doesn't yet support directly for both
+                                            // but we can pass them or use /api for base and then something else.
+                                            // For now, let's just use /api for base.
+                                            let cmd = format!("/api {} ", base_url);
+                                            // If helper is provided, we might need a separate command or handle it.
+                                            self.state.clear_modal();
+                                            self.pending_draw = true;
+                                            return Ok(Some(cmd));
+                                        } else if *selected_index == 3 {
+                                            // Cancel
+                                            self.state.clear_modal();
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    ModalState::SafetySettings {
+                                        selected_index,
+                                        ..
+                                    } => {
+                                        let session_state = crate::session_state::get_session_state();
+                                        match *selected_index {
+                                            0 => {
+                                                // Cycle approval policy
+                                                let current = crate::safe_mode::get_safe_mode();
+                                                let next = match current {
+                                                    crate::safe_mode::SafeMode::Off => crate::safe_mode::SafeMode::Ask,
+                                                    crate::safe_mode::SafeMode::Ask => crate::safe_mode::SafeMode::On,
+                                                    crate::safe_mode::SafeMode::On => crate::safe_mode::SafeMode::Off,
+                                                };
+                                                crate::safe_mode::set_safe_mode(next);
+                                                return Ok(Some("/approve-refresh".to_string()));
+                                            }
+                                            1 => {
+                                                // Toggle shell preflight redirection block
+                                                let mut settings = session_state.safety_settings.lock().unwrap();
+                                                settings.shell_redirection_blocked = !settings.shell_redirection_blocked;
+                                                return Ok(Some("/approve-refresh".to_string()));
+                                            }
+                                            2 => {
+                                                // Adjust command budget (simple increment for now)
+                                                let mut settings = session_state.safety_settings.lock().unwrap();
+                                                settings.max_shell_calls_per_turn = (settings.max_shell_calls_per_turn + 5) % 35;
+                                                if settings.max_shell_calls_per_turn == 0 { settings.max_shell_calls_per_turn = 5; }
+                                                return Ok(Some("/approve-refresh".to_string()));
+                                            }
+                                            3 => {
+                                                // Toggle path escape block
+                                                let mut settings = session_state.safety_settings.lock().unwrap();
+                                                settings.path_escape_blocked = !settings.path_escape_blocked;
+                                                return Ok(Some("/approve-refresh".to_string()));
+                                            }
+                                            4 => {
+                                                // Clear Cache
+                                                crate::shell_preflight::clear_confirmation_cache();
+                                                return Ok(Some("/approve-refresh".to_string()));
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    _ => {}
+                                }
                             }
                             continue;
                         }
@@ -1278,6 +1471,37 @@ impl TerminalUI {
                                     self.pending_draw = true;
                                 }
                             }
+                            if let Some(ModalState::ToolList { selected, .. }) =
+                                &mut self.state.modal
+                            {
+                                if *selected > 0 {
+                                    *selected -= 1;
+                                    self.pending_draw = true;
+                                }
+                            }
+                            if let Some(ms) = &mut self.state.modal {
+                                match ms {
+                                    ModalState::ListSelector { selected, .. }
+                                    | ModalState::ToolList { selected, .. }
+                                    | ModalState::ModelSelector { selected, .. }
+                                    | ModalState::TuneSelector { selected, .. }
+                                    | ModalState::SnapshotList { selected, .. }
+                                    | ModalState::ProviderConfig {
+                                        selected_index: selected,
+                                        ..
+                                    }
+                                    | ModalState::SafetySettings {
+                                        selected_index: selected,
+                                        ..
+                                    } => {
+                                        if *selected > 0 {
+                                            *selected -= 1;
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
                         KeyCode::Right => {
                             if let Some(ModalState::ToolApproval { selected, .. }) =
@@ -1295,24 +1519,56 @@ impl TerminalUI {
                         }
                         KeyCode::Char(c) => {
                             // Session picker: use chars for filter
-                            if let Some(ModalState::SessionPicker { filter, .. }) =
-                                &mut self.state.modal
-                            {
-                                filter.push(c);
-                                self.pending_draw = true;
-                                continue;
+                            if let Some(ms) = &mut self.state.modal {
+                                match ms {
+                                    ModalState::SessionPicker { filter, .. } => {
+                                        filter.push(c);
+                                        self.pending_draw = true;
+                                        continue;
+                                    }
+                                    ModalState::ProviderConfig {
+                                        base_url,
+                                        helper_url,
+                                        selected_index,
+                                    } => {
+                                        if *selected_index == 0 {
+                                            base_url.push(c);
+                                        } else if *selected_index == 1 {
+                                            helper_url.push(c);
+                                        }
+                                        self.pending_draw = true;
+                                        continue;
+                                    }
+                                    _ => {}
+                                }
                             }
                             self.input.insert_char(c);
                             self.pending_draw = true;
                         }
                         KeyCode::Backspace => {
                             // Session picker: backspace clears filter
-                            if let Some(ModalState::SessionPicker { filter, .. }) =
-                                &mut self.state.modal
-                            {
-                                filter.pop();
-                                self.pending_draw = true;
-                                continue;
+                            if let Some(ms) = &mut self.state.modal {
+                                match ms {
+                                    ModalState::SessionPicker { filter, .. } => {
+                                        filter.pop();
+                                        self.pending_draw = true;
+                                        continue;
+                                    }
+                                    ModalState::ProviderConfig {
+                                        base_url,
+                                        helper_url,
+                                        selected_index,
+                                    } => {
+                                        if *selected_index == 0 {
+                                            base_url.pop();
+                                        } else if *selected_index == 1 {
+                                            helper_url.pop();
+                                        }
+                                        self.pending_draw = true;
+                                        continue;
+                                    }
+                                    _ => {}
+                                }
                             }
                             self.input.backspace();
                             self.pending_draw = true;
@@ -1658,6 +1914,63 @@ impl TerminalUI {
                                 self.pending_draw = true;
                             }
                         }
+                            if let Some(ModalState::ToolList { tools, selected }) =
+                                &mut self.state.modal
+                            {
+                                if *selected + 1 < tools.len() {
+                                    *selected += 1;
+                                    self.pending_draw = true;
+                                }
+                            }
+                            if let Some(ms) = &mut self.state.modal {
+                                match ms {
+                                    ModalState::ListSelector { options, selected, .. } => {
+                                        if *selected + 1 < options.len() {
+                                            *selected += 1;
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    ModalState::ToolList { tools, selected } => {
+                                        if *selected + 1 < tools.len() {
+                                            *selected += 1;
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    ModalState::ModelSelector { models, selected, ..  } => {
+                                        if *selected + 1 < models.len() {
+                                            *selected += 1;
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    ModalState::TuneSelector { profiles, selected } => {
+                                        if *selected + 1 < profiles.len() {
+                                            *selected += 1;
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    ModalState::SnapshotList { snapshots, selected } => {
+                                        if *selected + 1 < snapshots.len() {
+                                            *selected += 1;
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    ModalState::ProviderConfig { selected_index, .. } => {
+                                        if *selected_index + 1 < 4 {
+                                            *selected_index += 1;
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    ModalState::SafetySettings {
+                                        selected_index, ..
+                                    } => {
+                                        if *selected_index + 1 < 6 {
+                                            *selected_index += 1;
+                                            self.pending_draw = true;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
                     }
                     KeyCode::Char(c) => {
                         self.input.insert_char(c);
@@ -1757,6 +2070,31 @@ impl TerminalUI {
                         self.pending_draw = true;
                     }
                     KeyCode::Up => {
+                        if let Some(ms) = &mut self.state.modal {
+                            match ms {
+                                ModalState::ListSelector { selected, .. }
+                                | ModalState::ToolList { selected, .. }
+                                | ModalState::ModelSelector { selected, .. }
+                                | ModalState::TuneSelector { selected, .. }
+                                | ModalState::SnapshotList { selected, .. }
+                                | ModalState::ProviderConfig {
+                                    selected_index: selected,
+                                    ..
+                                }
+                                | ModalState::SafetySettings {
+                                    selected_index: selected,
+                                    ..
+                                } => {
+                                    if *selected > 0 {
+                                        *selected -= 1;
+                                        self.pending_draw = true;
+                                    }
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
                         // Claude Code behavior: Up/Down scroll transcript, never history
                         if self.claude.is_picker_active() {
                             self.claude.picker_select_up();
@@ -1768,6 +2106,57 @@ impl TerminalUI {
                         self.pending_draw = true;
                     }
                     KeyCode::Down => {
+                        if let Some(ms) = &mut self.state.modal {
+                            match ms {
+                                ModalState::ListSelector { options, selected, .. } => {
+                                    if *selected + 1 < options.len() {
+                                        *selected += 1;
+                                        self.pending_draw = true;
+                                    }
+                                }
+                                ModalState::ToolList { tools, selected } => {
+                                    if *selected + 1 < tools.len() {
+                                        *selected += 1;
+                                        self.pending_draw = true;
+                                    }
+                                }
+                                ModalState::ModelSelector { models, selected, ..  } => {
+                                    if *selected + 1 < models.len() {
+                                        *selected += 1;
+                                        self.pending_draw = true;
+                                    }
+                                }
+                                ModalState::TuneSelector { profiles, selected } => {
+                                    if *selected + 1 < profiles.len() {
+                                        *selected += 1;
+                                        self.pending_draw = true;
+                                    }
+                                }
+                                ModalState::SnapshotList { snapshots, selected } => {
+                                    if *selected + 1 < snapshots.len() {
+                                        *selected += 1;
+                                        self.pending_draw = true;
+                                    }
+                                }
+                                ModalState::ProviderConfig { selected_index, .. } => {
+                                    if *selected_index + 1 < 4 {
+                                        *selected_index += 1;
+                                        self.pending_draw = true;
+                                    }
+                                }
+                                ModalState::SafetySettings {
+                                    selected_index, ..
+                                } => {
+                                    if *selected_index + 1 < 6 {
+                                        *selected_index += 1;
+                                        self.pending_draw = true;
+                                    }
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
                         // Claude Code behavior: Up/Down scroll transcript, never history
                         if self.claude.is_picker_active() {
                             self.claude.picker_select_down();
@@ -2567,9 +2956,9 @@ mod tests {
         let _ = MessageRole::System;
     }
 
-    #[test]
-    fn test_transcript_budget_divergence() {
-        let mut tui = TerminalUI::new(None).unwrap();
+    #[tokio::test]
+    async fn test_transcript_budget_divergence() {
+        let mut tui = TerminalUI::new(None).await.unwrap();
         // Model context budget is small (e.g. 100 tokens from prompt)
         tui.update_context_tokens(100);
 

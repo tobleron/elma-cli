@@ -211,13 +211,14 @@ impl<'a> ToolStateMachine<'a> {
             }
             let iter = self.stop_policy.iteration();
             if max_iter > 0 && iter == (max_iter * 2 / 3).max(1) {
-                self.tui.push_budget_notice(&format!(
-                    "Approaching iteration limit ({}/{})",
-                    iter, max_iter
-                ));
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::BudgetNotice {
+                    total: max_iter as u64,
+                    used: iter as u64,
+                    action: "iteration limit".to_string(),
+                });
             }
 
-            self.tui.process_pending_input_events();
+            // self.tui.process_pending_input_events(); // Handled by TerminalUI subscription
 
             if self.work_graph_runner.is_graph_driven() {
                 if self.work_graph_runner.current_progress.is_none() {
@@ -266,7 +267,10 @@ impl<'a> ToolStateMachine<'a> {
             }
 
             if self.stop_policy.is_struggling() {
-                self.tui.push_meta_event("STRUGGLE", "Model detected as struggling (repeated failures/stagnation). Decomposition recommended.");
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                    category: "STRUGGLE".to_string(),
+                    message: "Model detected as struggling (repeated failures/stagnation). Decomposition recommended.".to_string(),
+                });
             }
 
             if let Some(outcome) = self.stop_policy.check_should_stop() {
@@ -319,9 +323,9 @@ impl<'a> ToolStateMachine<'a> {
                 mutation_type.as_deref().unwrap_or("unknown"),
             );
             self.messages.push(ChatMessage::simple("user", &msg));
-            self.tui.push_stop_notice(
-                "Mutation required: continuing until mutating tool call is made",
-            );
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::StopReasonNotice {
+                reason: "Mutation required: continuing until mutating tool call is made".to_string(),
+            });
             trace(self.args, "tool_loop: mutation enforced continuation");
             let new_budget = StageBudget::from_complexity(self.complexity);
             self.stop_policy = StopPolicy::new(new_budget);
@@ -341,10 +345,10 @@ impl<'a> ToolStateMachine<'a> {
                 &self.scope_coverage,
             ) {
                 sync_loop_summary_coverage(&mut self.loop_summary_tracker, &self.scope_coverage);
-                self.tui.push_meta_event(
-                    "COVERAGE",
-                    &format!("continuing - {}", self.scope_coverage.render_summary()),
-                );
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                    category: "COVERAGE".to_string(),
+                    message: format!("continuing - {}", self.scope_coverage.render_summary()),
+                });
                 format!(
                     "Continue from existing evidence. Scope coverage is still incomplete, so do not finalize yet.\n\n{}",
                     build_scope_coverage_nudge(&self.scope_coverage)
@@ -356,10 +360,12 @@ impl<'a> ToolStateMachine<'a> {
                 )
             };
             self.messages.push(ChatMessage::simple("user", &cont_msg));
-            self.tui.push_stop_notice(&format!(
-                "Budget continued ({}/{}): meaningful progress detected",
-                self.continuation_count, MAX_CONTINUATIONS
-            ));
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::StopReasonNotice {
+                reason: format!(
+                    "Budget continued ({}/{}): meaningful progress detected",
+                    self.continuation_count, MAX_CONTINUATIONS
+                ),
+            });
             trace(
                 self.args,
                 &format!(
@@ -389,10 +395,12 @@ impl<'a> ToolStateMachine<'a> {
                         .join("\n")
                 );
                 self.messages.push(ChatMessage::simple("user", &cont_msg));
-                self.tui.push_stop_notice(&format!(
-                    "Artifact continuation ({}/{}): completing incomplete deliverables",
-                    self.continuation_count, MAX_CONTINUATIONS
-                ));
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::StopReasonNotice {
+                    reason: format!(
+                        "Artifact continuation ({}/{}): completing incomplete deliverables",
+                        self.continuation_count, MAX_CONTINUATIONS
+                    ),
+                });
                 trace(
                     self.args,
                     &format!(
@@ -416,10 +424,10 @@ impl<'a> ToolStateMachine<'a> {
         let graph_incomplete = self.work_graph_runner.finalization_is_premature();
         if scope_coverage_blocks_finalization(self.read_scope_required, &self.scope_coverage) || graph_incomplete {
             sync_loop_summary_coverage(&mut self.loop_summary_tracker, &self.scope_coverage);
-            self.tui.push_meta_event(
-                "COVERAGE",
-                &format!("incomplete at stop - {}", self.scope_coverage.render_summary()),
-            );
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                category: "COVERAGE".to_string(),
+                message: format!("incomplete at stop - {}", self.scope_coverage.render_summary()),
+            });
             let cont_msg = if graph_incomplete {
                 format!(
                     "{}\n\n{}",
@@ -465,18 +473,17 @@ impl<'a> ToolStateMachine<'a> {
                 self.messages = new_messages;
                 self.tracker.record_success();
                 self.update_context_estimate();
-                self.tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactBoundary);
-                self.tui.add_claude_message(crate::claude_ui::ClaudeMessage::CompactSummary {
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::CompactBoundary);
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::CompactSummary {
                     message_count: before_count,
                     context_preview: Some("auto compact".to_string()),
                 });
-                self.tui.push_meta_event(
-                    "COMPACTION",
-                    &format!(
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::CompactionNotice {
+                    reason: format!(
                         "Auto-compact triggered: {} tokens freed",
                         result.tokens_freed
                     ),
-                );
+                });
                 trace(
                     self.args,
                     &format!(
@@ -569,7 +576,10 @@ impl<'a> ToolStateMachine<'a> {
                             self.messages = new_messages;
                             if result.ok {
                                 self.tracker.record_success();
-                                self.tui.push_meta_event("COMPACTION", &format!("Emergency compact triggered: {} tokens freed", result.tokens_freed));
+                                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                                    category: "COMPACTION".to_string(),
+                                    message: format!("Emergency compact triggered: {} tokens freed", result.tokens_freed),
+                                });
                             }
                             // This is a bit tricky, the original code used `continue` in the outer loop.
                             // We'll return an empty turn to let the outer loop continue.
@@ -720,7 +730,10 @@ impl<'a> ToolStateMachine<'a> {
                 &format!("tool_loop: {} (no new tool signal)", stagnation_info),
             );
             if self.stop_policy.stagnation_runs() >= 3 {
-                self.tui.push_meta_event("STAGNATION", &stagnation_info);
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                    category: "STAGNATION".to_string(),
+                    message: stagnation_info,
+                });
             }
 
             if self.stop_policy.stagnation_runs() >= 2
@@ -1049,12 +1062,13 @@ impl<'a> ToolStateMachine<'a> {
         let (is_risky, reason) =
             CompactTracker::forecast_shell_output_risk(&tc.function.arguments);
         if is_risky {
-            self.tui.push_budget_notice(&format!(
-                "High-risk command detected: {}. Forecast: high volume.",
-                reason
-            ));
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::BudgetNotice {
+                total: 0,
+                used: 0,
+                action: format!("High-risk command detected: {}. Forecast: high volume.", reason),
+            });
 
-            let mut ctx_limit = self.tui.get_context_max() as usize;
+            let mut ctx_limit = self.ctx_max.unwrap_or(0) as usize;
             if ctx_limit == 0 {
                 ctx_limit = self.ctx_max
                     .map(|v| v as usize)
@@ -1076,12 +1090,10 @@ impl<'a> ToolStateMachine<'a> {
                     self.tracker.record_success();
                     self.tracker.recalculate(&self.messages);
                     self.update_context_estimate();
-                    self.tui.add_claude_message(
-                        crate::claude_ui::ClaudeMessage::CompactBoundary,
-                    );
-                    self.tui.push_compaction_notice(
-                        "Proactive compaction triggered to accommodate high-volume shell output.",
-                    );
+                    let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::CompactBoundary);
+                    let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::CompactionNotice {
+                        reason: "Proactive compaction triggered to accommodate high-volume shell output.".to_string(),
+                    });
                 }
             }
         }
@@ -1250,12 +1262,19 @@ impl<'a> ToolStateMachine<'a> {
             );
 
             self.stop_policy.record_tool_result(tc, &result);
-            let _ = self.tui.push_tool_finish(
-                "shell",
-                result.ok,
-                &result.content,
-                Some(result.duration_ms),
-            );
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(if result.ok {
+                crate::ui_runtime_event::UiRuntimeEvent::ToolSucceeded {
+                    name: "shell".to_string(),
+                    output: result.content.clone(),
+                    duration_ms: Some(result.duration_ms),
+                }
+            } else {
+                crate::ui_runtime_event::UiRuntimeEvent::ToolFailed {
+                    name: "shell".to_string(),
+                    output: result.content.clone(),
+                    duration_ms: Some(result.duration_ms),
+                }
+            });
             self.messages.push(ChatMessage {
                 role: "assistant".to_string(),
                 content: "".to_string(),
@@ -1322,7 +1341,10 @@ impl<'a> ToolStateMachine<'a> {
                 self.read_scope_required = true;
             }
         }
-        self.tui.push_meta_event("COVERAGE", &self.work_graph_runner.render_progress());
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+            category: "COVERAGE".to_string(),
+            message: self.work_graph_runner.render_progress(),
+        });
 
         if self.work_graph_runner.is_graph_driven() {
             self.work_graph_runner.sync_external_coverage(&self.scope_coverage);
@@ -1619,16 +1641,18 @@ impl<'a> ToolStateMachine<'a> {
 
     async fn finalize_loop(&mut self, outcome: StopOutcome, turn_id: &str, push_notice: bool) -> Result<ToolLoopResult> {
         if push_notice {
-            self.tui.push_stop_notice(&format!("Limit reached: {}", outcome.reason.as_str()));
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::StopReasonNotice {
+                reason: format!("Limit reached: {}", outcome.reason.as_str()),
+            });
         }
-        self.tui.push_meta_event(
-            "STOP",
-            &format!(
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+            category: "STOP".to_string(),
+            message: format!(
                 "Stopping: {} - {}",
                 outcome.reason.as_str(),
                 outcome.summary
             ),
-        );
+        });
 
         let final_content = finalize_from_evidence_or_fallback(
             self.args,
@@ -1671,10 +1695,12 @@ impl<'a> ToolStateMachine<'a> {
                     missing_after.len()
                 ),
             );
-            self.tui.push_stop_notice(&format!(
-                "Partial completion: {} deliverables not completed",
-                missing_after.len()
-            ));
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::StopReasonNotice {
+                reason: format!(
+                    "Partial completion: {} deliverables not completed",
+                    missing_after.len()
+                ),
+            });
         }
 
         sync_loop_summary_coverage(&mut self.loop_summary_tracker, &self.scope_coverage);
@@ -1702,10 +1728,10 @@ impl<'a> ToolStateMachine<'a> {
         {
             let nudge = self.work_graph_runner.build_relaxed_continuation();
             self.messages.push(ChatMessage::simple("system", &nudge));
-            self.tui.push_meta_event(
-                "FOCUS",
-                "Graph-driven: finalization blocked — work incomplete",
-            );
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                category: "FOCUS".to_string(),
+                message: "Graph-driven: finalization blocked — work incomplete".to_string(),
+            });
             trace(
                 self.args,
                 &format!(
@@ -1740,7 +1766,10 @@ impl<'a> ToolStateMachine<'a> {
                             reasons.join(" | ")
                         );
                         trace(self.args, &format!("tool_loop: bare text {}", msg));
-                        self.tui.push_meta_event("EVIDENCE", &msg);
+                        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                            category: "EVIDENCE".to_string(),
+                            message: msg,
+                        });
                         let correction = format!(
                             "! Your previous response contains claims not supported by evidence. \
                              You must call a real tool (shell, search, read) to gather facts \
@@ -1768,12 +1797,15 @@ impl<'a> ToolStateMachine<'a> {
                 } else {
                     build_scope_coverage_nudge(&self.scope_coverage)
                 };
-                self.tui.push_meta_event("COVERAGE", &self.work_graph_runner.render_progress());
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                    category: "COVERAGE".to_string(),
+                    message: self.work_graph_runner.render_progress(),
+                });
                 if graph_incomplete {
-                    self.tui.push_meta_event(
-                        "FOCUS",
-                        "Graph-driven: finalization blocked — work incomplete",
-                    );
+                    let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::MetaEvent {
+                        category: "FOCUS".to_string(),
+                        message: "Graph-driven: finalization blocked — work incomplete".to_string(),
+                    });
                 }
                 self.messages.push(ChatMessage::simple("system", &nudge));
                 trace(
@@ -1839,7 +1871,12 @@ impl<'a> ToolStateMachine<'a> {
         for m in &self.messages {
             total += crate::ui_terminal::TerminalUI::estimate_tokens(&m.content);
         }
-        self.tui.update_context_tokens(total);
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::FooterTokenCounts {
+            input_tokens: 0,
+            output_tokens: 0,
+            context_current: total,
+            context_max: self.ctx_max.unwrap_or(0),
+        });
     }
 
     fn build_continuation_message(

@@ -191,7 +191,12 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
     req.reasoning_format = Some("auto".to_string());
 
     let input_estimate: usize = crate::token_counter::count_request_tokens(&req);
-    tui.update_input_tokens(input_estimate);
+    let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::FooterTokenCounts {
+        input_tokens: input_estimate as u64,
+        output_tokens: 0,
+        context_current: 0,
+        context_max: 0,
+    });
 
     let response = client
         .post(chat_url.clone())
@@ -275,10 +280,10 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
                     reasoning_content_full.push_str(&reasoning);
                     if !thinking_started {
                         thinking_started = true;
-                        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingStarted);
                         let _ = tui.pump_ui();
                     }
-                    tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
+                    let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingDelta(
                         reasoning.clone(),
                     ));
                     thinking_accumulated.push_str(&reasoning);
@@ -298,10 +303,10 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
                     if !thinking_delta.is_empty() {
                         if !thinking_started {
                             thinking_started = true;
-                            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingStarted);
                             let _ = tui.pump_ui();
                         }
-                        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
+                        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingDelta(
                             thinking_delta.clone(),
                         ));
                         thinking_accumulated.push_str(&thinking_delta);
@@ -311,15 +316,16 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
                     if !assistant_delta.is_empty() {
                         if thinking_started && !in_think_block {
                             thinking_started = false;
-                            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+                            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingFinished);
                             let _ = save_thinking_display(session, &thinking_accumulated);
                             let _ = tui.pump_ui();
                         }
                         content.push_str(&assistant_delta);
                         if !content_started {
                             content_started = true;
+                            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::AssistantContentStarted);
                         }
-                        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantContentDelta(
+                        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::AssistantContentDelta(
                             assistant_delta,
                         ));
                         let _ = tui.pump_ui();
@@ -332,12 +338,12 @@ pub(crate) async fn request_tool_loop_model_turn_streaming(
     }
 
     if thinking_started {
-        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingFinished);
         let _ = save_thinking_display(session, &thinking_accumulated);
         let _ = tui.pump_ui();
     }
     if content_started {
-        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished { is_ephemeral: true });
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::AssistantContentFinished);
         let _ = tui.pump_ui();
     }
 
@@ -369,7 +375,12 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
         .map(|m| crate::token_counter::count_tokens(&m.content))
         .sum::<usize>()
         .max(1);
-    tui.update_input_tokens(input_estimate);
+    let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::FooterTokenCounts {
+        input_tokens: input_estimate as u64,
+        output_tokens: 0,
+        context_current: 0,
+        context_max: 0,
+    });
     let mut req = req;
     req.stream = true;
 
@@ -440,10 +451,10 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
                 if !reasoning.is_empty() {
                     if !thinking_started {
                         thinking_started = true;
-                        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingStarted);
                         let _ = tui.pump_ui();
                     }
-                    tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
+                    let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingDelta(
                         reasoning.to_string(),
                     ));
                     let _ = tui.pump_ui();
@@ -460,10 +471,10 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
                     if !thinking_delta.is_empty() {
                         if !thinking_started {
                             thinking_started = true;
-                            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingStarted);
                             let _ = tui.pump_ui();
                         }
-                        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(
+                        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingDelta(
                             thinking_delta,
                         ));
                         let _ = tui.pump_ui();
@@ -471,13 +482,14 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
                     if !assistant_delta.is_empty() {
                         if thinking_started && !in_think_block {
                             thinking_started = false;
-                            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+                            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingFinished);
                             let _ = tui.pump_ui();
                         }
                         if !content_started {
                             content_started = true;
+                            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::AssistantContentStarted);
                         }
-                        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantContentDelta(
+                        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::AssistantContentDelta(
                             assistant_delta,
                         ));
                         let _ = tui.pump_ui();
@@ -500,18 +512,18 @@ pub(crate) async fn request_tool_loop_final_answer_streaming(
         if !thinking_delta.is_empty() {
             if !thinking_started {
                 thinking_started = true;
-                tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingStarted);
+                let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingStarted);
             }
-            tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingDelta(thinking_delta));
+            let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingDelta(thinking_delta));
         }
     }
 
     if thinking_started {
-        tui.handle_ui_event(crate::claude_ui::UiEvent::ThinkingFinished);
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::ThinkingFinished);
         let _ = tui.pump_ui();
     }
     if content_started {
-        tui.handle_ui_event(crate::claude_ui::UiEvent::AssistantFinished { is_ephemeral: false });
+        let _ = crate::pubsub::UI_EVENT_BUS.publish(crate::ui_runtime_event::UiRuntimeEvent::AssistantContentFinished);
         let _ = tui.pump_ui();
     }
 
