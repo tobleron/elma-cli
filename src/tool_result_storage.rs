@@ -88,7 +88,9 @@ fn build_persisted_wrapper(
     original_size: usize,
     preview: &str,
     persisted_path: &PathBuf,
+    search_hint: Option<&str>,
 ) -> String {
+    let hint = search_hint.unwrap_or("Use `read` tool to examine the full output if needed.");
     format!(
         "[persisted-output]\n\
          Tool: {}\n\
@@ -96,9 +98,9 @@ fn build_persisted_wrapper(
          Preview:\n\
          {}\n\n\
          Full output saved to: {}\n\
-         Use `read` tool to examine the full output if needed.\n\
+         {}\n\
          [/persisted-output]",
-        tool_name, original_size, preview, persisted_path.display()
+        tool_name, original_size, preview, persisted_path.display(), hint
     )
 }
 
@@ -113,6 +115,7 @@ pub(crate) fn apply_tool_result_budget(
     content: &str,
     threshold_chars: usize,
     policy: crate::output_truncation::TruncationPolicy,
+    search_hint: Option<&str>,
 ) -> BudgetedResult {
     if content.len() <= threshold_chars {
         return BudgetedResult {
@@ -142,6 +145,7 @@ pub(crate) fn apply_tool_result_budget(
                     content.len(),
                     &preview,
                     &path,
+                    search_hint,
                 ),
                 persisted: true,
                 persisted_path: Some(path),
@@ -218,7 +222,7 @@ pub(crate) fn apply_aggregate_budget(
                     content,
                     crate::output_truncation::TruncationPolicy::HeadAndTail(1000, 1000),
                 );
-                tool_results[idx].2 = build_persisted_wrapper(tool_name, size, &preview, &path);
+                tool_results[idx].2 = build_persisted_wrapper(tool_name, size, &preview, &path, None);
                 current_total = current_total - size + tool_results[idx].2.len();
             }
             Err(_) => {

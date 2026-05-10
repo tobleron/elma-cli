@@ -128,6 +128,7 @@ pub(crate) async fn execute_tool_call(
     _chat_url: &Url,
     _intent: &str,
     tui: Option<&mut crate::ui_terminal::TerminalUI>,
+    available_tokens: Option<usize>,
 ) -> ToolExecutionResult {
     let call_id = tool_call.id.clone();
     let tool_name = tool_call.function.name.clone();
@@ -364,13 +365,49 @@ pub(crate) async fn execute_tool_call(
     // Apply budget to the result content before returning
     let mut result = result;
     if result.ok {
+        let (limit, policy, search_hint) = if tool_name == "read" {
+            let path = crate::tool_repair::extract_path_from_args(&tool_call.function.arguments);
+            let classification = crate::document_adapter::classify_file(&path);
+
+            match classification.kind {
+                crate::document_adapter::FileKind::Document | crate::document_adapter::FileKind::SourceCode => {
+                    // Use 80% of remaining context window if available, else default to 1M chars
+                    let char_limit = if let Some(tokens) = available_tokens {
+                        (tokens * 8 / 10) * 4 // Assuming 4 chars per token
+                    } else {
+                        1_000_000
+                    };
+                    (char_limit, crate::output_truncation::TruncationPolicy::Head(char_limit), None)
+                }
+                crate::document_adapter::FileKind::Log => {
+                    (
+                        50_000,
+                        crate::output_truncation::TruncationPolicy::HeadAndTail(1500, 1500),
+                        Some("Log file truncated. Use `shell` with `grep`, `tail -n`, or `sed` to search for specific entries.")
+                    )
+                }
+                _ => (
+                    crate::tool_result_storage::DEFAULT_MAX_RESULT_SIZE_CHARS,
+                    crate::output_truncation::TruncationPolicy::HeadAndTail(1500, 1500),
+                    None
+                )
+            }
+        } else {
+            (
+                crate::tool_result_storage::DEFAULT_MAX_RESULT_SIZE_CHARS,
+                crate::output_truncation::TruncationPolicy::HeadAndTail(1500, 1500),
+                None
+            )
+        };
+
         let budgeted = crate::tool_result_storage::apply_tool_result_budget(
             session,
             &result.tool_call_id,
             &result.tool_name,
             &result.content,
-            crate::tool_result_storage::DEFAULT_MAX_RESULT_SIZE_CHARS,
-            crate::output_truncation::TruncationPolicy::HeadAndTail(1500, 1500),
+            limit,
+            policy,
+            search_hint,
         );
         result.content = budgeted.content_for_model;
     }
